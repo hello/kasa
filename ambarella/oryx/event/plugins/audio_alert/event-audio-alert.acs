@@ -1,0 +1,15 @@
+
+_audio_alert_ = {
+  enable = true, --enable or disable audio alert
+  channel_num = 2, --audio channel
+  sample_rate = 16000, -- audio sampling frequency
+  chunk_bytes = 2048,
+  sample_format = 3, -- range from 0 to 6
+  -- 0: unsigned 8 bites, 1: G.711 Alaw, 2: G.711 ULaw, 3: Signed 16 bits Little Endian
+  -- 4: Signed 16 bits Big Endian, 5: Signed 32 bits Little Endian, 6: Signed 32 bits Bit Endian
+  sensitivity = 50, -- range from 0 to 100
+  threshold = 50, -- range from 0 to 100
+  direction = 0, -- 0, 1
+}
+
+return _audio_alert_

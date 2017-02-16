@@ -1,0 +1,2811 @@
+diff --git a/Makefile.am b/Makefile.am
+index c3356de..141ff85 100644
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -1,5 +1,5 @@
+ # This file is part of ltrace.
+-# Copyright (C) 2012 Petr Machata, Red Hat Inc.
++# Copyright (C) 2012, 2013 Petr Machata, Red Hat Inc.
+ # Copyright (C) 2010 Marc Kleine-Budde, Pengutronix
+ # Copyright (C) 2010 Zachary T Welch, CodeSourcery
+ #
+@@ -33,6 +33,7 @@ noinst_LTLIBRARIES = \
+ 	libltrace.la
+ 
+ libltrace_la_SOURCES = \
++	bits.c \
+ 	breakpoints.c \
+ 	debug.c \
+ 	demangle.c \
+@@ -83,6 +84,7 @@ ltrace_LDADD = \
+ 
+ 
+ noinst_HEADERS = \
++	bits.h \
+ 	backend.h \
+ 	breakpoint.h \
+ 	common.h \
+diff --git a/README b/README
+index 3db5bc8..95871d1 100644
+--- a/README
++++ b/README
+@@ -24,6 +24,8 @@ The following targets are currently (at least somewhat) supported.
+ Some of them may be more or less broken in reality, it is not feasible
+ to test each release comprehensively on each target.
+ 
++	armv6l-*-linux-gnueabi
++	armv7l-*-linux-gnueabihf
+ 	i[4567]86-*-linux-gnu
+ 	ia64-*-linux-gnu
+ 	m68k-*-linux-gnu
+@@ -41,11 +43,6 @@ current status is unknown:
+ 	sparc64*-*-linux-gnu
+ 	alpha*-*-linux-gnu
+ 
+-Support of the following systems is known to be broken and requires
+-fixing:
+-
+-	arm-*-linux-gnueabi
+-
+ 
+ Bug Reports
+ -----------
+@@ -83,7 +80,7 @@ quick one-liner), it is advisable to send an e-mail beforehand.
+ 
+ 
+ -------------------------------------------------------------------------------
+-Copyright (C) 2012 Petr Machata <pmachata@redhat.com>
++Copyright (C) 2012,2013 Petr Machata <pmachata@redhat.com>
+ Copyright (C) 1997-2009 Juan Cespedes <cespedes@debian.org>
+ This file is part of ltrace.
+ 
+diff --git a/backend.h b/backend.h
+index cfac65e..a9de3b4 100644
+--- a/backend.h
++++ b/backend.h
+@@ -107,10 +107,6 @@ void *get_stack_pointer(struct process *proc);
+  * function returns.  */
+ void *get_return_addr(struct process *proc, void *stack_pointer);
+ 
+-/* Adjust PROC so that when the current function returns, it returns
+- * to ADDR.  */
+-void set_return_addr(struct process *proc, void *addr);
+-
+ /* Enable breakpoint SBP in process PROC.  */
+ void enable_breakpoint(struct process *proc, struct breakpoint *sbp);
+ 
+diff --git a/bits.c b/bits.c
+new file mode 100644
+index 0000000..bde2e71
+--- /dev/null
++++ b/bits.c
+@@ -0,0 +1,34 @@
++/*
++ * This file is part of ltrace.
++ * Copyright (C) 2013 Petr Machata, Red Hat Inc.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of the
++ * License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
++ * 02110-1301 USA
++ */
++
++#include "bits.h"
++
++/* This is called rarely, and any overhead will be lost in ptrace
++ * noise, so the algorithm doesn't need to be terribly clever.  For
++ * the same reason we don't bother defining the corresponding _32
++ * variant.  */
++unsigned
++bitcount(uint64_t u)
++{
++	int c = 0;
++	for (; u > 0; u &= u - 1)
++		c++;
++	return c;
++}
+diff --git a/bits.h b/bits.h
+new file mode 100644
+index 0000000..7dbe478
+--- /dev/null
++++ b/bits.h
+@@ -0,0 +1,29 @@
++/*
++ * This file is part of ltrace.
++ * Copyright (C) 2013 Petr Machata, Red Hat Inc.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of the
++ * License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
++ * 02110-1301 USA
++ */
++
++#ifndef _BITS_H_
++#define _BITS_H_
++
++#include <stdint.h>
++
++/* Count bits in U that are 1.  */
++unsigned bitcount(uint64_t u);
++
++#endif /* _BITS_H_ */
+diff --git a/breakpoint.h b/breakpoint.h
+index 18af7a9..963cc66 100644
+--- a/breakpoint.h
++++ b/breakpoint.h
+@@ -1,6 +1,6 @@
+ /*
+  * This file is part of ltrace.
+- * Copyright (C) 2012 Petr Machata, Red Hat Inc.
++ * Copyright (C) 2012, 2013 Petr Machata, Red Hat Inc.
+  * Copyright (C) 2009 Juan Cespedes
+  *
+  * This program is free software; you can redistribute it and/or
+@@ -82,11 +82,10 @@ int breakpoint_init(struct breakpoint *bp, struct process *proc,
+ 		    arch_addr_t addr, struct library_symbol *libsym);
+ 
+ /* Make a clone of breakpoint BP into the area of memory pointed to by
+- * RETP.  The original breakpoint was assigned to process OLD_PROC,
+- * the cloned breakpoint will be attached to process NEW_PROC.
++ * RETP.  Symbols of cloned breakpoint are looked up in NEW_PROC.
+  * Returns 0 on success or a negative value on failure.  */
+ int breakpoint_clone(struct breakpoint *retp, struct process *new_proc,
+-		     struct breakpoint *bp, struct process *old_proc);
++		     struct breakpoint *bp);
+ 
+ /* Set callbacks.  If CBS is non-NULL, then BP->cbs shall be NULL.  */
+ void breakpoint_set_callbacks(struct breakpoint *bp, struct bp_callbacks *cbs);
+diff --git a/breakpoints.c b/breakpoints.c
+index 8db4e26..7b5530a 100644
+--- a/breakpoints.c
++++ b/breakpoints.c
+@@ -1,6 +1,6 @@
+ /*
+  * This file is part of ltrace.
+- * Copyright (C) 2006,2007,2011,2012 Petr Machata, Red Hat Inc.
++ * Copyright (C) 2006,2007,2011,2012,2013 Petr Machata, Red Hat Inc.
+  * Copyright (C) 2009 Juan Cespedes
+  * Copyright (C) 1998,2001,2002,2003,2007,2008,2009 Juan Cespedes
+  * Copyright (C) 2006 Ian Wienand
+@@ -117,7 +117,7 @@ arch_breakpoint_clone(struct breakpoint *retp, struct breakpoint *sbp)
+ #endif
+ 
+ static void
+-breakpoint_init_base(struct breakpoint *bp, struct process *proc,
++breakpoint_init_base(struct breakpoint *bp,
+ 		     arch_addr_t addr, struct library_symbol *libsym)
+ {
+ 	bp->cbs = NULL;
+@@ -135,7 +135,7 @@ int
+ breakpoint_init(struct breakpoint *bp, struct process *proc,
+ 		arch_addr_t addr, struct library_symbol *libsym)
+ {
+-	breakpoint_init_base(bp, proc, addr, libsym);
++	breakpoint_init_base(bp, addr, libsym);
+ 	return arch_breakpoint_init(proc, bp);
+ }
+ 
+@@ -157,7 +157,7 @@ breakpoint_destroy(struct breakpoint *bp)
+ 
+ int
+ breakpoint_clone(struct breakpoint *retp, struct process *new_proc,
+-		 struct breakpoint *bp, struct process *old_proc)
++		 struct breakpoint *bp)
+ {
+ 	struct library_symbol *libsym = NULL;
+ 	if (bp->libsym != NULL) {
+@@ -165,7 +165,7 @@ breakpoint_clone(struct breakpoint *retp, struct process *new_proc,
+ 		assert(rc == 0);
+ 	}
+ 
+-	breakpoint_init_base(retp, new_proc, bp->addr, libsym);
++	breakpoint_init_base(retp, bp->addr, libsym);
+ 	memcpy(retp->orig_value, bp->orig_value, sizeof(bp->orig_value));
+ 	retp->enabled = bp->enabled;
+ 	if (arch_breakpoint_clone(retp, bp) < 0)
+@@ -211,6 +211,22 @@ insert_breakpoint(struct process *proc, void *addr,
+ 
+ 	assert(addr != 0);
+ 
++	/* We first create the breakpoint to find out what it's real
++	 * address is.  This makes a difference on ARM.
++	 *
++	 * XXX The real problem here is that to create a return
++	 * breakpoint ltrace calls get_return_addr and then
++	 * insert_breakpoint.  So get_return_addr needs to encode all
++	 * the information necessary for breakpoint_init into the
++	 * address itself, so ADDR is potentially mangled.  We filter
++	 * the noise out by first creating the breakpoint on stack,
++	 * and then looking at the address of the created breakpoint.
++	 * Replacing get_return_addr with get_return_breakpoint might
++	 * be a better solution.  */
++	struct breakpoint bp;
++	if (breakpoint_init(&bp, proc, addr, libsym) < 0)
++		return NULL;
++
+ 	/* XXX what we need to do instead is have a list of
+ 	 * breakpoints that are enabled at this address.  The
+ 	 * following works if every breakpoint is the same and there's
+@@ -218,20 +234,21 @@ insert_breakpoint(struct process *proc, void *addr,
+ 	 * will suffice, about the only realistic case where we need
+ 	 * to have more than one breakpoint per address is return from
+ 	 * a recursive library call.  */
+-	struct breakpoint *sbp = dict_find_entry(leader->breakpoints, addr);
+-	if (sbp == NULL) {
++	struct breakpoint *sbp = dict_find_entry(leader->breakpoints, bp.addr);
++	if (sbp != NULL) {
++		breakpoint_destroy(&bp);
++	} else {
++	  //fprintf(stderr, "new BP at %p\n", addr);
+ 		sbp = malloc(sizeof(*sbp));
+-		if (sbp == NULL
+-		    || breakpoint_init(sbp, proc, addr, libsym) < 0) {
+-			free(sbp);
+-			return NULL;
+-		}
+-		if (proc_add_breakpoint(leader, sbp) < 0) {
++		if (sbp == NULL) {
+ 		fail:
+-			breakpoint_destroy(sbp);
+ 			free(sbp);
++			breakpoint_destroy(&bp);
+ 			return NULL;
+ 		}
++		memcpy(sbp, &bp, sizeof(*sbp));
++		if (proc_add_breakpoint(leader, sbp) < 0)
++			goto fail;
+ 	}
+ 
+ 	if (breakpoint_turn_on(sbp, proc) < 0) {
+diff --git a/handle_event.c b/handle_event.c
+index 9dbb696..1eaea09 100644
+--- a/handle_event.c
++++ b/handle_event.c
+@@ -607,7 +607,6 @@ handle_breakpoint(Event *event)
+ 					calc_time_spent(event->proc);
+ 				}
+ 			}
+-			event->proc->return_addr = brk_addr;
+ 
+ 			struct library_symbol *libsym =
+ 			    event->proc->callstack[i].c_un.libfunc;
+@@ -663,8 +662,6 @@ handle_breakpoint(Event *event)
+ 		if (event->proc->state != STATE_IGNORED
+ 		    && sbp->libsym != NULL) {
+ 			event->proc->stack_pointer = get_stack_pointer(event->proc);
+-			event->proc->return_addr =
+-				get_return_addr(event->proc, event->proc->stack_pointer);
+ 			callstack_push_symfunc(event->proc, sbp->libsym);
+ 			output_left(LT_TOF_FUNCTION, event->proc, sbp->libsym);
+ 		}
+@@ -722,9 +719,11 @@ callstack_push_symfunc(struct process *proc, struct library_symbol *sym)
+ 	elem->is_syscall = 0;
+ 	elem->c_un.libfunc = sym;
+ 
+-	elem->return_addr = proc->return_addr;
+-	if (elem->return_addr)
+-		insert_breakpoint(proc, elem->return_addr, NULL);
++	arch_addr_t return_addr = get_return_addr(proc, proc->stack_pointer);
++	struct breakpoint *rbp = NULL;
++	if (return_addr != 0)
++		rbp = insert_breakpoint(proc, return_addr, NULL);
++	elem->return_addr = rbp != NULL ? rbp->addr : 0;
+ 
+ 	if (opt_T || options.summary) {
+ 		struct timezone tz;
+diff --git a/lens_default.c b/lens_default.c
+index ed3d0e1..47b8c70 100644
+--- a/lens_default.c
++++ b/lens_default.c
+@@ -29,6 +29,7 @@
+ #include <stdio.h>
+ #include <string.h>
+ 
++#include "bits.h"
+ #include "proc.h"
+ #include "lens_default.h"
+ #include "value.h"
+@@ -608,15 +609,6 @@ out_bits(FILE *stream, size_t low, size_t high)
+ 		return fprintf(stream, "%zd-%zd", low, high);
+ }
+ 
+-static unsigned
+-bitcount(unsigned u)
+-{
+-	int c = 0;
+-	for (; u > 0; u &= u - 1)
+-		c++;
+-	return c;
+-}
+-
+ static int
+ bitvect_lens_format_cb(struct lens *lens, FILE *stream,
+ 		       struct value *value, struct value_dict *arguments)
+diff --git a/ltrace-elf.c b/ltrace-elf.c
+index 1d0f769..af25f8f 100644
+--- a/ltrace-elf.c
++++ b/ltrace-elf.c
+@@ -1,6 +1,6 @@
+ /*
+  * This file is part of ltrace.
+- * Copyright (C) 2006,2010,2011,2012 Petr Machata, Red Hat Inc.
++ * Copyright (C) 2006,2010,2011,2012,2013 Petr Machata, Red Hat Inc.
+  * Copyright (C) 2010 Zachary T Welch, CodeSourcery
+  * Copyright (C) 2010 Joe Damato
+  * Copyright (C) 1997,1998,2001,2004,2007,2008,2009 Juan Cespedes
+@@ -141,8 +141,9 @@ elf_get_section_if(struct ltelf *lte, Elf_Scn **tgt_sec, GElf_Shdr *tgt_shdr,
+ 			return 0;
+ 		}
+ 	}
+-	return -1;
+ 
++	*tgt_sec = NULL;
++	return 0;
+ }
+ 
+ static int
+@@ -203,23 +204,23 @@ elf_get_section_named(struct ltelf *lte, const char *name,
+ 				  &name_p, &data);
+ }
+ 
+-static int
+-need_data(Elf_Data *data, GElf_Xword offset, GElf_Xword size)
++int
++elf_can_read_next(Elf_Data *data, GElf_Xword offset, GElf_Xword size)
+ {
+ 	assert(data != NULL);
+ 	if (data->d_size < size || offset > data->d_size - size) {
+ 		debug(1, "Not enough data to read %"PRId64"-byte value"
+ 		      " at offset %"PRId64".", size, offset);
+-		return -1;
++		return 0;
+ 	}
+-	return 0;
++	return 1;
+ }
+ 
+ #define DEF_READER(NAME, SIZE)						\
+ 	int								\
+ 	NAME(Elf_Data *data, GElf_Xword offset, uint##SIZE##_t *retp)	\
+ 	{								\
+-		if (!need_data(data, offset, SIZE / 8) < 0)		\
++		if (!elf_can_read_next(data, offset, SIZE / 8))		\
+ 			return -1;					\
+ 									\
+ 		if (data->d_buf == NULL) /* NODATA section */ {		\
+@@ -236,12 +237,63 @@ need_data(Elf_Data *data, GElf_Xword offset, GElf_Xword size)
+ 		return 0;						\
+ 	}
+ 
++DEF_READER(elf_read_u8, 8)
+ DEF_READER(elf_read_u16, 16)
+ DEF_READER(elf_read_u32, 32)
+ DEF_READER(elf_read_u64, 64)
+ 
+ #undef DEF_READER
+ 
++#define DEF_READER(NAME, SIZE)						\
++	int								\
++	NAME(Elf_Data *data, GElf_Xword *offset, uint##SIZE##_t *retp)	\
++	{								\
++		int rc = elf_read_u##SIZE(data, *offset, retp);		\
++		if (rc < 0)						\
++			return rc;					\
++		*offset += SIZE / 8;					\
++		return 0;						\
++	}
++
++DEF_READER(elf_read_next_u8, 8)
++DEF_READER(elf_read_next_u16, 16)
++DEF_READER(elf_read_next_u32, 32)
++DEF_READER(elf_read_next_u64, 64)
++
++#undef DEF_READER
++
++int
++elf_read_next_uleb128(Elf_Data *data, GElf_Xword *offset, uint64_t *retp)
++{
++	uint64_t result = 0;
++	int shift = 0;
++	int size = 8 * sizeof result;
++
++	while (1) {
++		uint8_t byte;
++		if (elf_read_next_u8(data, offset, &byte) < 0)
++			return -1;
++
++		uint8_t payload = byte & 0x7f;
++		result |= (uint64_t)payload << shift;
++		shift += 7;
++		if (shift > size && byte != 0x1)
++			return -1;
++		if ((byte & 0x80) == 0)
++			break;
++	}
++
++	if (retp != NULL)
++		*retp = result;
++	return 0;
++}
++
++int
++elf_read_uleb128(Elf_Data *data, GElf_Xword offset, uint64_t *retp)
++{
++	return elf_read_next_uleb128(data, &offset, retp);
++}
++
+ int
+ open_elf(struct ltelf *lte, const char *filename)
+ {
+diff --git a/ltrace-elf.h b/ltrace-elf.h
+index b76d1eb..178258b 100644
+--- a/ltrace-elf.h
++++ b/ltrace-elf.h
+@@ -1,6 +1,6 @@
+ /*
+  * This file is part of ltrace.
+- * Copyright (C) 2006,2010,2012 Petr Machata, Red Hat Inc.
++ * Copyright (C) 2006,2010,2012,2013 Petr Machata, Red Hat Inc.
+  * Copyright (C) 2010 Zachary T Welch
+  * Copyright (C) 2001,2004,2007,2009 Juan Cespedes
+  * Copyright (C) 2006 Ian Wienand
+@@ -95,6 +95,12 @@ int elf_get_sym_info(struct ltelf *lte, const char *filename,
+ 		     size_t sym_index, GElf_Rela *rela, GElf_Sym *sym);
+ 
+ Elf_Data *elf_loaddata(Elf_Scn *scn, GElf_Shdr *shdr);
++
++/* The following three look for sections based on various criteria.
++ * They return 0 if there was no error, or a negative value if there
++ * was.  If the section was found, it is returned in *TGT_SEC, and the
++ * header is stored te TGT_SHDR.  If it wasn't found, *TGT_SEC is set
++ * to NULL.  */
+ int elf_get_section_covering(struct ltelf *lte, GElf_Addr addr,
+ 			     Elf_Scn **tgt_sec, GElf_Shdr *tgt_shdr);
+ int elf_get_section_type(struct ltelf *lte, GElf_Word type,
+@@ -102,13 +108,29 @@ int elf_get_section_type(struct ltelf *lte, GElf_Word type,
+ int elf_get_section_named(struct ltelf *lte, const char *name,
+ 			  Elf_Scn **tgt_sec, GElf_Shdr *tgt_shdr);
+ 
+-/* Read, respectively, 2, 4, or 8 bytes from Elf data at given OFFSET,
+- * and store it in *RETP.  Returns 0 on success or a negative value if
+- * there's not enough data.  */
++/* Read, respectively, 1, 2, 4, or 8 bytes from Elf data at given
++ * OFFSET, and store it in *RETP.  Returns 0 on success or a negative
++ * value if there's not enough data.  */
++int elf_read_u8(Elf_Data *data, GElf_Xword offset, uint8_t *retp);
+ int elf_read_u16(Elf_Data *data, GElf_Xword offset, uint16_t *retp);
+ int elf_read_u32(Elf_Data *data, GElf_Xword offset, uint32_t *retp);
+ int elf_read_u64(Elf_Data *data, GElf_Xword offset, uint64_t *retp);
+ 
++/* Read at most 64-bit quantity recorded in an ULEB128 variable-length
++ * encoding.  */
++int elf_read_uleb128(Elf_Data *data, GElf_Xword offset, uint64_t *retp);
++
++/* These are same as above, but update *OFFSET with the width
++ * of read datum.  */
++int elf_read_next_u8(Elf_Data *data, GElf_Xword *offset, uint8_t *retp);
++int elf_read_next_u16(Elf_Data *data, GElf_Xword *offset, uint16_t *retp);
++int elf_read_next_u32(Elf_Data *data, GElf_Xword *offset, uint32_t *retp);
++int elf_read_next_u64(Elf_Data *data, GElf_Xword *offset, uint64_t *retp);
++int elf_read_next_uleb128(Elf_Data *data, GElf_Xword *offset, uint64_t *retp);
++
++/* Return whether there's AMOUNT more bytes after OFFSET in DATA.  */
++int elf_can_read_next(Elf_Data *data, GElf_Xword offset, GElf_Xword amount);
++
+ #if __WORDSIZE == 32
+ #define PRI_ELF_ADDR		PRIx32
+ #define GELF_ADDR_CAST(x)	(void *)(uint32_t)(x)
+diff --git a/output.c b/output.c
+index fe62bb4..f046df8 100644
+--- a/output.c
++++ b/output.c
+@@ -1,6 +1,6 @@
+ /*
+  * This file is part of ltrace.
+- * Copyright (C) 2011,2012 Petr Machata, Red Hat Inc.
++ * Copyright (C) 2011,2012,2013 Petr Machata, Red Hat Inc.
+  * Copyright (C) 2010 Joe Damato
+  * Copyright (C) 1997,1998,1999,2001,2002,2003,2004,2007,2008,2009 Juan Cespedes
+  * Copyright (C) 2006 Paul Gilliam, IBM Corporation
+@@ -119,12 +119,15 @@ begin_of_line(struct process *proc, int is_func, int indent)
+ 		}
+ 	}
+ 	if (opt_i) {
+-		if (is_func)
++		if (is_func) {
++			struct callstack_element *stel
++				= &proc->callstack[proc->callstack_depth - 1];
+ 			current_column += fprintf(options.output, "[%p] ",
+-						  proc->return_addr);
+-		else
++						  stel->return_addr);
++		} else {
+ 			current_column += fprintf(options.output, "[%p] ",
+ 						  proc->instruction_pointer);
++		}
+ 	}
+ 	if (options.indent > 0 && indent) {
+ 		output_indent(proc);
+diff --git a/proc.c b/proc.c
+index db3f645..7dfde7c 100644
+--- a/proc.c
++++ b/proc.c
+@@ -314,8 +314,7 @@ clone_single_bp(void *key, void *value, void *u)
+ 
+ 	struct breakpoint *clone = malloc(sizeof(*clone));
+ 	if (clone == NULL
+-	    || breakpoint_clone(clone, data->new_proc,
+-				bp, data->old_proc) < 0) {
++	    || breakpoint_clone(clone, data->new_proc, bp) < 0) {
+ 	fail:
+ 		free(clone);
+ 		data->error = -1;
+@@ -1050,6 +1049,7 @@ proc_each_symbol(struct process *proc, struct library_symbol *start_after,
+ 		return 0;						\
+ 	}
+ 
++DEF_READER(proc_read_8, 8)
+ DEF_READER(proc_read_16, 16)
+ DEF_READER(proc_read_32, 32)
+ DEF_READER(proc_read_64, 64)
+diff --git a/proc.h b/proc.h
+index 04c0ef7..03708dc 100644
+--- a/proc.h
++++ b/proc.h
+@@ -65,7 +65,7 @@ struct callstack_element {
+ 		struct library_symbol * libfunc;
+ 	} c_un;
+ 	int is_syscall;
+-	void * return_addr;
++	arch_addr_t return_addr;
+ 	struct timeval time_spent;
+ 	struct fetch_context *fetch_context;
+ 	struct value_dict *arguments;
+@@ -106,7 +106,6 @@ struct process {
+ 	/* Arch-dependent: */
+ 	void * instruction_pointer;
+ 	void * stack_pointer;      /* To get return addr, args... */
+-	void * return_addr;
+ 	void * arch_ptr;
+ 
+ 	/* XXX We would like to replace this with a pointer to ABI
+@@ -116,11 +115,6 @@ struct process {
+ 	short e_machine;
+ 	char e_class;
+ 
+-	/* XXX this shoudl go to ARM's arch_process_data.  */
+-#ifdef __arm__
+-	int thumb_mode;           /* ARM execution mode: 0: ARM, 1: Thumb */
+-#endif
+-
+ #if defined(HAVE_LIBUNWIND)
+ 	/* libunwind address space */
+ 	unw_addr_space_t unwind_as;
+@@ -254,10 +248,11 @@ struct library_symbol *proc_each_symbol
+ 	 enum callback_status (*cb)(struct library_symbol *, void *),
+ 	 void *data);
+ 
+-/* Read 16, 32 or 64-bit quantity located at ADDR in PROC.  The
++/* Read 8, 16, 32 or 64-bit quantity located at ADDR in PROC.  The
+  * resulting value is stored in *LP.  0 is returned on success or a
+  * negative value on failure.  This uses umovebytes under the hood
+  * (see backend.h).  */
++int proc_read_8(struct process *proc, arch_addr_t addr, uint8_t *lp);
+ int proc_read_16(struct process *proc, arch_addr_t addr, uint16_t *lp);
+ int proc_read_32(struct process *proc, arch_addr_t addr, uint32_t *lp);
+ int proc_read_64(struct process *proc, arch_addr_t addr, uint64_t *lp);
+diff --git a/sysdeps/linux-gnu/alpha/regs.c b/sysdeps/linux-gnu/alpha/regs.c
+index c197225..9ccd8f2 100644
+--- a/sysdeps/linux-gnu/alpha/regs.c
++++ b/sysdeps/linux-gnu/alpha/regs.c
+@@ -1,5 +1,6 @@
+ /*
+  * This file is part of ltrace.
++ * Copyright (C) 2013 Petr Machata, Red Hat Inc.
+  * Copyright (C) 2004,2008,2009 Juan Cespedes
+  *
+  * This program is free software; you can redistribute it and/or
+@@ -58,9 +59,3 @@ get_return_addr(struct process *proc, void *stack_pointer)
+ {
+ 	return (void *)ptrace(PTRACE_PEEKUSER, proc->pid, 26 /* RA */ , 0);
+ }
+-
+-void
+-set_return_addr(struct process *proc, void *addr)
+-{
+-	ptrace(PTRACE_POKEUSER, proc->pid, 26 /* RA */ , addr);
+-}
+diff --git a/sysdeps/linux-gnu/arm/Makefile.am b/sysdeps/linux-gnu/arm/Makefile.am
+index 385424c..2c180c6 100644
+--- a/sysdeps/linux-gnu/arm/Makefile.am
++++ b/sysdeps/linux-gnu/arm/Makefile.am
+@@ -1,4 +1,5 @@
+ # This file is part of ltrace.
++# Copyright (C) 2013 Petr Machata, Red Hat Inc.
+ # Copyright (C) 2010 Marc Kleine-Budde, Pengutronix
+ #
+ # This program is free software; you can redistribute it and/or
+@@ -16,21 +17,11 @@
+ # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ # 02110-1301 USA
+ 
+-noinst_LTLIBRARIES = \
+-	../libcpu.la
++noinst_LTLIBRARIES = ../libcpu.la
+ 
+-___libcpu_la_SOURCES = \
+-	breakpoint.c \
+-	plt.c \
+-	regs.c \
+-	trace.c
++___libcpu_la_SOURCES = breakpoint.c fetch.c plt.c regs.c trace.c
+ 
+-noinst_HEADERS = \
+-	arch.h \
+-	arch_syscallent.h \
+-	ptrace.h \
+-	signalent.h \
+-	syscallent.h
++noinst_HEADERS = arch.h arch_syscallent.h ptrace.h regs.h signalent.h	\
++	 syscallent.h
+ 
+-MAINTAINERCLEANFILES = \
+-	Makefile.in
++MAINTAINERCLEANFILES = Makefile.in
+diff --git a/sysdeps/linux-gnu/arm/arch.h b/sysdeps/linux-gnu/arm/arch.h
+index 291443a..58a7fdf 100644
+--- a/sysdeps/linux-gnu/arm/arch.h
++++ b/sysdeps/linux-gnu/arm/arch.h
+@@ -1,5 +1,6 @@
+ /*
+  * This file is part of ltrace.
++ * Copyright (C) 2013 Petr Machata, Red Hat Inc.
+  * Copyright (C) 1998,2004,2008 Juan Cespedes
+  *
+  * This program is free software; you can redistribute it and/or
+@@ -18,6 +19,9 @@
+  * 02110-1301 USA
+  */
+ 
++#ifndef LTRACE_ARM_ARCH_H
++#define LTRACE_ARM_ARCH_H
++
+ #define ARCH_HAVE_ENABLE_BREAKPOINT 1
+ #define ARCH_HAVE_DISABLE_BREAKPOINT 1
+ 
+@@ -31,7 +35,24 @@
+ #define LT_ELFCLASS	ELFCLASS32
+ #define LT_ELF_MACHINE	EM_ARM
+ 
++#define ARCH_HAVE_SW_SINGLESTEP
++#define ARCH_HAVE_FETCH_ARG
++#define ARCH_HAVE_FETCH_PACK
++#define ARCH_HAVE_SIZEOF
++#define ARCH_HAVE_ALIGNOF
+ #define ARCH_HAVE_BREAKPOINT_DATA
+ struct arch_breakpoint_data {
+ 	int thumb_mode;
+ };
++
++#define ARCH_HAVE_LTELF_DATA
++struct arch_ltelf_data {
++	/* We have this only for the hooks.  */
++};
++
++#define ARCH_HAVE_LIBRARY_DATA
++struct arch_library_data {
++	unsigned int hardfp:1;
++};
++
++#endif /* LTRACE_ARM_ARCH_H */
+diff --git a/sysdeps/linux-gnu/arm/breakpoint.c b/sysdeps/linux-gnu/arm/breakpoint.c
+index 2fb9578..fcd43a7 100644
+--- a/sysdeps/linux-gnu/arm/breakpoint.c
++++ b/sysdeps/linux-gnu/arm/breakpoint.c
+@@ -94,14 +94,11 @@ arch_disable_breakpoint(pid_t pid, const struct breakpoint *sbp)
+ int
+ arch_breakpoint_init(struct process *proc, struct breakpoint *sbp)
+ {
+-	/* XXX That uintptr_t cast is there temporarily until
+-	 * arch_addr_t becomes integral type.  */
+-	int thumb_mode = ((uintptr_t)sbp->addr) & 1;
+-	if (thumb_mode)
+-		sbp->addr = (void *)((uintptr_t)sbp->addr & ~1);
+-	sbp->arch.thumb_mode = thumb_mode | proc->thumb_mode;
+-	/* XXX This doesn't seem like it belongs here.  */
+-	proc->thumb_mode = 0;
++	/* XXX double cast  */
++	sbp->arch.thumb_mode = ((uintptr_t)sbp->addr) & 1;
++	if (sbp->arch.thumb_mode)
++		/* XXX double cast */
++		sbp->addr = (arch_addr_t)((uintptr_t)sbp->addr & ~1);
+ 	return 0;
+ }
+ 
+diff --git a/sysdeps/linux-gnu/arm/fetch.c b/sysdeps/linux-gnu/arm/fetch.c
+new file mode 100644
+index 0000000..0064d91
+--- /dev/null
++++ b/sysdeps/linux-gnu/arm/fetch.c
+@@ -0,0 +1,529 @@
++/*
++ * This file is part of ltrace.
++ * Copyright (C) 2013 Petr Machata, Red Hat Inc.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of the
++ * License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
++ * 02110-1301 USA
++ */
++
++#include <sys/ptrace.h>
++#include <asm/ptrace.h>
++#include <assert.h>
++#include <elf.h>
++#include <libelf.h>
++#include <stdint.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <stdbool.h>
++
++#include "backend.h"
++#include "fetch.h"
++#include "library.h"
++#include "ltrace-elf.h"
++#include "proc.h"
++#include "ptrace.h"
++#include "regs.h"
++#include "type.h"
++#include "value.h"
++
++static int
++get_hardfp(uint64_t abi_vfp_args)
++{
++	if (abi_vfp_args == 2)
++		fprintf(stderr,
++			"Tag_ABI_VFP_args value 2 (tool chain-specific "
++			"conventions) not supported.\n");
++	return abi_vfp_args == 1;
++}
++
++int
++arch_elf_init(struct ltelf *lte, struct library *lib)
++{
++	/* Nothing in this section is strictly critical.  It's not
++	 * that much of a deal if we fail to guess right whether the
++	 * ABI is softfp or hardfp.  */
++	unsigned hardfp = 0;
++
++	Elf_Scn *scn;
++	Elf_Data *data;
++	GElf_Shdr shdr;
++	if (elf_get_section_type(lte, SHT_ARM_ATTRIBUTES, &scn, &shdr) < 0
++	    || (scn != NULL && (data = elf_loaddata(scn, &shdr)) == NULL)) {
++		fprintf(stderr,
++			"Error when obtaining ARM attribute section: %s\n",
++			elf_errmsg(-1));
++		goto done;
++
++	} else if (scn != NULL && data != NULL) {
++		GElf_Xword offset = 0;
++		uint8_t version;
++		if (elf_read_next_u8(data, &offset, &version) < 0) {
++			goto done;
++		} else if (version != 'A') {
++			fprintf(stderr, "Unsupported ARM attribute section "
++				"version %d ('%c').\n", version, version);
++			goto done;
++		}
++
++		do {
++			const char signature[] = "aeabi";
++			/* N.B. LEN is including the length field
++			 * itself.  */
++			uint32_t sec_len;
++			if (elf_read_u32(data, offset, &sec_len) < 0
++			    || !elf_can_read_next(data, offset, sec_len)) {
++				goto done;
++			}
++			const GElf_Xword next_offset = offset + sec_len;
++			offset += 4;
++
++			if (sec_len < 4 + sizeof signature
++			    || strcmp(signature, data->d_buf + offset) != 0)
++				goto skip;
++			offset += sizeof signature;
++
++			const GElf_Xword offset0 = offset;
++			uint64_t tag;
++			uint32_t sub_len;
++			if (elf_read_next_uleb128(data, &offset, &tag) < 0
++			    || elf_read_next_u32(data, &offset, &sub_len) < 0
++			    || !elf_can_read_next(data, offset0, sub_len))
++				goto done;
++
++			if (tag != 1)
++				/* IHI0045D_ABI_addenda: "section and
++				 * symbol attributes are deprecated
++				 * [...] consumers are permitted to
++				 * ignore them."  */
++				goto skip;
++
++			while (offset < offset0 + sub_len) {
++				if (elf_read_next_uleb128(data,
++							  &offset, &tag) < 0)
++					goto done;
++
++				switch (tag) {
++					uint64_t v;
++				case 6: /* Tag_CPU_arch */
++				case 7: /* Tag_CPU_arch_profile */
++				case 8: /* Tag_ARM_ISA_use */
++				case 9: /* Tag_THUMB_ISA_use */
++				case 10: /* Tag_FP_arch */
++				case 11: /* Tag_WMMX_arch */
++				case 12: /* Tag_Advanced_SIMD_arch */
++				case 13: /* Tag_PCS_config */
++				case 14: /* Tag_ABI_PCS_R9_use */
++				case 15: /* Tag_ABI_PCS_RW_data */
++				case 16: /* Tag_ABI_PCS_RO_data */
++				case 17: /* Tag_ABI_PCS_GOT_use */
++				case 18: /* Tag_ABI_PCS_wchar_t */
++				case 19: /* Tag_ABI_FP_rounding */
++				case 20: /* Tag_ABI_FP_denormal */
++				case 21: /* Tag_ABI_FP_exceptions */
++				case 22: /* Tag_ABI_FP_user_exceptions */
++				case 23: /* Tag_ABI_FP_number_model */
++				case 24: /* Tag_ABI_align_needed */
++				case 25: /* Tag_ABI_align_preserved */
++				case 26: /* Tag_ABI_enum_size */
++				case 27: /* Tag_ABI_HardFP_use */
++				case 28: /* Tag_ABI_VFP_args */
++				case 29: /* Tag_ABI_WMMX_args */
++				case 30: /* Tag_ABI_optimization_goals */
++				case 31: /* Tag_ABI_FP_optimization_goals */
++				case 32: /* Tag_compatibility */
++				case 34: /* Tag_CPU_unaligned_access */
++				case 36: /* Tag_FP_HP_extension */
++				case 38: /* Tag_ABI_FP_16bit_format */
++				case 42: /* Tag_MPextension_use */
++				case 70: /* Tag_MPextension_use as well */
++				case 44: /* Tag_DIV_use */
++				case 64: /* Tag_nodefaults */
++				case 66: /* Tag_T2EE_use */
++				case 68: /* Tag_Virtualization_use */
++				uleb128:
++					if (elf_read_next_uleb128
++						(data, &offset, &v) < 0)
++						goto done;
++					if (tag == 28)
++						hardfp = get_hardfp(v);
++					if (tag != 32)
++						continue;
++
++					/* Tag 32 has two arguments,
++					 * fall through.  */
++
++				case 4:	/* Tag_CPU_raw_name */
++				case 5:	/* Tag_CPU_name */
++				case 65: /* Tag_also_compatible_with */
++				case 67: /* Tag_conformance */
++				ntbs:
++					offset += strlen(data->d_buf
++							 + offset) + 1;
++					continue;
++				}
++
++				/* Handle unknown tags in a generic
++				 * manner, if possible.  */
++				if (tag <= 32) {
++					fprintf(stderr,
++						"Unknown tag %lld "
++						"at offset %#llx "
++						"of ARM attribute section.",
++						tag, offset);
++					goto skip;
++				} else if (tag % 2 == 0) {
++					goto uleb128;
++				} else {
++					goto ntbs;
++				}
++			}
++
++		skip:
++			offset = next_offset;
++
++		} while (elf_can_read_next(data, offset, 1));
++
++	}
++
++done:
++	lib->arch.hardfp = hardfp;
++	return 0;
++}
++
++void
++arch_elf_destroy(struct ltelf *lte)
++{
++}
++
++void
++arch_library_init(struct library *lib)
++{
++}
++
++void
++arch_library_destroy(struct library *lib)
++{
++}
++
++void
++arch_library_clone(struct library *retp, struct library *lib)
++{
++	retp->arch = lib->arch;
++}
++
++enum {
++	/* How many (double) VFP registers the AAPCS uses for
++	 * parameter passing.  */
++	NUM_VFP_REGS = 8,
++};
++
++struct fetch_context {
++	struct pt_regs regs;
++
++	struct {
++		union {
++			double d[32];
++			float s[64];
++		};
++		uint32_t fpscr;
++	} fpregs;
++
++	/* VFP register allocation.  ALLOC.S tracks whether the
++	 * corresponding FPREGS.S register is taken, ALLOC.D the same
++	 * for FPREGS.D.  We only track 8 (16) registers, because
++	 * that's what the ABI uses for parameter passing.  */
++	union {
++		int16_t d[NUM_VFP_REGS];
++		int8_t s[NUM_VFP_REGS * 2];
++	} alloc;
++
++	unsigned ncrn;
++	arch_addr_t sp;
++	arch_addr_t nsaa;
++	arch_addr_t ret_struct;
++
++	bool hardfp:1;
++	bool in_varargs:1;
++};
++
++static int
++fetch_register_banks(struct process *proc, struct fetch_context *context)
++{
++	if (ptrace(PTRACE_GETREGS, proc->pid, NULL, &context->regs) == -1)
++		return -1;
++
++	if (context->hardfp
++	    && ptrace(PTRACE_GETVFPREGS, proc->pid,
++		      NULL, &context->fpregs) == -1)
++		return -1;
++
++	context->ncrn = 0;
++	context->nsaa = context->sp = get_stack_pointer(proc);
++	memset(&context->alloc, 0, sizeof(context->alloc));
++
++	return 0;
++}
++
++struct fetch_context *
++arch_fetch_arg_init(enum tof type, struct process *proc,
++		    struct arg_type_info *ret_info)
++{
++	struct fetch_context *context = malloc(sizeof(*context));
++
++	{
++		struct process *mainp = proc;
++		while (mainp->libraries == NULL && mainp->parent != NULL)
++			mainp = mainp->parent;
++		context->hardfp = mainp->libraries->arch.hardfp;
++	}
++
++	if (context == NULL
++	    || fetch_register_banks(proc, context) < 0) {
++		free(context);
++		return NULL;
++	}
++
++	if (ret_info->type == ARGTYPE_STRUCT
++	    || ret_info->type == ARGTYPE_ARRAY) {
++		size_t sz = type_sizeof(proc, ret_info);
++		assert(sz != (size_t)-1);
++		if (sz > 4) {
++			/* XXX double cast */
++			context->ret_struct
++				= (arch_addr_t)context->regs.uregs[0];
++			context->ncrn++;
++		}
++	}
++
++	return context;
++}
++
++struct fetch_context *
++arch_fetch_arg_clone(struct process *proc,
++		     struct fetch_context *context)
++{
++	struct fetch_context *clone = malloc(sizeof(*context));
++	if (clone == NULL)
++		return NULL;
++	*clone = *context;
++	return clone;
++}
++
++/* 0 is success, 1 is failure, negative value is an error.  */
++static int
++pass_in_vfp(struct fetch_context *ctx, struct process *proc,
++	    enum arg_type type, size_t count, struct value *valuep)
++{
++	assert(type == ARGTYPE_FLOAT || type == ARGTYPE_DOUBLE);
++	unsigned max = type == ARGTYPE_DOUBLE ? NUM_VFP_REGS : 2 * NUM_VFP_REGS;
++	if (count > max)
++		return 1;
++
++	size_t i;
++	size_t j;
++	for (i = 0; i < max; ++i) {
++		for (j = i; j < i + count; ++j)
++			if ((type == ARGTYPE_DOUBLE && ctx->alloc.d[j] != 0)
++			    || (type == ARGTYPE_FLOAT && ctx->alloc.s[j] != 0))
++				goto next;
++
++		/* Found COUNT consecutive unallocated registers at I.  */
++		const size_t sz = (type == ARGTYPE_FLOAT ? 4 : 8) * count;
++		unsigned char *data = value_reserve(valuep, sz);
++		if (data == NULL)
++			return -1;
++
++		for (j = i; j < i + count; ++j)
++			if (type == ARGTYPE_DOUBLE)
++				ctx->alloc.d[j] = -1;
++			else
++				ctx->alloc.s[j] = -1;
++
++		if (type == ARGTYPE_DOUBLE)
++			memcpy(data, ctx->fpregs.d + i, sz);
++		else
++			memcpy(data, ctx->fpregs.s + i, sz);
++
++		return 0;
++
++	next:
++		continue;
++	}
++	return 1;
++}
++
++/* 0 is success, 1 is failure, negative value is an error.  */
++static int
++consider_vfp(struct fetch_context *ctx, struct process *proc,
++	     struct arg_type_info *info, struct value *valuep)
++{
++	struct arg_type_info *float_info = NULL;
++	size_t hfa_size = 1;
++	if (info->type == ARGTYPE_FLOAT || info->type == ARGTYPE_DOUBLE)
++		float_info = info;
++	else
++		float_info = type_get_hfa_type(info, &hfa_size);
++
++	if (float_info != NULL && hfa_size <= 4)
++		return pass_in_vfp(ctx, proc, float_info->type,
++				   hfa_size, valuep);
++	return 1;
++}
++
++int
++arch_fetch_arg_next(struct fetch_context *ctx, enum tof type,
++		    struct process *proc,
++		    struct arg_type_info *info, struct value *valuep)
++{
++	const size_t sz = type_sizeof(proc, info);
++	assert(sz != (size_t)-1);
++
++	if (ctx->hardfp && !ctx->in_varargs) {
++		int rc;
++		if ((rc = consider_vfp(ctx, proc, info, valuep)) != 1)
++			return rc;
++	}
++
++	/* IHI0042E_aapcs: If the argument requires double-word
++	 * alignment (8-byte), the NCRN is rounded up to the next even
++	 * register number.  */
++	const size_t al = type_alignof(proc, info);
++	assert(al != (size_t)-1);
++	if (al == 8)
++		ctx->ncrn = ((ctx->ncrn + 1) / 2) * 2;
++
++	/* If the size in words of the argument is not more than r4
++	 * minus NCRN, the argument is copied into core registers,
++	 * starting at the NCRN.  */
++	/* If the NCRN is less than r4 and the NSAA is equal to the
++	 * SP, the argument is split between core registers and the
++	 * stack.  */
++
++	const size_t words = (sz + 3) / 4;
++	if (ctx->ncrn < 4 && ctx->nsaa == ctx->sp) {
++		unsigned char *data = value_reserve(valuep, words * 4);
++		if (data == NULL)
++			return -1;
++		size_t i;
++		for (i = 0; i < words && ctx->ncrn < 4; ++i) {
++			memcpy(data, &ctx->regs.uregs[ctx->ncrn++], 4);
++			data += 4;
++		}
++		const size_t rest = (words - i) * 4;
++		if (rest > 0) {
++			umovebytes(proc, ctx->nsaa, data, rest);
++			ctx->nsaa += rest;
++		}
++		return 0;
++	}
++
++	assert(ctx->ncrn == 4);
++
++	/* If the argument required double-word alignment (8-byte),
++	 * then the NSAA is rounded up to the next double-word
++	 * address.  */
++	if (al == 8)
++		/* XXX double cast.  */
++		ctx->nsaa = (arch_addr_t)((((uintptr_t)ctx->nsaa + 7) / 8) * 8);
++	else
++		ctx->nsaa = (arch_addr_t)((((uintptr_t)ctx->nsaa + 3) / 4) * 4);
++
++	value_in_inferior(valuep, ctx->nsaa);
++	ctx->nsaa += sz;
++
++	return 0;
++}
++
++int
++arch_fetch_retval(struct fetch_context *ctx, enum tof type,
++		  struct process *proc, struct arg_type_info *info,
++		  struct value *valuep)
++{
++	if (fetch_register_banks(proc, ctx) < 0)
++		return -1;
++
++	if (ctx->hardfp && !ctx->in_varargs) {
++		int rc;
++		if ((rc = consider_vfp(ctx, proc, info, valuep)) != 1)
++			return rc;
++	}
++
++	size_t sz = type_sizeof(proc, info);
++	assert(sz != (size_t)-1);
++
++	switch (info->type) {
++		unsigned char *data;
++
++	case ARGTYPE_VOID:
++		return 0;
++
++	case ARGTYPE_FLOAT:
++	case ARGTYPE_DOUBLE:
++		if (ctx->hardfp && !ctx->in_varargs) {
++			unsigned char *data = value_reserve(valuep, sz);
++			if (data == NULL)
++				return -1;
++			memmove(data, &ctx->fpregs, sz);
++			return 0;
++		}
++		goto pass_in_registers;
++
++	case ARGTYPE_ARRAY:
++	case ARGTYPE_STRUCT:
++		if (sz > 4) {
++			value_in_inferior(valuep, ctx->ret_struct);
++			return 0;
++		}
++		/* Fall through.  */
++
++	case ARGTYPE_CHAR:
++	case ARGTYPE_SHORT:
++	case ARGTYPE_USHORT:
++	case ARGTYPE_INT:
++	case ARGTYPE_UINT:
++	case ARGTYPE_LONG:
++	case ARGTYPE_ULONG:
++	case ARGTYPE_POINTER:
++	pass_in_registers:
++		if ((data = value_reserve(valuep, sz)) == NULL)
++			return -1;
++		memmove(data, ctx->regs.uregs, sz);
++		return 0;
++	}
++	assert(info->type != info->type);
++	abort();
++}
++
++void
++arch_fetch_arg_done(struct fetch_context *context)
++{
++	free(context);
++}
++
++int
++arch_fetch_param_pack_start(struct fetch_context *context,
++			    enum param_pack_flavor ppflavor)
++{
++	if (ppflavor == PARAM_PACK_VARARGS)
++		context->in_varargs = true;
++	return 0;
++}
++
++void
++arch_fetch_param_pack_end(struct fetch_context *context)
++{
++	context->in_varargs = false;
++}
+diff --git a/sysdeps/linux-gnu/arm/regs.c b/sysdeps/linux-gnu/arm/regs.c
+index 377df62..e9e825e 100644
+--- a/sysdeps/linux-gnu/arm/regs.c
++++ b/sysdeps/linux-gnu/arm/regs.c
+@@ -1,5 +1,6 @@
+ /*
+  * This file is part of ltrace.
++ * Copyright (C) 2013 Petr Machata, Red Hat Inc.
+  * Copyright (C) 1998,2002,2004,2008,2009 Juan Cespedes
+  * Copyright (C) 2009 Juan Cespedes
+  *
+@@ -24,9 +25,11 @@
+ #include <sys/types.h>
+ #include <sys/ptrace.h>
+ #include <asm/ptrace.h>
++#include <errno.h>
+ 
+ #include "proc.h"
+ #include "common.h"
++#include "regs.h"
+ 
+ #if (!defined(PTRACE_PEEKUSER) && defined(PTRACE_PEEKUSR))
+ # define PTRACE_PEEKUSER PTRACE_PEEKUSR
+@@ -36,50 +39,119 @@
+ # define PTRACE_POKEUSER PTRACE_POKEUSR
+ #endif
+ 
+-#define off_pc ((void *)60)
+-#define off_lr ((void *)56)
+-#define off_sp ((void *)52)
++int
++arm_get_register(struct process *proc, enum arm_register reg, uint32_t *lp)
++{
++	errno = 0;
++	long l = ptrace(PTRACE_PEEKUSER, proc->pid, (void *)(reg * 4L), 0);
++	if (l == -1 && errno != 0)
++		return -1;
++	*lp = (uint32_t)l;
++	return 0;
++}
+ 
+-void *
+-get_instruction_pointer(struct process *proc)
++int
++arm_set_register(struct process *proc, enum arm_register reg, uint32_t lp)
+ {
+-	return (void *)ptrace(PTRACE_PEEKUSER, proc->pid, off_pc, 0);
++	return ptrace(PTRACE_PEEKUSER, proc->pid,
++		      (void *)(reg * 4L), (void *)lp);
+ }
+ 
+-void
+-set_instruction_pointer(struct process *proc, void *addr)
++int
++arm_get_register_offpc(struct process *proc, enum arm_register reg,
++		       uint32_t *lp)
+ {
+-	ptrace(PTRACE_POKEUSER, proc->pid, off_pc, addr);
++	if (arm_get_register(proc, reg, lp) < 0)
++		return -1;
++	if (reg == ARM_REG_PC)
++		*lp += 8;
++	return 0;
+ }
+ 
+-void *
+-get_stack_pointer(struct process *proc)
++int
++arm_get_shifted_register(struct process *proc, uint32_t inst, int carry,
++			 arch_addr_t pc_val, uint32_t *lp)
+ {
+-	return (void *)ptrace(PTRACE_PEEKUSER, proc->pid, off_sp, 0);
++	enum arm_register rm = BITS(inst, 0, 3);
++	unsigned long shifttype = BITS(inst, 5, 6);
++
++	uint32_t shift;
++	if (BIT(inst, 4)) {
++		if (arm_get_register_offpc(proc, BITS(inst, 8, 11), &shift) < 0)
++			return -1;
++		shift &= 0xff;
++	} else {
++		shift = BITS(inst, 7, 11);
++	}
++
++	uint32_t res;
++	if (rm == ARM_REG_PC)
++		/* xxx double cast */
++		res = (uintptr_t)pc_val + (BIT(inst, 4) ? 12 : 8);
++	else if (arm_get_register(proc, rm, &res) < 0)
++		return -1;
++
++	switch (shifttype) {
++	case 0:			/* LSL */
++		res = shift >= 32 ? 0 : res << shift;
++		break;
++
++	case 1:			/* LSR */
++		res = shift >= 32 ? 0 : res >> shift;
++		break;
++
++	case 2:			/* ASR */
++		if (shift >= 32)
++			shift = 31;
++		res = ((res & 0x80000000L)
++		       ? ~((~res) >> shift) : res >> shift);
++		break;
++
++	case 3:			/* ROR/RRX */
++		shift &= 31;
++		if (shift == 0)
++			res = (res >> 1) | (carry ? 0x80000000L : 0);
++		else
++			res = (res >> shift) | (res << (32 - shift));
++		break;
++	}
++
++	*lp = res & 0xffffffff;
++	return 0;
+ }
+ 
+-/* really, this is given the *stack_pointer expecting
+- * a CISC architecture; in our case, we don't need that */
+-void *
+-get_return_addr(struct process *proc, void *stack_pointer)
++static arch_addr_t
++get_register_nocheck(struct process *proc, enum arm_register r)
+ {
+-	long addr = ptrace(PTRACE_PEEKUSER, proc->pid, off_lr, 0);
+-
+-	/* Remember & unset the thumb mode bit.  XXX This is really a
+-	 * bit of a hack, as we assume that the following
+-	 * insert_breakpoint call will be related to this address.
+-	 * This interface should really be get_return_breakpoint, or
+-	 * maybe install_return_breakpoint.  */
+-	proc->thumb_mode = addr & 1;
+-	if (proc->thumb_mode)
+-		addr &= ~1;
+-
+-	return (void *)addr;
++	uint32_t reg;
++	if (arm_get_register(proc, r, &reg) < 0)
++		/* XXX double cast. */
++		return (arch_addr_t)-1;
++	/* XXX double cast.  */
++	return (arch_addr_t)(uintptr_t)reg;
++}
++
++arch_addr_t
++get_instruction_pointer(struct process *proc)
++{
++	return get_register_nocheck(proc, ARM_REG_PC);
+ }
+ 
+ void
+-set_return_addr(struct process *proc, void *addr)
++set_instruction_pointer(struct process *proc, arch_addr_t addr)
++{
++	/* XXX double cast.  */
++	arm_set_register(proc, ARM_REG_PC, (uint32_t)addr);
++}
++
++void *
++get_stack_pointer(struct process *proc)
++{
++	return get_register_nocheck(proc, ARM_REG_SP);
++}
++
++arch_addr_t
++get_return_addr(struct process *proc, arch_addr_t stack_pointer)
+ {
+-	long iaddr = (int)addr | proc->thumb_mode;
+-	ptrace(PTRACE_POKEUSER, proc->pid, off_lr, (void *)iaddr);
++	return get_register_nocheck(proc, ARM_REG_LR);
+ }
+diff --git a/sysdeps/linux-gnu/arm/regs.h b/sysdeps/linux-gnu/arm/regs.h
+new file mode 100644
+index 0000000..f9a5a86
+--- /dev/null
++++ b/sysdeps/linux-gnu/arm/regs.h
+@@ -0,0 +1,47 @@
++/*
++ * This file is part of ltrace.
++ * Copyright (C) 2013 Petr Machata, Red Hat Inc.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of the
++ * License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
++ * 02110-1301 USA
++ */
++
++#define SUBMASK(x) ((1L << ((x) + 1)) - 1)
++#define BIT(obj,st) (((obj) >> (st)) & 1)
++#define BITS(obj,st,fn) (((obj) >> (st)) & SUBMASK((fn) - (st)))
++#define SBITS(obj,st,fn) \
++	((long) (BITS(obj,st,fn) | ((long) BIT(obj,fn) * ~ SUBMASK(fn - st))))
++
++enum arm_register {
++	ARM_REG_R7 = 7,
++	ARM_REG_IP = 12,
++	ARM_REG_SP = 13,
++	ARM_REG_LR = 14,
++	ARM_REG_PC = 15,
++	ARM_REG_CPSR = 16,
++};
++
++/* Write value of register REG to *LP.  Return 0 on success or a
++ * negative value on failure.  */
++int arm_get_register(struct process *proc, enum arm_register reg, uint32_t *lp);
++
++/* Same as above, but if REG==ARM_REG_PC, it returns the value +8.  */
++int arm_get_register_offpc(struct process *proc, enum arm_register reg,
++			   uint32_t *lp);
++
++/* Same as arm_get_register, but shift is performed depending on
++ * instruction INST.  */
++int arm_get_shifted_register(struct process *proc, uint32_t inst, int carry,
++			     arch_addr_t pc, uint32_t *lp);
+diff --git a/sysdeps/linux-gnu/arm/trace.c b/sysdeps/linux-gnu/arm/trace.c
+index fbbf676..5e51e91 100644
+--- a/sysdeps/linux-gnu/arm/trace.c
++++ b/sysdeps/linux-gnu/arm/trace.c
+@@ -1,6 +1,6 @@
+ /*
+  * This file is part of ltrace.
+- * Copyright (C) 2012 Petr Machata, Red Hat Inc.
++ * Copyright (C) 2012, 2013 Petr Machata, Red Hat Inc.
+  * Copyright (C) 1998,2004,2008,2009 Juan Cespedes
+  * Copyright (C) 2006 Ian Wienand
+  *
+@@ -29,10 +29,13 @@
+ #include <sys/ptrace.h>
+ #include <asm/ptrace.h>
+ 
+-#include "proc.h"
++#include "bits.h"
+ #include "common.h"
++#include "proc.h"
+ #include "output.h"
+ #include "ptrace.h"
++#include "regs.h"
++#include "type.h"
+ 
+ #if (!defined(PTRACE_PEEKUSER) && defined(PTRACE_PEEKUSR))
+ # define PTRACE_PEEKUSER PTRACE_PEEKUSR
+@@ -42,11 +45,6 @@
+ # define PTRACE_POKEUSER PTRACE_POKEUSR
+ #endif
+ 
+-#define off_r0 ((void *)0)
+-#define off_r7 ((void *)28)
+-#define off_ip ((void *)48)
+-#define off_pc ((void *)60)
+-
+ void
+ get_arch_dep(struct process *proc)
+ {
+@@ -68,18 +66,24 @@ syscall_p(struct process *proc, int status, int *sysnum)
+ {
+ 	if (WIFSTOPPED(status)
+ 	    && WSTOPSIG(status) == (SIGTRAP | proc->tracesysgood)) {
+-		/* get the user's pc (plus 8) */
+-		unsigned pc = ptrace(PTRACE_PEEKUSER, proc->pid, off_pc, 0);
++		uint32_t pc, ip;
++		if (arm_get_register(proc, ARM_REG_PC, &pc) < 0
++		    || arm_get_register(proc, ARM_REG_IP, &ip) < 0)
++			return -1;
++
+ 		pc = pc - 4;
++
+ 		/* fetch the SWI instruction */
+ 		unsigned insn = ptrace(PTRACE_PEEKTEXT, proc->pid,
+ 				       (void *)pc, 0);
+-		int ip = ptrace(PTRACE_PEEKUSER, proc->pid, off_ip, 0);
+ 
+ 		if (insn == 0xef000000 || insn == 0x0f000000
+ 		    || (insn & 0xffff0000) == 0xdf000000) {
+ 			/* EABI syscall */
+-			*sysnum = ptrace(PTRACE_PEEKUSER, proc->pid, off_r7, 0);
++			uint32_t r7;
++			if (arm_get_register(proc, ARM_REG_R7, &r7) < 0)
++				return -1;
++			*sysnum = r7;
+ 		} else if ((insn & 0xfff00000) == 0xef900000) {
+ 			/* old ABI syscall */
+ 			*sysnum = insn & 0xfffff;
+@@ -105,47 +109,605 @@ syscall_p(struct process *proc, int status, int *sysnum)
+ 	return 0;
+ }
+ 
+-long
+-gimme_arg(enum tof type, struct process *proc, int arg_num,
+-	  struct arg_type_info *info)
++static arch_addr_t
++arm_branch_dest(const arch_addr_t pc, const uint32_t insn)
+ {
+-	proc_archdep *a = (proc_archdep *) proc->arch_ptr;
++	/* Bits 0-23 are signed immediate value.  */
++	return pc + ((((insn & 0xffffff) ^ 0x800000) - 0x800000) << 2) + 8;
++}
+ 
+-	if (arg_num == -1) {	/* return value */
+-		return ptrace(PTRACE_PEEKUSER, proc->pid, off_r0, 0);
+-	}
++/* Addresses for calling Thumb functions have the bit 0 set.
++   Here are some macros to test, set, or clear bit 0 of addresses.  */
++/* XXX double cast */
++#define IS_THUMB_ADDR(addr)	((uintptr_t)(addr) & 1)
++#define MAKE_THUMB_ADDR(addr)	((arch_addr_t)((uintptr_t)(addr) | 1))
++#define UNMAKE_THUMB_ADDR(addr) ((arch_addr_t)((uintptr_t)(addr) & ~1))
+ 
+-	/* deal with the ARM calling conventions */
+-	if (type == LT_TOF_FUNCTION || type == LT_TOF_FUNCTIONR) {
+-		if (arg_num < 4) {
+-			if (a->valid && type == LT_TOF_FUNCTION)
+-				return a->regs.uregs[arg_num];
+-			if (a->valid && type == LT_TOF_FUNCTIONR)
+-				return a->func_arg[arg_num];
+-			return ptrace(PTRACE_PEEKUSER, proc->pid,
+-				      (void *)(4 * arg_num), 0);
+-		} else {
+-			return ptrace(PTRACE_PEEKDATA, proc->pid,
+-				      proc->stack_pointer + 4 * (arg_num - 4),
+-				      0);
++enum {
++	COND_ALWAYS = 0xe,
++	COND_NV = 0xf,
++	FLAG_C = 0x20000000,
++};
++
++static int
++arm_get_next_pcs(struct process *proc,
++		 const arch_addr_t pc, arch_addr_t next_pcs[2])
++{
++	uint32_t this_instr;
++	uint32_t status;
++	if (proc_read_32(proc, pc, &this_instr) < 0
++	    || arm_get_register(proc, ARM_REG_CPSR, &status) < 0)
++		return -1;
++
++	/* In theory, we sometimes don't even need to add any
++	 * breakpoints at all.  If the conditional bits of the
++	 * instruction indicate that it should not be taken, then we
++	 * can just skip it altogether without bothering.  We could
++	 * also emulate the instruction under the breakpoint.
++	 *
++	 * Here, we make it as simple as possible (though We Accept
++	 * Patches).  */
++	int nr = 0;
++
++	/* ARM can branch either relatively by using a branch
++	 * instruction, or absolutely, by doing arbitrary arithmetic
++	 * with PC as the destination.  */
++	const unsigned cond = BITS(this_instr, 28, 31);
++	const unsigned opcode = BITS(this_instr, 24, 27);
++
++	if (cond == COND_NV)
++		switch (opcode) {
++			arch_addr_t addr;
++		case 0xa:
++		case 0xb:
++			/* Branch with Link and change to Thumb.  */
++			/* XXX double cast.  */
++			addr = (arch_addr_t)
++				((uint32_t)arm_branch_dest(pc, this_instr)
++				 | (((this_instr >> 24) & 0x1) << 1));
++			next_pcs[nr++] = MAKE_THUMB_ADDR(addr);
++			break;
+ 		}
+-	} else if (type == LT_TOF_SYSCALL || type == LT_TOF_SYSCALLR) {
+-		if (arg_num < 5) {
+-			if (a->valid && type == LT_TOF_SYSCALL)
+-				return a->regs.uregs[arg_num];
+-			if (a->valid && type == LT_TOF_SYSCALLR)
+-				return a->sysc_arg[arg_num];
+-			return ptrace(PTRACE_PEEKUSER, proc->pid,
+-				      (void *)(4 * arg_num), 0);
+-		} else {
+-			return ptrace(PTRACE_PEEKDATA, proc->pid,
+-				      proc->stack_pointer + 4 * (arg_num - 5),
+-				      0);
++	else
++		switch (opcode) {
++			uint32_t operand1, operand2, result = 0;
++		case 0x0:
++		case 0x1:			/* data processing */
++		case 0x2:
++		case 0x3:
++			if (BITS(this_instr, 12, 15) != ARM_REG_PC)
++				break;
++
++			if (BITS(this_instr, 22, 25) == 0
++			    && BITS(this_instr, 4, 7) == 9) {	/* multiply */
++			invalid:
++				fprintf(stderr,
++				"Invalid update to pc in instruction.\n");
++				break;
++			}
++
++			/* BX <reg>, BLX <reg> */
++			if (BITS(this_instr, 4, 27) == 0x12fff1
++			    || BITS(this_instr, 4, 27) == 0x12fff3) {
++				enum arm_register reg = BITS(this_instr, 0, 3);
++				/* XXX double cast: no need to go
++				 * through tmp.  */
++				uint32_t tmp;
++				if (arm_get_register_offpc(proc, reg, &tmp) < 0)
++					return -1;
++				next_pcs[nr++] = (arch_addr_t)tmp;
++				return 0;
++			}
++
++			/* Multiply into PC.  */
++			if (arm_get_register_offpc
++			    (proc, BITS(this_instr, 16, 19), &operand1) < 0)
++				return -1;
++
++			int c = (status & FLAG_C) ? 1 : 0;
++			if (BIT(this_instr, 25)) {
++				uint32_t immval = BITS(this_instr, 0, 7);
++				uint32_t rotate = 2 * BITS(this_instr, 8, 11);
++				operand2 = (((immval >> rotate)
++					     | (immval << (32 - rotate)))
++					    & 0xffffffff);
++			} else {
++				/* operand 2 is a shifted register.  */
++				if (arm_get_shifted_register
++				    (proc, this_instr, c, pc, &operand2) < 0)
++					return -1;
++			}
++
++			switch (BITS(this_instr, 21, 24)) {
++			case 0x0:	/*and */
++				result = operand1 & operand2;
++				break;
++
++			case 0x1:	/*eor */
++				result = operand1 ^ operand2;
++				break;
++
++			case 0x2:	/*sub */
++				result = operand1 - operand2;
++				break;
++
++			case 0x3:	/*rsb */
++				result = operand2 - operand1;
++				break;
++
++			case 0x4:	/*add */
++				result = operand1 + operand2;
++				break;
++
++			case 0x5:	/*adc */
++				result = operand1 + operand2 + c;
++				break;
++
++			case 0x6:	/*sbc */
++				result = operand1 - operand2 + c;
++				break;
++
++			case 0x7:	/*rsc */
++				result = operand2 - operand1 + c;
++				break;
++
++			case 0x8:
++			case 0x9:
++			case 0xa:
++			case 0xb:	/* tst, teq, cmp, cmn */
++				/* Only take the default branch.  */
++				result = 0;
++				break;
++
++			case 0xc:	/*orr */
++				result = operand1 | operand2;
++				break;
++
++			case 0xd:	/*mov */
++				/* Always step into a function.  */
++				result = operand2;
++				break;
++
++			case 0xe:	/*bic */
++				result = operand1 & ~operand2;
++				break;
++
++			case 0xf:	/*mvn */
++				result = ~operand2;
++				break;
++			}
++
++			/* XXX double cast */
++			next_pcs[nr++] = (arch_addr_t)result;
++			break;
++
++		case 0x4:
++		case 0x5:		/* data transfer */
++		case 0x6:
++		case 0x7:
++			/* Ignore if insn isn't load or Rn not PC.  */
++			if (!BIT(this_instr, 20)
++			    || BITS(this_instr, 12, 15) != ARM_REG_PC)
++				break;
++
++			if (BIT(this_instr, 22))
++				goto invalid;
++
++			/* byte write to PC */
++			uint32_t base;
++			if (arm_get_register_offpc
++			    (proc, BITS(this_instr, 16, 19), &base) < 0)
++				return -1;
++
++			if (BIT(this_instr, 24)) {
++				/* pre-indexed */
++				int c = (status & FLAG_C) ? 1 : 0;
++				uint32_t offset;
++				if (BIT(this_instr, 25)) {
++					if (arm_get_shifted_register
++					    (proc, this_instr, c,
++					     pc, &offset) < 0)
++						return -1;
++				} else {
++					offset = BITS(this_instr, 0, 11);
++				}
++
++				if (BIT(this_instr, 23))
++					base += offset;
++				else
++					base -= offset;
++			}
++
++			/* XXX two double casts.  */
++			uint32_t next;
++			if (proc_read_32(proc, (arch_addr_t)base, &next) < 0)
++				return -1;
++			next_pcs[nr++] = (arch_addr_t)next;
++			break;
++
++		case 0x8:
++		case 0x9:		/* block transfer */
++			if (!BIT(this_instr, 20))
++				break;
++			/* LDM */
++			if (BIT(this_instr, 15)) {
++				/* Loading pc.  */
++				int offset = 0;
++				enum arm_register rn = BITS(this_instr, 16, 19);
++				uint32_t rn_val;
++				if (arm_get_register(proc, rn, &rn_val) < 0)
++					return -1;
++
++				int pre = BIT(this_instr, 24);
++				if (BIT(this_instr, 23)) {
++					/* Bit U = up.  */
++					unsigned reglist
++						= BITS(this_instr, 0, 14);
++					offset = bitcount(reglist) * 4;
++					if (pre)
++						offset += 4;
++				} else if (pre) {
++					offset = -4;
++				}
++
++				/* XXX double cast.  */
++				arch_addr_t addr
++					= (arch_addr_t)(rn_val + offset);
++				uint32_t next;
++				if (proc_read_32(proc, addr, &next) < 0)
++					return -1;
++				next_pcs[nr++] = (arch_addr_t)next;
++			}
++			break;
++
++		case 0xb:		/* branch & link */
++		case 0xa:		/* branch */
++			next_pcs[nr++] = arm_branch_dest(pc, this_instr);
++			break;
++
++		case 0xc:
++		case 0xd:
++		case 0xe:		/* coproc ops */
++		case 0xf:		/* SWI */
++			break;
++		}
++
++	/* Otherwise take the next instruction.  */
++	if (cond != COND_ALWAYS || nr == 0)
++		next_pcs[nr++] = pc + 4;
++	return 0;
++}
++
++/* Return the size in bytes of the complete Thumb instruction whose
++ * first halfword is INST1.  */
++
++static int
++thumb_insn_size (unsigned short inst1)
++{
++  if ((inst1 & 0xe000) == 0xe000 && (inst1 & 0x1800) != 0)
++	  return 4;
++  else
++	  return 2;
++}
++
++static int
++thumb_get_next_pcs(struct process *proc,
++		   const arch_addr_t pc, arch_addr_t next_pcs[2])
++{
++	uint16_t inst1;
++	uint32_t status;
++	if (proc_read_16(proc, pc, &inst1) < 0
++	    || arm_get_register(proc, ARM_REG_CPSR, &status) < 0)
++		return -1;
++
++	int nr = 0;
++
++	/* We currently ignore Thumb-2 conditional execution support
++	 * (the IT instruction).  No branches are allowed in IT block,
++	 * and it's not legal to jump in the middle of it, so unless
++	 * we need to singlestep through large swaths of code, which
++	 * we currently don't, we can ignore them.  */
++
++	if ((inst1 & 0xff00) == 0xbd00)	{ /* pop {rlist, pc} */
++		/* Fetch the saved PC from the stack.  It's stored
++		 * above all of the other registers.  */
++		const unsigned offset = bitcount(BITS(inst1, 0, 7)) * 4;
++		uint32_t sp;
++		uint32_t next;
++		/* XXX two double casts */
++		if (arm_get_register(proc, ARM_REG_SP, &sp) < 0
++		    || proc_read_32(proc, (arch_addr_t)(sp + offset),
++				    &next) < 0)
++			return -1;
++		next_pcs[nr++] = (arch_addr_t)next;
++	} else if ((inst1 & 0xf000) == 0xd000) { /* conditional branch */
++		const unsigned long cond = BITS(inst1, 8, 11);
++		if (cond != 0x0f) { /* SWI */
++			next_pcs[nr++] = pc + (SBITS(inst1, 0, 7) << 1);
++			if (cond == COND_ALWAYS)
++				return 0;
++		}
++	} else if ((inst1 & 0xf800) == 0xe000) { /* unconditional branch */
++		next_pcs[nr++] = pc + (SBITS(inst1, 0, 10) << 1);
++	} else if (thumb_insn_size(inst1) == 4) { /* 32-bit instruction */
++		unsigned short inst2;
++		if (proc_read_16(proc, pc + 2, &inst2) < 0)
++			return -1;
++
++		if ((inst1 & 0xf800) == 0xf000 && (inst2 & 0x8000) == 0x8000) {
++			/* Branches and miscellaneous control instructions.  */
++
++			if ((inst2 & 0x1000) != 0
++			    || (inst2 & 0xd001) == 0xc000) {
++				/* B, BL, BLX.  */
++
++				const int imm1 = SBITS(inst1, 0, 10);
++				const unsigned imm2 = BITS(inst2, 0, 10);
++				const unsigned j1 = BIT(inst2, 13);
++				const unsigned j2 = BIT(inst2, 11);
++
++				int32_t offset
++					= ((imm1 << 12) + (imm2 << 1));
++				offset ^= ((!j2) << 22) | ((!j1) << 23);
++
++				/* XXX double cast */
++				uint32_t next = (uint32_t)(pc + offset);
++				/* For BLX make sure to clear the low bits.  */
++				if (BIT(inst2, 12) == 0)
++					next = next & 0xfffffffc;
++				/* XXX double cast */
++				next_pcs[nr++] = (arch_addr_t)next;
++				return 0;
++			} else if (inst1 == 0xf3de
++				   && (inst2 & 0xff00) == 0x3f00) {
++				/* SUBS PC, LR, #imm8.  */
++				uint32_t next;
++				if (arm_get_register(proc, ARM_REG_LR,
++						     &next) < 0)
++					return -1;
++				next -= inst2 & 0x00ff;
++				/* XXX double cast */
++				next_pcs[nr++] = (arch_addr_t)next;
++				return 0;
++			} else if ((inst2 & 0xd000) == 0x8000
++				   && (inst1 & 0x0380) != 0x0380) {
++				/* Conditional branch.  */
++				const int sign = SBITS(inst1, 10, 10);
++				const unsigned imm1 = BITS(inst1, 0, 5);
++				const unsigned imm2 = BITS(inst2, 0, 10);
++				const unsigned j1 = BIT(inst2, 13);
++				const unsigned j2 = BIT(inst2, 11);
++
++				int32_t offset = (sign << 20)
++					+ (j2 << 19) + (j1 << 18);
++				offset += (imm1 << 12) + (imm2 << 1);
++				next_pcs[nr++] = pc + offset;
++				if (BITS(inst1, 6, 9) == COND_ALWAYS)
++					return 0;
++			}
++		} else if ((inst1 & 0xfe50) == 0xe810) {
++			int load_pc = 1;
++			int offset;
++			const enum arm_register rn = BITS(inst1, 0, 3);
++
++			if (BIT(inst1, 7) && !BIT(inst1, 8)) {
++				/* LDMIA or POP */
++				if (!BIT(inst2, 15))
++					load_pc = 0;
++				offset = bitcount(inst2) * 4 - 4;
++			} else if (!BIT(inst1, 7) && BIT(inst1, 8)) {
++				/* LDMDB */
++				if (!BIT(inst2, 15))
++					load_pc = 0;
++				offset = -4;
++			} else if (BIT(inst1, 7) && BIT(inst1, 8)) {
++				/* RFEIA */
++				offset = 0;
++			} else if (!BIT(inst1, 7) && !BIT(inst1, 8)) {
++				/* RFEDB */
++				offset = -8;
++			} else {
++				load_pc = 0;
++			}
++
++			if (load_pc) {
++				uint32_t addr;
++				if (arm_get_register(proc, rn, &addr) < 0)
++					return -1;
++				arch_addr_t a = (arch_addr_t)(addr + offset);
++				uint32_t next;
++				if (proc_read_32(proc, a, &next) < 0)
++					return -1;
++				/* XXX double cast */
++				next_pcs[nr++] = (arch_addr_t)next;
++			}
++		} else if ((inst1 & 0xffef) == 0xea4f
++			   && (inst2 & 0xfff0) == 0x0f00) {
++			/* MOV PC or MOVS PC.  */
++			const enum arm_register rn = BITS(inst2, 0, 3);
++			uint32_t next;
++			if (arm_get_register(proc, rn, &next) < 0)
++				return -1;
++			/* XXX double cast */
++			next_pcs[nr++] = (arch_addr_t)next;
++		} else if ((inst1 & 0xff70) == 0xf850
++			   && (inst2 & 0xf000) == 0xf000) {
++			/* LDR PC.  */
++			const enum arm_register rn = BITS(inst1, 0, 3);
++			uint32_t base;
++			if (arm_get_register(proc, rn, &base) < 0)
++				return -1;
++
++			int load_pc = 1;
++			if (rn == ARM_REG_PC) {
++				base = (base + 4) & ~(uint32_t)0x3;
++				if (BIT(inst1, 7))
++					base += BITS(inst2, 0, 11);
++				else
++					base -= BITS(inst2, 0, 11);
++			} else if (BIT(inst1, 7)) {
++				base += BITS(inst2, 0, 11);
++			} else if (BIT(inst2, 11)) {
++				if (BIT(inst2, 10)) {
++					if (BIT(inst2, 9))
++						base += BITS(inst2, 0, 7);
++					else
++						base -= BITS(inst2, 0, 7);
++				}
++			} else if ((inst2 & 0x0fc0) == 0x0000) {
++				const int shift = BITS(inst2, 4, 5);
++				const enum arm_register rm = BITS(inst2, 0, 3);
++				uint32_t v;
++				if (arm_get_register(proc, rm, &v) < 0)
++					return -1;
++				base += v << shift;
++			} else {
++				/* Reserved.  */
++				load_pc = 0;
++			}
++
++			if (load_pc) {
++				/* xxx double casts */
++				uint32_t next;
++				if (proc_read_32(proc,
++						 (arch_addr_t)base, &next) < 0)
++					return -1;
++				next_pcs[nr++] = (arch_addr_t)next;
++			}
++		} else if ((inst1 & 0xfff0) == 0xe8d0
++			   && (inst2 & 0xfff0) == 0xf000) {
++			/* TBB.  */
++			const enum arm_register tbl_reg = BITS(inst1, 0, 3);
++			const enum arm_register off_reg = BITS(inst2, 0, 3);
++
++			uint32_t table;
++			if (tbl_reg == ARM_REG_PC)
++				/* Regcache copy of PC isn't right yet.  */
++				/* XXX double cast */
++				table = (uint32_t)pc + 4;
++			else if (arm_get_register(proc, tbl_reg, &table) < 0)
++				return -1;
++
++			uint32_t offset;
++			if (arm_get_register(proc, off_reg, &offset) < 0)
++				return -1;
++
++			table += offset;
++			uint8_t length;
++			/* XXX double cast */
++			if (proc_read_8(proc, (arch_addr_t)table, &length) < 0)
++				return -1;
++
++			next_pcs[nr++] = pc + 2 * length;
++
++		} else if ((inst1 & 0xfff0) == 0xe8d0
++			   && (inst2 & 0xfff0) == 0xf010) {
++			/* TBH.  */
++			const enum arm_register tbl_reg = BITS(inst1, 0, 3);
++			const enum arm_register off_reg = BITS(inst2, 0, 3);
++
++			uint32_t table;
++			if (tbl_reg == ARM_REG_PC)
++				/* Regcache copy of PC isn't right yet.  */
++				/* XXX double cast */
++				table = (uint32_t)pc + 4;
++			else if (arm_get_register(proc, tbl_reg, &table) < 0)
++				return -1;
++
++			uint32_t offset;
++			if (arm_get_register(proc, off_reg, &offset) < 0)
++				return -1;
++
++			table += 2 * offset;
++			uint16_t length;
++			/* XXX double cast */
++			if (proc_read_16(proc, (arch_addr_t)table, &length) < 0)
++				return -1;
++
++			next_pcs[nr++] = pc + 2 * length;
+ 		}
+-	} else {
+-		fprintf(stderr, "gimme_arg called with wrong arguments\n");
+-		exit(1);
+ 	}
+ 
++
++	/* Otherwise take the next instruction.  */
++	if (nr == 0)
++		next_pcs[nr++] = pc + thumb_insn_size(inst1);
+ 	return 0;
+ }
++
++enum sw_singlestep_status
++arch_sw_singlestep(struct process *proc, struct breakpoint *sbp,
++		   int (*add_cb)(arch_addr_t, struct sw_singlestep_data *),
++		   struct sw_singlestep_data *add_cb_data)
++{
++	const arch_addr_t pc = get_instruction_pointer(proc);
++
++	uint32_t cpsr;
++	if (arm_get_register(proc, ARM_REG_CPSR, &cpsr) < 0)
++		return SWS_FAIL;
++
++	const unsigned thumb_p = BIT(cpsr, 5);
++	arch_addr_t next_pcs[2] = {};
++	if ((thumb_p ? &thumb_get_next_pcs
++	     : &arm_get_next_pcs)(proc, pc, next_pcs) < 0)
++		return SWS_FAIL;
++
++	int i;
++	for (i = 0; i < 2; ++i) {
++		/* XXX double cast.  */
++		arch_addr_t target
++			= (arch_addr_t)(((uintptr_t)next_pcs[i]) | thumb_p);
++		if (next_pcs[i] != 0 && add_cb(target, add_cb_data) < 0)
++			return SWS_FAIL;
++	}
++
++	debug(1, "PTRACE_CONT");
++	ptrace(PTRACE_CONT, proc->pid, 0, 0);
++	return SWS_OK;
++}
++
++size_t
++arch_type_sizeof(struct process *proc, struct arg_type_info *info)
++{
++	if (proc == NULL)
++		return (size_t)-2;
++
++	switch (info->type) {
++	case ARGTYPE_VOID:
++		return 0;
++
++	case ARGTYPE_CHAR:
++		return 1;
++
++	case ARGTYPE_SHORT:
++	case ARGTYPE_USHORT:
++		return 2;
++
++	case ARGTYPE_INT:
++	case ARGTYPE_UINT:
++	case ARGTYPE_LONG:
++	case ARGTYPE_ULONG:
++	case ARGTYPE_POINTER:
++		return 4;
++
++	case ARGTYPE_FLOAT:
++		return 4;
++	case ARGTYPE_DOUBLE:
++		return 8;
++
++	case ARGTYPE_ARRAY:
++	case ARGTYPE_STRUCT:
++		/* Use default value.  */
++		return (size_t)-2;
++
++	default:
++		assert(info->type != info->type);
++		abort();
++	}
++}
++
++size_t
++arch_type_alignof(struct process *proc, struct arg_type_info *info)
++{
++	return arch_type_sizeof(proc, info);
++}
+diff --git a/sysdeps/linux-gnu/ia64/fetch.c b/sysdeps/linux-gnu/ia64/fetch.c
+index e90dbed..171c7a2 100644
+--- a/sysdeps/linux-gnu/ia64/fetch.c
++++ b/sysdeps/linux-gnu/ia64/fetch.c
+@@ -1,6 +1,6 @@
+ /*
+  * This file is part of ltrace.
+- * Copyright (C) 2012 Petr Machata, Red Hat Inc.
++ * Copyright (C) 2012,2013 Petr Machata, Red Hat Inc.
+  * Copyright (C) 2008,2009 Juan Cespedes
+  * Copyright (C) 2006 Steve Fink
+  * Copyright (C) 2006 Ian Wienand
+@@ -249,37 +249,6 @@ allocate_float(struct fetch_context *ctx, struct process *proc,
+ 	return 0;
+ }
+ 
+-static enum arg_type
+-get_hfa_type(struct arg_type_info *info, size_t *countp)
+-{
+-	size_t n = type_aggregate_size(info);
+-	if (n == (size_t)-1)
+-		return ARGTYPE_VOID;
+-
+-	enum arg_type type = ARGTYPE_VOID;
+-	*countp = 0;
+-
+-	while (n-- > 0) {
+-		struct arg_type_info *emt = type_element(info, n);
+-
+-		enum arg_type emt_type = emt->type;
+-		size_t emt_count = 1;
+-		if (emt_type == ARGTYPE_STRUCT || emt_type == ARGTYPE_ARRAY)
+-			emt_type = get_hfa_type(emt, &emt_count);
+-
+-		if (type == ARGTYPE_VOID) {
+-			if (emt_type != ARGTYPE_FLOAT
+-			    && emt_type != ARGTYPE_DOUBLE)
+-				return ARGTYPE_VOID;
+-			type = emt_type;
+-		}
+-		if (emt_type != type)
+-			return ARGTYPE_VOID;
+-		*countp += emt_count;
+-	}
+-	return type;
+-}
+-
+ static int
+ allocate_hfa(struct fetch_context *ctx, struct process *proc,
+ 	     struct arg_type_info *info, struct value *valuep,
+@@ -380,10 +349,11 @@ allocate_ret(struct fetch_context *ctx, struct process *proc,
+ 	 * floating-point registers, beginning with f8.  */
+ 	if (info->type == ARGTYPE_STRUCT || info->type == ARGTYPE_ARRAY) {
+ 		size_t hfa_size;
+-		enum arg_type hfa_type = get_hfa_type(info, &hfa_size);
+-		if (hfa_type != ARGTYPE_VOID && hfa_size <= 8)
++		struct arg_type_info *hfa_info
++			= type_get_hfa_type(info, &hfa_size);
++		if (hfa_info != NULL && hfa_size <= 8)
+ 			return allocate_hfa(ctx, proc, info, valuep,
+-					    hfa_type, hfa_size);
++					    hfa_info->type, hfa_size);
+ 	}
+ 
+ 	/* Integers and pointers are passed in r8.  128-bit integers
+@@ -409,7 +379,7 @@ arch_fetch_arg_next(struct fetch_context *ctx, enum tof type,
+ 		    struct arg_type_info *info, struct value *valuep)
+ {
+ 	switch (info->type) {
+-		enum arg_type hfa_type;
++		struct arg_type_info *hfa_info;
+ 		size_t hfa_size;
+ 
+ 	case ARGTYPE_VOID:
+@@ -421,10 +391,10 @@ arch_fetch_arg_next(struct fetch_context *ctx, enum tof type,
+ 		return allocate_float(ctx, proc, info, valuep, 1);
+ 
+ 	case ARGTYPE_STRUCT:
+-		hfa_type = get_hfa_type(info, &hfa_size);
+-		if (hfa_type != ARGTYPE_VOID)
++		hfa_info = type_get_hfa_type(info, &hfa_size);
++		if (hfa_info != NULL)
+ 			return allocate_hfa(ctx, proc, info, valuep,
+-					    hfa_type, hfa_size);
++					    hfa_info->type, hfa_size);
+ 		/* Fall through.  */
+ 	case ARGTYPE_CHAR:
+ 	case ARGTYPE_SHORT:
+diff --git a/sysdeps/linux-gnu/ia64/regs.c b/sysdeps/linux-gnu/ia64/regs.c
+index fb79e8a..67873ce 100644
+--- a/sysdeps/linux-gnu/ia64/regs.c
++++ b/sysdeps/linux-gnu/ia64/regs.c
+@@ -1,6 +1,6 @@
+ /*
+  * This file is part of ltrace.
+- * Copyright (C) 2011,2012 Petr Machata, Red Hat Inc.
++ * Copyright (C) 2011,2012,2013 Petr Machata, Red Hat Inc.
+  * Copyright (C) 2008,2009 Juan Cespedes
+  * Copyright (C) 2006 Ian Wienand
+  *
+@@ -77,9 +77,3 @@ get_return_addr(struct process *proc, void *stack_pointer)
+ 		return NULL;
+ 	return (void *)l;
+ }
+-
+-void
+-set_return_addr(struct process *proc, void *addr)
+-{
+-	ptrace(PTRACE_POKEUSER, proc->pid, PT_B0, addr);
+-}
+diff --git a/sysdeps/linux-gnu/m68k/regs.c b/sysdeps/linux-gnu/m68k/regs.c
+index c2fafe1..e25aefb 100644
+--- a/sysdeps/linux-gnu/m68k/regs.c
++++ b/sysdeps/linux-gnu/m68k/regs.c
+@@ -1,5 +1,6 @@
+ /*
+  * This file is part of ltrace.
++ * Copyright (C) 2013 Petr Machata, Red Hat Inc.
+  * Copyright (C) 1998,2002,2004,2008,2009 Juan Cespedes
+  *
+  * This program is free software; you can redistribute it and/or
+@@ -58,9 +59,3 @@ get_return_addr(struct process *proc, void *stack_pointer)
+ {
+ 	return (void *)ptrace(PTRACE_PEEKTEXT, proc->pid, stack_pointer, 0);
+ }
+-
+-void
+-set_return_addr(struct process *proc, void *addr)
+-{
+-	ptrace(PTRACE_POKETEXT, proc->pid, proc->stack_pointer, addr);
+-}
+diff --git a/sysdeps/linux-gnu/mipsel/regs.c b/sysdeps/linux-gnu/mipsel/regs.c
+index 19f97cb..d6a7a50 100644
+--- a/sysdeps/linux-gnu/mipsel/regs.c
++++ b/sysdeps/linux-gnu/mipsel/regs.c
+@@ -1,5 +1,6 @@
+ /*
+  * This file is part of ltrace.
++ * Copyright (C) 2013 Petr Machata, Red Hat Inc.
+  * Copyright (C) 2008,2009 Juan Cespedes
+  * Copyright (C) 2006 Eric Vaitl, Cisco Systems, Inc.
+  *
+@@ -94,9 +95,3 @@ get_return_addr(struct process *proc, void *stack_pointer)
+ {
+ 	return (void *)ptrace(PTRACE_PEEKUSER, proc->pid, off_lr, 0);
+ }
+-
+-void
+-set_return_addr(struct process *proc, void *addr)
+-{
+-	ptrace(PTRACE_POKEUSER, proc->pid, off_lr, addr);
+-}
+diff --git a/sysdeps/linux-gnu/ppc/plt.c b/sysdeps/linux-gnu/ppc/plt.c
+index 439b8e8..fe1602a 100644
+--- a/sysdeps/linux-gnu/ppc/plt.c
++++ b/sysdeps/linux-gnu/ppc/plt.c
+@@ -262,7 +262,8 @@ load_opd_data(struct ltelf *lte, struct library *lib)
+ {
+ 	Elf_Scn *sec;
+ 	GElf_Shdr shdr;
+-	if (elf_get_section_named(lte, ".opd", &sec, &shdr) < 0) {
++	if (elf_get_section_named(lte, ".opd", &sec, &shdr) < 0
++	    || sec == NULL) {
+ 	fail:
+ 		fprintf(stderr, "couldn't find .opd data\n");
+ 		return -1;
+@@ -290,8 +291,9 @@ get_glink_vma(struct ltelf *lte, GElf_Addr ppcgot, Elf_Data *plt_data)
+ 	Elf_Scn *ppcgot_sec = NULL;
+ 	GElf_Shdr ppcgot_shdr;
+ 	if (ppcgot != 0
+-	    && elf_get_section_covering(lte, ppcgot,
+-					&ppcgot_sec, &ppcgot_shdr) < 0)
++	    && (elf_get_section_covering(lte, ppcgot,
++					 &ppcgot_sec, &ppcgot_shdr) < 0
++		|| ppcgot_sec == NULL))
+ 		fprintf(stderr,
+ 			"DT_PPC_GOT=%#"PRIx64", but no such section found\n",
+ 			ppcgot);
+diff --git a/sysdeps/linux-gnu/ppc/regs.c b/sysdeps/linux-gnu/ppc/regs.c
+index ed9b398..40d7e7a 100644
+--- a/sysdeps/linux-gnu/ppc/regs.c
++++ b/sysdeps/linux-gnu/ppc/regs.c
+@@ -1,5 +1,6 @@
+ /*
+  * This file is part of ltrace.
++ * Copyright (C) 2013 Petr Machata, Red Hat Inc.
+  * Copyright (C) 2002,2008,2009 Juan Cespedes
+  * Copyright (C) 2009 Juan Cespedes
+  * Copyright (C) 2008 Luis Machado, IBM Corporation
+@@ -63,9 +64,3 @@ get_return_addr(struct process *proc, void *stack_pointer)
+ {
+ 	return (void *)ptrace(PTRACE_PEEKUSER, proc->pid, sizeof(long)*PT_LNK, 0);
+ }
+-
+-void
+-set_return_addr(struct process *proc, void *addr)
+-{
+-	ptrace(PTRACE_POKEUSER, proc->pid, sizeof(long)*PT_LNK, addr);
+-}
+diff --git a/sysdeps/linux-gnu/s390/regs.c b/sysdeps/linux-gnu/s390/regs.c
+index 44e8f67..bb16c61 100644
+--- a/sysdeps/linux-gnu/s390/regs.c
++++ b/sysdeps/linux-gnu/s390/regs.c
+@@ -1,5 +1,6 @@
+ /*
+  * This file is part of ltrace.
++ * Copyright (C) 2013 Petr Machata, Red Hat Inc.
+  * Copyright (C) 2002,2004,2008,2009 Juan Cespedes
+  * Copyright (C) 2009 Juan Cespedes
+  * Copyright (C) 2006 Ian Wienand
+@@ -87,13 +88,3 @@ get_return_addr(struct process *proc, void *stack_pointer)
+ #endif
+ 	return (void *)ret;
+ }
+-
+-void
+-set_return_addr(struct process *proc, void *addr)
+-{
+-#ifdef __s390x__
+-	if (proc->mask_32bit)
+-		addr = (void *)((long)addr & PSW_MASK31);
+-#endif
+-	ptrace(PTRACE_POKEUSER, proc->pid, PT_GPR14, addr);
+-}
+diff --git a/sysdeps/linux-gnu/sparc/regs.c b/sysdeps/linux-gnu/sparc/regs.c
+index 8431c9b..c474c83 100644
+--- a/sysdeps/linux-gnu/sparc/regs.c
++++ b/sysdeps/linux-gnu/sparc/regs.c
+@@ -1,5 +1,6 @@
+ /*
+  * This file is part of ltrace.
++ * Copyright (C) 2013 Petr Machata, Red Hat Inc.
+  * Copyright (C) 2004,2008,2009 Juan Cespedes
+  * Copyright (C) 2006 Ian Wienand
+  *
+@@ -65,12 +66,3 @@ get_return_addr(struct process *proc, void *stack_pointer)
+ 		return (void *)a->regs.u_regs[UREG_I6] + 12;
+ 	return (void *)a->regs.u_regs[UREG_I6] + 8;
+ }
+-
+-void
+-set_return_addr(struct process *proc, void *addr)
+-{
+-	proc_archdep *a = (proc_archdep *) (proc->arch_ptr);
+-	if (!a->valid)
+-		return;
+-	ptrace(PTRACE_POKETEXT, proc->pid, a->regs.u_regs[UREG_I6] + 8, addr);
+-}
+diff --git a/sysdeps/linux-gnu/trace.c b/sysdeps/linux-gnu/trace.c
+index e57a5ed..3aea082 100644
+--- a/sysdeps/linux-gnu/trace.c
++++ b/sysdeps/linux-gnu/trace.c
+@@ -561,12 +561,12 @@ remove_sw_breakpoints(struct process *proc)
+ 	assert(self != NULL);
+ 	assert(self->super.on_event == process_stopping_on_event);
+ 
+-	int ct = sizeof(self->sws_bp_addrs) / sizeof(*self->sws_bp_addrs);
++	int ct = sizeof(self->sws_bps) / sizeof(*self->sws_bps);
+ 	int i;
+ 	for (i = 0; i < ct; ++i)
+-		if (self->sws_bp_addrs[i] != 0) {
+-			delete_breakpoint(proc, self->sws_bp_addrs[i]);
+-			self->sws_bp_addrs[i] = 0;
++		if (self->sws_bps[i] != NULL) {
++			delete_breakpoint(proc, self->sws_bps[i]->addr);
++			self->sws_bps[i] = NULL;
+ 		}
+ }
+ 
+@@ -586,18 +586,17 @@ sw_singlestep_add_bp(arch_addr_t addr, struct sw_singlestep_data *data)
+ 	struct process_stopping_handler *self = data->self;
+ 	struct process *proc = self->task_enabling_breakpoint;
+ 
+-	int ct = sizeof(self->sws_bp_addrs)
+-		/ sizeof(*self->sws_bp_addrs);
++	int ct = sizeof(self->sws_bps) / sizeof(*self->sws_bps);
+ 	int i;
+ 	for (i = 0; i < ct; ++i)
+-		if (self->sws_bp_addrs[i] == 0) {
+-			self->sws_bp_addrs[i] = addr;
++		if (self->sws_bps[i] == NULL) {
+ 			static struct bp_callbacks cbs = {
+ 				.on_hit = sw_singlestep_bp_on_hit,
+ 			};
+ 			struct breakpoint *bp
+ 				= insert_breakpoint(proc, addr, NULL);
+ 			breakpoint_set_callbacks(bp, &cbs);
++			self->sws_bps[i] = bp;
+ 			return 0;
+ 		}
+ 
+@@ -608,7 +607,9 @@ sw_singlestep_add_bp(arch_addr_t addr, struct sw_singlestep_data *data)
+ static int
+ singlestep(struct process_stopping_handler *self)
+ {
+-	struct process *proc = self->task_enabling_breakpoint;
++	size_t i;
++	for (i = 0; i < sizeof(self->sws_bps) / sizeof(*self->sws_bps); ++i)
++		self->sws_bps[i] = NULL;
+ 
+ 	struct sw_singlestep_data data = { self };
+ 	switch (arch_sw_singlestep(self->task_enabling_breakpoint,
+@@ -617,7 +618,8 @@ singlestep(struct process_stopping_handler *self)
+ 	case SWS_HW:
+ 		/* Otherwise do the default action: singlestep.  */
+ 		debug(1, "PTRACE_SINGLESTEP");
+-		if (ptrace(PTRACE_SINGLESTEP, proc->pid, 0, 0)) {
++		if (ptrace(PTRACE_SINGLESTEP,
++			   self->task_enabling_breakpoint->pid, 0, 0)) {
+ 			perror("PTRACE_SINGLESTEP");
+ 			return -1;
+ 		}
+@@ -1038,7 +1040,7 @@ ltrace_exiting_install_handler(struct process *proc)
+ struct process_vfork_handler
+ {
+ 	struct event_handler super;
+-	void *bp_addr;
++	int vfork_bp_refd:1;
+ };
+ 
+ static Event *
+@@ -1049,38 +1051,33 @@ process_vfork_on_event(struct event_handler *super, Event *event)
+ 	      event->proc->pid, event->type);
+ 
+ 	struct process_vfork_handler *self = (void *)super;
+-	struct breakpoint *sbp;
++	struct process *proc = event->proc;
+ 	assert(self != NULL);
+ 
+ 	switch (event->type) {
+ 	case EVENT_BREAKPOINT:
+-		/* Remember the vfork return breakpoint.  */
+-		if (self->bp_addr == 0)
+-			self->bp_addr = event->e_un.brk_addr;
++		/* We turn on the vfork return breakpoint (which
++		 * should be the one that we have tripped over just
++		 * now) one extra time, so that the vfork parent hits
++		 * it as well.  */
++		if (!self->vfork_bp_refd) {
++			struct breakpoint *const sbp =
++				dict_find_entry(proc->leader->breakpoints,
++						event->e_un.brk_addr);
++			assert(sbp != NULL);
++			breakpoint_turn_on(sbp, proc->leader);
++			self->vfork_bp_refd = 1;
++		}
+ 		break;
+ 
+ 	case EVENT_EXIT:
+ 	case EVENT_EXIT_SIGNAL:
+ 	case EVENT_EXEC:
+-		/* Smuggle back in the vfork return breakpoint, so
+-		 * that our parent can trip over it once again.  */
+-		if (self->bp_addr != 0) {
+-			sbp = dict_find_entry(event->proc->leader->breakpoints,
+-					      self->bp_addr);
+-			if (sbp != NULL)
+-				assert(sbp->libsym == NULL);
+-			/* We don't mind failing that, it's not a big
+-			 * deal to not display one extra vfork return.  */
+-			insert_breakpoint(event->proc->parent,
+-					  self->bp_addr, NULL);
+-		}
+-
+-		continue_process(event->proc->parent->pid);
+-
+ 		/* Remove the leader that we artificially set up
+ 		 * earlier.  */
+-		change_process_leader(event->proc, event->proc);
+-		destroy_event_handler(event->proc);
++		change_process_leader(proc, proc);
++		destroy_event_handler(proc);
++		continue_process(proc->parent->pid);
+ 
+ 	default:
+ 		;
+diff --git a/sysdeps/linux-gnu/trace.h b/sysdeps/linux-gnu/trace.h
+index e988f70..5bb8380 100644
+--- a/sysdeps/linux-gnu/trace.h
++++ b/sysdeps/linux-gnu/trace.h
+@@ -64,8 +64,8 @@ struct process_stopping_handler
+ 	/* The pointer being re-enabled.  */
+ 	struct breakpoint *breakpoint_being_enabled;
+ 
+-	/* Artificial atomic skip breakpoint, if any needed.  */
+-	arch_addr_t sws_bp_addrs[2];
++	/* Software singlestep breakpoints, if any needed.  */
++	struct breakpoint *sws_bps[2];
+ 
+ 	/* When all tasks are stopped, this callback gets called.  */
+ 	void (*on_all_stopped)(struct process_stopping_handler *);
+diff --git a/sysdeps/linux-gnu/x86/regs.c b/sysdeps/linux-gnu/x86/regs.c
+index 3886e84..0a42c6e 100644
+--- a/sysdeps/linux-gnu/x86/regs.c
++++ b/sysdeps/linux-gnu/x86/regs.c
+@@ -1,6 +1,6 @@
+ /*
+  * This file is part of ltrace.
+- * Copyright (C) 2012 Petr Machata, Red Hat Inc.
++ * Copyright (C) 2012,2013 Petr Machata, Red Hat Inc.
+  * Copyright (C) 1998,2002,2004,2008,2009 Juan Cespedes
+  * Copyright (C) 2006 Ian Wienand
+  *
+@@ -107,11 +107,3 @@ get_return_addr(struct process *proc, void *sp)
+ 		ret = conv_32(ret);
+ 	return ret;
+ }
+-
+-void
+-set_return_addr(struct process *proc, void *addr)
+-{
+-	if (proc->e_machine == EM_386)
+-		addr = (void *)((long int)addr & 0xffffffff);
+-	ptrace(PTRACE_POKETEXT, proc->pid, proc->stack_pointer, addr);
+-}
+diff --git a/testsuite/ltrace.main/parameters.exp b/testsuite/ltrace.main/parameters.exp
+index e54086f..b585bc9 100644
+--- a/testsuite/ltrace.main/parameters.exp
++++ b/testsuite/ltrace.main/parameters.exp
+@@ -35,9 +35,6 @@ if [regexp {ELF from incompatible architecture} $exec_output] {
+ 	return
+ }
+ 
+-set xfail_spec {"arm*-*" }
+-set xfail_spec_arm {"arm*-*"}
+-
+ # Verify the output
+ set pattern "func_intptr(17)"
+ ltrace_verify_output ${objdir}/${subdir}/${testfile}.ltrace $pattern 1
+@@ -63,7 +60,6 @@ set pattern "func_ushort(33, 34)"
+ ltrace_verify_output ${objdir}/${subdir}/${testfile}.ltrace $pattern 1
+ set pattern "func_float(3.40*, -3.40*).*= 3.40*"
+ ltrace_verify_output ${objdir}/${subdir}/${testfile}.ltrace $pattern 1
+-eval "setup_xfail $xfail_spec"
+ set pattern "func_double(3.40*, -3.40*).*= -3.40*"
+ ltrace_verify_output ${objdir}/${subdir}/${testfile}.ltrace $pattern 1
+ set pattern "func_typedef(BLUE)"
+@@ -86,7 +82,6 @@ set pattern "func_work(\\\"x\\\")"
+ ltrace_verify_output ${objdir}/${subdir}/${testfile}.ltrace $pattern 1
+ set pattern "func_struct_2(17, { \\\"ABCDE\\\\\\\\0\\\", 0.250* }, 0.50*).*= { 0.250*, 'B', 'C' }"
+ ltrace_verify_output ${objdir}/${subdir}/${testfile}.ltrace $pattern 1
+-eval "setup_xfail $xfail_spec_arm"
+ set pattern "<... func_call resumed> \\\"x\\\", \\\"y\\\")"
+ ltrace_verify_output ${objdir}/${subdir}/${testfile}.ltrace $pattern 1
+ 
+diff --git a/testsuite/ltrace.torture/Makefile.am b/testsuite/ltrace.torture/Makefile.am
+index daa772f..5a45265 100644
+--- a/testsuite/ltrace.torture/Makefile.am
++++ b/testsuite/ltrace.torture/Makefile.am
+@@ -15,15 +15,9 @@
+ # Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ #
+ 
+-EXTRA_DIST = \
+-	ia64-sigill.exp \
+-	ia64-sigill.s \
+-	ppc-lwarx.c \
+-	ppc-lwarx.exp \
+-	signals.c \
+-	signals.exp \
+-	vfork-thread.c \
+-	vfork-thread.exp
++EXTRA_DIST = arm-singlestep.exp ia64-sigill.exp ia64-sigill.s	\
++	 ppc-lwarx.c ppc-lwarx.exp signals.c signals.exp	\
++	 vfork-thread.c vfork-thread.exp
+ 
+ CLEANFILES = *.o *.so *.log *.sum *.ltrace setval.tmp \
+ 	signals
+diff --git a/testsuite/ltrace.torture/arm-singlestep.exp b/testsuite/ltrace.torture/arm-singlestep.exp
+new file mode 100644
+index 0000000..0d633d9
+--- /dev/null
++++ b/testsuite/ltrace.torture/arm-singlestep.exp
+@@ -0,0 +1,44 @@
++# This file is part of ltrace.
++# Copyright (C) 2013 Petr Machata, Red Hat Inc.
++#
++# This program is free software; you can redistribute it and/or
++# modify it under the terms of the GNU General Public License as
++# published by the Free Software Foundation; either version 2 of the
++# License, or (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful, but
++# WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++# General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software
++# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
++# 02110-1301 USA
++
++if {![istarget arm*-*]} {
++    unsupported "arm-specific test"
++    return
++}
++
++set exe [ltraceCompile {} [ltraceSource c {
++    int puc(void) { return 0; }
++
++    int bar(void);
++    int baz(void);
++    __asm__ ("	.type   bar, %function\n"
++	     "bar:		\n"
++	     "	b puc	\n"
++	     "	.type   baz, %function\n"
++	     "baz:		\n"
++	     "	b puc	\n");
++
++    int main(void) { return bar() + baz(); }
++}]]
++
++ltraceMatch [ltraceRun -L -xbar+baz $exe] {
++    {{bar} == 1}
++    {{baz} == 1}
++}
++
++ltraceDone
+diff --git a/type.c b/type.c
+index d80550b..e06a9c2 100644
+--- a/type.c
++++ b/type.c
+@@ -1,6 +1,6 @@
+ /*
+  * This file is part of ltrace.
+- * Copyright (C) 2011,2012 Petr Machata, Red Hat Inc.
++ * Copyright (C) 2011,2012,2013 Petr Machata, Red Hat Inc.
+  * Copyright (C) 2007,2008 Juan Cespedes
+  *
+  * This program is free software; you can redistribute it and/or
+@@ -568,3 +568,39 @@ type_get_fp_equivalent(struct arg_type_info *info)
+ 	}
+ 	abort();
+ }
++
++struct arg_type_info *
++type_get_hfa_type(struct arg_type_info *info, size_t *countp)
++{
++	assert(info != NULL);
++	if (info->type != ARGTYPE_STRUCT
++	    && info->type != ARGTYPE_ARRAY)
++		return NULL;
++
++	size_t n = type_aggregate_size(info);
++	if (n == (size_t)-1)
++		return NULL;
++
++	struct arg_type_info *ret = NULL;
++	*countp = 0;
++
++	while (n-- > 0) {
++		struct arg_type_info *emt = type_element(info, n);
++
++		size_t emt_count = 1;
++		if (emt->type == ARGTYPE_STRUCT || emt->type == ARGTYPE_ARRAY)
++			emt = type_get_hfa_type(emt, &emt_count);
++		if (emt == NULL)
++			return NULL;
++		if (ret == NULL) {
++			if (emt->type != ARGTYPE_FLOAT
++			    && emt->type != ARGTYPE_DOUBLE)
++				return NULL;
++			ret = emt;
++		}
++		if (emt->type != ret->type)
++			return NULL;
++		*countp += emt_count;
++	}
++	return ret;
++}
+diff --git a/type.h b/type.h
+index b92c1af..3210677 100644
+--- a/type.h
++++ b/type.h
+@@ -1,6 +1,6 @@
+ /*
+  * This file is part of ltrace.
+- * Copyright (C) 2011,2012 Petr Machata, Red Hat Inc.
++ * Copyright (C) 2011,2012,2013 Petr Machata, Red Hat Inc.
+  * Copyright (C) 1997-2009 Juan Cespedes
+  *
+  * This program is free software; you can redistribute it and/or
+@@ -142,4 +142,13 @@ int type_is_signed(enum arg_type type);
+  * type.  */
+ struct arg_type_info *type_get_fp_equivalent(struct arg_type_info *info);
+ 
++/* If INFO is homogeneous floating-point aggregate, return the
++ * corresponding floating point type, and set *COUNTP to number of
++ * fields of the structure.  Otherwise return NULL.  INFO is a HFA if
++ * it's an aggregate whose each field is either a HFA, or a
++ * floating-point type.  */
++struct arg_type_info *type_get_hfa_type(struct arg_type_info *info,
++					size_t *countp);
++
++
+ #endif /* TYPE_H */

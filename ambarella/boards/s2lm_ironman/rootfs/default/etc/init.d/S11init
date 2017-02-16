@@ -1,0 +1,119 @@
+#!/bin/sh
+#
+# Init S2LM Ironman board drivers
+#
+
+if [ -f /etc/ambarella.conf ]; then
+	. /etc/ambarella.conf
+fi
+
+# All the static nodes are created in /etc/ambrwfs script
+#create_node()
+#{
+#	mknod -m 666 /dev/iav        c 248 0
+#	mknod -m 666 /dev/ucode      c 248 1
+#	mknod -m 666 /dev/overlay    c 248 2
+#	mknod -m 644 /dev/eis        c 248 10
+#	mknod -m 644 /dev/amb_gadget c 248 128
+#	mknod -m 644 /dev/ambac      c 248 144
+#	mknod -m 644 /dev/amb_iris   c 248 145
+#	mknod -m 644 /dev/fdet       c 248 148
+#	mknod -m 666 /dev/ambad      c 248 248
+#	mknod -m 666 /dev/dsplog     c 248 249
+#}
+
+install_drivers()
+{
+	kernel_ver=$(uname -r)
+
+	#Install I2C module
+	modprobe i2c-dev
+
+	#Install SPI module
+	modprobe spi_ambarella
+	modprobe spidev
+
+	#Ethernet
+	modprobe libphy
+	modprobe ksz80x1r
+	modprobe ambarella_eth
+
+	#Audio
+	modprobe snd-soc-core
+	modprobe snd-soc-ak7719
+	modprobe snd-soc-ambarella
+	modprobe snd-soc-ambarella-i2s
+	modprobe snd-soc-ak4951-amb
+	modprobe snd-soc-ambdummy
+	modprobe snd-soc-amba-board
+
+	#Power WiFi, BT
+	#modprobe ambad
+	#/usr/local/bin/amba_debug -g 102 -d 0x01
+	#/usr/local/bin/amba_debug -g 101 -d 0x01
+
+	#SD/MMC
+	modprobe ambarella_sd
+	modprobe mmc_block
+
+	#Install input module
+	modprobe gpio_keys
+	modprobe evdev
+	modprobe ambarella_input_adc
+	modprobe ambarella_input_ir
+
+	#Install USB module
+	modprobe ehci-hcd
+	modprobe ohci-hcd
+	modprobe ehci_ambarella
+	modprobe ambarella_udc
+	modprobe usb_storage delay_use=0
+	if [ -r /lib/modules/$kernel_ver/kernel/drivers/usb/gadget/g_$SYS_USB_G_TYPE.ko ]; then
+		modprobe g_$SYS_USB_G_TYPE $SYS_USB_G_PARAMETER
+	fi
+
+	echo host > /proc/ambarella/usbphy0
+
+	#Install PWM module
+	modprobe pwm-ambarella
+	modprobe pwm_bl
+
+	#Install wifi and BT module
+	# modprobe bcmdhd
+	# /usr/sbin/brcm_patchram --tosleep=200000 --no2bytes --enable_hci --baudrate 1500000 --patchram /lib/firmware/broadcom/ap6234/bcm43341b0.hcd /dev/ttyS1 &
+
+}
+
+start()
+{
+	install_drivers
+	#create_node
+}
+
+stop()
+{
+	kernel_ver=$(uname -r)
+}
+
+restart()
+{
+	stop
+	start
+}
+
+case "$1" in
+	start)
+		start
+		;;
+	stop)
+		stop
+		;;
+	restart|reload)
+		restart
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart}"
+		exit 1
+esac
+
+exit $?

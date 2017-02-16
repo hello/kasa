@@ -1,0 +1,581 @@
+diff -Naur cfg80211.orig/ethtool.c cfg80211/ethtool.c
+--- cfg80211.orig/ethtool.c	2013-05-09 21:54:49.656530585 +0800
++++ cfg80211/ethtool.c	2013-05-09 21:54:56.646542180 +0800
+@@ -68,6 +68,95 @@
+ 	return -ENOTSUPP;
+ }
+ 
++#ifdef CE_SUPPORT
++static void    cfg80211_get_wol(struct net_device *dev, struct ethtool_wolinfo * wolinfo) 
++{
++	struct wireless_dev *wdev = dev->ieee80211_ptr;
++	struct cfg80211_registered_device *rdev = wiphy_to_dev(wdev->wiphy);
++	struct cfg80211_wowlan *ntrig;
++	ntrig = rdev->wowlan;
++
++	wolinfo->supported = WAKE_MAGIC | WAKE_MAGICSECURE;
++	wolinfo->wolopts = 0;
++	memset(&wolinfo->sopass, 0, sizeof(wolinfo->sopass));
++	
++	if(ntrig != NULL) {
++		if(ntrig->magic_pkt)
++			wolinfo->wolopts |= WAKE_MAGIC;
++		if(ntrig->n_patterns == 1) {
++			if(ntrig->patterns[0].pattern_len == 6) {
++				wolinfo->wolopts |= WAKE_MAGICSECURE;		
++				memcpy(wolinfo->sopass,ntrig->patterns[0].pattern,6);
++			}
++		}
++	}
++}
++
++static int     cfg80211_set_wol(struct net_device *dev, struct ethtool_wolinfo *wolinfo)
++{
++	struct wireless_dev *wdev = dev->ieee80211_ptr;
++	struct cfg80211_registered_device *rdev = wiphy_to_dev(wdev->wiphy);
++	struct cfg80211_wowlan *ntrig;
++	struct cfg80211_wowlan no_triggers = {};
++	struct cfg80211_wowlan new_triggers = {};
++	int err=0,i;
++	
++	memset(&new_triggers,0x00,sizeof(new_triggers));
++
++	if((wolinfo->wolopts & WAKE_MAGIC) == WAKE_MAGIC) {
++		new_triggers.disconnect = true;	
++		new_triggers.magic_pkt = true;
++		new_triggers.gtk_rekey_failure = true;		
++	}
++	if((wolinfo->wolopts & WAKE_MAGICSECURE) == WAKE_MAGICSECURE) {
++		u8 pattern_mask = 0x3f;
++		new_triggers.n_patterns = 1;
++		new_triggers.patterns = kcalloc(new_triggers.n_patterns,
++						sizeof(new_triggers.patterns[0]),
++						GFP_KERNEL);
++		if (!new_triggers.patterns)
++			return -ENOMEM;
++
++		new_triggers.patterns[0].mask =
++				kmalloc(1 + 6, GFP_KERNEL);
++		if (!new_triggers.patterns[0].mask) {
++			err = -ENOMEM;
++			goto error;
++		}
++	
++		new_triggers.patterns[0].pattern =
++			new_triggers.patterns[0].mask + 1;
++		memcpy(new_triggers.patterns[0].mask ,&pattern_mask,1);
++		new_triggers.patterns[0].pattern_len = 6;
++	
++		memcpy(new_triggers.patterns[0].pattern,
++			   wolinfo->sopass,
++			   6);
++	}
++
++	if (memcmp(&new_triggers, &no_triggers, sizeof(new_triggers))) {
++		struct cfg80211_wowlan *ntrig;
++		ntrig = kmemdup(&new_triggers, sizeof(new_triggers),
++				GFP_KERNEL);
++		if (!ntrig) {
++			err = -ENOMEM;
++			goto error;
++		}	
++		cfg80211_rdev_free_wowlan(rdev);
++		rdev->wowlan = ntrig;
++
++		//if(rdev->ops->set_wow_mode) {		
++		//	rdev->ops->set_wow_mode(&rdev->wiphy, ntrig);
++		//}
++	}
++	return 0;
++error:	
++	for (i = 0; i < new_triggers.n_patterns; i++)
++		kfree(new_triggers.patterns[i].mask);
++	kfree(new_triggers.patterns);
++	return err;
++}
++#endif
+ const struct ethtool_ops cfg80211_ethtool_ops = {
+ 	.get_drvinfo = cfg80211_get_drvinfo,
+ 	.get_regs_len = cfg80211_get_regs_len,
+@@ -75,4 +164,8 @@
+ 	.get_link = ethtool_op_get_link,
+ 	.get_ringparam = cfg80211_get_ringparam,
+ 	.set_ringparam = cfg80211_set_ringparam,
++#ifdef CE_SUPPORT
++    .get_wol = cfg80211_get_wol,
++    .set_wol = cfg80211_set_wol,
++#endif
+ };
+diff -Naur cfg80211.orig/mlme.c cfg80211/mlme.c
+--- cfg80211.orig/mlme.c	2013-05-09 21:54:49.656530585 +0800
++++ cfg80211/mlme.c	2013-05-10 14:23:34.199467056 +0800
+@@ -1053,6 +1053,27 @@
+ }
+ EXPORT_SYMBOL(cfg80211_rx_mgmt);
+ 
++#ifdef ACL_SUPPORT
++bool cfg80211_rx_acl_reject_info(struct net_device *dev, const u8 *buf,
++		      size_t len, gfp_t gfp)
++{
++	struct wireless_dev *wdev = dev->ieee80211_ptr;
++	struct wiphy *wiphy = wdev->wiphy;
++	struct cfg80211_registered_device *rdev = wiphy_to_dev(wiphy);
++
++	bool result = false;
++
++	spin_lock_bh(&wdev->mgmt_registrations_lock);
++
++    nl80211_send_acl_reject_event(rdev, dev ,buf ,len);
++
++	spin_unlock_bh(&wdev->mgmt_registrations_lock);
++result = true;
++	return result;
++}
++EXPORT_SYMBOL(cfg80211_rx_acl_reject_info);
++#endif
++
+ void cfg80211_mgmt_tx_status(struct net_device *dev, u64 cookie,
+ 			     const u8 *buf, size_t len, bool ack, gfp_t gfp)
+ {
+@@ -1065,6 +1086,27 @@
+ }
+ EXPORT_SYMBOL(cfg80211_mgmt_tx_status);
+ 
++#ifdef CE_SUPPORT
++void cfg80211_csa_done_info(struct net_device *dev, u32 freq,
++					enum nl80211_channel_type channel_type,
++					u32	set_flag,
++					gfp_t gfp)
++{
++	struct wireless_dev *wdev = dev->ieee80211_ptr;
++	struct wiphy *wiphy = wdev->wiphy;
++	struct cfg80211_registered_device *rdev = wiphy_to_dev(wiphy);
++
++	/* Indicate CSA DONE INFO to user space */
++	nl80211_send_csa_done_info(rdev, dev, freq, gfp);	
++	if (set_flag == 1) {
++		wdev_lock(wdev);
++		cfg80211_set_freq(rdev, wdev, freq, channel_type);
++		wdev_unlock(wdev);	
++	}
++}
++EXPORT_SYMBOL(cfg80211_csa_done_info);
++#endif
++
+ void cfg80211_cqm_rssi_notify(struct net_device *dev,
+ 			      enum nl80211_cqm_rssi_threshold_event rssi_event,
+ 			      gfp_t gfp)
+diff -Naur cfg80211.orig/nl80211.c cfg80211/nl80211.c
+--- cfg80211.orig/nl80211.c	2013-05-09 21:54:49.656530585 +0800
++++ cfg80211/nl80211.c	2013-05-09 21:54:56.646542180 +0800
+@@ -4082,6 +4082,14 @@
+ 	list_for_each_entry(scan, &rdev->bss_list, list) {
+ 		if (++idx <= start)
+ 			continue;
++#ifdef CE_SUPPORT
++		if (dev != scan->pub.coming_from_dev) {
++			if (atomic_read(&scan->hold)) {/* bss information,return to supplicant */
++			} else {		
++				continue;
++			}
++		}
++#endif
+ 		if (nl80211_send_bss(skb, cb,
+ 				cb->nlh->nlmsg_seq, NLM_F_MULTI,
+ 				rdev, wdev, scan) < 0) {
+@@ -6769,6 +6777,12 @@
+ 	.name = "regulatory",
+ };
+ 
++#ifdef ACL_SUPPORT
++static struct genl_multicast_group nl80211_athr_mcgrp = {
++	.name = "athr",
++};
++#endif
++
+ /* notification functions */
+ 
+ void nl80211_notify_dev_rename(struct cfg80211_registered_device *rdev)
+@@ -6963,6 +6977,49 @@
+ 				nl80211_scan_mcgrp.id, GFP_KERNEL);
+ }
+ 
++#ifdef ACL_SUPPORT
++static int nl80211_send_acl_reject_msg(struct sk_buff *msg,
++				 struct cfg80211_registered_device *rdev,
++				 struct net_device *netdev,
++				 u32 pid, u32 seq, int flags,
++				 u32 cmd,const u8 *buf, size_t len)
++{
++	void *hdr;
++
++	hdr = nl80211hdr_put(msg, pid, seq, flags, cmd);
++	if (!hdr)
++		return -1;
++
++	NLA_PUT_U32(msg, NL80211_ATTR_WIPHY, rdev->wiphy_idx);
++	NLA_PUT_U32(msg, NL80211_ATTR_IFINDEX, netdev->ifindex);
++	NLA_PUT(msg, NL80211_ATTR_FRAME, len, buf);//add reject mac
++
++	return genlmsg_end(msg, hdr);
++
++ nla_put_failure:
++	genlmsg_cancel(msg, hdr);
++	return -EMSGSIZE;
++}
++void nl80211_send_acl_reject_event(struct cfg80211_registered_device *rdev,
++			     struct net_device *netdev,const u8 *buf, size_t len)
++{
++	struct sk_buff *msg;
++
++	msg = nlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
++	if (!msg)
++		return;
++
++	if (nl80211_send_acl_reject_msg(msg, rdev, netdev, 0, 0, 0,
++				  NL80211_CMD_ACL_REJECT_INFO,buf,len) < 0) {
++		nlmsg_free(msg);
++		return;
++	}
++
++	genlmsg_multicast_netns(wiphy_net(&rdev->wiphy), msg, 0,
++				nl80211_athr_mcgrp.id, GFP_KERNEL);
++}
++#endif
++
+ /*
+  * This can happen on global regulatory changes or device specific settings
+  * based on custom world regulatory domains.
+@@ -7957,6 +8014,12 @@
+ 	if (err)
+ 		goto err_out;
+ 
++#ifdef ACL_SUPPORT
++	err = genl_register_mc_group(&nl80211_fam, &nl80211_athr_mcgrp);
++	if (err)
++		goto err_out;
++#endif
++
+ 	err = genl_register_mc_group(&nl80211_fam, &nl80211_regulatory_mcgrp);
+ 	if (err)
+ 		goto err_out;
+@@ -7981,6 +8044,40 @@
+ 	return err;
+ }
+ 
++#ifdef CE_SUPPORT
++void nl80211_send_csa_done_info(struct cfg80211_registered_device *rdev,
++				 struct net_device *netdev, u32 freq,
++				 gfp_t gfp)
++{
++	struct sk_buff *msg;
++	void *hdr;
++
++	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, gfp);
++	if (!msg)
++		return;
++
++	hdr = nl80211hdr_put(msg, 0, 0, 0, NL80211_CMD_CSA_DONE_INFO);
++	if (!hdr) {
++		nlmsg_free(msg);
++		return;
++	}
++
++	NLA_PUT_U32(msg, NL80211_ATTR_WIPHY, rdev->wiphy_idx);
++	NLA_PUT_U32(msg, NL80211_ATTR_IFINDEX, netdev->ifindex);
++	NLA_PUT_U32(msg, NL80211_ATTR_WIPHY_FREQ, freq);
++
++	genlmsg_end(msg, hdr);
++
++	genlmsg_multicast(msg, 0, nl80211_mlme_mcgrp.id, gfp);
++	
++	return;
++
++ nla_put_failure:
++	genlmsg_cancel(msg, hdr);
++	nlmsg_free(msg);
++}
++#endif
++
+ void nl80211_exit(void)
+ {
+ 	netlink_unregister_notifier(&nl80211_netlink_notifier);
+diff -Naur cfg80211.orig/nl80211.h cfg80211/nl80211.h
+--- cfg80211.orig/nl80211.h	2013-05-09 21:54:49.656530585 +0800
++++ cfg80211/nl80211.h	2013-05-09 21:54:56.646542180 +0800
+@@ -16,6 +16,10 @@
+ 			     struct net_device *netdev, u32 cmd);
+ void nl80211_send_sched_scan_results(struct cfg80211_registered_device *rdev,
+ 				     struct net_device *netdev);
++#ifdef ACL_SUPPORT
++void nl80211_send_acl_reject_event(struct cfg80211_registered_device *rdev,
++			     struct net_device *netdev,const u8 *buf, size_t len);
++#endif
+ void nl80211_send_reg_change_event(struct regulatory_request *request);
+ void nl80211_send_rx_auth(struct cfg80211_registered_device *rdev,
+ 			  struct net_device *netdev,
+@@ -122,5 +126,9 @@
+ 			      const u8 *addr, gfp_t gfp);
+ bool nl80211_unexpected_4addr_frame(struct net_device *dev,
+ 				    const u8 *addr, gfp_t gfp);
+-
++#ifdef CE_SUPPORT
++void nl80211_send_csa_done_info(struct cfg80211_registered_device *rdev,
++				 struct net_device *netdev, u32 freq,
++				 gfp_t gfp);
++#endif
+ #endif /* __NET_WIRELESS_NL80211_H */
+diff -Naur cfg80211.orig/scan.c cfg80211/scan.c
+--- cfg80211.orig/scan.c	2013-05-09 21:54:49.656530585 +0800
++++ cfg80211/scan.c	2013-05-09 22:12:24.048006261 +0800
+@@ -478,6 +478,37 @@
+ }
+ EXPORT_SYMBOL(cfg80211_get_bss);
+ 
++#ifdef CE_SUPPORT
++struct cfg80211_bss *cfg80211_get_bss_ce(struct wiphy *wiphy,
++				      const u8 *bssid,
++				      const u8 *ssid, size_t ssid_len)
++{
++	struct cfg80211_registered_device *dev = wiphy_to_dev(wiphy);
++	struct cfg80211_internal_bss *bss, *res = NULL;
++	unsigned long now = jiffies;
++
++	spin_lock_bh(&dev->bss_lock);
++
++	list_for_each_entry(bss, &dev->bss_list, list) {
++		/* Don't get expired BSS structs */
++		if (time_after(now, bss->ts + IEEE80211_SCAN_RESULT_EXPIRE) &&
++		    !atomic_read(&bss->hold))
++			continue;		
++		if (is_bss(&bss->pub, bssid, ssid, ssid_len)) {
++			res = bss;
++			kref_get(&res->ref);
++			break;
++		}
++	}
++
++	spin_unlock_bh(&dev->bss_lock);
++	if (!res)
++		return NULL;
++	return &res->pub;
++}
++EXPORT_SYMBOL(cfg80211_get_bss_ce);
++#endif
++
+ struct cfg80211_bss *cfg80211_get_mesh(struct wiphy *wiphy,
+ 				       struct ieee80211_channel *channel,
+ 				       const u8 *meshid, size_t meshidlen,
+diff -Naur cfg80211.orig/util.c cfg80211/util.c
+--- cfg80211.orig/util.c	2013-05-09 21:54:49.656530585 +0800
++++ cfg80211/util.c	2013-05-09 21:54:56.646542180 +0800
+@@ -88,6 +88,57 @@
+ }
+ EXPORT_SYMBOL(__ieee80211_get_channel);
+ 
++#ifdef ACS_SUPPORT
++void ieee80211_acs_construct_chan_list(struct wiphy *wiphy,
++						  ieee80211_acs_t acs)
++{
++	enum ieee80211_band band;
++	struct ieee80211_supported_band *sband;
++	int i;
++
++    /* reset channel mapping array */
++    memset(&acs->acs_chan_maps, 0xff, sizeof(acs->acs_chan_maps));
++    acs->acs_nchans = 0;
++
++	for (band = 0; band < IEEE80211_NUM_BANDS; band++) {
++		sband = wiphy->bands[band];
++
++		if (!sband)
++			continue;
++
++		for (i = 0; i < sband->n_channels; i++) {
++			acs->acs_chan_maps[ieee80211_frequency_to_channel(sband->channels[i].center_freq)] = acs->acs_nchans;
++			acs->acs_chans[acs->acs_nchans++] = &sband->channels[i];
++		}
++	}
++}
++EXPORT_SYMBOL(ieee80211_acs_construct_chan_list);
++
++struct ieee80211_channel *ieee80211_is_support_band(struct wiphy *wiphy,
++						  int freq,enum ieee80211_band band)
++{
++	struct ieee80211_supported_band *sband;
++	int i;
++	enum ieee80211_band band_temp;
++	sband = wiphy->bands[band];
++	for (band_temp = 0; band_temp < IEEE80211_NUM_BANDS; band_temp++) {
++		sband = wiphy->bands[band_temp];
++		if (!sband)
++			return NULL;
++		if(band != IEEE80211_NUM_BANDS) {
++			if(band_temp != band)
++				continue;
++		} 
++		for (i = 0; i < sband->n_channels; i++) {
++			if (sband->channels[i].center_freq == freq)
++				return &sband->channels[i];
++		}
++	}
++	return NULL;
++}
++EXPORT_SYMBOL(ieee80211_is_support_band);
++#endif
++
+ static void set_mandatory_flags_band(struct ieee80211_supported_band *sband,
+ 				     enum ieee80211_band band)
+ {
+@@ -1217,3 +1268,27 @@
+ 	return crc;
+ }
+ EXPORT_SYMBOL(ieee802_11_parse_elems_crc);
++
++#ifdef ATHTST_SUPPORT
++bool cfg80211_suspend_issue(struct net_device *dev, int suspend)
++{
++	struct wireless_dev *wdev = dev->ieee80211_ptr;
++	struct wiphy *wiphy = wdev->wiphy;
++	struct cfg80211_registered_device *rdev = wiphy_to_dev(wiphy);
++	
++	if(suspend == 1)//go to suspend
++	{
++		if(rdev->ops->suspend) {
++			rdev->ops->suspend(&rdev->wiphy, rdev->wowlan);
++		}			
++	}
++	else if(suspend == 0)//go to resume
++	{
++		if(rdev->ops->resume) {
++			rdev->ops->resume(&rdev->wiphy);
++		}		
++	}
++	return true;
++}
++EXPORT_SYMBOL(cfg80211_suspend_issue);
++#endif
+diff -Naur include_local.orig/linux/nl80211.h include_local/linux/nl80211.h
+--- include_local.orig/linux/nl80211.h	2013-05-09 21:55:52.516619540 +0800
++++ include_local/linux/nl80211.h	2013-05-09 21:55:59.616629498 +0800
+@@ -704,6 +704,12 @@
+ 
+ 	NL80211_CMD_SET_REKEY_OFFLOAD,
+ 
++	NL80211_CMD_DISABLE_11B_RATES,
++	NL80211_CMD_SET_WMM,
++	NL80211_CMD_AP_SET_UAPSD,
++	NL80211_CMD_SET_TX_SGI,
++	NL80211_CMD_ACL_REJECT_INFO,
++
+ 	NL80211_CMD_PMKSA_CANDIDATE,
+ 
+ 	NL80211_CMD_TDLS_OPER,
+@@ -724,6 +730,7 @@
+ 	NL80211_CMD_BTCOEX_ANTENNA_CONFIG,
+ 	NL80211_CMD_BTCOEX_BT_VENDOR,
+ 	NL80211_CMD_BTCOEX,
++	NL80211_CMD_CSA_DONE_INFO,
+ 
+ 	/* add new commands above here */
+ 
+diff -Naur include_local.orig/net/cfg80211.h include_local/net/cfg80211.h
+--- include_local.orig/net/cfg80211.h	2013-05-09 21:55:52.516619540 +0800
++++ include_local/net/cfg80211.h	2013-05-10 14:24:10.359517602 +0800
+@@ -138,6 +138,21 @@
+ 	int orig_mag, orig_mpwr;
+ };
+ 
++#ifdef ACS_SUPPORT
++#define IEEE80211_CHAN_MAX 255
++struct ieee80211_acs {
++    struct ieee80211_channel            *acs_channel;
++
++    u_int16_t                           acs_nchans;         /* # of all available chans */
++    struct ieee80211_channel            *acs_chans[IEEE80211_CHAN_MAX];
++    u_int8_t                            acs_chan_maps[IEEE80211_CHAN_MAX];       /* channel mapping array */
++    u_int32_t                           acs_chan_maxrssi[IEEE80211_CHAN_MAX];    /* max rssi of these channels */
++    u_int32_t                           acs_minrssi_11na;    /* min rssi in 5 GHz band selected channel */
++    u_int32_t                           acs_avgrssi_11ng;    /* average rssi in 2.4 GHz band selected channel */
++};
++typedef struct ieee80211_acs    *ieee80211_acs_t;
++#endif
++
+ /**
+  * enum ieee80211_rate_flags - rate flags
+  *
+@@ -1004,6 +1019,10 @@
+ 
+ 	void (*free_priv)(struct cfg80211_bss *bss);
+ 	u8 priv[0] __attribute__((__aligned__(sizeof(void *))));
++	
++#ifdef CE_SUPPORT
++	struct net_device *coming_from_dev;
++#endif
+ };
+ 
+ /**
+@@ -2310,6 +2329,14 @@
+  */
+ extern struct ieee80211_channel *__ieee80211_get_channel(struct wiphy *wiphy,
+ 							 int freq);
++
++#ifdef ACS_SUPPORT		 
++void ieee80211_acs_construct_chan_list(struct wiphy *wiphy,
++						  ieee80211_acs_t acs);
++struct ieee80211_channel *ieee80211_is_support_band(struct wiphy *wiphy,
++						  int freq,enum ieee80211_band band);		
++#endif
++
+ /**
+  * ieee80211_get_channel - get channel struct from wiphy for specified frequency
+  * @wiphy: the struct wiphy to get the channel for
+@@ -2749,6 +2776,11 @@
+ 				      const u8 *bssid,
+ 				      const u8 *ssid, size_t ssid_len,
+ 				      u16 capa_mask, u16 capa_val);
++#ifdef CE_SUPPORT
++struct cfg80211_bss *cfg80211_get_bss_ce(struct wiphy *wiphy,
++				      const u8 *bssid,
++				      const u8 *ssid, size_t ssid_len);	
++#endif
+ static inline struct cfg80211_bss *
+ cfg80211_get_ibss(struct wiphy *wiphy,
+ 		  struct ieee80211_channel *channel,
+@@ -3228,6 +3260,11 @@
+ bool cfg80211_rx_mgmt(struct net_device *dev, int freq, const u8 *buf,
+ 		      size_t len, gfp_t gfp);
+ 
++#ifdef ACL_SUPPORT
++bool cfg80211_rx_acl_reject_info(struct net_device *dev, const u8 *buf,
++		      size_t len, gfp_t gfp);
++#endif
++
+ /**
+  * cfg80211_mgmt_tx_status - notification of TX status for management frame
+  * @dev: network device
+@@ -3244,7 +3281,12 @@
+ void cfg80211_mgmt_tx_status(struct net_device *dev, u64 cookie,
+ 			     const u8 *buf, size_t len, bool ack, gfp_t gfp);
+ 
+-
++#ifdef CE_SUPPORT
++void cfg80211_csa_done_info(struct net_device *dev, u32 freq,
++					enum nl80211_channel_type channel_type,
++					u32	set_flag,
++					gfp_t gfp);
++#endif
+ /**
+  * cfg80211_cqm_rssi_notify - connection quality monitoring rssi event
+  * @dev: network device
+@@ -3280,6 +3322,10 @@
+ void cfg80211_gtk_rekey_notify(struct net_device *dev, const u8 *bssid,
+ 			       const u8 *replay_ctr, gfp_t gfp);
+ 
++#ifdef ATHTST_SUPPORT
++bool cfg80211_suspend_issue(struct net_device *dev, int suspend);
++#endif
++
+ /**
+  * cfg80211_pmksa_candidate_notify - notify about PMKSA caching candidate
+  * @dev: network device

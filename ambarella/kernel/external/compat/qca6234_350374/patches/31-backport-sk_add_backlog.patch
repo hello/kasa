@@ -1,0 +1,24 @@
+
+v2.6.34-rc2~48 got 8eae939f net: add limit for socket backlog
+This adds sk_add_backlog_limitted() which makes the backlog
+have a size, and therefore adding an skb to the backlog can
+fail, a later patch changed all non-limitted calls to use the
+limitted caller via a3a858ff. The older kernels don't have a
+size and as such always are successfull when adding to the
+backlog.
+
+--- a/net/bluetooth/l2cap_core.c
++++ b/net/bluetooth/l2cap_core.c
+@@ -4206,8 +4206,12 @@ static inline int l2cap_data_channel(str
+ 		if (!sock_owned_by_user(sk)) {
+ 			l2cap_ertm_data_rcv(sk, skb);
+ 		} else {
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
+ 			if (sk_add_backlog(sk, skb))
+ 				goto drop;
++#else
++			sk_add_backlog(sk, skb);
++#endif
+ 		}
+ 
+ 		goto done;

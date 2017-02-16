@@ -1,0 +1,36 @@
+##
+## ambarella/oryx/protocol/AmbaConfig
+##
+## History:
+##    2015/01/26 - [Yupeng Chang] Create
+##
+## Copyright (C) 2004-2016, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+config BUILD_AMBARELLA_ORYX_PROTOCOL
+  bool "Build Oryx Protocol"
+  default n
+  help
+    Build Oryx Protocol
+
+config BUILD_AMBARELLA_ORYX_PROTOCOL_RTSP
+  bool "Build Oryx Protocol RTSP Server"
+  depends on BUILD_AMBARELLA_ORYX_PROTOCOL
+  select CONFIG_AMBARELLA_OPENSSL_SUPPORT
+  default n
+  help
+    Build Oryx Protocol RTSP Server
+
+config BUILD_AMBARELLA_ORYX_PROTOCOL_SIP
+  bool "Build Oryx Protocol SIP Server"
+  depends on BUILD_AMBARELLA_ORYX_PROTOCOL
+  select CONFIG_AMBARELLA_LIBOSIP2_SUPPORT
+  select CONFIG_AMBARELLA_LIBEXOSIP2_SUPPORT
+  default n
+  help
+    Build Oryx Protocol SIP Server

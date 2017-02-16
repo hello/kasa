@@ -1,0 +1,61 @@
+#!/bin/sh
+#
+# Init S2L BUB...
+#
+
+if [ -f /etc/ambarella.conf ]; then
+	. /etc/ambarella.conf
+fi
+
+start()
+{
+	kernel_ver=$(uname -r)
+	if [ -r /lib/modules/$kernel_ver/kernel/sound/soc/snd-soc-core.ko ]; then
+		modprobe snd-soc-core
+	fi
+	if [ -r /lib/modules/$kernel_ver/kernel/sound/soc/ambarella/snd-soc-ambarella.ko ]; then
+		modprobe snd-soc-ambarella
+	fi
+	if [ -r /lib/modules/$kernel_ver/kernel/sound/soc/ambarella/snd-soc-ambarella-i2s.ko ]; then
+		modprobe snd-soc-ambarella-i2s
+	fi
+	if [ -r /lib/modules/$kernel_ver/kernel/sound/soc/codecs/snd-soc-ak4954-amb.ko ]; then
+		modprobe snd_soc_ak4954_amb
+	fi
+	if [ -r /lib/modules/$kernel_ver/kernel/sound/soc/codecs/snd-soc-ambdummy.ko ]; then
+			modprobe snd-soc-ambdummy
+	fi
+	if [ -r /lib/modules/$kernel_ver/kernel/sound/soc/ambarella/snd-soc-amba-board.ko ]; then
+		modprobe snd-soc-amba-board
+	fi
+
+}
+
+stop()
+{
+	kernel_ver=$(uname -r)
+}
+
+restart()
+{
+	stop
+	start
+}
+
+case "$1" in
+	start)
+		start
+		;;
+	stop)
+		stop
+		;;
+	restart|reload)
+		restart
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart}"
+		exit 1
+esac
+
+exit $?
+

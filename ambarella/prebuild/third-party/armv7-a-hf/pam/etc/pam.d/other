@@ -1,0 +1,12 @@
+#%PAM-1.0
+# The PAM configuration file for the `other' service
+#
+auth       required   pam_deny.so
+auth       required   pam_warn.so
+
+account    required   pam_deny.so
+
+password   required   pam_deny.so
+password   required   pam_warn.so
+
+session    required   pam_deny.so

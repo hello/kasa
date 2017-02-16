@@ -1,0 +1,50 @@
+-- source buffer format
+-- alloc_style (string)       "manual" | "auto"
+-- type (string) candidates   "encode"|"preview"|"off"
+--    only 3rd source buffer can be used for "preview",
+--    main source buffer cannot be "off"
+-- input_crop (bool)     false:use default input window, true: use input_window rect
+-- input_window (rect):       {width, height, offset_x, offset_y}
+-- size (rect) candidate:     {width, height}
+-- prewarp  (bool)            true|false
+
+--main source buffer
+
+source_buffer = {
+  alloc_style = "manual",
+
+  --main source buffer
+  {
+    type = "encode",
+    input_crop = false,
+    size = { 1920, 1080 },
+    prewarp = false,
+  },
+
+  --2nd source buffer
+  {
+    type = "encode",
+    input_crop = false,
+    input_rect = { },
+    size = { 720, 480 },
+    prewarp = false,
+  },
+
+  --3rd source buffer
+  {
+    type = "off",
+    input_crop = false,
+    size = { 720, 480 },
+    prewarp = false,
+  },
+
+  --4th source buffer
+  {
+    type = "off",
+    input_crop = false,
+    size = { 1280, 720 },
+    prewarp = false,
+  }
+}
+
+return source_buffer

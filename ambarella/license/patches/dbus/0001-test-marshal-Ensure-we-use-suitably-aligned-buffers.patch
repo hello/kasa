@@ -1,0 +1,64 @@
+From 1a09d46b3cad370e4bd2c59ec6215fbf65351834 Mon Sep 17 00:00:00 2001
+From: Colin Walters <walters@verbum.org>
+Date: Wed, 24 Jul 2013 21:48:58 +0100
+Subject: [PATCH] test/marshal: Ensure we use suitably aligned buffers
+
+This test was failing on s390; though it could fail
+on other platforms too.  Basically we need to be sure
+we're passing at least word-aligned buffers to the
+demarshalling code.  malloc() will do that for us.
+---
+ test/marshal.c | 27 ++++++++++++++++++++++-----
+ 1 file changed, 22 insertions(+), 5 deletions(-)
+
+diff --git a/test/marshal.c b/test/marshal.c
+index e9ac7e3..e65ee7c 100644
+--- a/test/marshal.c
++++ b/test/marshal.c
+@@ -27,6 +27,7 @@
+ #include <config.h>
+ 
+ #include <glib.h>
++#include <string.h>
+ 
+ #include <dbus/dbus.h>
+ #include <dbus/dbus-glib-lowlevel.h>
+@@ -244,14 +245,30 @@ int
+ main (int argc,
+     char **argv)
+ {
++  int ret;
++  char *aligned_le_blob;
++  char *aligned_be_blob;
++
+   g_test_init (&argc, &argv, NULL);
+ 
+-  g_test_add ("/demarshal/le", Fixture, le_blob, setup, test_endian, teardown);
+-  g_test_add ("/demarshal/be", Fixture, be_blob, setup, test_endian, teardown);
+-  g_test_add ("/demarshal/needed/le", Fixture, le_blob, setup, test_needed,
++  /* We have to pass in a buffer that's at least "default aligned",
++   * i.e.  on GNU systems to 8 or 16.  The linker may have only given
++   * us byte-alignment for the char[] static variables.
++   */
++  aligned_le_blob = g_malloc (sizeof (le_blob));
++  memcpy (aligned_le_blob, le_blob, sizeof (le_blob));
++  aligned_be_blob = g_malloc (sizeof (be_blob));
++  memcpy (aligned_be_blob, be_blob, sizeof (be_blob));  
++
++  g_test_add ("/demarshal/le", Fixture, aligned_le_blob, setup, test_endian, teardown);
++  g_test_add ("/demarshal/be", Fixture, aligned_be_blob, setup, test_endian, teardown);
++  g_test_add ("/demarshal/needed/le", Fixture, aligned_le_blob, setup, test_needed,
+       teardown);
+-  g_test_add ("/demarshal/needed/be", Fixture, be_blob, setup, test_needed,
++  g_test_add ("/demarshal/needed/be", Fixture, aligned_be_blob, setup, test_needed,
+       teardown);
+ 
+-  return g_test_run ();
++  ret = g_test_run ();
++  g_free (aligned_le_blob);
++  g_free (aligned_be_blob);
++  return ret;
+ }
+-- 
+1.8.1.4
+

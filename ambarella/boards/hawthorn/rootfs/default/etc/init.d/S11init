@@ -1,0 +1,188 @@
+#!/bin/sh
+#
+# Init S2 IPCAM...
+#
+
+if [ -f /etc/ambarella.conf ]; then
+	. /etc/ambarella.conf
+fi
+
+start()
+{
+	kernel_ver=$(uname -r)
+	if [ -d /sys/module/ambarella_config/parameters ]; then
+		config_dir=/sys/module/ambarella_config/parameters
+	fi
+	if [ -d /sys/module/board/parameters ]; then
+		config_dir=/sys/module/board/parameters
+	fi
+
+	#Setup PLL
+	#echo 1080P60 > /proc/ambarella/performance
+	#echo ipcam > /proc/ambarella/mode
+
+	#Install HW Timer module
+	if [ -r /lib/modules/$kernel_ver/extra/hw_timer.ko ]; then
+		modprobe hw_timer
+	fi
+
+	#Install NAND module
+	if [ -r /lib/modules/$kernel_ver/kernel/drivers/mtd/nand/ambarella_nand.ko ]; then
+		modprobe ambarella_nand
+	fi
+	if [ -r /lib/modules/$kernel_ver/kernel/drivers/mtd/mtdchar.ko ]; then
+		modprobe mtdchar
+	fi
+
+	#Install I2C module
+	if [ -r /lib/modules/$kernel_ver/kernel/drivers/i2c/i2c-core.ko ]; then
+		modprobe i2c-core
+	fi
+	if [ -r /lib/modules/$kernel_ver/kernel/drivers/i2c/busses/ambarella_i2c.ko ]; then
+		modprobe ambarella_i2c
+	fi
+	if [ -r /lib/modules/$kernel_ver/kernel/drivers/i2c/busses/i2c-ambarella.ko ]; then
+		modprobe i2c-ambarella
+	fi
+	if [ -r /lib/modules/$kernel_ver/kernel/drivers/i2c/i2c-dev.ko ]; then
+		modprobe i2c-dev
+	fi
+
+	#Install SPI module
+	if [ -r /lib/modules/$kernel_ver/kernel/drivers/spi/spi_ambarella.ko ]; then
+		modprobe spi_ambarella
+	fi
+	if [ -r /lib/modules/$kernel_ver/kernel/drivers/spi/spidev.ko ]; then
+		modprobe spidev
+	fi
+
+	#Ethernet
+	if [ -r /lib/modules/$kernel_ver/kernel/drivers/net/phy/libphy.ko ]; then
+		modprobe libphy
+	fi
+	if [ -r /lib/modules/$kernel_ver/kernel/drivers/net/arm/ambarella_eth.ko ]; then
+		modprobe ambarella_eth
+	else
+		if [ -r /lib/modules/$kernel_ver/kernel/drivers/net/ethernet/ambarella/ambarella_eth.ko ]; then
+			modprobe ambarella_eth
+		fi
+	fi
+	#Increase default write memory size
+	if [ -r /sbin/sysctl ]; then
+		/sbin/sysctl -w net.core.wmem_default=327680
+	fi
+
+	#Audio
+	if [ -r /lib/modules/$kernel_ver/kernel/sound/soc/snd-soc-core.ko ]; then
+		modprobe snd-soc-core pmdown_time=500
+	fi
+	if [ -r /lib/modules/$kernel_ver/kernel/sound/soc/ambarella/snd-soc-ambarella.ko ]; then
+		modprobe snd-soc-ambarella
+	fi
+	if [ -r /lib/modules/$kernel_ver/kernel/sound/soc/ambarella/snd-soc-ambarella-i2s.ko ]; then
+		modprobe snd-soc-ambarella-i2s
+	fi
+	if [ -r /lib/modules/$kernel_ver/kernel/sound/soc/codecs/snd-soc-ak4642-amb.ko ]; then
+		modprobe snd-soc-ak4642-amb
+	else
+		if [ -r /lib/modules/$kernel_ver/kernel/sound/soc/codecs/snd-soc-ambdummy.ko ]; then
+			modprobe snd-soc-ambdummy
+		fi
+	fi
+
+	if [ -r /lib/modules/$kernel_ver/kernel/sound/soc/codecs/snd-soc-ambdummy.ko ]; then
+			modprobe snd-soc-ambdummy
+	fi
+
+	if [ -r /lib/modules/$kernel_ver/kernel/sound/soc/ambarella/snd-soc-amba-board.ko ]; then
+		modprobe snd-soc-amba-board
+	else
+		if [ -r /lib/modules/$kernel_ver/kernel/sound/soc/ambarella/snd-soc-dummy.ko ]; then
+			modprobe snd-soc-dummy
+		fi
+	fi
+
+	#SD
+	#echo 4 > $config_dir/fio_default_owner
+	#echo 24000000 > $config_dir/sd0_max_clock
+	#echo 100 > $config_dir/sd0_slot0_cd_delay
+	#echo 20480 > $config_dir/sd0_slot0_max_blk_sz
+	#echo 1 > $config_dir/sd0_slot0_use_bounce_buffer
+	#echo 0 > $config_dir/sd0_slot0_private_caps
+	#echo 0 > $config_dir/sd0_slot0_fixed_cd
+	#echo 0 > $config_dir/sd0_slot0_fixed_wp
+	#echo -1 > $config_dir/sd0_slot0_power_gpio_id
+	#echo -1 > $config_dir/sd0_slot0_wp_gpio_id
+	#echo -1 > $config_dir/sd0_slot0_cd_irq_gpio
+	#echo -1 > $config_dir/sd0_slot0_cd_irq_line
+	#echo -1 > $config_dir/sd0_slot0_cd_irq_type
+	#echo 0 > $config_dir/sd1_slot0_private_caps
+	if [ -r /lib/modules/$kernel_ver/kernel/drivers/mmc/host/ambarella_sd.ko ]; then
+		modprobe ambarella_sd
+	fi
+	if [ -r /lib/modules/$kernel_ver/kernel/drivers/mmc/card/mmc_block.ko ]; then
+		modprobe mmc_block
+	fi
+
+	#Install input module
+	if [ -r /lib/modules/$kernel_ver/kernel/drivers/input/misc/ambarella_general_input.ko ]; then
+		if [ -r /lib/firmware/ambarella-keymap.bin ]; then
+			modprobe ambarella_general_input ambarella_keymap=ambarella-keymap.bin
+		else
+			modprobe ambarella_general_input
+		fi
+	fi
+
+	#Install USB module
+	if [ -r /lib/modules/$kernel_ver/kernel/drivers/usb/host/ehci-hcd.ko ]; then
+		modprobe ehci-hcd
+	fi
+	if [ -r /lib/modules/$kernel_ver/kernel/drivers/usb/host/ohci-hcd.ko ]; then
+		modprobe ohci-hcd
+	fi
+	if [ -r /lib/modules/$kernel_ver/kernel/drivers/usb/gadget/ambarella_udc.ko ]; then
+		modprobe ambarella_udc
+	fi
+	if [ -r /lib/modules/$kernel_ver/kernel/drivers/usb/gadget/g_$SYS_USB_G_TYPE.ko ]; then
+		modprobe g_$SYS_USB_G_TYPE $SYS_USB_G_PARAMETER
+	fi
+
+
+	#Install PWM module
+	if [ -r /lib/modules/$kernel_ver/kernel/drivers/video/backlight/pwm_bl.ko ]; then
+		# the accuracy of 200000 is about 0.003
+#		echo 200000 > $config_dir/board_pwm0_period_ns
+#		echo 1000 > $config_dir/board_pwm0_max_duty
+#		echo 100 > $config_dir/board_pwm0_default_duty
+		modprobe pwm_bl
+	fi
+}
+
+stop()
+{
+	kernel_ver=$(uname -r)
+}
+
+restart()
+{
+	stop
+	start
+}
+
+case "$1" in
+	start)
+		start
+		;;
+	stop)
+		stop
+		;;
+	restart|reload)
+		restart
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart}"
+		exit 1
+esac
+
+exit $?
+

@@ -1,0 +1,1411 @@
+Reason for not yet publishing: This code needs more testing and
+enhancements.
+
+From 067eeff8bf0ddb90ea77bf088f924c2a165a98d1 Mon Sep 17 00:00:00 2001
+From: Vasanthakumar Thiagarajan <vasanth@atheros.com>
+Date: Wed, 14 Apr 2010 11:36:44 -0700
+Subject: [PATCH 2/3] ath9k: Add pktlog support
+
+This adds packet log support for all of the supported
+Atheros hardware families under ath9k, AR5008, AR9001, AR9002
+and AR9003. Packet log is used to extract specific descriptor
+and rate control data into a binary file parsed for analysis
+by our systems team.
+
+Signed-off-by: Vasanthakumar Thiagarajan <vasanth@atheros.com>
+---
+ drivers/net/wireless/ath/ath9k/Kconfig      |    8 +
+ drivers/net/wireless/ath/ath9k/Makefile     |    1 +
+ drivers/net/wireless/ath/ath9k/ar9002_mac.c |    3 +-
+ drivers/net/wireless/ath/ath9k/ar9003_mac.c |    4 +-
+ drivers/net/wireless/ath/ath9k/ath9k.h      |    6 +
+ drivers/net/wireless/ath/ath9k/debug.c      |    4 +
+ drivers/net/wireless/ath/ath9k/hw-ops.h     |    5 +-
+ drivers/net/wireless/ath/ath9k/hw.c         |    2 +-
+ drivers/net/wireless/ath/ath9k/hw.h         |    4 +-
+ drivers/net/wireless/ath/ath9k/pktlog.c     |  783 +++++++++++++++++++++++++++
+ drivers/net/wireless/ath/ath9k/pktlog.h     |  242 +++++++++
+ drivers/net/wireless/ath/ath9k/rc.c         |   22 +-
+ drivers/net/wireless/ath/ath9k/recv.c       |   15 +-
+ drivers/net/wireless/ath/ath9k/xmit.c       |   24 +-
+ 14 files changed, 1103 insertions(+), 20 deletions(-)
+ create mode 100644 drivers/net/wireless/ath/ath9k/pktlog.c
+ create mode 100644 drivers/net/wireless/ath/ath9k/pktlog.h
+
+--- a/drivers/net/wireless/ath/ath9k/Kconfig
++++ b/drivers/net/wireless/ath/ath9k/Kconfig
+@@ -40,6 +40,13 @@ config ATH9K_RATE_CONTROL
+ 	  Say Y, if you want to use the ath9k specific rate control
+ 	  module instead of minstrel_ht.
+ 
++config ATH9K_PKTLOG
++	bool "ath9k packet logging support"
++	depends on ATH9K_DEBUGFS
++	---help---
++	Say Y to dump frame information during tx/rx, rate information
++	and ani state.
++
+ config ATH9K_HTC
+        tristate "Atheros HTC based wireless cards support"
+        depends on USB && MAC80211
+@@ -61,3 +68,4 @@ config ATH9K_HTC_DEBUGFS
+ 	depends on ATH9K_HTC && DEBUG_FS
+ 	---help---
+ 	  Say Y, if you need access to ath9k_htc's statistics.
++
+--- a/drivers/net/wireless/ath/ath9k/Makefile
++++ b/drivers/net/wireless/ath/ath9k/Makefile
+@@ -9,6 +9,7 @@ ath9k-$(CONFIG_ATH9K_RATE_CONTROL) += rc
+ ath9k-$(CONFIG_PCI) += pci.o
+ ath9k-$(CONFIG_ATHEROS_AR71XX) += ahb.o
+ ath9k-$(CONFIG_ATH9K_DEBUGFS) += debug.o
++ath9k-$(CONFIG_ATH9K_PKTLOG) += pktlog.o
+ 
+ obj-$(CONFIG_ATH9K) += ath9k.o
+ 
+--- a/drivers/net/wireless/ath/ath9k/ar9002_mac.c
++++ b/drivers/net/wireless/ath/ath9k/ar9002_mac.c
+@@ -205,7 +205,8 @@ static void ar9002_hw_fill_txdesc(struct
+ }
+ 
+ static int ar9002_hw_proc_txdesc(struct ath_hw *ah, void *ds,
+-				 struct ath_tx_status *ts)
++				 struct ath_tx_status *ts,
++				 void *txs_desc)
+ {
+ 	struct ar5416_desc *ads = AR5416DESC(ds);
+ 	u32 status;
+--- a/drivers/net/wireless/ath/ath9k/ar9003_mac.c
++++ b/drivers/net/wireless/ath/ath9k/ar9003_mac.c
+@@ -234,7 +234,8 @@ static void ar9003_hw_fill_txdesc(struct
+ }
+ 
+ static int ar9003_hw_proc_txdesc(struct ath_hw *ah, void *ds,
+-				 struct ath_tx_status *ts)
++				 struct ath_tx_status *ts,
++				 void *txs_desc)
+ {
+ 	struct ar9003_txs *ads;
+ 	u32 status;
+@@ -308,6 +309,7 @@ static int ar9003_hw_proc_txdesc(struct
+ 	ts->ts_rssi_ext1 = MS(status, AR_TxRSSIAnt11);
+ 	ts->ts_rssi_ext2 = MS(status, AR_TxRSSIAnt12);
+ 
++	memcpy(txs_desc, ads, sizeof(*ads));
+ 	memset(ads, 0, sizeof(*ads));
+ 
+ 	return 0;
+--- a/drivers/net/wireless/ath/ath9k/ath9k.h
++++ b/drivers/net/wireless/ath/ath9k/ath9k.h
+@@ -24,6 +24,7 @@
+ 
+ #include "debug.h"
+ #include "common.h"
++#include "pktlog.h"
+ 
+ /*
+  * Header for the ath9k.ko driver core *only* -- hw code nor any other driver
+@@ -550,6 +551,7 @@ struct ath_ant_comb {
+ #define SC_OP_BT_SCAN		     BIT(13)
+ #define SC_OP_ANI_RUN		     BIT(14)
+ #define SC_OP_ENABLE_APM	     BIT(15)
++#define SC_OP_PKTLOGGING	     BIT(16)
+ 
+ /* Powersave flags */
+ #define PS_WAIT_FOR_BEACON        BIT(0)
+@@ -629,6 +631,10 @@ struct ath_softc {
+ 	struct list_head nodes; /* basically, stations */
+ 	unsigned int tx_complete_poll_work_seen;
+ #endif
++#ifdef CONFIG_ATH9K_PKTLOG
++	struct ath_pktlog_debugfs pktlog;
++#endif
++	bool is_pkt_logging;
+ 	struct ath_beacon_config cur_beacon_conf;
+ 	struct delayed_work tx_complete_work;
+ 	struct delayed_work hw_pll_work;
+--- a/drivers/net/wireless/ath/ath9k/debug.c
++++ b/drivers/net/wireless/ath/ath9k/debug.c
+@@ -1066,6 +1066,9 @@ static int open_file_regdump(struct inod
+ 
+ 	file->private_data = buf;
+ 
++	if (ath9k_init_pktlog(sc) != 0)
++		return -EINVAL;
++
+ 	return 0;
+ }
+ 
+@@ -1148,6 +1151,7 @@ int ath9k_init_debug(struct ath_hw *ah)
+ 	sc->debug.regidx = 0;
+ 	return 0;
+ err:
++	ath9k_deinit_pktlog(sc);
+ 	debugfs_remove_recursive(sc->debug.debugfs_phy);
+ 	sc->debug.debugfs_phy = NULL;
+ 	return -ENOMEM;
+--- a/drivers/net/wireless/ath/ath9k/hw-ops.h
++++ b/drivers/net/wireless/ath/ath9k/hw-ops.h
+@@ -67,9 +67,10 @@ static inline void ath9k_hw_filltxdesc(s
+ }
+ 
+ static inline int ath9k_hw_txprocdesc(struct ath_hw *ah, void *ds,
+-				      struct ath_tx_status *ts)
++				      struct ath_tx_status *ts,
++				      void *txs_desc)
+ {
+-	return ath9k_hw_ops(ah)->proc_txdesc(ah, ds, ts);
++	return ath9k_hw_ops(ah)->proc_txdesc(ah, ds, ts, txs_desc);
+ }
+ 
+ static inline void ath9k_hw_set11n_txdesc(struct ath_hw *ah, void *ds,
+--- a/drivers/net/wireless/ath/ath9k/hw.c
++++ b/drivers/net/wireless/ath/ath9k/hw.c
+@@ -2192,7 +2192,7 @@ void ath9k_hw_setrxfilter(struct ath_hw
+ 		phybits |= AR_PHY_ERR_RADAR;
+ 	if (bits & ATH9K_RX_FILTER_PHYERR)
+ 		phybits |= AR_PHY_ERR_OFDM_TIMING | AR_PHY_ERR_CCK_TIMING;
+-	REG_WRITE(ah, AR_PHY_ERR, phybits);
++	REG_WRITE(ah, AR_PHY_ERR, 0xffffffff);
+ 
+ 	if (phybits)
+ 		REG_WRITE(ah, AR_RXCFG,
+--- a/drivers/net/wireless/ath/ath9k/hw.h
++++ b/drivers/net/wireless/ath/ath9k/hw.h
+@@ -620,7 +620,7 @@ struct ath_hw_ops {
+ 			    const void *ds0, dma_addr_t buf_addr,
+ 			    unsigned int qcu);
+ 	int (*proc_txdesc)(struct ath_hw *ah, void *ds,
+-			   struct ath_tx_status *ts);
++			   struct ath_tx_status *ts, void* txs_desc);
+ 	void (*set11n_txdesc)(struct ath_hw *ah, void *ds,
+ 			      u32 pktLen, enum ath9k_pkt_type type,
+ 			      u32 txPower, u32 keyIx,
+@@ -856,6 +856,8 @@ struct ath_hw {
+ 
+ 	/* Enterprise mode cap */
+ 	u32 ent_mode;
++
++	bool is_pkt_logging;
+ };
+ 
+ static inline struct ath_common *ath9k_hw_common(struct ath_hw *ah)
+--- /dev/null
++++ b/drivers/net/wireless/ath/ath9k/pktlog.c
+@@ -0,0 +1,783 @@
++
++#include <linux/vmalloc.h>
++#include <linux/highmem.h>
++#include "ath9k.h"
++
++static int ath9k_debugfs_open(struct inode *inode, struct file *file)
++{
++	file->private_data = inode->i_private;
++	return 0;
++}
++
++static struct page *pktlog_virt_to_logical(void *addr)
++{
++	struct page *page;
++	unsigned long vpage = 0UL;
++
++	page = vmalloc_to_page(addr);
++	if (page) {
++		vpage = (unsigned long) page_address(page);
++		vpage |= ((unsigned long) addr & (PAGE_SIZE - 1));
++	}
++	return virt_to_page((void *) vpage);
++}
++
++static void ath_pktlog_release(struct ath_pktlog *pktlog)
++{
++	unsigned long page_cnt, vaddr;
++	struct page *page;
++
++	page_cnt =
++		((sizeof(*(pktlog->pktlog_buf)) +
++		pktlog->pktlog_buf_size) / PAGE_SIZE) + 1;
++
++	for (vaddr = (unsigned long) (pktlog->pktlog_buf); vaddr <
++			(unsigned long) (pktlog->pktlog_buf) +
++			(page_cnt * PAGE_SIZE);
++			vaddr += PAGE_SIZE) {
++		page = pktlog_virt_to_logical((void *) vaddr);
++		clear_bit(PG_reserved, &page->flags);
++	}
++
++	vfree(pktlog->pktlog_buf);
++	pktlog->pktlog_buf = NULL;
++}
++
++static int ath_alloc_pktlog_buf(struct ath_softc *sc)
++{
++	u32 page_cnt;
++	unsigned long vaddr;
++	struct page *page;
++	struct ath_pktlog *pktlog = &sc->pktlog.pktlog;
++
++	if (pktlog->pktlog_buf_size == 0)
++		return -EINVAL;
++
++	page_cnt = (sizeof(*(pktlog->pktlog_buf)) +
++		    pktlog->pktlog_buf_size) / PAGE_SIZE;
++
++	pktlog->pktlog_buf =  vmalloc((page_cnt + 2) * PAGE_SIZE);
++	if (pktlog->pktlog_buf == NULL) {
++		printk(KERN_ERR "Failed to allocate memory  for pktlog");
++		return -ENOMEM;
++	}
++
++	pktlog->pktlog_buf = (struct ath_pktlog_buf *)
++				     (((unsigned long)
++				      (pktlog->pktlog_buf)
++				     + PAGE_SIZE - 1) & PAGE_MASK);
++
++	for (vaddr = (unsigned long) (pktlog->pktlog_buf);
++		      vaddr < ((unsigned long) (pktlog->pktlog_buf)
++		      + (page_cnt * PAGE_SIZE)); vaddr += PAGE_SIZE) {
++		page = pktlog_virt_to_logical((void *)vaddr);
++		set_bit(PG_reserved, &page->flags);
++	}
++
++	return 0;
++}
++
++static void ath_init_pktlog_buf(struct ath_pktlog *pktlog)
++{
++	pktlog->pktlog_buf->bufhdr.magic_num = PKTLOG_MAGIC_NUM;
++	pktlog->pktlog_buf->bufhdr.version = CUR_PKTLOG_VER;
++	pktlog->pktlog_buf->rd_offset = -1;
++	pktlog->pktlog_buf->wr_offset = 0;
++	if (pktlog->pktlog_filter == 0)
++		pktlog->pktlog_filter = ATH_PKTLOG_FILTER_DEFAULT;
++}
++
++static char *ath_pktlog_getbuf(struct ath_pktlog *pl_info,
++			       u16 log_type, size_t log_size,
++		               u32 flags)
++{
++	struct ath_pktlog_buf *log_buf;
++	struct ath_pktlog_hdr *log_hdr;
++	int32_t cur_wr_offset, buf_size;
++	char *log_ptr;
++
++	log_buf = pl_info->pktlog_buf;
++	buf_size = pl_info->pktlog_buf_size;
++
++	spin_lock_bh(&pl_info->pktlog_lock);
++	cur_wr_offset = log_buf->wr_offset;
++	/* Move read offset to the next entry if there is a buffer overlap */
++	if (log_buf->rd_offset >= 0) {
++		if ((cur_wr_offset <= log_buf->rd_offset)
++				&& (cur_wr_offset +
++				sizeof(struct ath_pktlog_hdr)) >
++				log_buf->rd_offset)
++			PKTLOG_MOV_RD_IDX(log_buf->rd_offset, log_buf,
++					  buf_size);
++	} else {
++		log_buf->rd_offset = cur_wr_offset;
++	}
++
++	log_hdr =
++		(struct ath_pktlog_hdr *) (log_buf->log_data + cur_wr_offset);
++	log_hdr->log_type = log_type;
++	log_hdr->flags = flags;
++	log_hdr->timestamp = jiffies;
++	log_hdr->size = (u16) log_size;
++
++	cur_wr_offset += sizeof(*log_hdr);
++
++	if ((buf_size - cur_wr_offset) < log_size) {
++		while ((cur_wr_offset <= log_buf->rd_offset)
++				&& (log_buf->rd_offset < buf_size))
++			PKTLOG_MOV_RD_IDX(log_buf->rd_offset, log_buf,
++					  buf_size);
++		cur_wr_offset = 0;
++	}
++
++	while ((cur_wr_offset <= log_buf->rd_offset)
++			&& (cur_wr_offset + log_size) > log_buf->rd_offset)
++		PKTLOG_MOV_RD_IDX(log_buf->rd_offset, log_buf, buf_size);
++
++	log_ptr = &(log_buf->log_data[cur_wr_offset]);
++
++	cur_wr_offset += log_hdr->size;
++
++	log_buf->wr_offset =
++		((buf_size - cur_wr_offset) >=
++		 sizeof(struct ath_pktlog_hdr)) ? cur_wr_offset : 0;
++	spin_unlock_bh(&pl_info->pktlog_lock);
++
++	return log_ptr;
++}
++
++static void ath9k_hw_get_descinfo(struct ath_hw *ah, struct ath_desc_info *desc_info)
++{
++       desc_info->txctl_numwords = TXCTL_NUMWORDS(ah);
++       desc_info->txctl_offset = TXCTL_OFFSET(ah);
++       desc_info->txstatus_numwords = TXSTATUS_NUMWORDS(ah);
++       desc_info->txstatus_offset = TXSTATUS_OFFSET(ah);
++
++       desc_info->rxctl_numwords = RXCTL_NUMWORDS(ah);
++       desc_info->rxctl_offset = RXCTL_OFFSET(ah);
++       desc_info->rxstatus_numwords = RXSTATUS_NUMWORDS(ah);
++       desc_info->rxstatus_offset = RXSTATUS_OFFSET(ah);
++}
++
++static int  pktlog_pgfault(struct vm_area_struct *vma, struct vm_fault *vmf)
++{
++	unsigned long address = (unsigned long) vmf->virtual_address;
++
++	if (address == 0UL)
++		return VM_FAULT_NOPAGE;
++
++	if (vmf->pgoff > vma->vm_end)
++		return VM_FAULT_SIGBUS;
++
++	get_page(virt_to_page(address));
++	vmf->page = virt_to_page(address);
++	return VM_FAULT_MINOR;
++}
++
++static struct vm_operations_struct pktlog_vmops = {
++	.fault = pktlog_pgfault
++};
++
++static int ath_pktlog_mmap(struct file *file, struct vm_area_struct *vma)
++{
++	struct ath_softc *sc = file->private_data;
++
++	/* entire buffer should be mapped */
++	if (vma->vm_pgoff != 0)
++		return -EINVAL;
++
++	if (!sc->pktlog.pktlog.pktlog_buf) {
++		printk(KERN_ERR "Can't allocate pktlog buf");
++		return -ENOMEM;
++	}
++
++	vma->vm_flags |= VM_LOCKED;
++	vma->vm_ops = &pktlog_vmops;
++
++	return 0;
++}
++
++static ssize_t ath_pktlog_read(struct file *file, char __user *userbuf,
++			       size_t count, loff_t *ppos)
++{
++	size_t bufhdr_size;
++	size_t nbytes = 0, ret_val = 0;
++	int rem_len;
++	int start_offset, end_offset;
++	int fold_offset, ppos_data, cur_rd_offset;
++	struct ath_softc *sc = file->private_data;
++	struct ath_pktlog *pktlog_info = &sc->pktlog.pktlog;
++	struct ath_pktlog_buf *log_buf = pktlog_info->pktlog_buf;
++
++	if (log_buf == NULL)
++		return 0;
++
++	bufhdr_size = sizeof(log_buf->bufhdr);
++
++	/* copy valid log entries from circular buffer into user space */
++	rem_len = count;
++
++	nbytes = 0;
++
++	if (*ppos < bufhdr_size) {
++		nbytes = min((int) (bufhdr_size -  *ppos), rem_len);
++		if (copy_to_user(userbuf,
++		    ((char *) &log_buf->bufhdr) + *ppos, nbytes))
++			return -EFAULT;
++		rem_len -= nbytes;
++		ret_val += nbytes;
++	}
++
++	start_offset = log_buf->rd_offset;
++
++	if ((rem_len == 0) || (start_offset < 0))
++		goto read_done;
++
++	fold_offset = -1;
++	cur_rd_offset = start_offset;
++
++	/* Find the last offset and fold-offset if the buffer is folded */
++	do {
++		struct ath_pktlog_hdr *log_hdr;
++		int log_data_offset;
++
++		log_hdr =
++			(struct ath_pktlog_hdr *) (log_buf->log_data +
++							cur_rd_offset);
++
++		log_data_offset = cur_rd_offset + sizeof(struct ath_pktlog_hdr);
++
++		if ((fold_offset == -1)
++				&& ((pktlog_info->pktlog_buf_size -
++				    log_data_offset) <= log_hdr->size))
++			fold_offset = log_data_offset - 1;
++
++		PKTLOG_MOV_RD_IDX(cur_rd_offset, log_buf,
++				  pktlog_info->pktlog_buf_size);
++
++		if ((fold_offset == -1) && (cur_rd_offset == 0)
++				&& (cur_rd_offset != log_buf->wr_offset))
++			fold_offset = log_data_offset + log_hdr->size - 1;
++
++		end_offset = log_data_offset + log_hdr->size - 1;
++	} while (cur_rd_offset != log_buf->wr_offset);
++
++	ppos_data = *ppos + ret_val - bufhdr_size + start_offset;
++
++	if (fold_offset == -1) {
++		if (ppos_data > end_offset)
++			goto read_done;
++
++		nbytes = min(rem_len, end_offset - ppos_data + 1);
++		if (copy_to_user(userbuf + ret_val,
++				 log_buf->log_data + ppos_data, nbytes))
++			return -EFAULT;
++		ret_val += nbytes;
++		rem_len -= nbytes;
++	} else {
++		if (ppos_data <= fold_offset) {
++			nbytes = min(rem_len, fold_offset - ppos_data + 1);
++			if (copy_to_user(userbuf + ret_val,
++						log_buf->log_data + ppos_data,
++						nbytes))
++				return -EFAULT;
++			ret_val += nbytes;
++			rem_len -= nbytes;
++		}
++
++		if (rem_len == 0)
++			goto read_done;
++
++		ppos_data =
++			*ppos + ret_val - (bufhdr_size +
++					(fold_offset - start_offset + 1));
++
++		if (ppos_data <= end_offset) {
++			nbytes = min(rem_len, end_offset - ppos_data + 1);
++			if (copy_to_user(userbuf + ret_val, log_buf->log_data
++					 + ppos_data,
++					 nbytes))
++				return -EFAULT;
++			ret_val += nbytes;
++			rem_len -= nbytes;
++		}
++	}
++
++read_done:
++		*ppos += ret_val;
++
++		return ret_val;
++}
++
++static const struct file_operations fops_pktlog_dump = {
++	.read = ath_pktlog_read,
++	.mmap = ath_pktlog_mmap,
++	.open = ath9k_debugfs_open
++};
++
++static ssize_t write_pktlog_start(struct file *file, const char __user *ubuf,
++				   size_t count, loff_t *ppos)
++{
++	struct ath_softc *sc = file->private_data;
++	struct ath_pktlog *pktlog = &sc->pktlog.pktlog;
++	char buf[32];
++	int buf_size;
++	int start_pktlog, err;
++
++	buf_size = min(count, sizeof(buf) - 1);
++	if (copy_from_user(buf, ubuf, buf_size))
++		return -EFAULT;
++
++	sscanf(buf, "%d", &start_pktlog);
++	if (start_pktlog) {
++		if (pktlog->pktlog_buf != NULL)
++			ath_pktlog_release(pktlog);
++
++		err = ath_alloc_pktlog_buf(sc);
++		if (err != 0)
++			return err;
++
++		ath_init_pktlog_buf(pktlog);
++		pktlog->pktlog_buf->rd_offset = -1;
++		pktlog->pktlog_buf->wr_offset = 0;
++		sc->is_pkt_logging = 1;
++	} else {
++		sc->is_pkt_logging = 0;
++	}
++
++	sc->sc_ah->is_pkt_logging = sc->is_pkt_logging;
++	return count;
++}
++
++static ssize_t read_pktlog_start(struct file *file, char __user *ubuf,
++				  size_t count, loff_t *ppos)
++{
++	char buf[32];
++	struct ath_softc *sc = file->private_data;
++	int len = 0;
++
++	len = scnprintf(buf, sizeof(buf) - len, "%d", sc->is_pkt_logging);
++	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
++}
++
++static const struct file_operations fops_pktlog_start = {
++	.read = read_pktlog_start,
++	.write = write_pktlog_start,
++	.open = ath9k_debugfs_open
++};
++
++static ssize_t pktlog_size_write(struct file *file, const char __user *ubuf,
++				 size_t count, loff_t *ppos)
++{
++	struct ath_softc *sc = file->private_data;
++	char buf[32];
++	u32 pktlog_size;
++	int buf_size;
++
++	buf_size = min(count, sizeof(buf) - 1);
++	if (copy_from_user(buf, ubuf, buf_size))
++		return -EFAULT;
++
++	sscanf(buf, "%d", &pktlog_size);
++
++	if (pktlog_size == sc->pktlog.pktlog.pktlog_buf_size)
++		return count;
++
++	if (sc->is_pkt_logging) {
++		printk(KERN_DEBUG "Stop packet logging before"
++			" changing the pktlog size \n");
++		return -EINVAL;
++	}
++
++	sc->pktlog.pktlog.pktlog_buf_size = pktlog_size;
++
++	return count;
++}
++
++static ssize_t pktlog_size_read(struct file *file, char __user *ubuf,
++				size_t count, loff_t *ppos)
++{
++	char buf[32];
++	struct ath_softc *sc = file->private_data;
++	int len = 0;
++
++	len = scnprintf(buf, sizeof(buf) - len, "%ul",
++			    sc->pktlog.pktlog.pktlog_buf_size);
++	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
++}
++
++static const struct file_operations fops_pktlog_size = {
++	.read = pktlog_size_read,
++	.write = pktlog_size_write,
++	.open = ath9k_debugfs_open
++};
++
++static ssize_t pktlog_filter_write(struct file *file, const char __user *ubuf,
++				   size_t count, loff_t *ppos)
++{
++	char buf[32];
++	struct ath_softc *sc = file->private_data;
++	u32 filter;
++	int buf_count;
++
++	buf_count = min(count, sizeof(buf) - 1);
++	if (copy_from_user(buf, ubuf, buf_count))
++		return -EFAULT;
++
++	if (sscanf(buf, "%x", &filter))
++		sc->pktlog.pktlog.pktlog_filter = filter;
++	else
++		sc->pktlog.pktlog.pktlog_filter = 0;
++
++	return count;
++}
++
++static ssize_t  pktlog_filter_read(struct file *file, char __user *ubuf,
++				   size_t count, loff_t *ppos)
++{
++	char buf[32];
++	struct ath_softc *sc = file->private_data;
++	int len = 0;
++
++	len = scnprintf(buf, sizeof(buf) - len, "%ul",
++			    sc->pktlog.pktlog.pktlog_filter);
++
++	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
++}
++
++static const struct file_operations fops_pktlog_filter = {
++	.read = pktlog_filter_read,
++	.write = pktlog_filter_write,
++	.open = ath9k_debugfs_open
++};
++
++void ath_pktlog_txctl(struct ath_softc *sc, struct ath_buf *bf)
++{
++	struct ath_pktlog_txctl *tx_log;
++	struct ath_pktlog *pl_info;
++	struct ieee80211_hdr *hdr;
++	struct ath_desc_info desc_info;
++	int i;
++	u32 *ds_words, flags = 0;
++
++	pl_info = &sc->pktlog.pktlog;
++
++	if ((pl_info->pktlog_filter & ATH_PKTLOG_TX) == 0 ||
++	    bf->bf_mpdu == NULL || !sc->is_pkt_logging)
++		return;
++
++	flags |= (((sc->sc_ah->hw_version.macRev <<
++			PHFLAGS_MACREV_SFT) & PHFLAGS_MACREV_MASK) |
++			((sc->sc_ah->hw_version.macVersion << PHFLAGS_MACVERSION_SFT)
++			& PHFLAGS_MACVERSION_MASK));
++
++	tx_log = (struct ath_pktlog_txctl *)ath_pktlog_getbuf(pl_info,
++			PKTLOG_TYPE_TXCTL, sizeof(*tx_log), flags);
++
++	memset(tx_log, 0, sizeof(*tx_log));
++
++	hdr = (struct ieee80211_hdr *) bf->bf_mpdu->data;
++	tx_log->framectrl = hdr->frame_control;
++	tx_log->seqctrl   = hdr->seq_ctrl;
++
++	if (ieee80211_has_tods(tx_log->framectrl)) {
++		tx_log->bssid_tail = (hdr->addr1[ETH_ALEN - 2] << 8) |
++				     (hdr->addr1[ETH_ALEN - 1]);
++		tx_log->sa_tail    = (hdr->addr2[ETH_ALEN - 2] << 8) |
++				     (hdr->addr2[ETH_ALEN - 1]);
++		tx_log->da_tail    = (hdr->addr3[ETH_ALEN - 2] << 8) |
++				     (hdr->addr3[ETH_ALEN - 1]);
++	} else if (ieee80211_has_fromds(tx_log->framectrl)) {
++		tx_log->bssid_tail = (hdr->addr2[ETH_ALEN - 2] << 8) |
++				     (hdr->addr2[ETH_ALEN - 1]);
++		tx_log->sa_tail    = (hdr->addr3[ETH_ALEN - 2] << 8) |
++				     (hdr->addr3[ETH_ALEN - 1]);
++		tx_log->da_tail    = (hdr->addr1[ETH_ALEN - 2] << 8) |
++				     (hdr->addr1[ETH_ALEN - 1]);
++	} else {
++		tx_log->bssid_tail = (hdr->addr3[ETH_ALEN - 2] << 8) |
++				     (hdr->addr3[ETH_ALEN - 1]);
++		tx_log->sa_tail	   = (hdr->addr2[ETH_ALEN - 2] << 8) |
++				     (hdr->addr2[ETH_ALEN - 1]);
++		tx_log->da_tail    = (hdr->addr1[ETH_ALEN - 2] << 8) |
++				     (hdr->addr1[ETH_ALEN - 1]);
++	}
++
++	ath9k_hw_get_descinfo(sc->sc_ah, &desc_info);
++
++	ds_words = (u32 *)(bf->bf_desc) + desc_info.txctl_offset;
++	for (i = 0; i < desc_info.txctl_numwords; i++)
++		tx_log->txdesc_ctl[i] = ds_words[i];
++}
++
++void ath_pktlog_txstatus(struct ath_softc *sc, void *ds)
++{
++	struct ath_pktlog_txstatus *tx_log;
++	struct ath_pktlog *pl_info;
++	struct ath_desc_info desc_info;
++	int i;
++	u32 *ds_words, flags = 0;
++
++	pl_info = &sc->pktlog.pktlog;
++
++	if ((pl_info->pktlog_filter & ATH_PKTLOG_TX) == 0 ||
++	    !sc->is_pkt_logging)
++		return;
++
++	flags |= (((sc->sc_ah->hw_version.macRev <<
++		  PHFLAGS_MACREV_SFT) & PHFLAGS_MACREV_MASK) |
++		  ((sc->sc_ah->hw_version.macVersion << PHFLAGS_MACVERSION_SFT)
++		  & PHFLAGS_MACVERSION_MASK));
++	tx_log = (struct ath_pktlog_txstatus *)ath_pktlog_getbuf(pl_info,
++			PKTLOG_TYPE_TXSTATUS, sizeof(*tx_log), flags);
++
++	memset(tx_log, 0, sizeof(*tx_log));
++
++	ath9k_hw_get_descinfo(sc->sc_ah, &desc_info);
++
++	ds_words = (u32 *)(ds) + desc_info.txstatus_offset;
++
++	for (i = 0; i < desc_info.txstatus_numwords; i++)
++		tx_log->txdesc_status[i] = ds_words[i];
++}
++
++void ath_pktlog_rx(struct ath_softc *sc, void *desc, struct sk_buff *skb)
++{
++	struct ath_pktlog_rx *rx_log;
++	struct ath_pktlog *pl_info;
++	struct ieee80211_hdr *hdr;
++	struct ath_desc_info desc_info;
++	int i;
++	u32 *ds_words, flags = 0;
++
++	pl_info = &sc->pktlog.pktlog;
++
++	if ((pl_info->pktlog_filter & ATH_PKTLOG_RX) == 0 ||
++	    !sc->is_pkt_logging)
++		return;
++
++	flags |= (((sc->sc_ah->hw_version.macRev <<
++		  PHFLAGS_MACREV_SFT) & PHFLAGS_MACREV_MASK) |
++		  ((sc->sc_ah->hw_version.macVersion <<
++		 PHFLAGS_MACVERSION_SFT) & PHFLAGS_MACVERSION_MASK));
++
++	rx_log = (struct ath_pktlog_rx *)ath_pktlog_getbuf(pl_info, PKTLOG_TYPE_RX,
++			sizeof(*rx_log), flags);
++
++	memset(rx_log, 0, sizeof(*rx_log));
++
++	if (skb->len > sizeof(struct ieee80211_hdr)) {
++		hdr = (struct ieee80211_hdr *) skb->data;
++		rx_log->framectrl = hdr->frame_control;
++		rx_log->seqctrl   = hdr->seq_ctrl;
++
++		if (ieee80211_has_tods(rx_log->framectrl)) {
++			rx_log->bssid_tail = (hdr->addr1[ETH_ALEN - 2] << 8) |
++					     (hdr->addr1[ETH_ALEN - 1]);
++			rx_log->sa_tail    = (hdr->addr2[ETH_ALEN - 2] << 8) |
++					     (hdr->addr2[ETH_ALEN - 1]);
++			rx_log->da_tail    = (hdr->addr3[ETH_ALEN - 2] << 8) |
++					     (hdr->addr3[ETH_ALEN - 1]);
++		} else if (ieee80211_has_fromds(rx_log->framectrl)) {
++			rx_log->bssid_tail = (hdr->addr2[ETH_ALEN - 2] << 8) |
++					     (hdr->addr2[ETH_ALEN - 1]);
++			rx_log->sa_tail    = (hdr->addr3[ETH_ALEN - 2] << 8) |
++					     (hdr->addr3[ETH_ALEN - 1]);
++			rx_log->da_tail    = (hdr->addr1[ETH_ALEN - 2] << 8) |
++					     (hdr->addr1[ETH_ALEN - 1]);
++		} else {
++			rx_log->bssid_tail = (hdr->addr3[ETH_ALEN - 2] << 8) |
++					     (hdr->addr3[ETH_ALEN - 1]);
++			rx_log->sa_tail    = (hdr->addr2[ETH_ALEN - 2] << 8) |
++					     (hdr->addr2[ETH_ALEN - 1]);
++			rx_log->da_tail    = (hdr->addr1[ETH_ALEN - 2] << 8) |
++					     (hdr->addr1[ETH_ALEN - 1]);
++		}
++	} else {
++		hdr = (struct ieee80211_hdr *) skb->data;
++
++		if (ieee80211_is_ctl(hdr->frame_control)) {
++			rx_log->framectrl = hdr->frame_control;
++			rx_log->da_tail = (hdr->addr1[ETH_ALEN - 2] << 8) |
++					     (hdr->addr1[ETH_ALEN - 1]);
++			if (skb->len < sizeof(struct ieee80211_rts)) {
++				rx_log->sa_tail = 0;
++			} else {
++				rx_log->sa_tail = (hdr->addr2[ETH_ALEN - 2]
++						  << 8) |
++						  (hdr->addr2[ETH_ALEN - 1]);
++			}
++		} else {
++			rx_log->framectrl = 0xFFFF;
++			rx_log->da_tail = 0;
++			rx_log->sa_tail = 0;
++		}
++
++		rx_log->seqctrl   = 0;
++		rx_log->bssid_tail = 0;
++	}
++
++	ath9k_hw_get_descinfo(sc->sc_ah, &desc_info);
++
++	ds_words = (u32 *)(desc) + desc_info.rxstatus_offset;
++
++	for (i = 0; i < desc_info.rxstatus_numwords; i++)
++		rx_log->rxdesc_status[i] = ds_words[i];
++}
++
++void ath9k_pktlog_rc(struct ath_softc *sc, struct ath_rate_priv *ath_rc_priv,
++		     int8_t ratecode, u8 rate, int8_t is_probing, u16 ac)
++{
++	struct ath_pktlog_rcfind *rcf_log;
++	struct ath_pktlog *pl_info;
++	u32 flags = 0;
++
++	pl_info = &sc->pktlog.pktlog;
++
++	if ((pl_info->pktlog_filter & ATH_PKTLOG_RCFIND) == 0 ||
++	    !sc->is_pkt_logging)
++		return;
++
++	flags |= (((sc->sc_ah->hw_version.macRev <<
++		 PHFLAGS_MACREV_SFT) & PHFLAGS_MACREV_MASK) |
++		 ((sc->sc_ah->hw_version.macVersion <<
++		 PHFLAGS_MACVERSION_SFT) & PHFLAGS_MACVERSION_MASK));
++	rcf_log = (struct ath_pktlog_rcfind *)ath_pktlog_getbuf(pl_info,
++		  PKTLOG_TYPE_RCFIND, sizeof(*rcf_log), flags);
++
++	rcf_log->rate = rate;
++	rcf_log->rateCode = ratecode;
++	rcf_log->rcProbeRate = is_probing ? ath_rc_priv->probe_rate : 0;
++	rcf_log->isProbing = is_probing;
++	rcf_log->ac = ac;
++	rcf_log->rcRateMax = ath_rc_priv->rate_max_phy;
++	rcf_log->rcRateTableSize = ath_rc_priv->rate_table_size;
++}
++
++void ath9k_pktlog_rcupdate(struct ath_softc *sc, struct ath_rate_priv *ath_rc_priv, u8 tx_rate,
++			   u8 rate_code, u8 xretries, u8 retries, int8_t rssi, u16 ac)
++{
++	struct ath_pktlog_rcupdate *rcu_log;
++	struct ath_pktlog *pl_info;
++	int i;
++	u32 flags = 0;
++
++	pl_info = &sc->pktlog.pktlog;
++
++	if ((pl_info->pktlog_filter & ATH_PKTLOG_RCUPDATE) == 0 ||
++	    !sc->is_pkt_logging)
++		return;
++
++	flags |= (((sc->sc_ah->hw_version.macRev <<
++		 PHFLAGS_MACREV_SFT) & PHFLAGS_MACREV_MASK) |
++		 ((sc->sc_ah->hw_version.macVersion <<
++		 PHFLAGS_MACVERSION_SFT) & PHFLAGS_MACVERSION_MASK));
++	rcu_log = (struct ath_pktlog_rcupdate *)ath_pktlog_getbuf(pl_info,
++						PKTLOG_TYPE_RCUPDATE,
++						sizeof(*rcu_log), flags);
++
++	memset(rcu_log, 0, sizeof(*rcu_log));
++
++	rcu_log->txRate = tx_rate;
++	rcu_log->rateCode = rate_code;
++	rcu_log->Xretries = xretries;
++	rcu_log->retries = retries;
++	rcu_log->rssiAck = rssi;
++	rcu_log->ac = ac;
++	rcu_log->rcProbeRate = ath_rc_priv->probe_rate;
++	rcu_log->rcRateMax = ath_rc_priv->rate_max_phy;
++
++	for (i = 0; i < RATE_TABLE_SIZE; i++) {
++		rcu_log->rcPer[i] = ath_rc_priv->per[i];
++	}
++}
++
++void ath9k_pktlog_txcomplete(struct ath_softc *sc, struct list_head *bf_head,
++			     struct ath_buf *bf, struct ath_buf *bf_last)
++{
++	struct log_tx ;
++	struct ath_buf *tbf;
++
++	list_for_each_entry(tbf, bf_head, list)
++		ath_pktlog_txctl(sc, tbf);
++
++	if (bf->bf_next == NULL && bf_last->bf_stale)
++		ath_pktlog_txctl(sc, bf_last);
++}
++
++void ath9k_pktlog_txctrl(struct ath_softc *sc, struct list_head *bf_head, struct ath_buf *lastbf)
++{
++	struct log_tx ;
++	struct ath_buf *tbf;
++
++	list_for_each_entry(tbf, bf_head, list)
++		ath_pktlog_txctl(sc, tbf);
++
++	/* log the last descriptor. */
++	ath_pktlog_txctl(sc, lastbf);
++}
++
++static void pktlog_init(struct ath_softc *sc)
++{
++	spin_lock_init(&sc->pktlog.pktlog.pktlog_lock);
++	sc->pktlog.pktlog.pktlog_buf_size = ATH_DEBUGFS_PKTLOG_SIZE_DEFAULT;
++	sc->pktlog.pktlog.pktlog_buf = NULL;
++	sc->pktlog.pktlog.pktlog_filter = 0;
++}
++
++int ath9k_init_pktlog(struct ath_softc *sc)
++{
++	sc->pktlog.debugfs_pktlog = debugfs_create_dir("pktlog",
++			sc->debug.debugfs_phy);
++	if (!sc->pktlog.debugfs_pktlog)
++		goto err;
++
++	sc->pktlog.pktlog_start = debugfs_create_file("pktlog_start",
++			S_IRUGO | S_IWUSR,
++			sc->pktlog.debugfs_pktlog,
++			sc, &fops_pktlog_start);
++	if (!sc->pktlog.pktlog_start)
++		goto err;
++
++	sc->pktlog.pktlog_size = debugfs_create_file("pktlog_size",
++			S_IRUGO | S_IWUSR,
++			sc->pktlog.debugfs_pktlog,
++			sc, &fops_pktlog_size);
++	if (!sc->pktlog.pktlog_size)
++		goto err;
++
++	sc->pktlog.pktlog_filter = debugfs_create_file("pktlog_filter",
++			S_IRUGO | S_IWUSR,
++			sc->pktlog.debugfs_pktlog,
++			sc, &fops_pktlog_filter);
++	if (!sc->pktlog.pktlog_filter)
++		goto err;
++
++	sc->pktlog.pktlog_dump = debugfs_create_file("pktlog_dump",
++			S_IRUGO,
++			sc->pktlog.debugfs_pktlog,
++			sc, &fops_pktlog_dump);
++	if (!sc->pktlog.pktlog_dump)
++		goto err;
++
++	pktlog_init(sc);
++
++	return 0;
++
++err:
++	return -ENOMEM;
++}
++
++void ath9k_deinit_pktlog(struct ath_softc *sc)
++{
++	struct ath_pktlog *pktlog = &sc->pktlog.pktlog;
++
++	if (pktlog->pktlog_buf != NULL)
++		ath_pktlog_release(pktlog);
++
++	debugfs_remove(sc->pktlog.pktlog_start);
++	debugfs_remove(sc->pktlog.pktlog_size);
++	debugfs_remove(sc->pktlog.pktlog_filter);
++	debugfs_remove(sc->pktlog.pktlog_dump);
++	debugfs_remove(sc->pktlog.debugfs_pktlog);
++}
+--- /dev/null
++++ b/drivers/net/wireless/ath/ath9k/pktlog.h
+@@ -0,0 +1,242 @@
++#ifndef PKTLOG_H
++#define PKTLOG_H
++
++#ifdef CONFIG_ATH9K_PKTLOG
++#define CUR_PKTLOG_VER          10010  /* Packet log version */
++#define PKTLOG_MAGIC_NUM        7735225
++#define ATH_PKTLOG_TX		0x000000001
++#define ATH_PKTLOG_RX		0x000000002
++#define ATH_PKTLOG_RCFIND	0x000000004
++#define ATH_PKTLOG_RCUPDATE	0x000000008
++
++#define ATH_DEBUGFS_PKTLOG_SIZE_DEFAULT (1024 * 1024)
++#define ATH_PKTLOG_FILTER_DEFAULT (ATH_PKTLOG_TX | ATH_PKTLOG_RX |	\
++		ATH_PKTLOG_RCFIND | ATH_PKTLOG_RCUPDATE)
++
++#define PHFLAGS_MACVERSION_MASK 0x00ff0000
++#define PHFLAGS_MACVERSION_SFT  16
++#define PHFLAGS_MACREV_MASK 0xff0  /* MAC revision */
++#define PHFLAGS_MACREV_SFT  4
++
++struct ath_pktlog_hdr {
++	u32 flags;
++	u16 log_type; /* Type of log information foll this header */
++	int16_t size; /* Size of variable length log information in bytes */
++	u32 timestamp;
++}  __packed;
++
++/* Types of packet log events */
++#define PKTLOG_TYPE_TXCTL    0
++#define PKTLOG_TYPE_TXSTATUS 1
++#define PKTLOG_TYPE_RX       2
++#define PKTLOG_TYPE_RCFIND   3
++#define PKTLOG_TYPE_RCUPDATE 4
++
++#define PKTLOG_MAX_TXCTL_WORDS 12
++#define PKTLOG_MAX_TXSTATUS_WORDS 10
++#define PKTLOG_MAX_PROTO_WORDS  16
++
++struct ath_pktlog_txctl {
++	__le16 framectrl;       /* frame control field from header */
++	__le16 seqctrl;         /* frame control field from header */
++	u16 bssid_tail;      /* last two octets of bssid */
++	u16 sa_tail;         /* last two octets of SA */
++	u16 da_tail;         /* last two octets of DA */
++	u16 resvd;
++	u32 txdesc_ctl[PKTLOG_MAX_TXCTL_WORDS];     /* Tx descriptor words */
++	unsigned long proto_hdr;   /* protocol header (variable length!) */
++	int32_t misc[0]; /* Can be used for HT specific or other misc info */
++}  __packed;
++
++struct ath_pktlog_txstatus {
++	/* Tx descriptor status words */
++	u32 txdesc_status[PKTLOG_MAX_TXSTATUS_WORDS];
++	int32_t misc[0]; /* Can be used for HT specific or other misc info */
++}  __packed;
++
++#define PKTLOG_MAX_RXSTATUS_WORDS 11
++
++struct ath_pktlog_rx {
++	u16 framectrl;       /* frame control field from header */
++	u16 seqctrl;         /* sequence control field */
++	u16 bssid_tail;      /* last two octets of bssid */
++	u16 sa_tail;         /* last two octets of SA */
++	u16 da_tail;         /* last two octets of DA */
++	u16 resvd;
++	u32 rxdesc_status[PKTLOG_MAX_RXSTATUS_WORDS];  /* Rx descriptor words */
++	unsigned long proto_hdr;   /* protocol header (variable length!) */
++	int32_t misc[0];    /* Can be used for HT specific or other misc info */
++}  __packed;
++
++struct ath_pktlog_rcfind {
++	u8 rate;
++	u8 rateCode;
++	s8 rcRssiLast;
++	s8 rcRssiLastPrev;
++	s8 rcRssiLastPrev2;
++	s8 rssiReduce;
++	u8 rcProbeRate;
++	s8 isProbing;
++	s8 primeInUse;
++	s8 currentPrimeState;
++	u8 rcRateTableSize;
++	u8 rcRateMax;
++	u8 ac;
++	int32_t misc[0]; /* Can be used for HT specific or other misc info */
++}  __packed;
++
++struct ath_pktlog_rcupdate {
++	u8 txRate;
++	u8 rateCode;
++	s8 rssiAck;
++	u8 Xretries;
++	u8 retries;
++	s8 rcRssiLast;
++	s8 rcRssiLastLkup;
++	s8 rcRssiLastPrev;
++	s8 rcRssiLastPrev2;
++	u8 rcProbeRate;
++	u8 rcRateMax;
++	s8 useTurboPrime;
++	s8 currentBoostState;
++	u8 rcHwMaxRetryRate;
++	u8 ac;
++	u8 resvd[2];
++	s8 rcRssiThres[RATE_TABLE_SIZE];
++	u8 rcPer[RATE_TABLE_SIZE];
++	u8 resv2[RATE_TABLE_SIZE + 5];
++	int32_t misc[0]; /* Can be used for HT specific or other misc info */
++};
++
++#define TXCTL_OFFSET(ah)      (AR_SREV_9300_20_OR_LATER(ah) ? 11 : 2)
++#define TXCTL_NUMWORDS(ah)    (AR_SREV_5416_20_OR_LATER(ah) ? 12 : 8)
++#define TXSTATUS_OFFSET(ah)   (AR_SREV_9300_20_OR_LATER(ah) ? 2 : 14)
++#define TXSTATUS_NUMWORDS(ah) (AR_SREV_9300_20_OR_LATER(ah) ? 7 : 10)
++
++#define RXCTL_OFFSET(ah)      (AR_SREV_9300_20_OR_LATER(ah) ? 0 : 3)
++#define RXCTL_NUMWORDS(ah)    (AR_SREV_9300_20_OR_LATER(ah) ? 0 : 1)
++#define RXSTATUS_OFFSET(ah)   (AR_SREV_9300_20_OR_LATER(ah) ? 1 : 4)
++#define RXSTATUS_NUMWORDS(ah) (AR_SREV_9300_20_OR_LATER(ah) ? 11 : 9)
++
++struct ath_desc_info {
++	u8 txctl_offset;
++	u8 txctl_numwords;
++	u8 txstatus_offset;
++	u8 txstatus_numwords;
++	u8 rxctl_offset;
++	u8 rxctl_numwords;
++	u8 rxstatus_offset;
++	u8 rxstatus_numwords;
++};
++
++#define PKTLOG_MOV_RD_IDX(_rd_offset, _log_buf, _log_size)  \
++	do { \
++		if ((_rd_offset + sizeof(struct ath_pktlog_hdr) + \
++		    ((struct ath_pktlog_hdr *)((_log_buf)->log_data + \
++			    (_rd_offset)))->size) <= _log_size) { \
++			_rd_offset = ((_rd_offset) + \
++					sizeof(struct ath_pktlog_hdr) + \
++					((struct ath_pktlog_hdr *) \
++					 ((_log_buf)->log_data + \
++					  (_rd_offset)))->size); \
++		} else { \
++			_rd_offset = ((struct ath_pktlog_hdr *) \
++					((_log_buf)->log_data +  \
++					 (_rd_offset)))->size;  \
++		} \
++		(_rd_offset) = (((_log_size) - (_rd_offset)) >= \
++				sizeof(struct ath_pktlog_hdr)) ? \
++		_rd_offset : 0; \
++	} while (0);
++
++struct ath_pktlog_bufhdr {
++	u32 magic_num;  /* Used by post processing scripts */
++	u32 version;    /* Set to CUR_PKTLOG_VER */
++};
++
++struct ath_pktlog_buf {
++	struct ath_pktlog_bufhdr bufhdr;
++	int32_t rd_offset;
++	int32_t wr_offset;
++	char log_data[0];
++};
++
++struct ath_pktlog {
++	struct ath_pktlog_buf *pktlog_buf;
++	u32 pktlog_filter;
++	u32 pktlog_buf_size;           /* Size of buffer in bytes */
++	spinlock_t pktlog_lock;
++};
++
++struct ath_pktlog_debugfs {
++	struct dentry *debugfs_pktlog;
++	struct dentry *pktlog_enable;
++	struct dentry *pktlog_start;
++	struct dentry *pktlog_filter;
++	struct dentry *pktlog_size;
++	struct dentry *pktlog_dump;
++	struct ath_pktlog pktlog;
++};
++
++void ath_pktlog_txctl(struct ath_softc *sc, struct ath_buf *bf);
++void ath_pktlog_txstatus(struct ath_softc *sc, void *ds);
++void ath_pktlog_rx(struct ath_softc *sc, void *ds, struct sk_buff *skb);
++void ath9k_pktlog_rc(struct ath_softc *sc, struct ath_rate_priv *ath_rc_priv,
++		int8_t ratecode, u8 rate, int8_t is_probing, u16 ac);
++void ath9k_pktlog_rcupdate(struct ath_softc *sc,
++			   struct ath_rate_priv *ath_rc_priv, u8 tx_rate,
++			   u8 rate_code, u8 xretries, u8 retries, int8_t rssi,
++			   u16 ac);
++void ath9k_pktlog_txcomplete(struct ath_softc *sc ,struct list_head *bf_head,
++			     struct ath_buf *bf, struct ath_buf *bf_last);
++void ath9k_pktlog_txctrl(struct ath_softc *sc, struct list_head *bf_head,
++			 struct ath_buf *lastbf);
++int ath9k_init_pktlog(struct ath_softc *sc);
++void ath9k_deinit_pktlog(struct ath_softc *sc);
++#else /* CONFIG_ATH9K_PKTLOG */
++static inline void ath_pktlog_txstatus(struct ath_softc *sc, void *ds)
++{
++}
++
++static inline void ath_pktlog_rx(struct ath_softc *sc, void *ds,
++				 struct sk_buff *skb)
++{
++}
++
++static inline void ath9k_pktlog_rc(struct ath_softc *sc,
++				   struct ath_rate_priv *ath_rc_priv,
++				   int8_t ratecode, u8 rate,
++				   int8_t is_probing, u16 ac)
++{
++}
++
++static inline void ath9k_pktlog_rcupdate(struct ath_softc *sc,
++					 struct ath_rate_priv *ath_rc_priv,
++					 u8 tx_rate, u8 rate_code,
++					 u8 xretries, u8 retries,
++					 int8_t rssi, u16 ac)
++{
++}
++
++static inline void ath9k_pktlog_txcomplete(struct ath_softc *sc,
++					   struct list_head *bf_head,
++					   struct ath_buf *bf,
++					   struct ath_buf *bf_last)
++{
++}
++
++static inline void ath9k_pktlog_txctrl(struct ath_softc *sc,
++				       struct list_head *bf_head,
++				       struct ath_buf *lastbf)
++{
++}
++static inline int ath9k_init_pktlog(struct ath_softc *sc)
++{
++	return 0;
++}
++static inline void ath9k_deinit_pktlog(struct ath_softc *sc)
++{
++}
++#endif /* CONFIG_ATH9K_PKTLOG */
++
++#endif
+--- a/drivers/net/wireless/ath/ath9k/rc.c
++++ b/drivers/net/wireless/ath/ath9k/rc.c
+@@ -580,7 +580,7 @@ static u8 ath_rc_setvalid_htrates(struct
+ static u8 ath_rc_get_highest_rix(struct ath_softc *sc,
+ 			         struct ath_rate_priv *ath_rc_priv,
+ 				 const struct ath_rate_table *rate_table,
+-				 int *is_probing)
++				 int *is_probing, u16 ac)
+ {
+ 	u32 best_thruput, this_thruput, now_msec;
+ 	u8 rate, next_rate, best_rate, maxindex, minindex;
+@@ -671,6 +671,8 @@ static u8 ath_rc_get_highest_rix(struct
+ 
+ 	rate = ath_rc_priv->valid_rate_index[0];
+ 
++      ath9k_pktlog_rc(sc, ath_rc_priv,  rate_table->info[rate].ratecode,
++		      rate, *is_probing, ac);
+ 	return rate;
+ }
+ 
+@@ -762,7 +764,7 @@ static void ath_get_rate(void *priv, str
+ 	try_per_rate = 4;
+ 
+ 	rate_table = ath_rc_priv->rate_table;
+-	rix = ath_rc_get_highest_rix(sc, ath_rc_priv, rate_table, &is_probe);
++	rix = ath_rc_get_highest_rix(sc, ath_rc_priv, rate_table, &is_probe, skb_get_queue_mapping(skb));
+ 
+ 	/*
+ 	 * If we're in HT mode and both us and our peer supports LDPC.
+@@ -1012,7 +1014,8 @@ static void ath_debug_stat_retries(struc
+ static void ath_rc_update_ht(struct ath_softc *sc,
+ 			     struct ath_rate_priv *ath_rc_priv,
+ 			     struct ieee80211_tx_info *tx_info,
+-			     int tx_rate, int xretries, int retries)
++			     int tx_rate, int xretries, int retries,
++			     u16 ac)
+ {
+ 	u32 now_msec = jiffies_to_msecs(jiffies);
+ 	int rate;
+@@ -1081,6 +1084,9 @@ static void ath_rc_update_ht(struct ath_
+ 	ath_debug_stat_retries(ath_rc_priv, tx_rate, xretries, retries,
+ 			       ath_rc_priv->per[tx_rate]);
+ 
++	ath9k_pktlog_rcupdate(sc, ath_rc_priv, tx_rate,
++			rate_table->info[tx_rate].ratecode,
++			xretries, retries, tx_info->status.ack_signal, ac);
+ }
+ 
+ static int ath_rc_get_rateindex(const struct ath_rate_table *rate_table,
+@@ -1113,7 +1119,8 @@ static int ath_rc_get_rateindex(const st
+ static void ath_rc_tx_status(struct ath_softc *sc,
+ 			     struct ath_rate_priv *ath_rc_priv,
+ 			     struct ieee80211_tx_info *tx_info,
+-			     int final_ts_idx, int xretries, int long_retry)
++			     int final_ts_idx, int xretries, int long_retry,
++			     u16 ac)
+ {
+ 	const struct ath_rate_table *rate_table;
+ 	struct ieee80211_tx_rate *rates = tx_info->status.rates;
+@@ -1142,7 +1149,7 @@ static void ath_rc_tx_status(struct ath_
+ 				rix = ath_rc_get_rateindex(rate_table, &rates[i]);
+ 				ath_rc_update_ht(sc, ath_rc_priv, tx_info,
+ 						rix, xretries ? 1 : 2,
+-						rates[i].count);
++						rates[i].count, ac);
+ 			}
+ 		}
+ 	} else {
+@@ -1164,7 +1171,7 @@ static void ath_rc_tx_status(struct ath_
+ 		return;
+ 
+ 	rix = ath_rc_get_rateindex(rate_table, &rates[i]);
+-	ath_rc_update_ht(sc, ath_rc_priv, tx_info, rix, xretries, long_retry);
++	ath_rc_update_ht(sc, ath_rc_priv, tx_info, rix, xretries, long_retry, ac);
+ }
+ 
+ static const
+@@ -1358,7 +1365,7 @@ static void ath_tx_status(void *priv, st
+ 		tx_status = 1;
+ 
+ 	ath_rc_tx_status(sc, ath_rc_priv, tx_info, final_ts_idx, tx_status,
+-			 long_retry);
++			 long_retry, skb_get_queue_mapping(skb));
+ 
+ 	/* Check if aggregation has to be enabled for this tid */
+ 	if (conf_is_ht(&sc->hw->conf) &&
+--- a/drivers/net/wireless/ath/ath9k/recv.c
++++ b/drivers/net/wireless/ath/ath9k/recv.c
+@@ -1577,6 +1577,7 @@ int ath_rx_tasklet(struct ath_softc *sc,
+ 	struct ieee80211_rx_status *rxs;
+ 	struct ath_hw *ah = sc->sc_ah;
+ 	struct ath_common *common = ath9k_hw_common(ah);
++	u32 *rx_desc = NULL;
+ 	/*
+ 	 * The hw can technically differ from common->hw when using ath9k
+ 	 * virtual wiphy so to account for that we iterate over the active
+@@ -1676,13 +1677,24 @@ int ath_rx_tasklet(struct ath_softc *sc,
+ 				 dma_type);
+ 
+ 		skb_put(skb, rs.rs_datalen + ah->caps.rx_status_len);
+-		if (ah->caps.rx_status_len)
++		if (ah->caps.rx_status_len) {
++			rx_desc = kzalloc(ah->caps.rx_status_len, GFP_ATOMIC);
++			if (rx_desc == NULL)
++				BUG_ON(1);
++			memcpy(rx_desc, skb->data, ah->caps.rx_status_len);
+ 			skb_pull(skb, ah->caps.rx_status_len);
++}
+ 
+ 		if (!rs.rs_more)
+ 			ath9k_rx_skb_postprocess(common, hdr_skb, &rs,
+ 						 rxs, decrypt_error);
+ 
++		if (rx_desc) {
++			ath_pktlog_rx(sc, (void *) rx_desc, skb);
++			kfree(rx_desc);
++		} else
++			ath_pktlog_rx(sc, bf->bf_desc, skb);
++
+ 		/* We will now give hardware our shiny new allocated skb */
+ 		bf->bf_mpdu = requeue_skb;
+ 		bf->bf_buf_addr = dma_map_single(sc->dev, requeue_skb->data,
+--- a/drivers/net/wireless/ath/ath9k/xmit.c
++++ b/drivers/net/wireless/ath/ath9k/xmit.c
+@@ -475,6 +475,8 @@ static void ath_tx_complete_aggr(struct
+ 			list_move_tail(&bf->list, &bf_head);
+ 		}
+ 
++		ath9k_pktlog_txcomplete(sc, &bf_head, bf, bf_last);
++
+ 		if (!txpending || (tid->state & AGGR_CLEANUP)) {
+ 			/*
+ 			 * complete the acked-ones/xretried ones; update
+@@ -2043,7 +2045,7 @@ static void ath_tx_processq(struct ath_s
+ 		ds = lastbf->bf_desc;
+ 
+ 		memset(&ts, 0, sizeof(ts));
+-		status = ath9k_hw_txprocdesc(ah, ds, &ts);
++		status = ath9k_hw_txprocdesc(ah, ds, &ts, NULL);
+ 		if (status == -EINPROGRESS) {
+ 			spin_unlock_bh(&txq->axq_lock);
+ 			break;
+@@ -2085,11 +2087,15 @@ static void ath_tx_processq(struct ath_s
+ 			ath_tx_rc_status(sc, bf, &ts, 1, txok ? 0 : 1, txok, true);
+ 		}
+ 
+-		if (bf_isampdu(bf))
++		if (bf_isampdu(bf)) {
+ 			ath_tx_complete_aggr(sc, txq, bf, &bf_head, &ts, txok,
+ 					     true);
+-		else
++		} else {
++			ath9k_pktlog_txctrl(sc, &bf_head, lastbf);
+ 			ath_tx_complete_buf(sc, bf, txq, &bf_head, &ts, txok, 0);
++		}
++
++		ath_pktlog_txstatus(sc, lastbf->bf_desc);
+ 
+ 		spin_lock_bh(&txq->axq_lock);
+ 
+@@ -2210,9 +2216,11 @@ void ath_tx_edma_tasklet(struct ath_soft
+ 	struct list_head bf_head;
+ 	int status;
+ 	int txok;
++	u32 txs_desc[9];
+ 
+ 	for (;;) {
+-		status = ath9k_hw_txprocdesc(ah, NULL, (void *)&txs);
++		status = ath9k_hw_txprocdesc(ah, NULL, (void *)&txs,
++					     (void *) txs_desc);
+ 		if (status == -EINPROGRESS)
+ 			break;
+ 		if (status == -EIO) {
+@@ -2258,9 +2266,13 @@ void ath_tx_edma_tasklet(struct ath_soft
+ 		if (bf_isampdu(bf))
+ 			ath_tx_complete_aggr(sc, txq, bf, &bf_head, &txs,
+ 					     txok, true);
+-		else
++		else {
++			ath9k_pktlog_txctrl(sc, &bf_head, lastbf);
+ 			ath_tx_complete_buf(sc, bf, txq, &bf_head,
+ 					    &txs, txok, 0);
++		}
++
++		ath_pktlog_txstatus(sc, txs_desc);
+ 
+ 		spin_lock_bh(&txq->axq_lock);
+ 

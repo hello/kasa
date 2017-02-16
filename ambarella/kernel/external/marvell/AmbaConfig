@@ -1,0 +1,68 @@
+##
+## kernel/external/marvell/AmbaConfig
+##
+## History:
+##    2008/01/16 - [Anthony Ginger] Create
+##
+## Copyright (C) 2004-2008, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+############# Marvell SD8688 ############
+
+config BUILD_MARVELL_WIFI_BT_SD8688
+depends on BUILD_WIFI_BLUETOOTH_MODULES
+	bool "Marvell WiFi-Bluetooth SD8688"
+	default n
+	help
+		Select the Marvell WiFi-Bluetooth SD8688 driver.
+
+menu "SD8688 Configuration"
+depends on BUILD_MARVELL_WIFI_BT_SD8688
+
+config BUILD_MARVELL_WIFI_BT_SD8688_BT
+	bool "SD8688 bluetooth driver"
+	default n
+	help
+		Select SD8688 bluetooth driver.
+		Verified on Kernel 2.6.38
+
+config BUILD_MARVELL_WIFI_BT_SD8688_WLAN
+	bool "SD8688 wifi driver"
+	default n
+	help
+		Select SD8688 wifi driver.
+		Verified on Kernel 2.6.38
+
+endmenu
+
+############# Marvell SD8787 ############
+
+config BUILD_MARVELL_WIFI_BT_SD8787
+depends on BUILD_WIFI_BLUETOOTH_MODULES
+	bool "Marvell WiFi-Bluetooth SD8787"
+	default n
+	help
+		Select the Marvell WiFi-Bluetooth SD8787 driver.
+
+menu "SD8787 Configuration"
+depends on BUILD_MARVELL_WIFI_BT_SD8787
+
+config BUILD_MARVELL_WIFI_BT_SD8787_BT
+	bool "SD8787 bluetooth driver"
+	default n
+	help
+		Select SD8787 bluetooth driver.
+		Verified on Kernel 2.6.38
+
+config BUILD_MARVELL_WIFI_BT_SD8787_WLAN
+	bool "SD8787 wifi driver"
+	default n
+	help
+		Select SD8787 wifi driver.
+		Verified on Kernel 2.6.38
+endmenu

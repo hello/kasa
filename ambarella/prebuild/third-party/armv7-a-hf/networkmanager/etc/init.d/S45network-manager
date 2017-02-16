@@ -1,0 +1,49 @@
+#!/bin/sh
+
+prefix=/usr
+exec_prefix=/usr
+sbindir=${exec_prefix}/sbin
+
+NETWORKMANAGER_BIN=${sbindir}/NetworkManager
+IW=${sbindir}/iw
+WMICONFIG=${sbindir}/wmiconfig
+DEV=wlan0
+
+[ -x $NETWORKMANAGER_BIN ] || exit 0
+[ -d /var/run/NetworkManager ] || /bin/mkdir -p /var/run/NetworkManager
+[ -d /var/lib/NetworkManager ] || /bin/mkdir -p /var/lib/NetworkManager
+
+case "$1" in
+	start)
+		echo -n "Starting NetworkManager ... "
+		PID=`pidof -o %PPID NetworkManager`
+		if [ -z "$PID" ]; then
+			$NETWORKMANAGER_BIN > /dev/null 2>&1
+		fi
+		PID=`pidof -o %PPID NetworkManager`
+		if [ -z "$PID" -o $? -gt 0 ]; then
+			echo "failed!"
+		else
+			echo "done."
+		fi
+		;;
+	stop)
+		echo -n "Stopping NetworkManager ... "
+		PID=`pidof -o %PPID NetworkManager`
+		[ ! -z "$PID" ] && kill $PID || kill -9 $PID &> /dev/null
+		if [ $? -gt 0 ]; then
+			echo "failed!"
+		else
+			echo "done."
+		fi
+		;;
+	restart)
+		$0 stop
+		sleep 1
+		$0 start
+		;;
+	*)
+		echo "usage: $0 {start|stop|restart|sleep|wake}"
+		;;
+esac
+exit 0

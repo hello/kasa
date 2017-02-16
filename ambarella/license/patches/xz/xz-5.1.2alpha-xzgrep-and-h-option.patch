@@ -1,0 +1,23 @@
+commit 5019413a055ce29e660dbbf15e02443cb5a26c59
+Author:     Jeff Bastian <jbastian@redhat.com>
+AuthorDate: Wed Apr 3 13:59:17 2013 +0200
+Commit:     Lasse Collin <lasse.collin@tukaani.org>
+CommitDate: Fri Apr 5 19:14:50 2013 +0300
+
+    xzgrep: make the '-h' option to be --no-filename equivalent
+    
+    * src/scripts/xzgrep.in: Accept the '-h' option in argument parsing.
+
+diff --git a/src/scripts/xzgrep.in b/src/scripts/xzgrep.in
+index d8e9bb5..951266b 100644
+--- a/src/scripts/xzgrep.in
++++ b/src/scripts/xzgrep.in
+@@ -109,7 +109,7 @@ while test $# -ne 0; do
+     files_with_matches=1;;
+   (-L | --files-witho*)
+     files_without_matches=1;;
+-  (--no-f*)
++  (-h | --no-f*)
+     no_filename=1;;
+   (-V | --v | --ve | --ver | --vers | --versi | --versio | --version)
+     echo "$version" || exit 2

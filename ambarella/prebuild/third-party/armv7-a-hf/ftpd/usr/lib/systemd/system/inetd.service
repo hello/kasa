@@ -1,0 +1,13 @@
+[Unit]
+Description=Busybox inetd
+ConditionFileIsExecutable=/bin/busybox
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/inetd -f
+TimeoutSec=0
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

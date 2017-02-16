@@ -1,0 +1,11 @@
+diff -Naur procps-ng-3.3.9.orig/proc/readproc.c procps-ng-3.3.9/proc/readproc.c
+--- procps-ng-3.3.9.orig/proc/readproc.c	2013-11-25 10:57:32.000000000 +0100
++++ procps-ng-3.3.9/proc/readproc.c	2014-01-24 16:20:02.222000000 +0100
+@@ -686,6 +686,7 @@
+     close(fd);
+     if(n){
+         int i=n;
++        while(i && dst[i-1]=='\0') --i; // skip trailing zeros
+         while(i--)
+             if(dst[i]=='\n' || dst[i]=='\0') dst[i]=sep;
+         if(dst[n-1]==' ') dst[n-1]='\0';

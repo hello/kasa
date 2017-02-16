@@ -1,0 +1,335 @@
+diff -cBr mmc_org/core/core.c mmc/core/core.c
+*** mmc_org/core/core.c	2009-03-30 03:54:31.000000000 -0700
+--- mmc/core/core.c	2009-03-30 03:55:09.000000000 -0700
+***************
+*** 486,492 ****
+  	 * This delay should be sufficient to allow the power supply
+  	 * to reach the minimum voltage.
+  	 */
+! 	mmc_delay(2);
+  
+  	host->ios.clock = host->f_min;
+  	host->ios.power_mode = MMC_POWER_ON;
+--- 486,492 ----
+  	 * This delay should be sufficient to allow the power supply
+  	 * to reach the minimum voltage.
+  	 */
+! 	mmc_delay(200);
+  
+  	host->ios.clock = host->f_min;
+  	host->ios.power_mode = MMC_POWER_ON;
+diff -cBr mmc_org/host/sdhci.c mmc/host/sdhci.c
+*** mmc_org/host/sdhci.c	2009-03-30 03:54:34.000000000 -0700
+--- mmc/host/sdhci.c	2009-03-30 04:27:23.000000000 -0700
+***************
+*** 57,62 ****
+--- 57,68 ----
+  #define SDHCI_QUIRK_32BIT_DMA_SIZE			(1<<7)
+  /* Controller needs to be reset after each request to stay stable */
+  #define SDHCI_QUIRK_RESET_AFTER_REQUEST			(1<<8)
++ /* Controller only catchs CIRQ when in 1-bit bus mode  */
++ #define SDHCI_QUIRK_1BIT_INTERRUPT			(1<<9)
++ 
++ //should be added to linux/pci.h
++ #define PCI_VENDOR_ID_TOKYO_ELECTRON 	0x1679
++ #define PCI_DEVICE_ID_TOKYO_ELECTRON_ELLEN_I  0x3000
+  
+  static const struct pci_device_id pci_ids[] __devinitdata = {
+  	{
+***************
+*** 108,115 ****
+  		.device         = PCI_DEVICE_ID_ENE_CB714_SD,
+  		.subvendor      = PCI_ANY_ID,
+  		.subdevice      = PCI_ANY_ID,
+! 		.driver_data    = SDHCI_QUIRK_SINGLE_POWER_WRITE |
+! 				  SDHCI_QUIRK_RESET_CMD_DATA_ON_IOS,
+  	},
+  
+  	{
+--- 114,123 ----
+  		.device         = PCI_DEVICE_ID_ENE_CB714_SD,
+  		.subvendor      = PCI_ANY_ID,
+  		.subdevice      = PCI_ANY_ID,
+! 		.driver_data    = SDHCI_QUIRK_BROKEN_DMA |
+! 				  SDHCI_QUIRK_SINGLE_POWER_WRITE |
+! 				  SDHCI_QUIRK_RESET_CMD_DATA_ON_IOS |
+! 				  SDHCI_QUIRK_1BIT_INTERRUPT,
+  	},
+  
+  	{
+***************
+*** 130,135 ****
+--- 138,150 ----
+  				  SDHCI_QUIRK_32BIT_DMA_SIZE |
+  				  SDHCI_QUIRK_RESET_AFTER_REQUEST,
+  	},
++ 	{
++ 		.vendor         = PCI_VENDOR_ID_TOKYO_ELECTRON,
++ 		.device         = PCI_DEVICE_ID_TOKYO_ELECTRON_ELLEN_I,
++ 		.subvendor      = PCI_ANY_ID,
++ 		.subdevice      = PCI_ANY_ID,
++ 		.driver_data    = SDHCI_QUIRK_BROKEN_DMA,
++ 	},
+  
+  	{	/* Generic SD host controller */
+  		PCI_DEVICE_CLASS((PCI_CLASS_SYSTEM_SDHCI << 8), 0xFFFF00)
+***************
+*** 256,261 ****
+--- 271,333 ----
+  	writeb(ctrl, host->ioaddr + SDHCI_HOST_CONTROL);
+  }
+  
++ /* handle bus case where controller cannot detect CIRQ reliably when in 4-bit mode */
++ static void sdhci_idle_bus_adjust(struct sdhci_host *host, u8 idle)
++ {
++ 	u8 ctrl;
++ 	if ((host->flags & SDHCI_IN_4BIT_MODE) && (host->chip->quirks & SDHCI_QUIRK_1BIT_INTERRUPT)){
++ 		/* while bus is idle, leave it in 1-bit mode at the controller level */
++ 		ctrl = readb(host->ioaddr + SDHCI_HOST_CONTROL);
++ 		ctrl &= ~SDHCI_CTRL_4BITBUS; 
++ 		if (!idle) {
++ 			ctrl |= SDHCI_CTRL_4BITBUS; 
++ 		} 
++ 		writeb(ctrl, host->ioaddr + SDHCI_HOST_CONTROL);
++ 	}
++ }
++ 
++ /* PLX 9030 control registers */
++ #define INTCSR 			0x4C
++ #define INTCSR_LINTi1ENABLE	(1 << 0)
++ #define INTCSR_LINTi1STATUS	(1 << 2)
++ #define INTCSR_LINTi2ENABLE	(1 << 3)
++ #define INTCSR_LINTi2STATUS	(1 << 5)
++ #define INTCSR_PCIINTENABLE	(1 << 6)
++ 
++ /* handle the non-standard PCI issues of the Tokyo Electron Ellen1 board */  
++ static int teellen1_init(struct pci_dev *pdev)
++ {
++ 	int ret;
++ 	resource_size_t addr;
++ 	void __iomem *	ioaddr;
++ 	int temp;
++ 
++             /* map the slots control register BAR */
++ 	ret = pci_request_region(pdev, 0, "TE_ELLEN1");
++ 	if (ret) {
++ 		dev_err(&pdev->dev, "cannot request region\n");
++ 		return ret;
++ 	}
++ 
++ 	addr = pci_resource_start(pdev, 0);
++ 	ioaddr = ioremap_nocache(addr, pci_resource_len(pdev, 0));
++ 	if (!ioaddr) {
++ 		dev_err(&pdev->dev, "failed to remap registers\n");
++ 		goto release;
++ 	}
++ 
++ 	temp = readw(ioaddr + INTCSR);
++         temp |= INTCSR_LINTi1ENABLE | INTCSR_LINTi2ENABLE | INTCSR_PCIINTENABLE;
++         
++             /* enable local to PCI interrupts */  
++     	writew(temp, ioaddr + INTCSR);
++ 
++ release:
++ 	pci_release_region(pdev, 0);
++ 
++ 	return ret;
++ }
++ 
+  /*****************************************************************************\
+   *                                                                           *
+   * Core functions                                                            *
+***************
+*** 572,579 ****
+  
+  	WARN_ON(host->cmd);
+  
+- 	/* Wait max 10 ms */
+- 	timeout = 10;
+  
+  	mask = SDHCI_CMD_INHIBIT;
+  	if ((cmd->data != NULL) || (cmd->flags & MMC_RSP_BUSY))
+--- 644,649 ----
+***************
+*** 584,589 ****
+--- 654,661 ----
+  	if (host->mrq->data && (cmd == host->mrq->data->stop))
+  		mask &= ~SDHCI_DATA_INHIBIT;
+  
++ 	/* Wait max 10 ms */
++ 	timeout = (10*256) + 255;
+  	while (readl(host->ioaddr + SDHCI_PRESENT_STATE) & mask) {
+  		if (timeout == 0) {
+  			printk(KERN_ERR "%s: Controller never released "
+***************
+*** 594,604 ****
+  			return;
+  		}
+  		timeout--;
+! 		mdelay(1);
+  	}
+  
+  	mod_timer(&host->timer, jiffies + 10 * HZ);
+! 
+  	host->cmd = cmd;
+  
+  	sdhci_prepare_data(host, cmd->data);
+--- 666,679 ----
+  			return;
+  		}
+  		timeout--;
+!         if (!(timeout & 0xFF)) 
+!     		mdelay(1);
+  	}
+  
+  	mod_timer(&host->timer, jiffies + 10 * HZ);
+! 	
+! 	sdhci_idle_bus_adjust(host, 0);
+! 	
+  	host->cmd = cmd;
+  
+  	sdhci_prepare_data(host, cmd->data);
+***************
+*** 633,638 ****
+--- 708,729 ----
+  
+  	writew(SDHCI_MAKE_CMD(cmd->opcode, flags),
+  		host->ioaddr + SDHCI_COMMAND);
++ 
++ 	mask = SDHCI_CMD_INHIBIT;
++ 	timeout = (10*256) + 255;
++ 	while (readl(host->ioaddr + SDHCI_PRESENT_STATE) & mask) {
++ 		if (timeout == 0) {
++ 			printk(KERN_ERR "%s: Controller never released(2) "
++ 				"inhibit bit(s).\n", mmc_hostname(host->mmc));
++ 			sdhci_dumpregs(host);
++ 			cmd->error = -EIO;
++ 			tasklet_schedule(&host->finish_tasklet);
++ 			return;
++ 		}
++ 		timeout--;
++         if (!(timeout & 0xFF)) 
++ 		    mdelay(1);
++ 	}
+  }
+  
+  static void sdhci_finish_command(struct sdhci_host *host)
+***************
+*** 815,824 ****
+  
+  	ctrl = readb(host->ioaddr + SDHCI_HOST_CONTROL);
+  
+! 	if (ios->bus_width == MMC_BUS_WIDTH_4)
+  		ctrl |= SDHCI_CTRL_4BITBUS;
+! 	else
+  		ctrl &= ~SDHCI_CTRL_4BITBUS;
+  
+  	if (ios->timing == MMC_TIMING_SD_HS)
+  		ctrl |= SDHCI_CTRL_HISPD;
+--- 906,918 ----
+  
+  	ctrl = readb(host->ioaddr + SDHCI_HOST_CONTROL);
+  
+! 	if (ios->bus_width == MMC_BUS_WIDTH_4) {
+  		ctrl |= SDHCI_CTRL_4BITBUS;
+! 		host->flags |= SDHCI_IN_4BIT_MODE;
+! 	} else {
+  		ctrl &= ~SDHCI_CTRL_4BITBUS;
++ 		host->flags &= ~SDHCI_IN_4BIT_MODE;
++ 	}
+  
+  	if (ios->timing == MMC_TIMING_SD_HS)
+  		ctrl |= SDHCI_CTRL_HISPD;
+***************
+*** 965,970 ****
+--- 1059,1066 ----
+  	host->cmd = NULL;
+  	host->data = NULL;
+  
++ 	sdhci_idle_bus_adjust(host, 1);
++ 
+  	sdhci_deactivate_led(host);
+  
+  	mmiowb();
+***************
+*** 1139,1146 ****
+  
+  	intmask &= ~SDHCI_INT_BUS_POWER;
+  
+! 	if (intmask & SDHCI_INT_CARD_INT)
+  		cardint = 1;
+  
+  	intmask &= ~SDHCI_INT_CARD_INT;
+  
+--- 1235,1245 ----
+  
+  	intmask &= ~SDHCI_INT_BUS_POWER;
+  
+!         if (intmask & SDHCI_INT_CARD_INT) {
+!             if (readl(host->ioaddr + SDHCI_INT_ENABLE) & SDHCI_INT_CARD_INT) {
+  		cardint = 1;
++             }
++         }
+  
+  	intmask &= ~SDHCI_INT_CARD_INT;
+  
+***************
+*** 1161,1169 ****
+  	/*
+  	 * We have to delay this as it calls back into the driver.
+  	 */
+! 	if (cardint)
+  		mmc_signal_sdio_irq(host->mmc);
+! 
+  	return result;
+  }
+  
+--- 1260,1268 ----
+  	/*
+  	 * We have to delay this as it calls back into the driver.
+  	 */
+! 	if (cardint) 
+  		mmc_signal_sdio_irq(host->mmc);
+! 	
+  	return result;
+  }
+  
+***************
+*** 1279,1286 ****
+  	ret = pci_read_config_byte(pdev, PCI_SLOT_INFO, &first_bar);
+  	if (ret)
+  		return ret;
+! 
+! 	first_bar &= PCI_SLOT_INFO_FIRST_BAR_MASK;
+  
+  	if (first_bar > 5) {
+  		printk(KERN_ERR DRIVER_NAME ": Invalid first BAR. Aborting.\n");
+--- 1378,1391 ----
+  	ret = pci_read_config_byte(pdev, PCI_SLOT_INFO, &first_bar);
+  	if (ret)
+  		return ret;
+! 	if ((pdev->vendor == PCI_VENDOR_ID_TOKYO_ELECTRON) &&
+! 	    (pdev->device == PCI_DEVICE_ID_TOKYO_ELECTRON_ELLEN_I)) {
+! 		/* ignore the PLX control BARs */
+! 		first_bar = 2;
+! 		teellen1_init(pdev);
+! 	} else {
+! 		first_bar &= PCI_SLOT_INFO_FIRST_BAR_MASK;
+! 	}
+  
+  	if (first_bar > 5) {
+  		printk(KERN_ERR DRIVER_NAME ": Invalid first BAR. Aborting.\n");
+diff -cBr mmc_org/host/sdhci.h mmc/host/sdhci.h
+*** mmc_org/host/sdhci.h	2009-03-30 03:54:34.000000000 -0700
+--- mmc/host/sdhci.h	2009-03-30 03:54:56.000000000 -0700
+***************
+*** 173,178 ****
+--- 173,179 ----
+  	int			flags;		/* Host attributes */
+  #define SDHCI_USE_DMA		(1<<0)		/* Host is DMA capable */
+  #define SDHCI_REQ_USE_DMA	(1<<1)		/* Use DMA for this req. */
++ #define SDHCI_IN_4BIT_MODE	(1<<2)		/* bus is in 4-bit mode */
+  
+  	unsigned int		max_clk;	/* Max possible freq (MHz) */
+  	unsigned int		timeout_clk;	/* Timeout freq (KHz) */
+

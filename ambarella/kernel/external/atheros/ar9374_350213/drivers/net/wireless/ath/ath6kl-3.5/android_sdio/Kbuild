@@ -1,0 +1,58 @@
+ifeq ($(BUILD_ATH6KL_VER_35), 1)
+obj-m += wlan.o
+
+wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/debug.o
+wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/bmi.o
+wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/cfg80211.o
+wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/cfg80211_btcoex.o
+wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/init.o
+wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/main.o
+wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/txrx.o
+wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/wmi.o
+wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/wmi_btcoex.o
+wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/testmode.o
+wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/rttm.o
+wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/diag.o
+wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/htcoex.o
+wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/ath_netlink.o
+wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/pm.o
+wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/p2p.o
+wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/ap.o
+
+wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/msm.o
+wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/htc.o
+wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/hif.o
+wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/sdio.o
+endif
+
+ifeq ($(HAVE_CFG80211), 1)
+
+obj-$(CONFIG_CFG80211) += cfg80211.o
+
+cfg80211-y += src/net/wireless/core.o src/net/wireless/sysfs.o src/net/wireless/radiotap.o src/net/wireless/util.o src/net/wireless/reg.o src/net/wireless/scan.o src/net/wireless/nl80211.o
+cfg80211-y += src/net/wireless/mlme.o src/net/wireless/ibss.o src/net/wireless/sme.o src/net/wireless/chan.o src/net/wireless/ethtool.o src/net/wireless/mesh.o
+cfg80211-$(CONFIG_CFG80211_DEBUGFS) += src/net/wireless/debugfs.o
+cfg80211-y += src/net/wireless/wext-compat.o src/net/wireless/wext-sme.o
+cfg80211-y += src/net/wireless/regdb.o
+
+$(obj)/src/net/wireless/regdb.c:  $(PWD)/$(src)/src/net/wireless/db.txt $(PWD)/$(src)/src/net/wireless/genregdb.awk
+	@$(AWK) -f $(PWD)/$(src)/src/net/wireless/genregdb.awk < $< > $@
+
+clean-files := src/net/wireless/regdb.c
+
+ccflags-y += -DCONFIG_ATH6KL_DEBUG
+ccflags-y += -DCONFIG_NL80211_TESTMODE
+ccflags-y += -DCONFIG_CFG80211_DEFAULT_PS
+ccflags-y += -DCONFIG_CFG80211_WEXT
+ccflags-y += -DCONFIG_CFG80211_INTERNAL_REGDB
+ccflags-y += -D__CHECK_ENDIAN__
+
+ccflags-y += -I../external/compat-wireless/include
+ccflags-y += -I../external/compat-wireless/net/wireless
+ccflags-y += -include ../../include/linux/ieee80211.h
+ccflags-y += -include ../../include/linux/nl80211.h
+ccflags-y += -include ../../include/net/cfg80211.h
+ccflags-y += -include ../../include/linux/compat-2.6.h
+ccflags-y += -include ../../$(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include/linux/version.h
+endif
+

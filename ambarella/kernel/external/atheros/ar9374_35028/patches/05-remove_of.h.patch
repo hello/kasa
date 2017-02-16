@@ -1,0 +1,15 @@
+--- ath6kl.ori/init.c	2012-09-05 13:49:14.000000000 +0800
++++ ath6kl/init.c	2012-09-06 11:20:46.000000000 +0800
+@@ -17,7 +17,9 @@
+ 
+ #include <linux/errno.h>
+ #include <linux/vmalloc.h>
+ #ifndef CE_OLD_KERNEL_SUPPORT_2_6_23
++#ifdef CONFIG_OF
+ #include <linux/of.h>
++#endif
+ #include <linux/interrupt.h>
+ #include <linux/mmc/sdio_func.h>
+ #endif
+ #include "core.h"
+

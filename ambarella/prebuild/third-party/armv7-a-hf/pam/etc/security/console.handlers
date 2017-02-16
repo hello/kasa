@@ -1,0 +1,17 @@
+# /etc/security/console.handlers
+#
+# This file is provided for configuration of handlers which will be 
+# executed when user obtains console lock and when he loses it.
+# Additionally it is used for a configuration of console device names.
+#
+# Format:
+# name consoledevs regex regex ...
+# binary lock|unlock flag flag ...
+# See man console.handlers
+#
+# Example:
+# console consoledevs tty[0-9][0-9]* vc/[0-9][0-9]* :[0-9]\.[0-9] :[0-9]
+# echo lock wait Locking console for user on tty
+# touch unlock wait /var/run/console-unlocked
+
+console consoledevs tty[0-9][0-9]* ttyS[0-9][0-9]* vc/[0-9][0-9]* :[0-9]+\.[0-9]+ :[0-9]+

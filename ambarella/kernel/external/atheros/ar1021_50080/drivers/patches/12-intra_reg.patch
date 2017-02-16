@@ -1,0 +1,20 @@
+--- ath6kl.orig/Kbuild	2013-03-20 16:26:30.000000000 +0800
++++ ath6kl/Kbuild	2013-03-20 16:27:03.000000000 +0800
+@@ -62,7 +62,7 @@
+ ath6kl_usb-y += diag.o
+ ath6kl_usb-y += htcoex.o
+ ath6kl_usb-y += ath_netlink.o
+-ath6kl_usb-$(CONFIG_QC_INTERNAL) += intra_reg.o
++ath6kl_usb-y += intra_reg.o
+ ath6kl_usb-y += pm.o
+ ath6kl_usb-y += p2p.o
+ ath6kl_usb-y += ap.o
+@@ -71,7 +71,7 @@
+ ath6kl_usb-$(CONFIG_ACL_SUPPORT) += acl_ioctl.o
+ ath6kl_usb-$(CONFIG_TX99_SUPPORT) += tx99_ioctl.o
+ 
+-ccflags-$(CONFIG_QC_INTERNAL) += -DCONFIG_QC_INTERNAL
++ccflags-y += -DCONFIG_QC_INTERNAL
+ ccflags-$(CONFIG_FPGA) += -DCONFIG_FPGA
+ ccflags-y += -D__CHECK_ENDIAN__
+ ccflags-y += -DCONFIG_BTCOEX_OLCA_3_5

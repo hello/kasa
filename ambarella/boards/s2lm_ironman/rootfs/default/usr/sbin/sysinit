@@ -1,0 +1,8 @@
+#!/bin/sh
+# set Ambarella specific kernel parameters
+# echo parameters > /proc/ambarella/performace
+
+echo host > /proc/ambarella/usbphy0
+
+exit 0
+

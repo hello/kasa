@@ -1,0 +1,16 @@
+--- drivers.orig/drivers.mak	2012-07-12 16:16:23.000000000 +0800
++++ drivers/drivers.mak	2012-07-12 17:16:27.000000000 +0800
+@@ -35,7 +35,12 @@
+   ifdef CONFIG_LIBNL_TINY
+     DRV_LIBS += -lnl-tiny
+   else
+-    DRV_LIBS += -lnl
++    ifdef BUILD_LIBNL
++      DRV_LIBS += ${INCLUDE_LIBNL11_LIB}
++      DRV_CFLAGS += -I${INCLUDE_LIBNL11_HEADER}
++    else
++      DRV_LIBS += -lnl
++    endif
+   endif
+ 
+   ifdef CONFIG_LIBNL20

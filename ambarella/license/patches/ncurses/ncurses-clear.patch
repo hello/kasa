@@ -1,0 +1,34 @@
+diff -up ncurses-5.9/man/clear.1.clear ncurses-5.9/man/clear.1
+--- ncurses-5.9/man/clear.1.clear	2010-12-04 19:36:44.000000000 +0100
++++ ncurses-5.9/man/clear.1	2013-01-30 12:33:06.140568071 +0100
+@@ -37,7 +37,10 @@
+ .SH DESCRIPTION
+ \fB@CLEAR@\fR clears your screen if this is possible.  It looks in the
+ environment for the terminal type and then in the \fBterminfo\fR database to
+-figure out how to clear the screen.
++figure out how to clear the screen.  Some terminals can clear also their
++scrollback buffer to prevent access to potentially sensitive data.  If the
++\fBterminfo\fR entry for the terminal type contains extended capability
++\fBE3\fR, \fB@CLEAR@\fR will use it to clear the scrollback buffer.
+ .PP
+ \fB@CLEAR@\fR ignores any command-line parameters that may be present.
+ .SH SEE ALSO
+diff -up ncurses-5.9/progs/clear.c.clear ncurses-5.9/progs/clear.c
+--- ncurses-5.9/progs/clear.c.clear	2007-10-14 00:16:02.000000000 +0200
++++ ncurses-5.9/progs/clear.c	2013-01-30 12:13:10.494509019 +0100
+@@ -52,7 +52,15 @@ main(
+ 	int argc GCC_UNUSED,
+ 	char *argv[]GCC_UNUSED)
+ {
++    char *E3;
++
+     setupterm((char *) 0, STDOUT_FILENO, (int *) 0);
++    
++    /* Clear the scrollback buffer if possible. */
++    E3 = tigetstr("E3");
++    if (E3 && E3 != CANCELLED_STRING)
++	tputs(E3, lines > 0 ? lines : 1, putch);
++
+     ExitProgram((tputs(clear_screen, lines > 0 ? lines : 1, putch) == ERR)
+ 		? EXIT_FAILURE
+ 		: EXIT_SUCCESS);

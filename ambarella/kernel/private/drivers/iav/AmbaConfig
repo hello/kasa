@@ -1,0 +1,123 @@
+##
+## kernel/private/drivers/iav/AmbaConfig
+##
+## History:
+##    2014/01/16 - [Jian Tang] Create
+##
+## Copyright (C) 2014-2018, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+menuconfig BUILD_AMBARELLA_IAV
+	depends on BUILD_AMBARELLA_PRIVATE_MODULES
+	bool "Build Ambarella private IAV module"
+	default n
+	help
+		Build Ambarella private IAV module for Linux.
+
+if BUILD_AMBARELLA_IAV
+
+menu "IAV memory options"
+
+config DSP_BSB_SIZE
+	hex "DSP Bit Stream Buffer Size"
+	range  0x0100000   0x3200000
+	default 0x0600000
+	help
+		BSB DRAM Start = DSP DRAM Start = IDSP_RAM_START
+		DSP BSB SIZE must be in the range of 1MB to 50MB, default is 6 MB(0x0600000).
+		6 MB buffer has been set up to support 20 Mbps (8M + 4M + 4M + 4M) for the four streams.
+		If the system only needs to support one stream 1080p30, then 1 MB of buffer is sufficient.
+
+config DSP_IAVRSVD_SIZE
+	hex "DSP Reserved Buffer Size for IAV Drivers"
+	range  0x0A00000  0x8000000
+	default 0x0A00000
+	help
+		DSP IAVRSVD DRAM Start = (DSP BSB DRAM Start + DSP_BSB_SIZE)
+		DSP IAVRSVD SIZE is the size of memory reserved for IAV drivers which included all below.
+		DSP IAVRSVD SIZE must be larger than DSP IMGRSVD SIZE.
+
+config IAV_MEM_USR_SIZE
+	hex "IAV Usr Buffer Size"
+	default 0x0000000
+	help
+		If this function is not used, set it to 0x0;
+		Or else, default is 8M, it's for 1080p, 1920 * 1080 * 2 * 2  = 8 MB(0x0800000).
+		1920 * 1080 * 2: bytes per pixel
+		2: 2 cycle buffers
+
+config IAV_MEM_OVERLAY_SIZE
+	hex "IAV Overlay Buffer Size"
+	range  0x0000000   0x0400000
+	default 0x0200000
+	help
+		If this function is not used, set it to 0x0;
+		IAV OVERLAY SIZE must be in the range of 0MB to 4MB, default is 2 MB(0x0200000).
+
+
+config CONFIG_AMBARELLA_IAV_QP_OFFSET_IPB
+	bool "Support qp offset for all I/P/B frames"
+	depends on (CONFIG_ARCH_S2L)
+	default n
+	help
+		choose this to reserve more qp memory for P/B frames.
+		If it is set, QP MATRIX numbers is 3, or else it is 1.
+
+config IAV_MEM_QPM_SIZE
+	hex "IAV QP MATRIX Buffer Size"
+	default 0x0018000
+	help
+		This option is used to set a single QP buffer.
+		If this function is not used, set it to 0x0;
+		Default for 6MP single QP size, (3072 * 2048) / (16 *16) * 4 Bytes = 96 KB(0x0018000).
+		So in fact, QP_MATRIX_TOTAL_SIZE =
+		96KB * 1(or 3) * 4(four streams) * (1 + 8) = 3456 KB(or 10368 KB).
+		96KB: IAV_MEM_QPM_SIZE
+		1(or 3): means QP MATRIX numbers, it is set by CONFIG_AMBARELLA_IAV_QP_OFFSET_IPB.
+		4: means four streams.
+		(1 + 8): means 8 buffers for cycle saving and another one buffer for the user.
+
+config CONFIG_AMBARELLA_IAV_DRAM_WARP_MEM
+	bool "Open warp memory for dewarp"
+	default y
+	help
+		Choose this to allocate warp memory for dewarp, default WARP size is 364 KB.
+
+config IAV_MEM_PM_SIZE_S2L
+	hex "IAV Privacy Mask Buffer Size"
+	depends on (CONFIG_ARCH_S2L)
+	default 0x03C0000
+	help
+		It supports two types of privacy masks, BPC and MCTF.
+		If this function is not used, set it to 0x0;
+		Or else, default for BPC 6 MP, (3072 * 2048 / 8) * (1 + 4) = 3840 KB.
+		(3072 * 2048 / 8): PM single buffer as BPC is pixel level.
+		(1 + 4): 4 cycle buffers and another one buffer which is used for user Privacy Mask Partition.
+		And default for MCTF 6 MP, (3072 * 2048 / 16 /16 * 4 Bytes) * 8 = 768 KB.
+		(3072 * 2048 / 16 /16 * 4 Bytes): PM single size as MCTF is Macroblock (MB) level.
+		8: 8 cycle buffers
+		And they will share the same partition, so choose the max, default set is 3840 KB(0x03C0000).
+		If only need to use MCTF, set 768 KB(0x00C0000) is enough.
+
+endmenu
+
+config CONFIG_AMBARELLA_IAV_SESSION_ID_SUPPORT
+	bool "Support session id from ucode"
+	default n
+	help
+		choose this to enable session id support
+
+config CONFIG_AMBARELLA_IAV_GUARD_VSYNC_LOSS
+	bool "Guard Vsync loss detection in IAV driver"
+	depends on (CONFIG_ARCH_S2L)
+	default n
+	help
+		IAV driver detect Vsync loss signal, and App recover from Vsync loss.
+
+endif
+

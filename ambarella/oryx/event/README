@@ -1,0 +1,3 @@
+ambarella/oryx/eventmon:
+	this directory is for system event Monitor,
+	including motion event,  audio alert event and also key input event

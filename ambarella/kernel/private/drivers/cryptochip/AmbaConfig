@@ -1,0 +1,38 @@
+##
+## kernel/private/drivers/ambarella/cryptochip/AmbaConfig
+##
+## History:
+##    2015/06/10 - [Zhi He] Create
+##
+## Copyright (C) 2015 - 2025, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+menuconfig BUILD_PRIVATE_DRIVER_FOR_CRYPTOCHIP
+depends on BUILD_AMBARELLA_PRIVATE_MODULES
+	bool "Build Ambarella Private Driver for Crypt Chip"
+	default n
+	help
+		Build Ambarella Private Driver Module for Crypt Chip.
+
+if BUILD_PRIVATE_DRIVER_FOR_CRYPTOCHIP
+
+config CONFIG_CRYPTOCHIP_ATSHA204
+	depends on BUILD_PRIVATE_DRIVER_FOR_CRYPTOCHIP
+	bool "Private Driver for Atmel ATSHA204"
+	default n
+	help
+		Private Driver for Atmel ATSHA204.
+
+config BUILD_PRIVATE_ATSHA204_DRIVER_FROM_SOURCE
+	depends on CONFIG_CRYPTOCHIP_ATSHA204
+	bool "Build Private Driver of Atmel ATSHA204 from source"
+	default n
+	help
+		Build Private Driver of Atmel ATSHA204 from source.
+
+endif

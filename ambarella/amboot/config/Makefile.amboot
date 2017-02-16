@@ -1,0 +1,758 @@
+##
+## amboot/config/Makefile.amboot
+##
+## History:
+##    2005/01/26 - [Charles Chiou] created file
+##    2007/11/27 - [Charles Chiou] added echo supression
+##    2008/02/19 - [Anthony Ginger] imported to AMBuild
+##
+## Copyright (C) 2004-2007, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+# Requirements:
+#	Please define the following before including this Makefile,
+#	$(HOSTOS)
+#	$(TOP)
+#	$(BSP)
+#	$(CROSS) and all the compilation tool variables.
+
+DEFINES =	-D__BUILD_AMBOOT__ -D__ARCH_$(ARCH)__ -D__BSP_$(BSP)__ \
+		$(EXTRA_DEFINES)
+INCLUDES =	-I$(TOP)/include -I$(TOP)/src/bld -I. \
+		-I$(BUILD_DIR) -I$(BSP_DIR) -I$(TOP)/src/bst
+
+ARCH_LO :=	$(shell gawk 'BEGIN { print tolower("$(ARCH)") }')
+SV_DIR :=	$(TOP)/sv/$(ARCH_LO)
+
+ARM1136JS_OPT	= -mcpu=arm1136j-s -mfpu=fpa
+CORTEXA9_OPT	= -march=armv7-a -mlittle-endian -mfpu=fpa
+ifeq ($(CPU),ARM1136JS)
+CPU_OPT =	$(ARM1136JS_OPT)
+endif
+ifeq ($(CPU),CORTEXA9)
+CPU_OPT =	$(CORTEXA9_OPT)
+endif
+
+AFLAGS = \
+		-fomit-frame-pointer -fno-builtin -fno-strict-aliasing \
+		-fno-common \
+		-nostdinc -D__ASM__ $(DEFINES) $(INCLUDES)
+
+CFLAGS_DEBUG = \
+		-Wall \
+		-fno-builtin -fno-strict-aliasing \
+		-fno-common \
+		-nostdinc $(DEFINES) -D__DEBUG_BUILD__ $(INCLUDES) \
+		-g -O0
+
+CFLAGS_RELEASE = \
+		-Wall \
+		-fno-builtin -fno-strict-aliasing \
+		-fno-common \
+		-nostdinc $(DEFINES) -D__RELEASE_BUILD__ $(INCLUDES) \
+		-O3
+
+HOST_CFLAGS =	-D__BUILD_AMBOOT__ -D__BUILD_HOST__ \
+		-D__ARCH_$(ARCH)__ -D__BSP_$(BSP)__ $(EXTRA_DEFINES)
+
+__MAKE_HOST_OBJ = \
+		$(CC) $(HOST_CFLAGS) \
+		-I$(BUILD_DIR) -I$(TOP)/src -I$(TOP)/include -I$(TOP)/src/bld \
+		-I. -I$(BSP_DIR) -c $< -o $@
+__MAKE_HOST_EXE = \
+		$(CC) $(HOST_C_FLAGS) -o $@
+
+ifeq ($(MAKE_VERBOSE),yes)
+MAKE_HOST_OBJ =	$(__MAKE_HOST_OBJ)
+MAKE_HOST_EXE =	$(__MAKE_HOST_EXE)
+else
+MAKE_HOST_OBJ =	@echo "  HOSTCC    $@" ; $(__MAKE_HOST_OBJ)
+MAKE_HOST_EXE =	@echo "  HOSTLD    $@" ; $(__MAKE_HOST_EXE)
+endif
+
+ifneq ($(MAKE_VERBOSE),yes)
+ECHO_GCC =	@echo "  GCC       $@" ;
+ECHO_OCP =	@echo "  OBJCOPY   $@" ;
+ECHO_LD =	@echo "  LD        $@" ;
+ECHO_NM =	@echo "  NM        $@" ;
+ECHO_LDS =	@echo "  LDS       $@" ;
+ECHO_STRIP =	@echo "  STRIP     $@" ;
+endif
+
+__ASM_NDEBUG_OBJ =	$(CROSS)$(CC) $(CPU_OPT) $(AFLAGS) -c $< -o $@
+__ASM_DEBUG_OBJ =	$(CROSS)$(CC) $(CPU_OPT) $(AFLAGS) -Wa,-gdwarf2 -c $< -o $@
+ASM_NDEBUG_CORTEX_OBJ =	$(CROSS)$(CC) $(CORTEXA9_OPT) $(AFLAGS) -c $< -o $@
+ASM_DEBUG_CORTEX_OBJ =	$(CROSS)$(CC) $(CORTEXA9_OPT) $(AFLAGS) -Wa,-gdwarf2 -c $< -o $@
+__MAKE_DEBUG_OBJ =	$(CROSS)$(CC) $(CPU_OPT) $(CFLAGS_DEBUG) -c $< -o $@
+__MAKE_NDEBUG_OBJ =	$(CROSS)$(CC) $(CPU_OPT) $(CFLAGS_RELEASE) -c $< -o $@
+
+ifeq ($(MAKE_VERBOSE),yes)
+ASM_DEBUG_OBJ =		$(__ASM_DEBUG_OBJ)
+ASM_NDEBUG_OBJ =	$(__ASM_NDEBUG_OBJ)
+MAKE_DEBUG_OBJ =	$(__MAKE_DEBUG_OBJ)
+MAKE_NDEBUG_OBJ =	$(__MAKE_NDEBUG_OBJ)
+else
+ASM_DEBUG_OBJ =		@echo "  AS        $@" ; $(__ASM_DEBUG_OBJ)
+ASM_NDEBUG_OBJ =	@echo "  AS        $@" ; $(__ASM_NDEBUG_OBJ)
+MAKE_DEBUG_OBJ =	@echo "  GCC       $@" ; $(__MAKE_DEBUG_OBJ)
+MAKE_NDEBUG_OBJ =	@echo "  GCC       $@" ; $(__MAKE_NDEBUG_OBJ)
+endif
+
+HOST_UTILS = \
+	host_crc32 \
+	host_permutate \
+	host_fixbstini
+
+DRAM_TYPE = ddr3
+ifeq ($(DRAM_TYPE_DDR2),y)
+DRAM_TYPE = ddr2
+endif
+ifeq ($(DRAM_TYPE_LPDDR3),y)
+DRAM_TYPE = lpddr3
+endif
+ifeq ($(DRAM_TYPE_DDR3),y)
+DRAM_TYPE = ddr3
+endif
+
+## Link board lib if have
+ifeq ($(BSP_DIR)/libbst_external.a,$(wildcard $(BSP_DIR)/libbst_external.a))
+LD_BST_EXTERNAL := -L$(BSP_DIR) -lbst_external
+else
+LD_BST_EXTERNAL :=
+endif
+
+ifeq ($(BSP_DIR)/$(BSP_BOARD_VER).ini,$(wildcard $(BSP_DIR)/$(BSP_BOARD_VER).ini))
+BST_PAR := $(BSP_BOARD_VER).ini
+else
+BST_PAR := bst.ini
+endif
+
+## Multiple bst images support, max bst number is 4.
+BST_RELEASE_BINS :=
+ifeq ($(wildcard $(BSP_DIR)/$(BST_PAR:%.ini=%_0.ini)), $(BSP_DIR)/$(BST_PAR:%.ini=%_0.ini))
+BST_RELEASE_BINS += bst_0_release.bin
+endif
+ifeq ($(wildcard $(BSP_DIR)/$(BST_PAR:%.ini=%_1.ini)), $(BSP_DIR)/$(BST_PAR:%.ini=%_1.ini))
+BST_RELEASE_BINS += bst_1_release.bin
+endif
+ifeq ($(wildcard $(BSP_DIR)/$(BST_PAR:%.ini=%_2.ini)), $(BSP_DIR)/$(BST_PAR:%.ini=%_2.ini))
+BST_RELEASE_BINS += bst_2_release.bin
+endif
+ifeq ($(wildcard $(BSP_DIR)/$(BST_PAR:%.ini=%_3.ini)), $(BSP_DIR)/$(BST_PAR:%.ini=%_3.ini))
+BST_RELEASE_BINS += bst_3_release.bin
+endif
+
+ifneq ($(BST_RELEASE_BINS), )
+MUL_BST_ENABLE := yes
+MUL_BST_PAR := $(basename $(BST_PAR))_%.ini
+else
+MUL_BST_ENABLE := no
+MUL_BST_PAR :=
+BST_RELEASE_BINS := bst_release.bin
+endif
+BST_DEBUG_BINS := $(subst _release.bin,_debug.bin,$(BST_RELEASE_BINS))
+
+ifeq ($(HOST_MACHINE), x86_64)
+BSTCONFIG := $(SV_DIR)/bin/lnx64/bstconfig
+else
+BSTCONFIG := $(SV_DIR)/bin/lnx/bstconfig
+endif
+
+ifeq ($(CONFIG_BOOT_MEDIA_EMMC),y)
+BST_BIN := $(SV_DIR)/image/amboot_emmc_$(DRAM_TYPE).bin
+else
+ifeq ($(CONFIG_BOOT_MEDIA_SPINOR),y)
+BST_BIN := $(SV_DIR)/image/amboot_spinor_$(DRAM_TYPE).bin
+else
+BST_BIN := $(SV_DIR)/image/amboot_bst_$(DRAM_TYPE).bin
+endif
+endif
+
+## Enumerate BLD objects
+SRCS +=		$(TOP)/src/bld/trampoline.S \
+		$(TOP)/src/bld/mmu.S \
+		$(TOP)/src/bld/armcache.S \
+		$(TOP)/src/bld/cache.c \
+		$(TOP)/src/bld/jump.S \
+		$(TOP)/src/bld/rct.c \
+		$(TOP)/src/bld/strutil.c \
+		$(TOP)/src/bld/vic.c \
+		$(TOP)/src/bld/memcpy.c \
+		$(TOP)/src/bld/memmove.c \
+		$(TOP)/src/bld/memzero.c \
+		$(TOP)/src/bld/memset.c \
+		$(TOP)/src/bld/memcmp.c \
+		$(TOP)/src/bld/crc32.c \
+		$(TOP)/src/bld/uart.c \
+		$(TOP)/src/bld/firmfl.c \
+		$(TOP)/src/bld/partition.c \
+		$(TOP)/src/bld/loader.c \
+		$(TOP)/src/bld/main.c
+
+AMBOOT_BLD_OBJS = \
+		trampoline.o \
+		mmu.o \
+		armcache.o \
+		cache.o \
+		jump.o \
+		vic.o \
+		rct.o \
+		strutil.o \
+		memcpy.o \
+		memmove.o \
+		memzero.o \
+		memset.o \
+		memcmp.o \
+		crc32.o \
+		uart.o \
+		firmfl.o \
+		partition.o \
+		loader.o \
+		main.o
+
+ifeq ($(CONFIG_AMBOOT_COMMAND_SUPPORT),y)
+SRCS +=	\
+		$(TOP)/src/bld/command.c \
+		$(TOP)/src/bld/cmd_r32.c \
+		$(TOP)/src/bld/cmd_w32.c \
+		$(TOP)/src/bld/cmd_boot.c \
+		$(TOP)/src/bld/cmd_erase.c \
+		$(TOP)/src/bld/cmd_help.c \
+		$(TOP)/src/bld/cmd_reboot.c \
+		$(TOP)/src/bld/cmd_setenv.c \
+		$(TOP)/src/bld/cmd_show.c \
+		$(TOP)/src/bld/cmd_setmem.c
+
+AMBOOT_BLD_OBJS	+= \
+		command.o \
+		cmd_r32.o \
+		cmd_w32.o \
+		cmd_boot.o \
+		cmd_erase.o \
+		cmd_help.o \
+		cmd_reboot.o \
+		cmd_setenv.o \
+		cmd_show.o \
+		cmd_setmem.o
+
+ifeq ($(CONFIG_AMBOOT_ENABLE_ADC),y)
+SRCS +=	\
+		$(TOP)/src/bld/cmd_adc.c
+AMBOOT_BLD_OBJS	+= \
+		cmd_adc.o
+endif
+ifeq ($(CONFIG_AMBOOT_ENABLE_IR),y)
+SRCS +=	\
+		$(TOP)/src/bld/cmd_ir.c
+AMBOOT_BLD_OBJS	+= \
+		cmd_ir.o
+endif
+endif
+
+# lib support
+SRCS += \
+		$(TOP)/src/bld/lib/vsprintf.c \
+		$(TOP)/src/bld/lib/memory.c
+
+AMBOOT_BLD_OBJS += \
+				   vsprintf.o \
+				   memory.o
+
+# thaw hibernation support
+ifeq ($(AMBOOT_THAW_HIBERNATION),y)
+SRCS += \
+		$(TOP)/src/bld/lib/thaw.c \
+		$(TOP)/src/bld/cmd_thaw.c
+
+AMBOOT_BLD_OBJS += \
+				   thaw.o \
+				   cmd_thaw.o
+endif
+
+ifeq ($(SECURE_BOOT),y)
+SRCS +=	\
+		$(TOP)/src/bld/secure/crypt_utils.c \
+		$(TOP)/src/bld/secure/big_number.c \
+		$(TOP)/src/bld/secure/digest_sha256.c \
+		$(TOP)/src/bld/secure/pk_rsa.c \
+		$(TOP)/src/bld/secure/tiny_asn1.c \
+		$(TOP)/src/bld/secure/tiny_oid.c \
+		$(TOP)/src/bld/secure/secure_boot.c \
+
+AMBOOT_BLD_OBJS += \
+		crypt_utils.o \
+		big_number.o \
+		digest_sha256.o \
+		pk_rsa.o \
+		tiny_asn1.o \
+		tiny_oid.o \
+		secure_boot.o
+endif
+
+ifeq ($(CONFIG_AMBOOT_ENABLE_ATSHA204), y)
+ifeq ($(CONFIG_AMBOOT_BUILD_ATSHA204_FROM_SOURCE),y)
+SRCS +=	\
+		$(TOP)/src/bld/peripheral/driver_atsha204.c \
+		$(TOP)/src/bld/peripheral/library_atsha204.c
+endif
+
+AMBOOT_BLD_OBJS += \
+		driver_atsha204.o \
+		library_atsha204.o
+
+endif
+
+# flattern device tree
+ifeq ($(CONFIG_AMBOOT_BD_FDT_SUPPORT),y)
+SRCS +=	\
+		$(TOP)/src/bld/fdt_boot.c \
+		$(TOP)/src/bld/libfdt/fdt.c \
+		$(TOP)/src/bld/libfdt/fdt_ro.c \
+		$(TOP)/src/bld/libfdt/fdt_rw.c \
+		$(TOP)/src/bld/libfdt/fdt_strerror.c \
+		$(TOP)/src/bld/libfdt/fdt_sw.c \
+		$(TOP)/src/bld/libfdt/fdt_wip.c \
+		$(TOP)/src/bld/libfdt/fdt_empty_tree.c
+
+AMBOOT_BLD_OBJS	+= \
+		fdt_boot.o \
+		fdt.o \
+		fdt_ro.o \
+		fdt_rw.o \
+		fdt_strerror.o \
+		fdt_sw.o \
+		fdt_wip.o \
+		fdt_empty_tree.o
+
+ifeq ($(CONFIG_AMBOOT_COMMAND_SUPPORT),y)
+SRCS +=	\
+		$(TOP)/src/bld/cmd_fdt.c
+AMBOOT_BLD_OBJS	+= \
+		cmd_fdt.o
+endif
+endif
+
+ifeq ($(CONFIG_AMBOOT_BD_ATAG_SUPPORT),y)
+SRCS +=	\
+		$(TOP)/src/bld/atag.c
+AMBOOT_BLD_OBJS	+= \
+		atag.o
+endif
+
+ifeq ($(CONFIG_AMBOOT_BAPI_SUPPORT),y)
+SRCS +=	\
+		$(TOP)/src/bld/bapi.c
+
+AMBOOT_BLD_OBJS	+= \
+		bapi.o
+endif
+
+ifeq ($(CONFIG_AMBOOT_ENABLE_NAND),y)
+SRCS +=	\
+		$(TOP)/src/bld/nand.c
+
+AMBOOT_BLD_OBJS += \
+		nand.o
+
+ifeq ($(CONFIG_NAND_USE_FLASH_BBT),y)
+SRCS +=	\
+		$(TOP)/src/bld/nand_bbt.c
+
+AMBOOT_BLD_OBJS += \
+		nand_bbt.o
+endif
+
+include $(TOP)/src/flashdb/slcnand/make.inc
+SRCS +=		$(NANDDB_SRCS)
+AMBOOT_BLD_OBJS += \
+		$(NANDDB_OBJS)
+
+ifeq ($(CONFIG_AMBOOT_COMMAND_SUPPORT),y)
+SRCS +=	\
+		$(TOP)/src/bld/cmd_nand.c
+AMBOOT_BLD_OBJS += \
+		cmd_nand.o
+endif
+endif
+
+ifeq ($(CONFIG_AMBOOT_ENABLE_USB),y)
+SRCS += \
+		$(TOP)/src/bld/usb_irq.S \
+		$(TOP)/src/bld/usb_drv.c
+
+AMBOOT_BLD_OBJS += \
+		usb_irq.o \
+		usb_drv.o
+
+ifeq ($(CONFIG_AMBOOT_COMMAND_SUPPORT),y)
+SRCS +=	\
+		$(TOP)/src/bld/cmd_usbdl.c
+AMBOOT_BLD_OBJS += \
+		cmd_usbdl.o
+endif
+endif
+
+ifeq ($(CONFIG_AMBOOT_ENABLE_GPIO),y)
+SRCS += \
+		$(TOP)/src/bld/gpio.S
+
+AMBOOT_BLD_OBJS += \
+		gpio.o
+
+ifeq ($(CONFIG_AMBOOT_COMMAND_SUPPORT),y)
+SRCS +=	\
+		$(TOP)/src/bld/cmd_gpio.c
+AMBOOT_BLD_OBJS += \
+		cmd_gpio.o
+endif
+
+else
+SRCS += \
+		$(TOP)/src/bld/minipin.S
+
+AMBOOT_BLD_OBJS += \
+		minipin.o
+endif
+
+ifeq ($(CONFIG_AMBOOT_ENABLE_SPINOR),y)
+SRCS += $(TOP)/src/bld/spinor.c
+AMBOOT_BLD_OBJS += \
+		spinor.o
+
+include $(TOP)/src/flashdb/spinor/make.inc
+SRCS +=		$(SPINORDB_SRCS)
+AMBOOT_BLD_OBJS += \
+		$(SPINORDB_OBJS)
+
+ifeq ($(CONFIG_AMBOOT_COMMAND_SUPPORT),y)
+SRCS +=	\
+		$(TOP)/src/bld/cmd_spinor.c
+AMBOOT_BLD_OBJS += \
+		cmd_spinor.o
+endif
+endif
+
+ifeq ($(CONFIG_AMBOOT_ENABLE_ETH),y)
+SRCS += \
+		$(TOP)/src/bld/eth_irq.S \
+		$(TOP)/src/bld/eth_drv.c \
+		$(TOP)/src/bld/eth_bld.c
+
+AMBOOT_BLD_OBJS += \
+		eth_irq.o \
+		eth_drv.o \
+		eth_bld.o
+
+ifeq ($(CONFIG_AMBOOT_COMMAND_SUPPORT),y)
+SRCS +=	\
+		$(TOP)/src/bld/cmd_tftp.c \
+		$(TOP)/src/bld/cmd_ping.c
+AMBOOT_BLD_OBJS += \
+		cmd_tftp.o \
+		cmd_ping.o
+endif
+endif
+
+SRCS		+= $(BSP_DIR)/bsp.c
+AMBOOT_BLD_OBJS	+= bsp.o
+
+ifeq ($(CONFIG_AMBOOT_ENABLE_SD),y)
+SRCS +=	\
+		$(TOP)/src/bld/sdmmc.c
+AMBOOT_BLD_OBJS += \
+		sdmmc.o
+
+# Fat32 filesystem support
+SRCS += \
+		$(TOP)/src/bld/fs/fs.c  \
+		$(TOP)/src/bld/fs/fat.c \
+		$(TOP)/src/bld/cmd_fs.c
+
+AMBOOT_BLD_OBJS += \
+				   fs.o  \
+				   fat.o \
+				   cmd_fs.o
+
+ifeq ($(CONFIG_AMBOOT_COMMAND_SUPPORT),y)
+SRCS +=	\
+		$(TOP)/src/bld/cmd_sd.c
+AMBOOT_BLD_OBJS	+= \
+		cmd_sd.o
+endif
+endif
+
+ifeq ($(CONFIG_AMBOOT_ENABLE_SPI),y)
+endif
+
+ifeq ($(CONFIG_AMBOOT_ENABLE_IDC),y)
+SRCS +=	\
+		$(TOP)/src/bld/idc_bld.c
+AMBOOT_BLD_OBJS += \
+		idc_bld.o
+endif
+
+SRCS +=		$(TOP)/src/bld/cortex_bld.c
+AMBOOT_BLD_OBJS += cortex_bld.o
+
+ifeq ($(AMBOOT_DEV_BOOT_CORTEX),y)
+SRCS +=		$(TOP)/src/bld/cortex_bst.S
+AMBOOT_BLD_OBJS += cortex_bst.o
+endif
+
+ifeq ($(AMBOOT_BOOT_DSP),y)
+SRCS +=	\
+		$(TOP)/src/bld/dsp/dsp.c \
+		$(TOP)/src/bld/audio.c
+AMBOOT_BLD_OBJS += \
+		dsp.o \
+		audio.o
+
+ifneq ($(wildcard $(TOP)/src/bld/dsp/$(ARCH_LO)/dsp_bo.o_shipped),)
+AMBOOT_BLD_OBJS += \
+		dsp_bo.o
+endif
+
+endif
+
+ifeq ($(wildcard $(BSP_DIR)/make.amboot),$(BSP_DIR)/make.amboot)
+include $(BSP_DIR)/make.amboot
+endif
+
+ifeq ($(wildcard $(BSP_DIR)/make.devfw),$(BSP_DIR)/make.devfw)
+include $(BSP_DIR)/make.devfw
+endif
+
+ifeq ($(wildcard $(BSP_DIR)/make.cortex),$(BSP_DIR)/make.cortex)
+include $(BSP_DIR)/make.cortex
+endif
+
+AMBOOT_BLD_DEBUG_OBJS = $(patsubst %.o,%_debug.o,$(AMBOOT_BLD_OBJS))
+AMBOOT_BLD_RELEASE_OBJS = $(patsubst %.o,%_release.o,$(AMBOOT_BLD_OBJS))
+
+#
+# Native utilities
+#
+
+host_crc32.o: $(TOP)/src/bld/host_crc32.c
+	$(MAKE_HOST_OBJ)
+
+host_crc32: host_crc32.o
+	$(MAKE_HOST_EXE) host_crc32.o
+
+host_permutate.o: $(TOP)/src/bld/host_permutate.c
+	$(MAKE_HOST_OBJ)
+
+host_permutate: host_permutate.o
+	$(MAKE_HOST_EXE) host_permutate.o
+
+host_dspfw.o: $(TOP)/src/bld/dsp/host_dspfw.c
+	$(MAKE_HOST_OBJ)
+
+host_dspfw: host_dspfw.o
+	$(MAKE_HOST_EXE) host_dspfw.o
+
+host_fixbstini.o: $(TOP)/src/bld/host_fixbstini.c
+	$(MAKE_HOST_OBJ) `xml2-config --cflags`
+
+host_fixbstini: host_fixbstini.o
+	$(MAKE_HOST_EXE) host_fixbstini.o  `xml2-config --libs`
+
+# BST targets
+ifeq ($(MUL_BST_ENABLE),yes)
+bst_%_debug.bin: bst_%_release.bin
+	cp $< $@
+
+bst_%_release.bin: $(MUL_BST_PAR) $(BST_BIN)
+	$(BSTCONFIG) -batch -parameters $< -input $(BST_BIN) -output $@
+
+$(MUL_BST_PAR): $(BSP_DIR)/$(MUL_BST_PAR) bld_release.bin host_fixbstini
+	./host_fixbstini $< bld_release.bin > $@
+
+else
+bst_debug.bin: bst_release.bin
+	cp $< $@
+
+bst_release.bin: $(BST_PAR) $(BST_BIN)
+	$(BSTCONFIG) -batch -parameters $(BST_PAR) -input $(BST_BIN) -output $@
+
+$(BST_PAR): $(BSP_DIR)/$(BST_PAR) bld_release.bin host_fixbstini
+	./host_fixbstini $< bld_release.bin > $@
+endif
+
+# Avoid to delete $(BST_PAR) $(MUL_BST_PAR) automatically by MAKE.
+.PRECIOUS: $(BST_PAR) $(MUL_BST_PAR)
+
+# BLD targets
+bld_debug.bin: bld_debug.elf
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -j .data -S -O binary $< $@
+
+bld_debug.elf: .temp/bld.lds $(AMBOOT_BLD_DEBUG_OBJS)
+	$(ECHO_LD) $(CROSS)$(CC) -Wl,-T,.temp/bld.lds -nostartfiles \
+		$(AMBOOT_BLD_DEBUG_OBJS) $(LD_BST_EXTERNAL) -o $@
+	$(ECHO_NM) $(CROSS)$(NM) -n $@ | grep -v '\( [aUw] \)\|\(__crc__\)' > \
+		bld_debug.map
+
+bld_release.bin: bld_release.elf
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -j .data -S -O binary $< $@
+
+bld_release.elf: .temp/bld.lds $(AMBOOT_BLD_RELEASE_OBJS)
+	$(ECHO_LD) $(CROSS)$(CC) -Wl,-T,.temp/bld.lds -nostartfiles \
+		$(AMBOOT_BLD_RELEASE_OBJS) $(LD_BST_EXTERNAL) -o $@
+	$(ECHO_NM) $(CROSS)$(NM) -n $@ | grep -v '\( [aUw] \)\|\(__crc__\)' > \
+		bld_release.map
+	$(ECHO_STRIP) $(CROSS)$(STRIP) --remove-section=.trash \
+		 --remove-section=.hugebuf --remove-section=.bldbuf \
+		 --remove-section=.splashbuf $@ 2> /dev/null
+
+.temp/bld.lds: $(TOP)/src/bld/bld.lds.cpp
+	@mkdir -p .temp
+	$(ECHO_LDS) $(CROSS)$(CPP) -D__ASM__ $(DEFINES) $(INCLUDES) $< \
+		| sed /^#/d > $@
+
+# DSP targets
+ifeq ($(AMBOOT_BOOT_DSP),y)
+HOST_UTILS += \
+	host_dspfw \
+	dsp.bin
+
+## DSP_FILE_LIST is defined in $(BSP_DIR)/make.amboot
+dsp.bin: host_dspfw $(DSP_FILE_LIST)
+	./host_dspfw $@ $(DSP_FILE_LIST)
+endif
+
+# Object targets
+%_debug.o: $(TOP)/src/bld/%.S
+	$(ASM_DEBUG_OBJ)
+
+cortex_bst_debug.o: $(TOP)/src/bld/cortex_bst.S
+	$(ASM_DEBUG_CORTEX_OBJ)
+
+%_debug.o: $(TOP)/src/bld/%.c
+	$(MAKE_DEBUG_OBJ)
+
+%_debug.o: $(TOP)/src/flashdb/slcnand/%.c
+	$(MAKE_DEBUG_OBJ)
+
+%_debug.o: $(TOP)/src/flashdb/spinor/%.c
+	$(MAKE_DEBUG_OBJ)
+
+%_debug.o: $(TOP)/src/bld/libfdt/%.c
+	$(MAKE_DEBUG_OBJ)
+
+%_debug.o: $(BSP_DIR)/%.S
+	$(ASM_DEBUG_OBJ)
+
+%_debug.o: $(BSP_DIR)/%.c
+	$(MAKE_DEBUG_OBJ)
+
+%_debug.o: $(TOP)/src/bld/dsp/%.c
+	$(MAKE_DEBUG_OBJ)
+
+%_debug.o: $(TOP)/src/bld/dsp/$(ARCH_LO)/%.o_shipped
+	cp $< $@
+
+%_debug.o: $(TOP)/src/bld/fs/%.c
+	$(MAKE_DEBUG_OBJ)
+
+%_debug.o: $(TOP)/src/bld/lib/%.c
+	$(MAKE_DEBUG_OBJ)
+
+%_debug.o: $(TOP)/src/bld/secure/%.c
+	$(MAKE_DEBUG_OBJ)
+
+ifeq ($(CONFIG_AMBOOT_BUILD_ATSHA204_FROM_SOURCE),y)
+%_debug.o: $(TOP)/src/bld/peripheral/%.c
+	$(MAKE_DEBUG_OBJ)
+else
+%_debug.o: $(TOP)/src/bld/peripheral/%.o_shipped
+	cp $< $@
+endif
+
+%_release.o: $(TOP)/src/bld/%.S
+	$(ASM_NDEBUG_OBJ)
+
+cortex_bst_release.o: $(TOP)/src/bld/cortex_bst.S
+	$(ASM_NDEBUG_CORTEX_OBJ)
+
+%_release.o: $(TOP)/src/bld/%.c
+	$(MAKE_NDEBUG_OBJ)
+
+%_release.o: $(TOP)/src/flashdb/slcnand/%.c
+	$(MAKE_NDEBUG_OBJ)
+
+%_release.o: $(TOP)/src/flashdb/spinor/%.c
+	$(MAKE_NDEBUG_OBJ)
+
+%_release.o: $(TOP)/src/bld/libfdt/%.c
+	$(MAKE_NDEBUG_OBJ)
+
+%_release.o: $(BSP_DIR)/%.S
+	$(ASM_NDEBUG_OBJ)
+
+%_release.o: $(BSP_DIR)/%.c
+	$(MAKE_NDEBUG_OBJ)
+
+%_release.o: $(TOP)/src/bld/dsp/%.c
+	$(MAKE_NDEBUG_OBJ)
+
+%_release.o: $(TOP)/src/bld/dsp/$(ARCH_LO)/%.o_shipped
+	cp $< $@
+
+%_release.o: $(TOP)/src/bld/fs/%.c
+	$(MAKE_NDEBUG_OBJ)
+
+%_release.o: $(TOP)/src/bld/lib/%.c
+	$(MAKE_NDEBUG_OBJ)
+
+%_release.o: $(TOP)/src/bld/secure/%.c
+	$(MAKE_NDEBUG_OBJ)
+
+ifeq ($(CONFIG_AMBOOT_BUILD_ATSHA204_FROM_SOURCE),y)
+%_release.o: $(TOP)/src/bld/peripheral/%.c
+	$(MAKE_DEBUG_OBJ)
+else
+%_release.o: $(TOP)/src/bld/peripheral/%.o_shipped
+	cp $< $@
+endif
+
+__MAKEDEP = \
+	$(CROSS)$(GCCDEP) $(DEFINES) $(INCLUDES) $(SRCS) > .deppre ; \
+	cat .deppre | sed -e s/.o:/_debug.o:/ > .dep ; \
+	cat .deppre | sed -e s/.o:/_release.o:/ >> .dep ; \
+	$(RM) .deppre
+
+ifeq ($(MAKE_VERBOSE),yes)
+MAKEDEP =	$(__MAKEDEP)
+else
+MAKEDEP =	@echo "  MAKEDEP" ; $(__MAKEDEP)
+endif
+
+dep .dep::
+	$(MAKEDEP)
+
+fwlist .fwlist:: $(HOST_UTILS)
+	@/bin/echo -n "FIRMWARES =	" > .fwlist
+ifneq ($(MINIMAL_FIRMWARE_COMBO),y)
+	@./host_permutate $(HOST_PERMUTATE_ARG) >> .fwlist
+else
+	@./host_permutate -m $(HOST_PERMUTATE_ARG) | sed -e s/bld/bld\ bst_bld/g >> .fwlist
+endif
+	@rm -rf memfwprog devfw
+
+ifeq ($(MAKE_VERBOSE),yes)
+CLEANUP =	rm -rf
+else
+CLEANUP =	@echo "  CLEANUP amboot" ; rm -rf
+endif
+
+clean::
+	$(CLEANUP) \
+	 *.c *.output *.h *.S \
+	.dep .fwlist *.o *.elf *.bin *.idb *.stf *.map *.lds *~ \
+	$(HOST_UTILS) *.exe *.efw devfw memfwprog .temp *.ini \
+	*.piggy *.fw header_*.S devfw_*.lds memfwprog_*.lds *.log *.stackdump

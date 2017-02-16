@@ -1,0 +1,169 @@
+##
+## kernel/external/atheros/AmbaConfig
+##
+## History:
+##    2008/01/16 - [Anthony Ginger] Create
+##
+## Copyright (C) 2004-2008, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+###################################
+
+config BUILD_ATHEROS_WIFI_AR6002
+	bool "Atheros WiFi AR6002 (802.11bg)"
+	help
+		Select Atheros WiFi AR6002 driver.
+		Verified on Kernel 2.6.38
+
+###################################
+
+config BUILD_ATHEROS_WIFI_AR6003
+	bool "Atheros WiFi AR6003 (802.11bgn)"
+	default n
+	help
+		Select Atheros WiFi AR6003 driver.
+
+choice
+	prompt "Atheros AR6003 driver Version"
+	depends on BUILD_ATHEROS_WIFI_AR6003
+	help
+		Select the AR6003 driver version.
+
+config BUILD_ATHEROS_WIFI_AR6003_V796
+	bool "AR6003 3.1_RC.796"
+	help
+		Select 3.1_RC.796 version
+		Verified on Kernel 2.6.38
+
+config BUILD_ATHEROS_WIFI_AR6003_V844
+	bool "AR6003 3.1_RC.844"
+	help
+		Select 3.1_RC.844 version
+		Verified on Kernel 2.6.38
+
+config BUILD_ATHEROS_WIFI_BT_AR6233_V445
+	bool "AR6233 3.1_RC.445 WiFi+BT "
+	help
+		Select AR6233 3.1_RC.445 WiFi+BT driver version.
+		Verified on Kernel 2.6.38
+
+endchoice ##prompt "Atheros AR6003 driver Version"
+
+###################################
+
+config BUILD_ATHEROS_WIFI_AR9374
+	bool "Atheros WiFi AR9374 (802.11abgn HT20/40, MIMO2x2, USB)"
+	default n
+	help
+		Select Atheros WiFi AR9374 driver.
+
+choice
+	prompt "Atheros AR9374 driver Version"
+	depends on BUILD_ATHEROS_WIFI_AR9374
+	help
+		Select the AR9374 driver version.
+
+config BUILD_ATHEROS_WIFI_AR9374_350213
+	bool "AR9734 3.5.0.213"
+	help
+		Select 3.5.0.213 version.
+		Verified on Kernel 2.6.38
+
+config BUILD_ATHEROS_WIFI_AR9374_35028
+	bool "AR9734 3.5.0.28"
+	help
+		Select 3.5.0.28 version.
+		Verified on Kernel 3.8
+
+endchoice ##prompt "Atheros AR9374 driver Version"
+
+###################################
+
+config BUILD_ATHEROS_WIFI_AR9375
+	bool "Atheros WiFi AR9375 (802.11bgn HT20/40, MIMO2x2, USB)"
+	default n
+	help
+		Select Atheros WiFi AR9375 driver.
+
+config ATH6KL_AR9375_SDIO
+	bool "Interface SDIO"
+	depends on BUILD_ATHEROS_WIFI_AR9375
+	help
+		This module adds support for wireless adapters based on
+		Atheros AR6003 and AR6004 chipsets running over SDIO. If you
+		choose to build it as a module, it will be called ath6kl_sdio.
+		Please note that AR6002 and AR6001 are not supported by this
+		driver.
+
+config ATH6KL_AR9375_USB
+	bool "Interface USB"
+	depends on BUILD_ATHEROS_WIFI_AR9375
+	help
+		This module adds support for wireless adapters based on
+		Atheros AR6004 chipset running over USB. This is still under
+		implementation and it isn't functional. If you choose to
+		build it as a module, it will be called ath6kl_usb.
+
+choice
+	prompt "Atheros AR9375 driver Version"
+	depends on BUILD_ATHEROS_WIFI_AR9375
+	help
+		Select the AR9375 driver version.
+
+config BUILD_ATHEROS_WIFI_AR9375_500110
+	bool "AR9375 5.0.0.110"
+	help
+		Select 5.0.0.110 version.
+
+config BUILD_ATHEROS_WIFI_AR9375_500109
+	bool "AR9375 5.0.0.109"
+	help
+		Select 5.0.0.109 version.
+
+endchoice ##prompt "Atheros AR9375 driver Version"
+
+###################################
+config BUILD_ATHEROS_WIFI_AR1021
+	bool "Atheros WiFi AR1021 (802.11abgn HT20/40, MIMO2x2, USB)"
+	default n
+	help
+		Select Atheros WiFi AR1021 driver.
+
+config ATH6KL_SDIO
+	bool "Interface SDIO"
+	depends on BUILD_ATHEROS_WIFI_AR1021
+	help
+		This module adds support for wireless adapters based on
+		Atheros AR6003 and AR6004 chipsets running over SDIO. If you
+		choose to build it as a module, it will be called ath6kl_sdio.
+		Please note that AR6002 and AR6001 are not supported by this
+		driver.
+
+config ATH6KL_USB
+	bool "Interface USB"
+	depends on BUILD_ATHEROS_WIFI_AR1021
+	help
+		This module adds support for wireless adapters based on
+		Atheros AR6004 chipset running over USB. This is still under
+		implementation and it isn't functional. If you choose to
+		build it as a module, it will be called ath6kl_usb.
+
+choice
+	prompt "Atheros AR1021 driver Version"
+	depends on BUILD_ATHEROS_WIFI_AR1021
+	help
+		Select the AR1021 driver version.
+
+config BUILD_ATHEROS_WIFI_AR1021_50080
+	bool "AR1021 5.0.0.80"
+	help
+		Select 5.0.0.80 version.
+
+endchoice ##prompt "Atheros AR1021 driver Version"
+
+###################################

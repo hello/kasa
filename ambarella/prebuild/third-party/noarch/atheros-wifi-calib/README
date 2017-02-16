@@ -1,0 +1,7 @@
+Wifi Moduel (directory name) : Build on Which Board
+Atheros_Default		     : default for all board
+AR6103G_BM2D_19680505_142D   : i1_AOF_PJ204
+AR6302G_BL38_PGB823_2B	     : A5s_cloud_cam
+
+NOTE:
+Wifi Moduel name can be found on Wifi hardware.

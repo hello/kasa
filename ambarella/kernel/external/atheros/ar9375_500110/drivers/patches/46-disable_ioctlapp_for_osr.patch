@@ -1,0 +1,16 @@
+diff -Naur drivers-old/driver_nl80211.c drivers/driver_nl80211.c
+--- drivers-old/driver_nl80211.c	2014-03-06 15:30:54.451762823 +0800
++++ drivers/driver_nl80211.c	2014-03-06 15:39:07.659776031 +0800
+@@ -98,9 +98,9 @@
+ #endif /* ANDROID */
+ 
+ /* IOCTL for scanmode, acs */
+-#define ATHR_WLAN_SCAN_BAND             1
+-#define ATHR_WLAN_FIND_BEST_CHANNEL     2
+-#define ATHR_WLAN_ACS_LIST              3
++//#define ATHR_WLAN_SCAN_BAND             1
++//#define ATHR_WLAN_FIND_BEST_CHANNEL     2
++//#define ATHR_WLAN_ACS_LIST              3
+ /* Sub-IOCTL for scanmode */
+ #define ATHR_CMD_SCANBAND_ALL           0	/* Scan all supported channel */
+ #define ATHR_CMD_SCANBAND_2G            1	/* Scan 2GHz channel only */

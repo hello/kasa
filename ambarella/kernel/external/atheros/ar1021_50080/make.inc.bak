@@ -1,0 +1,38 @@
+##
+## kernel/external/compat/qca6234_350374/make.inc
+##
+## History:
+##    2013/08/21 - [Tao Wu] Created file
+##
+## Copyright (C) 2004-2013, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+include $(CLEAR_VARS)
+
+LOCAL_TARGET := atheros_ar1021
+
+.PHONY: $(LOCAL_TARGET)
+
+export CONFIG_ATH6KL_USB=m
+
+$(LOCAL_TARGET):build_private_drivers
+	@echo "Build $@ Drivers:"
+	@echo "OUT_EXTERNAL_DRIVER_DIR=$(OUT_EXTERNAL_DRIVER_DIR)"
+	@echo "LINUX_OUT_DIR=$(LINUX_OUT_DIR)"
+	@echo "FAKEROOT_DIR=$(FAKEROOT_DIR)"
+	@$(ECHO) "  $(patsubst %/,%\n ,$(EXT_DRIVER_MODULES))"
+	@mkdir -p $(OUT_EXTERNAL_DRIVER_DIR)/atheros
+	@cp -dpRf $(EXTERNAL_DRIVER_DIR)/atheros/ar1021_50080 $(OUT_EXTERNAL_DRIVER_DIR)/atheros
+	$(AMBA_MAKEFILE_V)$(MAKE) -s -C $(OUT_EXTERNAL_DRIVER_DIR)/atheros/ar1021_50080/build \
+		ARCH=arm KMODDIR=extra KLIB_BUILD=$(LINUX_OUT_DIR) \
+		KLIB=$(FAKEROOT_DIR) DESTDIR=$(FAKEROOT_DIR) \
+		KERNELPATH=$(LINUX_OUT_DIR) KERNELARCH=arm INSTALL_ROOT=$(FAKEROOT_DIR)
+	@echo "Build $@ Done"
+
+$(call add-target-into-build, $(LOCAL_TARGET))
+

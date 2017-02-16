@@ -1,0 +1,40 @@
+	bsreader is "bitstream reader", it can help to make a wrapper to IAV IOCTL to 
+	read stream from DSP bsb, so that APP can read bitstream easier.
+	
+	The key benefits of using "bsreader" instead of directly reading from BSB:
+	
+	1. bsreader has policy to drop old frame or drop new frame, the ring FIFO 
+	allocated by bsreader is 100% controlled by ARM in user space, so there will
+	never be bitstream overwritten if upper level of app reads too slow from 
+	bsreader.
+	
+	2. bsreader can create an independant buffer for each stream, and caller of
+	bsreader app may use this feature to block on reading of each stream independently.
+	So that upper level application can be designed more easily. each RTP muxer just 
+	need to call the corresponding stream from bsreader and block on reading. 
+	
+	3. bsreader can wrap software encoders like CAVLC inside, and it will create a 
+	RT thread to call CAVLC algorithm, since CAVLC encoder lib is pure algorithm. 
+	And upper	level of application can use bsreader to easily get CAVLC encoded result.	
+	
+	
+	Known Limitations:
+	1. current version of bsreader only supports video, but not audio.
+	
+	Design notes:
+	1. bsreader has a RT main thread to read data from BSB buffer, by IAV IOCTL. 
+	2. bsreader allocated maximum 4 ring FIFOs, user can configure how many FIFOs to allocate,
+		base on maximum stream number. Each FIFO length is also configurable. 
+	3. bsreader function bsreader_get_one_frame can be called from four reader threads at same time,
+		each handles one stream.
+	4. When upper level API calls bsreader, it does not do direct memcpy, but transfer the addr 
+		 and length of each frame instead.  So after the frame has been read to upper level, the frame
+		 data is not immediately freed, but kept in buffer unchanged, until next read API call.  
+		 It's assumed the frame read by upper level will be thrown into muxer and once it's consumed, 
+		 upper level API will fetch next frame, and then bsreader can free last frame. (reduce memcpy)
+	5. after next API call completes, the previous frame is freed automatically by bsreader. 
+		 This mechanism keeps only one frame in queue, so it's designed for low latency and less memcpy
+		 in transmission.
+		 
+		  
+	

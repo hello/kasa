@@ -1,0 +1,156 @@
+--- WLAN-AIO-SB_3.5.0.284/apps/athr-hostap-wfd/src/drivers/driver_nl80211.c	2013-02-26 15:15:26.000000000 +0800
++++ WLAN-AIO-SB/apps/athr-hostap-wfd/src/drivers/driver_nl80211.c	2013-02-26 19:44:30.000000000 +0800
+@@ -35,7 +35,9 @@
+ #include "linux_ioctl.h"
+ #include "radiotap.h"
+ #include "radiotap_iter.h"
++#if CONFIG_RFKILL
+ #include "rfkill.h"
++#endif
+ #include "driver.h"
+ #include "linux_wext.h"
+ #include "wireless_copy.h"
+@@ -217,7 +219,9 @@
+ 	int if_removed;
+ 	int if_disabled;
+ 	int ignore_if_down_event;
++#if CONFIG_RFKILL
+ 	struct rfkill_data *rfkill;
++#endif
+ 	struct wpa_driver_capa capa;
+ 	int has_capability;
+ 
+@@ -2710,6 +2714,24 @@
+ #define genl_ctrl_resolve android_genl_ctrl_resolve
+ #endif /* ANDROID */
+ 
++#define CTRL_ATTR_MCAST_GROUPS 7
++
++enum nl80211_multicast_groups {
++	/* be notified of configuration changes like wiphy renames */
++	NL80211_GROUP_CONFIG,
++	/* be notified of scan results */
++	NL80211_GROUP_SCAN,
++	/* be notified of regulatory changes */
++	NL80211_GROUP_REGULATORY,
++	/* be notified of MLME events */
++	NL80211_GROUP_MLME,
++
++	/* add groups here */
++
++	/* keep last */
++	__NL80211_GROUP_AFTER_LAST
++};
++#define NL80211_GROUP_MAX (__NL80211_GROUP_AFTER_LAST - 1)
+ 
+ static int wpa_driver_nl80211_init_nl_global(struct nl80211_global *global)
+ {
+@@ -2813,6 +2835,7 @@
+ }
+ 
+ 
++#if CONFIG_RFKILL
+ static void wpa_driver_nl80211_rfkill_blocked(void *ctx)
+ {
+ 	wpa_printf(MSG_DEBUG, "nl80211: RFKILL blocked");
+@@ -2835,7 +2858,7 @@
+ 	}
+ 	/* rtnetlink ifup handler will report interface as enabled */
+ }
+-
++#endif
+ 
+ static void nl80211_get_phy_name(struct wpa_driver_nl80211_data *drv)
+ {
+@@ -2966,7 +2989,9 @@
+ 				      void *global_priv)
+ {
+ 	struct wpa_driver_nl80211_data *drv;
++#if CONFIG_RFKILL
+ 	struct rfkill_config *rcfg;
++#endif
+ 	struct i802_bss *bss;
+ 
+ 	if (global_priv == NULL)
+@@ -2994,6 +3019,7 @@
+ 
+ 	nl80211_get_phy_name(drv);
+ 
++#if CONFIG_RFKILL
+ 	rcfg = os_zalloc(sizeof(*rcfg));
+ 	if (rcfg == NULL)
+ 		goto failed;
+@@ -3006,6 +3032,7 @@
+ 		wpa_printf(MSG_DEBUG, "nl80211: RFKILL status not available");
+ 		os_free(rcfg);
+ 	}
++#endif
+ 
+ 	if (wpa_driver_nl80211_finish_drv_init(drv))
+ 		goto failed;
+@@ -3302,7 +3329,9 @@
+ wpa_driver_nl80211_finish_drv_init(struct wpa_driver_nl80211_data *drv)
+ {
+ 	struct i802_bss *bss = &drv->first_bss;
++#if CONFIG_RFKILL
+ 	int send_rfkill_event = 0;
++#endif
+ 
+ 	drv->ifindex = if_nametoindex(bss->ifname);
+ 	drv->first_bss.ifindex = drv->ifindex;
+@@ -3320,6 +3349,7 @@
+ 		return -1;
+ 	}
+ 
++#if CONFIG_RFKILL
+ 	if (linux_set_iface_flags(drv->global->ioctl_sock, bss->ifname, 1)) {
+ 		if (rfkill_is_blocked(drv->rfkill)) {
+ 			wpa_printf(MSG_DEBUG, "nl80211: Could not yet enable "
+@@ -3333,6 +3363,13 @@
+ 			return -1;
+ 		}
+ 	}
++#else
++	if (linux_set_iface_flags(drv->global->ioctl_sock, bss->ifname, 1)) {
++		wpa_printf(MSG_ERROR, "nl80211: Could not set "
++				   "interface '%s' UP", bss->ifname);
++		return -1;
++	}
++#endif
+ 
+ 	netlink_send_oper_ifla(drv->global->netlink, drv->ifindex,
+ 			       1, IF_OPER_DORMANT);
+@@ -3345,10 +3382,12 @@
+ 	                       bss->addr))
+ 		return -1;
+ 
++#if CONFIG_RFKILL
+ 	if (send_rfkill_event) {
+ 		eloop_register_timeout(0, 0, wpa_driver_nl80211_send_rfkill,
+ 				       drv, drv->ctx);
+ 	}
++#endif
+ 
+ 	return 0;
+ }
+@@ -3438,7 +3477,9 @@
+ 
+ 	netlink_send_oper_ifla(drv->global->netlink, drv->ifindex, 0,
+ 	                       IF_OPER_UP);
++#if CONFIG_RFKILL
+ 	rfkill_deinit(drv->rfkill);
++#endif
+ 
+ 	eloop_cancel_timeout(wpa_driver_nl80211_scan_timeout, drv, drv->ctx);
+
+--- WLAN-AIO-SB.orig/apps/athr-hostap-wfd/wpa_supplicant/.config	2013-04-25 18:44:23.000000000 +0800
++++ WLAN-AIO-SB/apps/athr-hostap-wfd/wpa_supplicant/.config	2013-04-29 17:20:20.000000000 +0800
+@@ -14,7 +14,7 @@
+ CONFIG_CTRL_IFACE=y
+ CONFIG_IEEE8021X_EAPOL=y
+ 
+-CONFIG_IEEE80211W=y
++#CONFIG_IEEE80211W=y
+ 
+ CONFIG_WPS=y
+ CONFIG_WPS2=y

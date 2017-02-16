@@ -1,0 +1,30 @@
+--- ath6kl.orig/debug.c	2012-07-12 16:19:02.000401000 +0800
++++ ath6kl/debug.c	2012-07-12 16:50:14.195445229 +0800
+@@ -42,16 +42,27 @@
+ 
+ int ath6kl_printk(const char *level, const char *fmt, ...)
+ {
++#if defined(CONFIG_KERNEL_3_8_2) || defined(CONFIG_KERNEL_3_5_7) || defined(CONFIG_KERNEL_3_10_9)
++#define LINUX_VERSION_CODE 3000
++#define KERNEL_VERSION(_a,_b,_c) _a*1000+_b*100+_c
++#endif
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
+ 	struct va_format vaf;
++#endif
+ 	va_list args;
+ 	int rtn;
+ 
+ 	va_start(args, fmt);
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
+ 	vaf.fmt = fmt;
+ 	vaf.va = &args;
+ 
+ 	rtn = printk(KERN_INFO "%sath6kl: %pV", level, &vaf);
++#else
++	printk("%sath6kl: ", level);
++	rtn = vprintk(fmt, args);
++#endif
+ 
+ 	va_end(args);
+ 

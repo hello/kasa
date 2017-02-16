@@ -1,0 +1,8 @@
+[Unit]
+Description= autorun shmoo service
+After=systemd-udevd.service
+[Service]
+ExecStart=/usr/local/bin/shmoo_memtester.sh
+
+[Install]
+WantedBy=multi-user.target

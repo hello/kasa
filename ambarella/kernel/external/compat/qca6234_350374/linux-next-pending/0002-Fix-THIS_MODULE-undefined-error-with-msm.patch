@@ -1,0 +1,26 @@
+From 905a6ce1af68c30ee1ed092ef6fe7a2dd0f84115 Mon Sep 17 00:00:00 2001
+From: vivek <vivek@vivek-desktop.(none)>
+Date: Tue, 10 Jan 2012 13:04:08 +0530
+Subject: [PATCH] Fix THIS_MODULE undefined error with msm.
+
+Signed-off-by: vivek <vivek@vivek-desktop.(none)>
+---
+ include/linux/export.h |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/include/linux/export.h b/include/linux/export.h
+index f7842b7..a0ced3e 100644
+--- a/include/linux/export.h
++++ b/include/linux/export.h
+@@ -3,7 +3,7 @@
+ 
+ #include <linux/version.h>
+ 
+-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,2,0))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0))
+ #include_next <linux/export.h>
+ #else
+ #include <linux/module.h>
+-- 
+1.7.0.4
+

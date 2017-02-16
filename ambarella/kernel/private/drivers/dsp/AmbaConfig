@@ -1,0 +1,59 @@
+##
+## kernel/private/drivers/dsp/AmbaConfig
+##
+## History:
+##    2008/01/16 - [Jian Tang] Create
+##
+## Copyright (C) 2012-2018, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+menuconfig BUILD_AMBARELLA_DSP
+	depends on BUILD_AMBARELLA_PRIVATE_MODULES
+	bool "Build Ambarella private DSP module"
+	default n
+	help
+		Build Ambarella private DSP module for Linux.
+
+if BUILD_AMBARELLA_DSP
+
+config CONFIG_PRINT_DSP_CMD
+	bool "Print all commands sent to DSP by printk"
+	default n
+	help
+		Print all commands sent to DSP by printk
+
+config CONFIG_PRINT_DSP_CMD_MORE
+	depends on CONFIG_PRINT_DSP_CMD
+	bool "Print dsp commands in detailed."
+	default n
+	help
+		Print dsp commands in detailed.
+
+config CONFIG_PRINT_DSP_CMD_RAW
+	depends on CONFIG_PRINT_DSP_CMD_MORE
+	bool "Print dsp commands in hex."
+	default n
+	help
+		Print dsp commands in hex.
+
+choice
+prompt "Choose DSP log start address"
+default CONFIG_DSP_LOG_START_0X80000
+help
+	Reset DSP log start address to 0x80000
+
+config CONFIG_DSP_LOG_START_0X80000
+	bool "Start from 0x80000"
+
+config CONFIG_DSP_LOG_START_IAVMEM
+	bool "Start from IAV mem end"
+
+endchoice
+
+endif
+

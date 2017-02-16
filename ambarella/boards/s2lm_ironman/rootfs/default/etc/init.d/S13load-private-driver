@@ -1,0 +1,58 @@
+#!/bin/sh
+
+AMBARELLA_CONF=ambarella.conf
+
+[ -r /etc/$AMBARELLA_CONF ] && . /etc/$AMBARELLA_CONF
+
+start()
+{
+	kernel_ver=$(uname -r)
+
+	#ov4689 (mipi) is sensor driver
+	#if you change sensor, need to change driver here
+	#dsplog driver is used for DSP log capture, for debug only
+	for mod in iav ov4689_mipi dsplog
+	do
+		modprobe $mod
+		if [ $? -ne 0 ]
+		then
+			echo "Modprobe $mod failed!"
+			exit 1
+		fi
+	done
+
+	#hw_timer is hardware timer generator for audio/video PTS generator,
+	#it's must have
+	if [ -e /lib/modules/$kernel_ver/kernel/extra/hw_timer.ko ]; then
+		modprobe hw_timer
+	fi
+
+	#ambad is a debug tool, please remove ambad in final product
+	if [ -r /lib/modules/$kernel_ver/extra/ambad.ko ]; then
+		modprobe ambad
+	fi
+
+	#bcmhdh is Broadcom wifi driver
+	if [ -e /lib/modules/$kernel_ver/extra/bcmdhd.ko ]; then
+		modprobe bcmdhd
+	fi
+	return $?
+}
+
+case $1 in
+	start)
+		echo -n "Loading ambarella private driver: "
+		start
+		if [ $? -eq 0 ]
+		then
+			echo "OK!"
+		else
+			echo "Failed!"
+		fi
+		;;
+	stop)
+		;;
+	restart)
+		;;
+esac
+

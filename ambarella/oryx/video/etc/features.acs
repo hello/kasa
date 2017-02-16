@@ -1,0 +1,15 @@
+-- dsp features
+-- mode can be auto|mode0|mode1|mode4|mode|5
+-- hdr can be none|2x|3x|4x|sensor
+    --"sensor" means using sensor built-in WDR/HDR if sensor supports
+-- iso can be normal|plus|advanced
+-- dewarp can be none|ldc|full
+
+features = {
+  mode   = "auto",
+  hdr    = "none",
+  iso    = "plus",
+  dewarp = "none",
+}
+
+return features

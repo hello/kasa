@@ -1,0 +1,62 @@
+// AmbaIPCmrWebPlugIn.idl : type library source for ActiveX Control project.
+
+// This file will be processed by the MIDL compiler tool to
+// produce the type library (AmbaIPCmrWebPlugIn.tlb) that will become a resource in
+// AmbaIPCmrWebPlugIn.ocx.
+
+#include <olectl.h>
+#include <idispids.h>
+
+[ uuid(41F4ECD8-8B5B-4E84-8FAE-8DDF7E8A15A8), version(1.0),
+  helpfile("AmbaIPCmrWebPlugIn.hlp"),
+  helpstring("AmbaIPCmrWebPlugIn ActiveX Control module"),
+  control ]
+library AmbaIPCmrWebPlugInLib
+{
+	importlib(STDOLE_TLB);
+
+	//  Primary dispatch interface for CAmbaIPCmrWebPlugInCtrl
+
+	[ uuid(20F8B004-C094-4BF9-81B1-FB7711B52799),
+	  helpstring("Dispatch interface for AmbaIPCmrWebPlugIn Control")]
+	dispinterface _DAmbaIPCmrWebPlugIn
+	{
+		properties:
+		methods:
+
+			[id(DISPID_ABOUTBOX)] void AboutBox();
+			[id(0)] bool Play();
+			[id(1)] bool Stop();
+			[id(2)] void Record(bool);
+			[id(3)] bool GetRecordStatus();
+			[id(4)] void SetStreamId(short);
+			[id(5)] void SetHostname(char*);
+			[id(6)] bool SetRecvType(short);
+			[id(7)] bool ShowStat(bool);
+			[id(8)] bool ShowDPTZ(bool);
+			[id(9)] bool EnableDPTZ();
+	};
+
+	//  Event dispatch interface for CAmbaIPCmrWebPlugInCtrl
+
+	[ uuid(B1419B58-2ACE-413C-98C3-A477F460C5A4),
+	  helpstring("Event interface for AmbaIPCmrWebPlugIn Control") ]
+	dispinterface _DAmbaIPCmrWebPlugInEvents
+	{
+		properties:
+			//  Event interface has no properties
+
+		methods:
+	};
+
+	//  Class information for CAmbaIPCmrWebPlugInCtrl
+
+	[ uuid(3BCDAA6A-7306-42FF-B8CF-BE5D3534C1E4),
+	  helpstring("AmbaIPCmrWebPlugIn Control"), control ]
+	coclass AmbaIPCmrWebPlugIn
+	{
+		[default] dispinterface _DAmbaIPCmrWebPlugIn;
+		[default, source] dispinterface _DAmbaIPCmrWebPlugInEvents;
+	};
+
+};

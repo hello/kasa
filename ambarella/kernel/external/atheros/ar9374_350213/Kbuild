@@ -1,0 +1,92 @@
+EXTRA_CFLAGS	+= $(AMBARELLA_DRV_CFLAGS)
+EXTRA_AFLAGS	+= $(AMBARELLA_DRV_AFLAGS)
+EXTRA_LDFLAGS	+= $(AMBARELLA_DRV_LDFLAGS)
+
+LOCAL_COMPAT	= $(AMB_TOPDIR)/kernel/external/atheros/ar9374_350213
+
+EXTRA_CFLAGS	+= -I$(LOCAL_COMPAT)/include		\
+		-I$(LOCAL_COMPAT)/include/net		\
+		-I$(LOCAL_COMPAT)/net/wireless		\
+		-I$(LOCAL_COMPAT)/drivers/net/wireless/ath/ath6kl	\
+		-include $(LOCAL_COMPAT)/include/linux/compat-2.6.h	\
+		-include $(LOCAL_COMPAT)/include/linux/compat_autoconf.h
+
+EXTRA_CFLAGS	+= -DCOMPAT_BASE_TREE="\"3.2-rel.git\""				\
+		-DCOMPAT_BASE_TREE_VERSION="\"branching-msm-3.2.3-67-g267c37b\""\
+		-DCOMPAT_VERSION="\"3.3-OSR-2012-10-11-13-g91a8a6b\""		\
+		-DCOMPAT_PROJECT="\"Compat-wireless\""
+
+EXTRA_CFLAGS	+= -D__KERNEL__ -DCONFIG_ATH_COMMON -DCONFIG_ATH_DEBUG	\
+		-DCONFIG_BTCOEX_OLCA_3_5 -DCONFIG_NL80211_TESTMODE	\
+		-DCONFIG_CFG80211_INTERNAL_REGDB			\
+		-DCONFIG_CFG80211_WEXT -DCONFIG_CFG80211_DEBUGFS
+
+#############################################
+
+obj-m += compat.o
+compat-y := compat/main.o	\
+	compat/compat-2.6.39.o	\
+	compat/kstrtox.o	\
+	compat/compat-3.0.o	\
+	compat/compat-3.2.o	\
+	compat/cordic.o		\
+	compat/crc8.o		\
+
+#################################
+
+obj-m	+= ath.o
+ath-objs := drivers/net/wireless/ath/main.o	\
+	drivers/net/wireless/ath/regd.o		\
+	drivers/net/wireless/ath/hw.o		\
+	drivers/net/wireless/ath/key.o		\
+	drivers/net/wireless/ath/debug.o
+
+#################################
+
+ccflags-y += -include $(LOCAL_COMPAT)/include/linux/ieee80211.h	\
+	-include $(LOCAL_COMPAT)/include/linux/nl80211.h	\
+	-include $(LOCAL_COMPAT)/include/net/cfg80211.h
+
+obj-m += cfg80211.o
+cfg80211-y += net/wireless/core.o \
+	net/wireless/sysfs.o 	\
+	net/wireless/radiotap.o \
+	net/wireless/util.o 	\
+	net/wireless/reg.o 	\
+	net/wireless/scan.o 	\
+	net/wireless/nl80211.o	\
+	net/wireless/mlme.o 	\
+	net/wireless/ibss.o 	\
+	net/wireless/sme.o 	\
+	net/wireless/chan.o 	\
+	net/wireless/ethtool.o 	\
+	net/wireless/mesh.o	\
+	net/wireless/debugfs.o	\
+	net/wireless/wext-compat.o\
+	net/wireless/wext-sme.o	\
+	net/wireless/regdb.o
+
+#############################################
+
+obj-m += ath6kl_usb.o
+ath6kl_usb-y += drivers/net/wireless/ath/ath6kl-3.5/debug.o	\
+	drivers/net/wireless/ath/ath6kl-3.5/htc_pipe.o		\
+	drivers/net/wireless/ath/ath6kl-3.5/bmi.o		\
+	drivers/net/wireless/ath/ath6kl-3.5/cfg80211.o		\
+	drivers/net/wireless/ath/ath6kl-3.5/cfg80211_btcoex.o	\
+	drivers/net/wireless/ath/ath6kl-3.5/init.o		\
+	drivers/net/wireless/ath/ath6kl-3.5/main.o		\
+	drivers/net/wireless/ath/ath6kl-3.5/txrx.o		\
+	drivers/net/wireless/ath/ath6kl-3.5/wmi.o		\
+	drivers/net/wireless/ath/ath6kl-3.5/wmi_btcoex.o	\
+	drivers/net/wireless/ath/ath6kl-3.5/usb.o		\
+	drivers/net/wireless/ath/ath6kl-3.5/testmode.o		\
+	drivers/net/wireless/ath/ath6kl-3.5/rttm.o		\
+	drivers/net/wireless/ath/ath6kl-3.5/diag.o		\
+	drivers/net/wireless/ath/ath6kl-3.5/htcoex.o		\
+	drivers/net/wireless/ath/ath6kl-3.5/ath_netlink.o	\
+	drivers/net/wireless/ath/ath6kl-3.5/pm.o		\
+	drivers/net/wireless/ath/ath6kl-3.5/p2p.o		\
+	drivers/net/wireless/ath/ath6kl-3.5/ap.o
+
+#############################################

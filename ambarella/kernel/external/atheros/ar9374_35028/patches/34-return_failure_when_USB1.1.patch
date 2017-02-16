@@ -1,0 +1,19 @@
+--- ath6kl.ori/usb.c	2012-12-11 22:14:03.000000000 +0800
++++ ath6kl/usb.c	2012-12-13 14:33:05.000000000 +0800
+@@ -1948,10 +1948,14 @@
+ 			   interface->cur_altsetting->desc.bInterfaceNumber);
+ 
+ 
+-	if (dev->speed == USB_SPEED_HIGH)
++	if (dev->speed == USB_SPEED_HIGH){
+ 		ath6kl_dbg(ATH6KL_DBG_USB, "USB 2.0 Host\n");
+-	else
++	}else{
+ 		ath6kl_dbg(ATH6KL_DBG_USB, "USB 1.1 Host\n");
++		ath6kl_err("Mck doesn't support USB 1.1 Host, return failure in USB probe\n");
++		ret = -1;
++		goto err_usb_put;
++	}
+ 
+ 	ar_usb = ath6kl_usb_create(interface);
+ 

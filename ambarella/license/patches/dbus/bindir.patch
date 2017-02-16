@@ -1,0 +1,12 @@
+diff -up dbus-1.2.1/bus/messagebus.in.start-early dbus-1.2.1/bus/messagebus.in
+--- dbus-1.2.1/bus/messagebus.in.start-early	2008-04-04 11:24:08.000000000 -0400
++++ dbus-1.2.1/bus/messagebus.in	2008-07-18 19:50:19.000000000 -0400
+@@ -21,7 +21,7 @@
+ ### END INIT INFO
+ 
+ # Sanity checks.
+-[ -x @EXPANDED_BINDIR@/dbus-daemon ] || exit 0
++[ -x /bin/dbus-daemon ] || exit 0
+ 
+ # Source function library.
+ . @EXPANDED_SYSCONFDIR@/rc.d/init.d/functions

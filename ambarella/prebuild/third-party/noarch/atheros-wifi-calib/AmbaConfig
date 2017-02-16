@@ -1,0 +1,43 @@
+##
+## prebuild/third-party/AmbaConfig
+##
+## History:
+##    2012/06/19 - [Cao Rongrong] Create
+##    2012/10/22 - [Tao Wu] modify
+##
+## Copyright (C) 2012-2016, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+choice
+  prompt "Atheros Wifi chip/module calibration data Version"
+  depends on CONFIG_AMBARELLA_ATHEROS_WIFI_SUPPORT
+  help
+    Select Atheros Wifi chip/module calibration data Version.
+
+config BUILD_CALIBRATION_DATA_DEFAULT_ATHEROS_WIFI
+  bool "Default Atheros Wifi chip/module "
+  help
+    Select Default Atheros wifi chip/module calibration data
+
+config BUILD_CALIBRATION_DATA_AR6103G_BM2D_19680505_142D
+  bool "AR6103G-BM2D_19680505.142D"
+  depends on CONFIG_ATHEROS_FIRMWARE_VERSION_6003_796
+  help
+    Select AR6103G_BM2D_19680505_142D calibration data
+
+config BUILD_CALIBRATION_DATA_AR6302G_BL38_PGB823_2B
+  bool "AR6302G-BL38_PGB823.2B"
+  help
+    Select AR6302G_BL38_PGB823_2B calibration data
+
+config BUILD_CALIBRATION_DATA_AR6003X_BC2B
+  bool "AR6003X-BC2B 2.4G,5G"
+  help
+    Select AR6003X-BC2B 2.4,5G calibration data
+
+endchoice

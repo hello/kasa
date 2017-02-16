@@ -1,0 +1,13 @@
+--- cfg80211.h	2012-11-14 09:07:58.526769405 +0800
++++ cfg80211_patch.h	2012-11-14 09:08:41.150782499 +0800
+@@ -1465,6 +1465,10 @@
+ struct cfg80211_ops {
+ 	int	(*suspend)(struct wiphy *wiphy, struct cfg80211_wowlan *wow);
+ 	int	(*resume)(struct wiphy *wiphy);
++#ifdef CONFIG_ANDROID
++        int     (*set_wow_mode)(struct wiphy *wiphy, struct cfg80211_wowlan *wow);
++        int     (*clr_wow_mode)(struct wiphy *wiphy);
++#endif
+ 
+ 	struct net_device * (*add_virtual_intf)(struct wiphy *wiphy,
+ 						char *name,

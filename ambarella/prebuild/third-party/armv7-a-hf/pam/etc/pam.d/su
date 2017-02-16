@@ -1,0 +1,10 @@
+#%PAM-1.0
+# The PAM configuration file for the `su' service
+#
+auth       required   pam_wheel.so
+auth       sufficient pam_rootok.so
+auth       include    system-auth
+
+account    include    system-auth
+
+session    include    system-auth

@@ -1,0 +1,110 @@
+#!/bin/sh
+# This script is a wrapper to help use parted,
+# this script will automatically make two partitions on the SD card and format
+# the partitions to FAT32 file system
+
+# Usage: mkpart device
+
+PARTED=`which parted`
+MKDOSFS=`which mkdosfs`
+MOUNT=`which mount`
+UMOUNT=`which umount`
+MMC=`echo $1 | sed -e 's/\(mmcblk[0-9]\).*/\1/'`
+
+if [ -z $PARTED ]
+then
+  echo "parted is not installed!"
+  exit 1
+fi
+
+if [ -z $MKDOSFS ]
+then
+  echo "mkdosfs is not installed!"
+  exit 1
+fi
+
+if [ -z $MOUNT ]
+then
+  echo "mount is not installed!"
+  exit 1
+fi
+
+if [ -z $UMOUNT ]
+then
+  echo "umount is not installed!"
+  exit 1
+fi
+
+if [ $# != 1 ]
+then
+    echo "Usage: mkpart device"
+    exit 1
+elif [ -z $MMC ]
+then
+    echo "Invalid device: $1"
+    exit 1
+elif [ ! -e $MMC ]
+then
+    echo "No such file or directory: $MMC"
+    exit 1
+fi
+
+umount_mmc()
+{
+  MOUNTPOINTS=`$MOUNT | grep $MMC | awk '{print $3}'`
+  echo $MOUNTPOINTS
+  for mpt in $MOUNTPOINTS
+  do
+    $UMOUNT $mpt
+  done
+}
+
+del_partition()
+{
+  line=`$PARTED $MMC print | wc -l`
+  line=`expr $line - 1`
+  partitionNum=`$PARTED $MMC print | awk 'NR=='$line'{print $1}'`
+  while [ $partitionNum -gt 0 ]
+  do
+      $PARTED ${MMC} rm $partitionNum
+      partitionNum=`expr $partitionNum - 1`
+  done
+}
+
+new_partition()
+{
+  GB=1073741824
+  MB=1048576
+  KB=1024
+
+  TOTAL_SECTOR=`$PARTED --align=opt $MMC unit s print | grep Disk | awk '{print $3}' | sed s/s//g`
+  SECTOR_SIZE=`$PARTED --align=opt $MMC unit s print | grep Sector\ [Ss]ize | awk -F\/ '{print $3}' | sed s/B//g`
+  TOTAL_SIZE=`expr $SECTOR_SIZE \* $TOTAL_SECTOR`
+
+  #Calculate partiton's start sector and end sector
+  PARTITION_START_SECTOR=`expr $MB / $SECTOR_SIZE`
+  PARTITION_END_SECTOR=`expr $TOTAL_SECTOR - 1`
+  PARTITION_SECTOR_COUNT=`expr $TOTAL_SECTOR - $PARTITION_START_SECTOR`
+  PARTITION_SIZE=`expr $PARTITION_SECTOR_COUNT \* $SECTOR_SIZE`
+
+  echo "Making label"
+  echo Y | $PARTED --align=opt $MMC mklabel msdos
+
+  echo "Making partitions"
+  echo "TOTAL SECTORS $TOTAL_SECTOR"
+  echo "SECTOR SIZE $SECTOR_SIZE Bytes"
+  echo "TOTAL SIZE $TOTAL_SIZE Bytes"
+  echo "PARTITION SIZE $PARTITION_SIZE Bytes, $PARTITION_START_SECTOR $PARTITION_END_SECTOR"
+  $PARTED --align=opt $MMC unit s mkpart primary fat32 $PARTITION_START_SECTOR $PARTITION_END_SECTOR
+  if [ $? -eq 0 ]
+  then
+    sleep 2
+    $MKDOSFS -v -n Cloudcam ${MMC}p1
+  else
+    echo "Failed to make partiton!"
+  fi
+}
+
+umount_mmc
+del_partition
+new_partition

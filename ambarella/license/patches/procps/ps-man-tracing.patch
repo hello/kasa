@@ -1,0 +1,15 @@
+diff -Naur procps-ng-3.3.9.orig/ps/ps.1 procps-ng-3.3.9/ps/ps.1
+--- procps-ng-3.3.9.orig/ps/ps.1	2013-11-25 10:55:25.000000000 +0100
++++ procps-ng-3.3.9/ps/ps.1	2014-04-08 15:47:51.743268372 +0200
+@@ -849,7 +849,10 @@
+ interruptible sleep (waiting for an event to complete)
+ .TP
+ T
+-stopped, either by a job control signal or because it is being traced
++stopped by job control signal
++.TP
++t
++stopped by debugger during the tracing
+ .TP
+ W
+ paging (not valid since the 2.6.xx kernel)

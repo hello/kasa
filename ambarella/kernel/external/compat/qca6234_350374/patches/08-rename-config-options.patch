@@ -1,0 +1,118 @@
+In kernel 2.6.26 and older CONFIG_IWL4965 was build as an extra
+module, but now it is directly included in the iwlagn.
+
+CONFIG_IWL4965 has to be set to y, to build correctly.
+
+zd1211rw does not build with kernel < 2.6.28, but it is often activated 
+in the kernel config of older kernels. We rename the option to 
+deactivate it on older kernels.
+CONFIG_BT_L2CAP and CONFIG_BT_SCO are boolean now, but often set to m 
+in the kernel config.
+
+CONFIG_BT_HIDP does not build with older kernel versions.
+
+--- a/drivers/net/wireless/Makefile
++++ b/drivers/net/wireless/Makefile
+@@ -21,7 +21,7 @@ obj-$(CONFIG_PRISM54)		+= prism54/
+ obj-$(CONFIG_HOSTAP)		+= hostap/
+ obj-$(CONFIG_B43)		+= b43/
+ obj-$(CONFIG_B43LEGACY)		+= b43legacy/
+-obj-$(CONFIG_ZD1211RW)		+= zd1211rw/
++obj-$(CONFIG_COMPAT_ZD1211RW)		+= zd1211rw/
+ obj-$(CONFIG_RTL8180)		+= rtl818x/
+ obj-$(CONFIG_RTL8187)		+= rtl818x/
+ obj-$(CONFIG_RTLWIFI)		+= rtlwifi/
+--- a/drivers/net/wireless/iwlegacy/Makefile
++++ b/drivers/net/wireless/iwlegacy/Makefile
+@@ -10,7 +10,7 @@ iwl-legacy-objs += $(iwl-legacy-m)
+ CFLAGS_iwl-devtrace.o := -I$(src)
+ 
+ # 4965
+-obj-$(CONFIG_IWL4965)	+= iwl4965.o
++obj-$(CONFIG_COMPAT_IWL4965)	+= iwl4965.o
+ iwl4965-objs		:= iwl-4965.o iwl4965-base.o iwl-4965-rs.o iwl-4965-led.o
+ iwl4965-objs		+= iwl-4965-ucode.o iwl-4965-tx.o
+ iwl4965-objs		+= iwl-4965-lib.o iwl-4965-rx.o iwl-4965-calib.o
+--- a/drivers/net/wireless/libertas/Makefile
++++ b/drivers/net/wireless/libertas/Makefile
+@@ -16,5 +16,5 @@ libertas_spi-objs += if_spi.o
+ obj-$(CONFIG_LIBERTAS)     += libertas.o
+ obj-$(CONFIG_LIBERTAS_USB) += usb8xxx.o
+ obj-$(CONFIG_LIBERTAS_CS)  += libertas_cs.o
+-obj-$(CONFIG_LIBERTAS_SDIO) += libertas_sdio.o
++obj-$(CONFIG_COMPAT_LIBERTAS_SDIO) += libertas_sdio.o
+ obj-$(CONFIG_LIBERTAS_SPI) += libertas_spi.o
+--- a/drivers/net/wireless/zd1211rw/Makefile
++++ b/drivers/net/wireless/zd1211rw/Makefile
+@@ -1,4 +1,4 @@
+-obj-$(CONFIG_ZD1211RW) += zd1211rw.o
++obj-$(CONFIG_COMPAT_ZD1211RW) += zd1211rw.o
+ 
+ zd1211rw-objs := zd_chip.o zd_mac.o \
+ 		zd_rf_al2230.o zd_rf_rf2959.o \
+--- a/include/net/bluetooth/bluetooth.h
++++ b/include/net/bluetooth/bluetooth.h
+@@ -245,7 +245,7 @@ extern void bt_sysfs_cleanup(void);
+ 
+ extern struct dentry *bt_debugfs;
+ 
+-#ifdef CONFIG_BT_L2CAP
++#ifdef CONFIG_COMPAT_BT_L2CAP
+ int l2cap_init(void);
+ void l2cap_exit(void);
+ #else
+@@ -259,7 +259,7 @@ static inline void l2cap_exit(void)
+ }
+ #endif
+ 
+-#ifdef CONFIG_BT_SCO
++#ifdef CONFIG_COMPAT_BT_SCO
+ int sco_init(void);
+ void sco_exit(void);
+ #else
+--- a/net/bluetooth/Makefile
++++ b/net/bluetooth/Makefile
+@@ -6,8 +6,8 @@ obj-$(CONFIG_BT)	+= bluetooth.o
+ obj-$(CONFIG_BT_RFCOMM)	+= rfcomm/
+ obj-$(CONFIG_BT_BNEP)	+= bnep/
+ obj-$(CONFIG_BT_CMTP)	+= cmtp/
+-obj-$(CONFIG_BT_HIDP)	+= hidp/
++obj-$(CONFIG_COMPAT_BT_HIDP)	+= hidp/
+ 
+ bluetooth-y := af_bluetooth.o hci_core.o hci_conn.o hci_event.o mgmt.o hci_sock.o hci_sysfs.o lib.o
+-bluetooth-$(CONFIG_BT_L2CAP)	+= l2cap_core.o l2cap_sock.o smp.o
+-bluetooth-$(CONFIG_BT_SCO)	+= sco.o
++bluetooth-$(CONFIG_COMPAT_BT_L2CAP)	+= l2cap_core.o l2cap_sock.o smp.o
++bluetooth-$(CONFIG_COMPAT_BT_SCO)	+= sco.o
+--- a/net/bluetooth/hidp/Makefile
++++ b/net/bluetooth/hidp/Makefile
+@@ -2,6 +2,6 @@
+ # Makefile for the Linux Bluetooth HIDP layer
+ #
+ 
+-obj-$(CONFIG_BT_HIDP) += hidp.o
++obj-$(CONFIG_COMPAT_BT_HIDP) += hidp.o
+ 
+ hidp-objs := core.o sock.o
+--- a/drivers/net/wireless/wl12xx/Makefile
++++ b/drivers/net/wireless/wl12xx/Makefile
+@@ -8,9 +8,9 @@ wl12xx_sdio_test-objs	= sdio_test.o
+ wl12xx-$(CONFIG_NL80211_TESTMODE)	+= testmode.o
+ obj-$(CONFIG_WL12XX)			+= wl12xx.o
+ obj-$(CONFIG_WL12XX_SPI)		+= wl12xx_spi.o
+-obj-$(CONFIG_WL12XX_SDIO)		+= wl12xx_sdio.o
++obj-$(CONFIG_COMPAT_WL12XX_SDIO)		+= wl12xx_sdio.o
+ 
+-obj-$(CONFIG_WL12XX_SDIO_TEST)		+= wl12xx_sdio_test.o
++obj-$(CONFIG_COMPAT_WL12XX_SDIO_TEST)		+= wl12xx_sdio_test.o
+ 
+ # small builtin driver bit
+ obj-$(CONFIG_WL12XX_PLATFORM_DATA)	+= wl12xx_platform_data.o
+--- a/drivers/net/wireless/wl1251/Makefile
++++ b/drivers/net/wireless/wl1251/Makefile
+@@ -5,4 +5,4 @@ wl1251_sdio-objs	+= sdio.o
+ 
+ obj-$(CONFIG_WL1251)		+= wl1251.o
+ obj-$(CONFIG_WL1251_SPI)	+= wl1251_spi.o
+-obj-$(CONFIG_WL1251_SDIO)	+= wl1251_sdio.o
++obj-$(CONFIG_COMPAT_WL1251_SDIO)	+= wl1251_sdio.o

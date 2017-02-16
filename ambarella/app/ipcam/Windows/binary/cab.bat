@@ -1,0 +1,1 @@
+"C:\Program Files\Microsoft Platform SDK for Windows Server 2003 R2\Bin\cabarc.exe" n ambaWeb.cab ambaWeb.inf AmbaIPCmrWebPlugIn.ocx AmbaTCPClient.ax AmbaRTSPClient.ax setup.exe setup.bat manual_setup.bat uninstall.bat

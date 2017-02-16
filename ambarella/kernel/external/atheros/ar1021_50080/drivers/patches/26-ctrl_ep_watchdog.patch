@@ -1,0 +1,121 @@
+diff -Naur ath6kl.ori/htc.h ath6kl/htc.h
+--- ath6kl.ori/htc.h	2012-11-28 11:19:29.000000000 +0800
++++ ath6kl/htc.h	2012-11-28 14:05:33.000000000 +0800
+@@ -641,6 +641,8 @@
+ 	u32 rx_sg_total_len_cur; /* current total length */
+ 	u32 rx_sg_total_len_exp; /* expected total length */
+ 
++	struct timer_list ctl_ep_wd_timer;
++
+ };
+ 
+ int ath6kl_htc_rxmsg_pending_handler(struct htc_target *target,
+diff -Naur ath6kl.ori/htc_pipe.c ath6kl/htc_pipe.c
+--- ath6kl.ori/htc_pipe.c	2012-11-28 11:19:29.000000000 +0800
++++ ath6kl/htc_pipe.c	2012-11-28 14:09:23.000000000 +0800
+@@ -27,6 +27,7 @@
+ #define HTC_PACKET_CONTAINER_ALLOCATION 32
+ #define HTC_CONTROL_BUFFER_SIZE (HTC_MAX_CTRL_MSG_LEN + HTC_HDR_LENGTH)
+ #define DATA_EP_SIZE 4
++#define HTC_CTL_EP_WD_TIMEOUT 3000
+ 
+ static int ath6kl_htc_pipe_tx(struct htc_target *handle,
+ 	struct htc_packet *packet);
+@@ -189,8 +190,12 @@
+
+ 		} else {
+
+-			if (ep->cred_dist.credits < credits_required)
++			if (ep->cred_dist.credits < credits_required) {
++				if(ep->eid == ENDPOINT_1)
++				    mod_timer(&target->ctl_ep_wd_timer, (jiffies +
++					msecs_to_jiffies(HTC_CTL_EP_WD_TIMEOUT)));
+				break;
++			}
+
+			if (htc_bundle_send && !msgs_upper_limit)
+				break;
+@@ -345,8 +350,14 @@
+ 			/* reclaim credits */
+ 			if (ep->eid >= ENDPOINT_2 && ep->eid <= ENDPOINT_5)
+ 				target->avail_tx_credits += bundle_credit_used;
+-			else
++			else {
+ 				ep->cred_dist.credits += bundle_credit_used;
++				if(ep->eid == ENDPOINT_1 && ep->cred_dist.credits >= 1) {
++                                    del_timer(&target->ctl_ep_wd_timer);
++                                    if(ep->cred_dist.credits > 1)
++                                        ep->cred_dist.credits = 1;
++				}
++			}
+
+                        ep->ep_st.cred_retnd += bundle_credit_used;
+                        ep->ep_st.tx_dropped += bundle_credit_used;
+@@ -413,9 +424,15 @@
+ 				    ep->eid <= ENDPOINT_5)
+ 					target->avail_tx_credits +=
+ 						packet->info.tx.cred_used;
+-				else
++				else {
+ 					ep->cred_dist.credits +=
+ 						packet->info.tx.cred_used;
++					if(ep->eid == ENDPOINT_1 && ep->cred_dist.credits >= 1) {
++                                        del_timer(&target->ctl_ep_wd_timer);
++                                        if(ep->cred_dist.credits > 1)
++                                            ep->cred_dist.credits = 1;
++					}
++				}
+
+                                ep->ep_st.tx_dropped +=
+                                        packet->info.tx.cred_used;
+@@ -958,6 +975,12 @@
+                        ep->ep_st.cred_retnd += rpt->credits;
+                        ep->ep_st.tx_cred_rpt++;
+
++			if(ep->eid == ENDPOINT_1 && ep->cred_dist.credits >= 1){
++				del_timer(&target->ctl_ep_wd_timer);
++				if(ep->cred_dist.credits > 1)
++					ep->cred_dist.credits = 1;
++			}
++
+ 			if (ep->cred_dist.credits &&
+ 			    get_queue_depth(&ep->txq)) {
+ 				spin_unlock_bh(&target->tx_lock);
+@@ -1814,6 +1835,18 @@
+ 	return allocation;
+ }
+ 
++static void ath6kl_htc_pipe_ctl_ep_timer_handler(unsigned long ptr)
++{
++	struct htc_target *target  = (struct htc_target *)ptr;
++    
++	spin_lock_bh(&target->tx_lock);
++	if(target->endpoint[ENDPOINT_1].cred_dist.credits == 0){
++		target->endpoint[ENDPOINT_1].cred_dist.credits = 1;
++	}
++	spin_unlock_bh(&target->tx_lock);
++	htc_try_send(target, &target->endpoint[ENDPOINT_1], NULL);
++}
++
+ static int ath6kl_htc_pipe_conn_service(struct htc_target *handle,
+ 		     struct htc_service_connect_req *conn_req,
+ 		     struct htc_service_connect_resp *conn_resp)
+@@ -2006,6 +2039,9 @@
+ 			   ep->svc_id, assigned_epid);
+ 	}
+ 
++	setup_timer(&target->ctl_ep_wd_timer, ath6kl_htc_pipe_ctl_ep_timer_handler,
++		    (unsigned long) target);
++
+ free_packet:
+ 	if (packet != NULL)
+ 		htc_free_txctrl_packet(target, packet);
+@@ -2167,6 +2203,8 @@
+ 		}
+ 	}
+ 
++	del_timer(&target->ctl_ep_wd_timer);
++
+ 	spin_lock_bh(&target->rx_lock);
+ 
+ 	while ((skb = skb_dequeue(rx_sg_queue)))

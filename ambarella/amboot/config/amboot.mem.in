@@ -1,0 +1,103 @@
+##
+## config/amboot.mem.in
+##
+## History:
+##    2007/08/22 - [Charles Chiou] created file (branch off)
+##    2007/10/24 - [Charles Chiou] imported to Linux tree
+##    2008/02/19 - [Anthony Ginger] imported to AMBuild
+##
+## Copyright (C) 2004-2007, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+menu "Memory Options"
+depends on BUILD_AMBARELLA_FIRMWARE
+
+menu "AMBoot memory options"
+
+config AMBOOT_BLD_RAM_START
+	hex "AMBoot bootloader starting address"
+	default 0x00000000 if CONFIG_ARCH_S2E || CONFIG_ARCH_S2L || CONFIG_ARCH_S3 || \
+			      CONFIG_ARCH_S3L
+	default 0xC0000000
+	help
+		The AMBoot bootloader starting address - The bootloader code is
+		the 2nd-stage code that is loaded by the AMBoot bootstrapper
+		code. Its size is limited to 512KB in size. It contains an
+		interactive prompt, diagnostics, and utilities for managing
+		the flash contents as well as loading other (RTOS, ramdisk,
+		etc.) images into the DRAM and uncompressing and executing
+		them. (Please don't modify this value unless you know what
+		you are doing!)
+
+config AMBOOT_BLD_STACK_SIZE
+	hex "AMBoot bootloader stack size"
+	default 0x00008000
+	help
+		The stack size of the bootloader code.
+		(Please don't modify this value unless you know what
+		you are doing!)
+
+config AMBOOT_BLD_HEAP_SIZE
+	hex "AMBoot bootloader heap size"
+	default 0x00008000
+	help
+		The bootloader needs a heap for the code decompression
+		algorithm to work.
+		(Please don't modify this value unless you know what
+		you are doing!)
+
+
+endmenu
+
+menu "RTOS memory options"
+
+config KERNEL_RAM_START
+	hex "Kernel start address"
+	default 0x00208000 if CONFIG_ARCH_S2E || CONFIG_ARCH_S2L || CONFIG_ARCH_S3 || \
+			      CONFIG_ARCH_S3L
+	default 0xC0208000
+	help
+		KERNEL DRAM Start = (KERNEL_RAM_START & 0xFFF00000)
+		KERNEL DRAM Size = (IDSP_RAM_START -
+			(KERNEL_RAM_START & 0xFFF00000))
+
+config AMBARELLA_INITRD_PHYS
+	hex "Initrd start address"
+	default 0x00A00000 if CONFIG_ARCH_S2E || CONFIG_ARCH_S2L || CONFIG_ARCH_S3 || \
+			      CONFIG_ARCH_S3L
+	default 0xC0A00000
+
+config IDSP_RAM_START
+	hex "DSP DRAM start address"
+	default 0x08000000 if CONFIG_ARCH_S2E || CONFIG_ARCH_S2L || CONFIG_ARCH_S3 || \
+			      CONFIG_ARCH_S3L
+	default 0xC8000000
+	help
+		DSP DRAM Start = IDSP_RAM_START
+		DSP DRAM Size = (DRAM_SIZE - (IDSP_RAM_START - DRAM_START_ADDR))
+
+config DSP_FASTDATA_SIZE
+	hex "DSP Reserved Buffer Size for Fastboot Data(Sync data from amboot to IAV)"
+	default 0x0000000
+	help
+		DSP FASTDATA DRAM Start = (DSP IAVRSVD DRAM Start + DSP_IAVRSVD_SIZE)
+
+config DSP_FASTAUDIO_SIZE
+	hex "DSP Reserved Buffer Size for Fast Audio"
+	default 0x0000000
+	help
+		DSP FASTAUDIO DRAM Start = (DSP FASTDATA DRAM Start + DSP_FASTDATA_SIZE)
+
+config FRAMEBUFFER_SIZE
+	hex "Ambarella framebuffer size"
+	default 0x0000000
+
+endmenu
+
+endmenu
+

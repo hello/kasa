@@ -1,0 +1,38 @@
+diff -Naur ath6kl.org/init.c ath6kl/init.c
+--- ath6kl.org/init.c	2012-12-21 11:35:10.000000000 +0800
++++ ath6kl/init.c	2012-12-21 13:50:39.000000000 +0800
+@@ -42,7 +44,7 @@
+ unsigned int ath6kl_vap = ATH6KL_MODULEVAP_DEF_MODE;
+ unsigned int ath6kl_scan_timeout;
+ unsigned int ath6kl_roam_mode = ATH6KL_MODULEROAM_DEFAULT;
+-static unsigned int recovery_enable_mode = ATH6KL_RECOVERY_MODE_NONE;
++static unsigned int recovery_enable_mode = ATH6KL_RECOVERY_MODE_COLD;
+ 
+ #ifdef CONFIG_QC_INTERNAL
+ unsigned short reg_domain = 0xffff;
+
+diff -Naur ath6kl.ori/cfg80211.c ath6kl/cfg80211.c
+--- ath6kl.ori/cfg80211.c	2012-12-06 17:43:35.000000000 +0800
++++ ath6kl/cfg80211.c	2012-12-06 19:22:23.000000000 +0800
+@@ -4900,7 +4900,7 @@
+ 		ath6kl_err("failed to initialize p2p_ps\n");
+ 		return -ENOMEM;
+ 	}
+-
++#if 0
+ 	if (ath6kl_mod_debug_quirks(vif->ar, ATH6KL_MODULE_ENABLE_KEEPALIVE)) {
+ 		vif->ap_keepalive_ctx =
+ 			ath6kl_ap_keepalive_init(vif, AP_KA_MODE_ENABLE);
+@@ -4911,6 +4911,12 @@
+ 			ath6kl_ap_keepalive_init(vif, AP_KA_MODE_DISABLE);
+	}
+
++#else
++        vif->ap_keepalive_ctx =
++                        ath6kl_ap_keepalive_init(vif, AP_KA_MODE_ENABLE);
++
++        ath6kl_ap_keepalive_config(vif, 5000, 3);
++#endif
+ 	if (!vif->ap_keepalive_ctx) {
+ 		ath6kl_err("failed to initialize ap_keepalive\n");
+ 		return -ENOMEM;

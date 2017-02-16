@@ -1,0 +1,24 @@
+diff -Naur cfg80211/nl80211.c cfg80211.patch/nl80211.c
+--- cfg80211/nl80211.c	2011-11-07 13:44:16.301048874 +0800
++++ cfg80211.patch/nl80211.c	2011-11-07 13:45:30.197035531 +0800
+@@ -1530,7 +1530,7 @@
+ 			       enum nl80211_iftype iftype)
+ {
+ 	if (!use_4addr) {
+-		if (netdev && (netdev->priv_flags & IFF_BRIDGE_PORT))
++		if (netdev && br_port_exists(netdev))
+ 			return -EBUSY;
+ 		return 0;
+ 	}
+diff -Naur cfg80211/util.c cfg80211.patch/util.c
+--- cfg80211/util.c	2011-11-07 13:44:16.973046128 +0800
++++ cfg80211.patch/util.c	2011-11-07 13:45:05.033044691 +0800
+@@ -802,7 +802,7 @@
+ 		return -EOPNOTSUPP;
+ 
+ 	/* if it's part of a bridge, reject changing type to station/ibss */
+-	if ((dev->priv_flags & IFF_BRIDGE_PORT) &&
++	if (br_port_exists(dev) &&
+ 	    (ntype == NL80211_IFTYPE_ADHOC ||
+ 	     ntype == NL80211_IFTYPE_STATION ||
+ 	     ntype == NL80211_IFTYPE_P2P_CLIENT))

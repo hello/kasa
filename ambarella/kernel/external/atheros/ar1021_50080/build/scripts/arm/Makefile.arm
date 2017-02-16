@@ -1,0 +1,32 @@
+# Build list
+
+targetList := drivers
+ifdef BUILD_LIBNL
+targetList += libnl
+endif
+targetList +=
+
+default: ${targetList}
+
+#################################################################################################################################
+export WLAN_DRIVER_TOPDIR=$(ATH_TOPDIR)/drivers
+
+#################################################################################################################################
+#
+# driver build
+#
+drivers_patch:
+	@echo Build drivers patch
+	@cd ${WLAN_DRIVER_TOPDIR} && patch -p0 < patches/00-remore_ns-type.patch
+	@cd ${WLAN_DRIVER_TOPDIR} && patch -p0 < patches/01-add_CFG80211_WEXT.patch
+	@cd ${WLAN_DRIVER_TOPDIR} && patch -p0 < patches/02-remore_netlink-seq.patch
+	@cd ${WLAN_DRIVER_TOPDIR} && patch -p0 < patches/03-change_IFF_BRIDGE_PORT.patch
+	@cd ${WLAN_DRIVER_TOPDIR} && patch -p0 < patches/05-remove_of.h.patch
+	@cd ${WLAN_DRIVER_TOPDIR} && patch -p0 < patches/05-change_fw-request-dev2.patch
+	@cd ${WLAN_DRIVER_TOPDIR} && patch -p0 < patches/06-Kbuild.patch
+	@cd ${WLAN_DRIVER_TOPDIR} && patch -p0 < patches/07-usb_CONFIG_PM.patch
+	@cd ${WLAN_DRIVER_TOPDIR} && patch -p0 < patches/10-remove_unaligned_copy.patch
+	@cd ${WLAN_DRIVER_TOPDIR} && patch -p0 < patches/11-fix_ath6kl_printk.patch
+	@cd ${WLAN_DRIVER_TOPDIR} && patch -p0 < patches/12-intra_reg.patch
+#	@cd ${WLAN_DRIVER_TOPDIR}/../apps/hostap/src/ && patch -p0 < ${WLAN_DRIVER_TOPDIR}/patches/08-hostap_make_libnl.patch
+

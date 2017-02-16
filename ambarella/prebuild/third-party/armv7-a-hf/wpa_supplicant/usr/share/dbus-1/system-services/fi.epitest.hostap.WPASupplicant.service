@@ -1,0 +1,5 @@
+[D-BUS Service]
+Name=fi.epitest.hostap.WPASupplicant
+Exec=/usr/sbin/wpa_supplicant -B -u -f /var/run/log/wpa_supplicant.log -c /etc/wpa_supplicant/wpa_supplicant.conf -P /var/run/wpa_supplicant.pid
+User=root
+SystemdService=wpa_supplicant.service

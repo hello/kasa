@@ -1,0 +1,161 @@
+#system configuration
+
+pipeline.enc_mode 4
+pipeline.raw2enc 0
+pipeline.raw_cap 0
+pipeline.raw_max_width 3072
+pipeline.raw_max_height 2048
+pipeline.exposure_num 1
+#duration counts by second
+pipeline.duration 0
+pipeline.next_cfg_file self
+
+#	SENSOR_IMX178	= 0x00003009
+vin.sensor_name imx178
+vin.sensor_id 12297
+#video_mode=0 means auto
+vin.video_mode 0
+vin.hdr_mode 0
+vin.width	3072
+vin.height 2048
+vin.fps 30
+vin.bit_resolution 14
+#255 means auto
+vin.mirror 255
+vin.bayer_pattern 255
+
+#vout0-LCD vout1-HDMI
+vout0.enable 1
+#input_from_smem=1 input_from_mixer=0
+vout0.input 1
+vout0.width 640
+vout0.height 480
+#AMBA_VIDEO_MODE_D1_NTSC	= 0x00020002,	//480p59.94
+vout0.mode 131074
+#AMBA_VOUT_SINK_TYPE_DIGITAL=2
+vout0.device 2
+#"--lcd digital"
+vout0.lcd_model_index 0
+
+vout1.enable 1
+vout1.input 1
+#AMBA_VIDEO_MODE_1080P		= 0x00020013,	//1080p59.94
+vout1.mode 131091
+vout1.width 1920
+vout1.height 1080
+#AMBA_VOUT_SINK_TYPE_HDMI=4
+vout1.device 4
+vout1.lcd_model_index -1
+
+osd.from_mixer_a 1
+osd.from_mixer_b 0
+
+#dummy = main_buf input, and 2/3/4 buf based on main_buf
+#dummy_win.width 3072
+#dummy_win.height 1728
+
+#assume active is identical to dummy always in ipcam
+#active_win.width 3072
+#active_win.height 1728
+
+main_buf.input_width 3072
+main_buf.input_height 1728
+main_buf.input_offset_x 0
+main_buf.input_offset_y 160
+main_buf.max_width 3072
+main_buf.max_height 1728
+main_buf.width 3072
+main_buf.height 1728
+#OFF=0 ENC=1 PREVIEW=2
+main_buf.type 1
+
+second_buf.input_width 1920
+second_buf.input_height 1080
+second_buf.input_offset_x 0
+second_buf.input_offset_y 0
+second_buf.max_width 720
+second_buf.max_height 576
+second_buf.width 720
+second_buf.height 576
+second_buf.type 1
+
+third_buf.input_width 1920
+third_buf.input_height 1080
+third_buf.input_offset_x 0
+third_buf.input_offset_y 0
+third_buf.max_width 1920
+third_buf.max_height 1080
+third_buf.width 1920
+third_buf.height 1080
+third_buf.type 2
+
+fourth_buf.input_width 1920
+fourth_buf.input_height 1080
+fourth_buf.input_offset_x 0
+fourth_buf.input_offset_y 0
+fourth_buf.max_width 1280
+fourth_buf.max_height 720
+fourth_buf.width 1280
+fourth_buf.height 720
+fourth_buf.type 1
+
+stream_a.width 1920
+stream_a.height 1080
+stream_a.max_width 1920
+stream_a.max_height 1080
+stream_a.m 1
+stream_a.n 30
+stream_a.bit_rate 20000000
+stream_a.quality 95
+stream_a.h_flip 0
+stream_a.v_flip 0
+stream_a.rotate 0
+stream_a.fps_ratio 1
+stream_a.source 0
+#h264 = 1 mjpeg = 2
+stream_a.type 1
+
+stream_b.width 1920
+stream_b.height 1080
+stream_b.max_width 1920
+stream_b.max_height 1080
+stream_b.m 1
+stream_b.n 30
+stream_b.bit_rate 10000000
+stream_b.quality 90
+stream_b.h_flip 0
+stream_b.v_flip 0
+stream_b.rotate 0
+stream_b.fps_ratio 1
+stream_b.source 0
+stream_b.type 1
+
+stream_c.width 1920
+stream_c.height 1080
+stream_c.max_width 1920
+stream_c.max_height 1080
+stream_c.m 1
+stream_c.n 30
+stream_c.bit_rate 10000000
+stream_c.quality 90
+stream_c.h_flip 0
+stream_c.v_flip 0
+stream_c.rotate 0
+stream_c.fps_ratio 1
+stream_c.source 0
+stream_c.type 1
+
+stream_d.width 1920
+stream_d.height 1080
+stream_d.max_width 1920
+stream_d.max_height 1080
+stream_d.m 1
+stream_d.n 30
+stream_d.bit_rate 10000000
+stream_d.quality 90
+stream_d.h_flip 0
+stream_d.v_flip 0
+stream_d.rotate 0
+stream_d.fps_ratio 1
+stream_d.source 0
+stream_d.type 1

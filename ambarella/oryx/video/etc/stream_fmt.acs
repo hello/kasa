@@ -1,0 +1,85 @@
+-- stream format
+-- type (string)  "h264"|"mjpeg"|"none"
+    -- If source_buffer.alloc_style = "auto", only stream D can be mjpeg
+-- source (int)   0:main source buffer 1:2nd source buffer
+    -- 2:3rd source buffer 3:4th source buffer
+    -- It is only used when source_buffer.alloc_style = "manual"
+-- frame_factor (string, int/int alike or "auto")   for example 1/2, 1/1
+    -- numberator must be no bigger than denominator
+    -- when it's auto, system auto decide the frame_factor
+-- width   (int),   multiple of 16, -1 for auto configure
+-- height  (int),   multiple of 8,  -1 for auto configure
+-- offset_x (int),  multiple of 4
+-- offset_y (int),  multiple of 4
+-- hflip   (bool)    true|false
+-- vflip   (bool)    true|false
+-- rotate_90_ccw (bool) true|false
+   -- (counter-clock-wise rotation 90 degrees)
+   -- note that if picture height is not multiple of 16, then
+   -- the picture does not support vflip
+   -- and it does not support "hflip + rotate_90_ccw"
+-- enable   (bool)   true|false
+
+stream_fmt = {
+  --stream A
+  {
+    type = "h264",
+    source = 0,
+    frame_factor  = "1/1",
+    width  = 1920,
+    height = 1080,
+    offset_x = 0,
+    offset_y = 0,
+    hflip    = false,
+    vflip    = false,
+    rotate_90_ccw = false,
+    enable = true
+  },
+
+  --stream B
+  {
+    type = "h264",
+    source = 1,
+    frame_factor  = "1/2",
+    width  = 640,
+    height = 480,
+    offset_x = 0,
+    offset_y = 0,
+    hflip    = false,
+    vflip    = false,
+    rotate_90_ccw = false,
+    enable = true
+  },
+
+  --stream C
+  {
+    type = "h264",
+    source = 0,
+    frame_factor  = "1/2",
+    width  = 640,
+    height = 360,
+    offset_x = 0,
+    offset_y = 0,
+    hflip    = false,
+    vflip    = false,
+    rotate_90_ccw = false,
+    enable = true
+  },
+
+  --stream D
+  {
+    type = "mjpeg",
+    source = 0,
+    frame_factor  = "1/2",
+    width  = 640,
+    height = 360,
+    offset_x = 0,
+    offset_y = 0,
+    hflip    = false,
+    vflip    = false,
+    rotate_90_ccw = false,
+    enable = false
+  }
+}
+
+return stream_fmt

@@ -1,0 +1,38 @@
+From 576f2f19067c0c974d1d39f92c51e5f3a08fc17f Mon Sep 17 00:00:00 2001
+From: Tomas Hozza <thozza@redhat.com>
+Date: Tue, 4 Mar 2014 16:34:21 +0100
+Subject: [PATCH] Return ISC_R_FAILURE if the API version check fails
+
+Signed-off-by: Tomas Hozza <thozza@redhat.com>
+---
+ bin/named/unix/dlz_dlopen_driver.c  | 1 +
+ bin/named/win32/dlz_dlopen_driver.c | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/bin/named/unix/dlz_dlopen_driver.c b/bin/named/unix/dlz_dlopen_driver.c
+index 2ba8a02..62b6614 100644
+--- a/bin/named/unix/dlz_dlopen_driver.c
++++ b/bin/named/unix/dlz_dlopen_driver.c
+@@ -330,6 +330,7 @@ dlopen_dlz_create(const char *dlzname, unsigned int argc, char *argv[],
+ 			   "dlz_dlopen: incorrect version %d "
+ 			   "should be %d in '%s'",
+ 			   cd->version, DLZ_DLOPEN_VERSION, cd->dl_path);
++		result = ISC_R_FAILURE;
+ 		goto failed;
+ 	}
+ 
+diff --git a/bin/named/win32/dlz_dlopen_driver.c b/bin/named/win32/dlz_dlopen_driver.c
+index 0c192b4..62008c0 100644
+--- a/bin/named/win32/dlz_dlopen_driver.c
++++ b/bin/named/win32/dlz_dlopen_driver.c
+@@ -314,6 +314,7 @@ dlopen_dlz_create(const char *dlzname, unsigned int argc, char *argv[],
+ 			   "dlz_dlopen: incorrect version %d "
+ 			   "should be %d in '%s'",
+ 			   cd->version, DLZ_DLOPEN_VERSION, cd->dl_path);
++		result = ISC_R_FAILURE;
+ 		goto failed;
+ 	}
+ 
+-- 
+1.8.5.3
+

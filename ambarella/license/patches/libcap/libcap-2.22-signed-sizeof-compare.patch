@@ -1,0 +1,21 @@
+diff -up libcap-2.22/libcap/cap_file.c.911878 libcap-2.22/libcap/cap_file.c
+--- libcap-2.22/libcap/cap_file.c.911878	2013-05-14 11:45:25.569448468 +0200
++++ libcap-2.22/libcap/cap_file.c	2013-05-14 11:47:04.712036407 +0200
+@@ -187,7 +187,7 @@ cap_t cap_get_fd(int fildes)
+ 	/* fill the capability sets via a system call */
+ 	sizeofcaps = fgetxattr(fildes, XATTR_NAME_CAPS,
+ 			       &rawvfscap, sizeof(rawvfscap));
+-	if (sizeofcaps < sizeof(rawvfscap.magic_etc)) {
++	if (sizeofcaps < (int) sizeof(rawvfscap.magic_etc)) {
+ 	    cap_free(result);
+ 	    result = NULL;
+ 	} else {
+@@ -217,7 +217,7 @@ cap_t cap_get_file(const char *filename)
+ 	/* fill the capability sets via a system call */
+ 	sizeofcaps = getxattr(filename, XATTR_NAME_CAPS,
+ 			      &rawvfscap, sizeof(rawvfscap));
+-	if (sizeofcaps < sizeof(rawvfscap.magic_etc)) {
++	if (sizeofcaps < (int) sizeof(rawvfscap.magic_etc)) {
+ 	    cap_free(result);
+ 	    result = NULL;
+ 	} else {

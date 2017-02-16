@@ -1,0 +1,49 @@
+##
+## app/ipcam/autorun_services/AmbaConfig
+##
+## History:
+##    2010/02/04 - [Jian Tang] Create
+##    2014/12/12 - [Alex ZHU] Modifed
+## Copyright (C) 2004-2008, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+menuconfig BUILD_AMBARELLA_APP_IPCAM_AUTORUN_SERVICES
+	bool "Build Autorun Services"
+	depends on BUILD_AMBARELLA_APP_IPCAM
+	depends on BUILD_AMBARELLA_BSREADER_PACKAGE
+	default n
+	help
+		Build Ambarella IPCAM Application Autorun Services.
+
+if BUILD_AMBARELLA_APP_IPCAM_AUTORUN_SERVICES
+
+choice
+depends on BUILD_AMBARELLA_APP_IPCAM_AUTORUN_SERVICES
+	prompt "Choose autorun service"
+	default BUILD_AMBARELLA_APP_IPCAM_AUTORUN_DEMO
+	help
+		Select the autrun service(autorun demo or shmoo script)
+
+config BUILD_AMBARELLA_APP_IPCAM_AUTORUN_DEMO
+	bool "Build Autorun demo"
+	help
+		Build Ambarella IPCAM Application Autorun demo.
+
+config BUILD_AMBARELLA_APP_CLOUD_AGENT
+	bool "Build Autorun amba cloud agent"
+	help
+		Build Ambarella IPCAM Application Autorun amba cloud agent.
+
+config BUILD_AMBARELLA_APP_IPCAM_ATR_SHMOO
+	bool "Build Autorun shmoo script"
+	help
+		Build Ambarella IPCAM Application Autorun shmoo test.
+	select BUILD_AMBARELLA_UNIT_TESTS_SHMOO
+endchoice
+
+endif

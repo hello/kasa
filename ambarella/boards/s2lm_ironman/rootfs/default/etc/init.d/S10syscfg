@@ -1,0 +1,68 @@
+#!/bin/sh
+#
+# Init S2Lm Ironman board sys config
+#
+
+vm_dir=/proc/sys/vm
+netdir=/proc/sys/net
+
+start()
+{
+  echo 327680 > $netdir/core/wmem_default
+  #Turn off laptop mode
+	echo 0 > $vm_dir/laptop_mode
+
+	#update free mem to 2K more than default
+	echo 2000 > $vm_dir/min_free_kbytes
+	echo 160 > $vm_dir/vfs_cache_pressure
+
+	#if you want to make system flush disk faster, uncomment below
+	#enable below will reduce write peak, but slightly reduce throughput
+	echo 1000 > $vm_dir/dirty_expire_centisecs
+	echo 200 > $vm_dir/dirty_writeback_centisecs
+	#echo 5 > $vm_dir/dirty_ratio
+	#echo 5 > $vm_dir/dirty_background_ratio
+
+	#remount sd card if there is
+	#if (grep mmcblk0p1 /proc/mounts); then
+	#	echo "remount sd card to improve performance"
+	#	mount -o remount,noatime,nodiratime /tmp/mmcblk0p1
+	#fi
+
+}
+
+stop()
+{
+	#Turn on laptop_mode and restore to default
+	echo 1 > $vm_dir/laptop_mode
+	echo 2048 > $vm_dir/min_free_kbytes
+	echo 100 > $vm_dir/vfs_cache_pressure
+
+	#if (grep mmcblk0p1 /proc/mounts); then
+	#	echo "remount sd in default mode"
+	#	mount -o remount,atime,diratime,relatime /tmp/mmcblk0p1
+	#fi
+}
+
+restart() {
+	stop
+	start
+}
+
+case "$1" in
+  start)
+	start
+	;;
+  stop)
+	stop
+	;;
+  restart|reload)
+	restart
+	;;
+  *)
+	echo "Usage: $0 {start|stop|restart}"
+	exit 1
+esac
+
+exit $?
+

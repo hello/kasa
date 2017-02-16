@@ -1,0 +1,65 @@
+##
+## kernel/external/atheros/AmbaConfig
+##
+## History:
+##    2008/01/16 - [Anthony Ginger] Create
+##
+## Copyright (C) 2004-2013, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+config BUILD_COMPAT_WIRELESS
+	bool "Compat-wireless with many WiFi"
+	default n
+	help
+		Select Compat-wireless driver.
+
+config BUILD_QCA6234_USE_AMBARELLA_SOFTMAC
+	depends on BUILD_COMPAT_WIRELESS
+	bool "Atheros ath6kl SoftMAC"
+	default n
+	help
+		Select Ambarella Board SoftMAC support.
+
+config ATH6KL_SDIO
+	bool "Interface SDIO"
+	depends on BUILD_COMPAT_WIRELESS
+	help
+		This module adds support for wireless adapters based on
+		Atheros AR6003 and AR6004 chipsets running over SDIO. If you
+		choose to build it as a module, it will be called ath6kl_sdio.
+		Please note that AR6002 and AR6001 are not supported by this
+		driver.
+
+config ATH6KL_USB
+	bool "Interface USB"
+	depends on BUILD_COMPAT_WIRELESS
+	help
+		This module adds support for wireless adapters based on
+		Atheros AR6004 chipset running over USB. This is still under
+		implementation and it isn't functional. If you choose to
+		build it as a module, it will be called ath6kl_usb.
+
+choice
+	prompt "Compat-wireless driver Version"
+	depends on BUILD_COMPAT_WIRELESS
+	help
+		Select the Compat-wireless driver version.
+
+config BUILD_COMPAT_WIRELESS_QCA6234_350415
+	bool "Atheros QCA6234 3.5.0.415"
+	help
+		Select Atheros QCA6234 3.5.0.415
+		Verified on Kernel 3.8
+
+config BUILD_COMPAT_WIRELESS_QCA6234_350374
+	bool "Atheros QCA6234 3.5.0.374"
+	help
+		Select Atheros QCA6234 3.5.0.374
+		Verified on Kernel 3.8
+
+endchoice ##prompt "Compat-wireless driver Version"

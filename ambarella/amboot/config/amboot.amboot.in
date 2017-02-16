@@ -1,0 +1,433 @@
+##
+## config/amboot.amboot.in
+##
+## History:
+##    2007/08/22 - [Charles Chiou] created file (branch off)
+##
+## Copyright (C) 2004-2007, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+menu "AMBoot (boot loader)"
+depends on BUILD_AMBARELLA_FIRMWARE
+
+choice
+	prompt "Boot Media"
+	default CONFIG_BOOT_MEDIA_NAND
+
+config CONFIG_BOOT_MEDIA_NAND
+	bool "Boot From Nand"
+	depends on CONFIG_AMBOOT_ENABLE_NAND
+
+config CONFIG_BOOT_MEDIA_EMMC
+	bool "Boot From eMMC"
+	depends on CONFIG_AMBOOT_ENABLE_SD
+	depends on CONFIG_ARCH_S2 || CONFIG_ARCH_S2E || CONFIG_ARCH_S2L || \
+		   CONFIG_ARCH_S3 || CONFIG_ARCH_S3L
+
+config CONFIG_BOOT_MEDIA_SPINOR
+	bool "Boot From SPI NOR"
+	depends on CONFIG_AMBOOT_ENABLE_SPINOR
+	depends on CONFIG_ARCH_S2E || CONFIG_ARCH_S2L || CONFIG_ARCH_S3 || \
+		   CONFIG_ARCH_S3L
+endchoice
+
+config CONFIG_4K_BOOT_IMAGE
+	bool "Boot Image Size(BST) is 4KB"
+	default n
+
+menu "NAND Boot Options"
+depends on CONFIG_BOOT_MEDIA_NAND
+
+endmenu
+
+menu "eMMC Boot Options"
+depends on CONFIG_BOOT_MEDIA_EMMC
+
+choice
+	prompt "Boot Partition"
+	default CONFIG_EMMC_BOOT_PARTITION_BP1
+
+config CONFIG_EMMC_BOOT_PARTITION_BP1
+	bool "1"
+
+config CONFIG_EMMC_BOOT_PARTITION_BP2
+	bool "2"
+
+config CONFIG_EMMC_BOOT_PARTITION_USER
+	bool "Default"
+
+endchoice
+
+choice
+	prompt "HW Reset"
+	default CONFIG_EMMC_BOOT_RST_ENABLE
+
+config CONFIG_EMMC_BOOT_RST_ENABLE
+	bool "Enable"
+
+config CONFIG_EMMC_BOOT_RST_DISABLE
+	bool "Disable"
+
+endchoice
+
+endmenu
+
+menu "Common Boot Options"
+
+config CONFIG_AMBOOT_COMMAND_SUPPORT
+	bool "Boot with amboot shell Support"
+	default y
+
+choice
+	prompt "Boot Data"
+	default CONFIG_AMBOOT_BD_FDT_SUPPORT
+
+config CONFIG_AMBOOT_BD_FDT_SUPPORT
+	bool "FDT"
+
+config CONFIG_AMBOOT_BD_ATAG_SUPPORT
+	bool "ATAG"
+
+config CONFIG_AMBOOT_BD_NONE_SUPPORT
+	bool "Disabled"
+
+endchoice
+
+config CONFIG_AMBOOT_FDT_LOW_ADDR
+	bool "Place DTB before Kernel"
+	depends on CONFIG_AMBOOT_BD_FDT_SUPPORT
+	default n
+	help
+		If select, DTB will be placed at (KERNEL_RAM_START & 0xfff00000).
+		However, you have to make sure the size of DTB is less than 16KB.
+
+config CONFIG_AMBOOT_SEARCH_PTB
+	bool "Search PTB by Magic Number"
+	default n
+
+config CONFIG_AMBOOT_BD_CMDLINE
+	string "Booting cmdline"
+	depends on CONFIG_AMBOOT_BD_FDT_SUPPORT || CONFIG_AMBOOT_BD_ATAG_SUPPORT
+	default ""
+	help
+		Enter the booting parameter command line here. Note: the value
+		selected under this option will be the default programmed
+		into flash, but could be later modified interactively at the
+		AMBoot command prompt.
+
+config CONFIG_AMBOOT_BAPI_SUPPORT
+	bool "Boot with BAPI Support"
+	default y
+
+config CONFIG_AMBOOT_BAPI_ZERO_FB
+	bool "Zero FB memory"
+	default y
+	depends on CONFIG_AMBOOT_BAPI_SUPPORT
+
+config CONFIG_AMBOOT_BAPI_AOSS
+	bool "Auto save BAPI AOSS"
+	default n
+	depends on CONFIG_AMBOOT_BAPI_SUPPORT
+
+config AMBOOT_DEFAULT_SN
+	string "Default SN"
+	default ""
+
+config AMBOOT_DEFAULT_LINUX_MACHINE_ID
+	int "Default MACHINE ID"
+	default 5010 if CONFIG_ARCH_S3L
+	default 4604 if CONFIG_ARCH_S3
+	default 4603 if CONFIG_ARCH_S2L
+	default 4121 if CONFIG_ARCH_S2
+	default 5009 if CONFIG_ARCH_S2E
+	default 3601 if CONFIG_ARCH_A7
+	default 2873 if CONFIG_ARCH_A7L
+	default 2872 if CONFIG_ARCH_A5S
+	default 1223
+	help
+		Default: 1223
+		A5S: 2872
+		A7L: 2873
+		A7: 3601
+		S2: 4121
+		S2E: 5009
+		S2L: 4603
+		S3: 4604
+
+config AMBOOT_DEV_AUTO_BOOT
+	bool "Automatically boot up the system"
+	default y
+	help
+		Automatically load all the code stored in the partitions and
+		jump to the primary image loaded into the DRAM. Note: the value
+		selected under this option will be the default programmed
+		into flash, but could be later modified interactively at the
+		AMBoot command prompt.
+
+config AMBOOT_DEV_FAST_BOOT
+	bool "Fast boot up"
+	depends on AMBOOT_DEV_AUTO_BOOT
+	default n
+	help
+		Boot up system as fast as possible, e.g., Reduce the waiting
+		time for the "Enter" key to enter Amboot.
+
+choice
+	prompt "Auto Boot Mode"
+	default AMBOOT_DEV_NORMAL_MODE
+	depends on AMBOOT_DEV_AUTO_BOOT
+
+config AMBOOT_DEV_NORMAL_MODE
+	bool "Normal boot up"
+
+config AMBOOT_DEV_USBDL_MODE
+	bool "Automatically enter USB download mode"
+	depends on CONFIG_AMBOOT_ENABLE_USB
+	help
+		Automatically enter USB download mode when USB cable is
+		connected suring system boot-up process. Note: the value
+		selected under this option will be the default programmed
+		into flash, but could be later modified interactively at the
+		AMBoot command prompt.
+
+endchoice
+
+config AMBOOT_DEV_BOOT_CORTEX
+	bool "Boot Cortex"
+	depends on AMBOOT_DEV_NORMAL_MODE
+	depends on CONFIG_ARCH_S2
+	default n
+	help
+		Boot Cortex by ARM11
+
+config AMBOOT_BOOT_SECONDARY_CORTEX
+	bool "Boot Secondary Cortex"
+	depends on AMBOOT_DEV_NORMAL_MODE
+	depends on CONFIG_ARCH_S2E || CONFIG_ARCH_S3
+	default y
+	default n
+	help
+		Boot second Cortex by first Cortex
+
+config DRAM_TYPE_DDR3
+	bool
+	default n
+
+config DRAM_TYPE_DDR2
+	bool
+	default n
+
+config DRAM_TYPE_LPDDR3
+	bool
+	default n
+
+endmenu
+
+config BUILD_DEVFW
+	bool "Build device firmware images"
+	default y
+	help
+		Build a number of firmware images including the:
+		"devfw_*.elf" and "devfw_*.bin" payloads, and the
+		"memfwprog_*.elf" in-memory firmware programming utilities.
+
+config SECURE_BOOT
+	bool "Secure boot, check with crypto chip"
+	default n
+	help
+		Secure boot with crypto chip
+
+config AMBOOT_THAW_HIBERNATION
+	bool "Build thaw from hibernation"
+	default n
+	help
+
+config MINIMAL_FIRMWARE_COMBO
+	bool "Minimal Fimrware Combinations"
+	default y
+	depends on BUILD_DEVFW
+	help
+		Selecting this option should save a lot of disk space as there
+		are many partitions that can form a large combinatorial
+		possibilities. Each would occupy a lot of disk space. If this
+		option is enabled, then for C(n, k) on partition types, only
+		C(n, 1) and C(n, n) are enumerated. If this option is not
+		enabled, then all C(n, 1), C(n, 2), ..., C(n, n) are generated!
+
+config BUILD_DEBUG_MEMFWPROG
+	bool "Build Debug version memfwprog"
+	default n
+	depends on BUILD_DEVFW
+
+menu "Persistent BIOS App Partition"
+	depends on BUILD_DEVFW
+
+config PBA
+	string "PBA"
+	default ""
+	help
+		Location of the PBA image.
+
+config PBA_VIF
+	string "PBA Version File"
+	default ""
+	help
+		Location of the version description file that describes
+		the format of the PBA image.
+
+endmenu
+
+menu "Primary Partition"
+	depends on BUILD_DEVFW
+
+config KERNEL
+	string "Kernel image"
+	default ""
+	help
+		Location of the kernel image.
+
+config KERNEL_VIF
+	string "Kernel Version File"
+	default "$(AMBABUILD_TOPDIR)/amboot/vif/linux.info"
+	help
+		Location of the version description file that describes
+		the format of the kernel image.
+
+endmenu
+
+menu "Secondary Partition"
+	depends on BUILD_DEVFW
+
+config SECONDARY
+	string "Secondary image"
+	default ""
+	help
+		Location of the secondary image.
+
+config SECONDARY_VIF
+	string "Secondary Version File"
+	default "$(AMBABUILD_TOPDIR)/amboot/vif/linux.info"
+	help
+		Location of the version description file that describes
+		the format of the secondary image.
+
+endmenu
+
+menu "Backup Partition"
+	depends on BUILD_DEVFW
+
+config BACKUP
+	string "Backup image"
+	default ""
+	help
+		Location of the kernel image.
+
+config BACKUP_VIF
+	string "Backup Version File"
+	default ""
+	help
+		Location of the version description file that describes
+		the format of the backup image.
+
+endmenu
+
+menu "Ramdisk Partition"
+	depends on BUILD_DEVFW
+
+config RAMDISK
+	string "Ramdisk image"
+	default ""
+	help
+		Location of the ramdisk image.
+
+config RAMDISK_VIF
+	string "Ramdisk Version File"
+	default "$(AMBABUILD_TOPDIR)/amboot/vif/ramdisk.info"
+	help
+		Location of the version description file that describes
+		the format of the ramdisk image.
+
+endmenu
+
+menu "ROMFS Partition"
+	depends on BUILD_DEVFW
+
+config ROMFS
+	string "ROMFS image"
+	default ""
+	help
+		Location of the ROMFS image.
+
+config ROMFS_VIF
+	string "ROMFS Version File"
+	default ""
+	default "$(AMBABUILD_TOPDIR)/amboot/vif/romfs.info"
+	help
+		Location of the version description file that describes
+		the format of the ROMFS image.
+
+endmenu
+
+menu "Linux Partition"
+	depends on BUILD_DEVFW
+
+config LNX
+	string "Linux FS image"
+	default ""
+
+config LNX_VIF
+	string "Linux FS Version File"
+	default ""
+
+endmenu
+
+menu "Swap Partition"
+	depends on BUILD_DEVFW
+
+config SWP
+	string "SWP image"
+	default ""
+
+config SWP_VIF
+	string "SWP Version File"
+	default ""
+
+endmenu
+
+menu "Android Data Partition"
+	depends on BUILD_DEVFW
+
+config ADD
+	string "ADD image"
+	default ""
+
+config ADD_VIF
+	string "ADD Version File"
+	default ""
+
+endmenu
+
+menu "Android Cache Partition"
+	depends on BUILD_DEVFW
+
+config ADC
+	string "ADC"
+	default ""
+
+config ADC_VIF
+	string "ADC Version File"
+	default ""
+
+endmenu
+
+config AMBOOT_BOOT_DSP
+	bool
+	default n
+
+endmenu
+

@@ -1,0 +1,82 @@
+From ac72b3436027456aab3c147553edad44b7b12a7a Mon Sep 17 00:00:00 2001
+From: vivek <vivek@vivek-desktop.(none)>
+Date: Mon, 9 Jan 2012 16:18:42 +0530
+Subject: [PATCH] fix compilation warning.
+
+Signed-off-by: vivek <vivek.natarajan@qca.qualcomm.com>
+---
+ compat/crc8.c                              |    2 +-
+ drivers/net/wireless/ath/ath6kl/cfg80211.c |    2 +-
+ drivers/net/wireless/ath/ath6kl/sdio.c     |    2 +-
+ net/wireless/core.c                        |    2 +-
+ net/wireless/reg.c                         |    2 +-
+ 5 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/compat/crc8.c b/compat/crc8.c
+index 87b59ca..ce524d0 100644
+--- a/compat/crc8.c
++++ b/compat/crc8.c
+@@ -14,7 +14,7 @@
+  * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+  */
+ 
+-#define pr_fmt(fmt)		KBUILD_MODNAME ": " fmt
++//#define pr_fmt(fmt)		KBUILD_MODNAME ": " fmt
+ 
+ #include <linux/module.h>
+ #include <linux/crc8.h>
+diff --git a/drivers/net/wireless/ath/ath6kl/cfg80211.c b/drivers/net/wireless/ath/ath6kl/cfg80211.c
+index 34945ed..d1554c8 100644
+--- a/drivers/net/wireless/ath/ath6kl/cfg80211.c
++++ b/drivers/net/wireless/ath/ath6kl/cfg80211.c
+@@ -985,7 +985,7 @@ static int ath6kl_cfg80211_add_key(struct wiphy *wiphy, struct net_device *ndev,
+ 	struct ath6kl *ar = ath6kl_priv(ndev);
+ 	struct ath6kl_vif *vif = netdev_priv(ndev);
+ 	struct ath6kl_key *key = NULL;
+-	int seq_len;
++	int seq_len = 0;
+ 	u8 key_usage;
+ 	u8 key_type;
+ 
+diff --git a/drivers/net/wireless/ath/ath6kl/sdio.c b/drivers/net/wireless/ath/ath6kl/sdio.c
+index 808ff8d..4970b2c 100644
+--- a/drivers/net/wireless/ath/ath6kl/sdio.c
++++ b/drivers/net/wireless/ath/ath6kl/sdio.c
+@@ -329,7 +329,7 @@ static int ath6kl_sdio_alloc_prep_scat_req(struct ath6kl_sdio *ar_sdio,
+ {
+ 	struct hif_scatter_req *s_req;
+ 	struct bus_request *bus_req;
+-	int i, scat_req_sz, scat_list_sz, sg_sz, buf_sz;
++	int i, scat_req_sz, scat_list_sz, sg_sz = 0, buf_sz;
+ 	u8 *virt_buf;
+ 
+ 	scat_list_sz = (n_scat_entry - 1) * sizeof(struct hif_scatter_item);
+diff --git a/net/wireless/core.c b/net/wireless/core.c
+index 52d8a00..4e843bb 100644
+--- a/net/wireless/core.c
++++ b/net/wireless/core.c
+@@ -4,7 +4,7 @@
+  * Copyright 2006-2010		Johannes Berg <johannes@sipsolutions.net>
+  */
+ 
+-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
++//#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+ 
+ #include <linux/if.h>
+ #include <linux/module.h>
+diff --git a/net/wireless/reg.c b/net/wireless/reg.c
+index e71f5a6..c59b4a2 100644
+--- a/net/wireless/reg.c
++++ b/net/wireless/reg.c
+@@ -33,7 +33,7 @@
+  *
+  */
+ 
+-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
++//#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+ 
+ #include <linux/kernel.h>
+ #include <linux/export.h>
+-- 
+1.7.0.4
+

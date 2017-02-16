@@ -1,0 +1,52 @@
+diff --git a/src/common/version.h b/src/common/version.h
+index 340afc7..c62995b 100644
+--- a/src/common/version.h
++++ b/src/common/version.h
+@@ -2,7 +2,7 @@
+ #define VERSION_H
+ 
+ #ifndef VERSION_STR_POSTFIX
+-#define VERSION_STR_POSTFIX ""
++#define VERSION_STR_POSTFIX "-fast"
+ #endif /* VERSION_STR_POSTFIX */
+ 
+ #define VERSION_STR "2.2" VERSION_STR_POSTFIX
+diff --git a/wpa_supplicant/events.c b/wpa_supplicant/events.c
+index 1ecd6d6..77ef86a 100644
+--- a/wpa_supplicant/events.c
++++ b/wpa_supplicant/events.c
+@@ -1125,11 +1125,16 @@ wpa_supplicant_pick_new_network(struct wpa_supplicant *wpa_s)
+ 	for (prio = 0; prio < wpa_s->conf->num_prio; prio++) {
+ 		for (ssid = wpa_s->conf->pssid[prio]; ssid; ssid = ssid->pnext)
+ 		{
++			wpa_dbg(wpa_s, MSG_DEBUG, "wpa_supplicant_pick_new_network %s %d",
++				ssid->ssid, ssid->mode);
++			#if 0
+ 			if (wpas_network_disabled(wpa_s, ssid))
+ 				continue;
+ 			if (ssid->mode == IEEE80211_MODE_IBSS ||
+ 			    ssid->mode == IEEE80211_MODE_AP)
++			#endif
+ 				return ssid;
++
+ 		}
+ 	}
+ 	return NULL;
+@@ -1514,6 +1519,7 @@ int wpa_supplicant_fast_associate(struct wpa_supplicant *wpa_s)
+ #else /* CONFIG_NO_SCAN_PROCESSING */
+ 	struct os_reltime now;
+ 
++	#if 0
+ 	if (wpa_s->last_scan_res_used <= 0)
+ 		return -1;
+ 
+@@ -1522,7 +1528,9 @@ int wpa_supplicant_fast_associate(struct wpa_supplicant *wpa_s)
+ 		wpa_printf(MSG_DEBUG, "Fast associate: Old scan results");
+ 		return -1;
+ 	}
++	#endif
+ 
++	wpa_printf(MSG_DEBUG, "Fast associate: wpas_select_network_from_last_scan");
+ 	return wpas_select_network_from_last_scan(wpa_s, 0, 1);
+ #endif /* CONFIG_NO_SCAN_PROCESSING */
+ }

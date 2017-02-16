@@ -1,0 +1,29 @@
+/**
+ * vif/squashfs.info
+ *
+ * History:
+ *    2009/04/29 - [Anthony Ginger] created file
+ *
+ * Copyright (C) 2004-2014, Ambarella, Inc.
+ *
+ * All rights reserved. No Part of this file may be reproduced, stored
+ * in a retrieval system, or transmitted, in any form, or by any means,
+ * electronic, mechanical, photocopying, recording, or otherwise,
+ * without the prior consent of Ambarella, Inc.
+ */
+
+#ifndef __VERSION_INFO__
+#define __VERSION_INFO__
+
+#include <amboot.h>
+
+#define FIRM_VER_NUM	AMB_VER_NUM(0,1)
+#if defined(__YEAR__) && defined(__MONTH__) && defined(__DAY__)
+#define FIRM_VER_DATE	AMB_VER_DATE(__YEAR__,__MONTH__,__DAY__)
+#else
+#define FIRM_VER_DATE	AMB_VER_DATE(2009,04,28)
+#endif
+#define FIRM_MEM_ADDR	0x0
+#define FIRM_FLAG	(PART_NO_LOAD)
+
+#endif

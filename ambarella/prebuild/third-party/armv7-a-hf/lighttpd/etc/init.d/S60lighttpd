@@ -1,0 +1,107 @@
+#!/bin/sh
+#
+# lighttpd     Lightning fast webserver with light system requirements
+#
+# description: Secure, fast, compliant and very flexible web-server which has \
+#              been optimized for high-performance environments. It has a \
+#              very low memory footprint compared to other web servers and \
+#              takes care of cpu-load.
+
+exec="/usr/sbin/lighttpd"
+prog="lighttpd"
+config="/etc/lighttpd/lighttpd.conf"
+lockfile=/var/lock/subsys/$prog
+
+if [ ! -d /tmp/weblog ]; then
+    /bin/mkdir -p /tmp/weblog
+fi
+
+if [ ! -d /tmp/cgiupload ]; then
+    /bin/mkdir -p /tmp/cgiupload
+fi
+
+if [ ! -d /webSvr/logs ]; then
+    /bin/mkdir -p /webSvr/logs
+fi
+
+
+start() {
+    [ -x $exec ] || exit 5
+    [ -f $config ] || exit 6
+    /bin/mount --bind /tmp/weblog /webSvr/logs
+    echo -n "Starting $prog: "
+    $exec -f $config > /dev/null 2>&1 &
+    retval=$?
+    [ $retval -eq 0 ] && echo "OK" || echo "Failed"
+    [ $retval -eq 0 ] && touch $lockfile
+    return $retval
+}
+
+stop() {
+    echo -n "Stopping $prog: "
+    /bin/kill $prog
+    retval=$?
+    /bin/umount /webSvr/logs
+    echo
+    [ $retval -eq 0 ] && rm -f $lockfile
+    return $retval
+}
+
+restart() {
+    stop
+    start
+}
+
+reload() {
+    echo -n "Reloading $prog: "
+    /bin/kill $prog -HUP
+    retval=$?
+    echo
+    return $retval
+}
+
+force_reload() {
+    restart
+}
+
+rh_status() {
+    status $prog
+}
+
+rh_status_q() {
+    rh_status &>/dev/null
+}
+
+
+case "$1" in
+    start)
+        rh_status_q && exit 0
+        $1
+        ;;
+    stop)
+        rh_status_q || exit 0
+        $1
+        ;;
+    restart)
+        $1
+        ;;
+    reload)
+        rh_status_q || exit 7
+        $1
+        ;;
+    force-reload)
+        force_reload
+        ;;
+    status)
+        rh_status
+        ;;
+    condrestart|try-restart)
+        rh_status_q || exit 0
+        restart
+        ;;
+    *)
+        echo $"Usage: $0 {start|stop|status|restart|condrestart|try-restart|reload|force-reload}"
+        exit 2
+esac
+exit $?
+

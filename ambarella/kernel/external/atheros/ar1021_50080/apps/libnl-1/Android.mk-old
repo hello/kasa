@@ -1,0 +1,144 @@
+LOCAL_PATH:= $(call my-dir)
+
+include $(CLEAR_VARS)
+
+LOCAL_SRC_FILES:= \
+	src/genl-ctrl-dump.c \
+	src/genl-ctrl-get.c \
+	src/nf-ct-dump.c \
+	src/nf-log.c \
+	src/nf-monitor.c \
+	src/nl-addr-add.c \
+	src/nl-addr-delete.c \
+	src/nl-addr-dump.c \
+	src/nl-fib-lookup.c \
+	src/nl-link-dump.c \
+	src/nl-link-ifindex2name.c \
+	src/nl-link-name2ifindex.c \
+	src/nl-link-set.c \
+	src/nl-link-stats.c \
+	src/nl-list-caches.c \
+	src/nl-list-sockets.c \
+	src/nl-monitor.c \
+	src/nl-neigh-add.c \
+	src/nl-neigh-delete.c \
+	src/nl-neigh-dump.c \
+	src/nl-neightbl-dump.c \
+	src/nl-qdisc-add.c \
+	src/nl-qdisc-delete.c \
+	src/nl-qdisc-dump.c \
+	src/nl-route-add.c \
+	src/nl-route-del.c \
+	src/nl-route-dump.c \
+	src/nl-route-get.c \
+	src/nl-rule-dump.c \
+	src/nl-tctree-dump.c \
+	src/nl-util-addr.c \
+	src/utils.c
+
+# Core 
+LOCAL_SRC_FILES += lib/addr.c
+LOCAL_SRC_FILES += lib/attr.c
+LOCAL_SRC_FILES += lib/nl.c
+LOCAL_SRC_FILES += lib/data.c
+LOCAL_SRC_FILES += lib/doc.c
+LOCAL_SRC_FILES += lib/family.c
+LOCAL_SRC_FILES += lib/handlers.c
+LOCAL_SRC_FILES += lib/msg.c
+LOCAL_SRC_FILES += lib/object.c
+LOCAL_SRC_FILES += lib/socket.c
+LOCAL_SRC_FILES += lib/utils.c
+LOCAL_SRC_FILES += lib/cache_mngr.c
+LOCAL_SRC_FILES += lib/cache_mngt.c
+
+# NETLINK_ROUTE
+LOCAL_SRC_FILES += lib/route/addr.c
+LOCAL_SRC_FILES += lib/route/class.c
+LOCAL_SRC_FILES += lib/route/class_api.c
+LOCAL_SRC_FILES += lib/route/class_obj.c
+LOCAL_SRC_FILES += lib/route/classifier.c
+LOCAL_SRC_FILES += lib/route/cls_api.c
+LOCAL_SRC_FILES += lib/route/cls_obj.c
+LOCAL_SRC_FILES += lib/route/link.c
+LOCAL_SRC_FILES += lib/route/neigh.c
+LOCAL_SRC_FILES += lib/route/neightbl.c
+LOCAL_SRC_FILES += lib/route/nexthop.c
+LOCAL_SRC_FILES += lib/route/qdisc.c
+LOCAL_SRC_FILES += lib/route/qdisc_api.c
+LOCAL_SRC_FILES += lib/route/qdisc_obj.c
+LOCAL_SRC_FILES += lib/route/route.c
+LOCAL_SRC_FILES += lib/route/route_obj.c
+LOCAL_SRC_FILES += lib/route/route_utils.c
+LOCAL_SRC_FILES += lib/route/rtnl.c
+LOCAL_SRC_FILES += lib/route/rule.c
+LOCAL_SRC_FILES += lib/route/tc.c
+
+# NETLINK_ROUTE Schedulers
+LOCAL_SRC_FILES += lib/route/sch/blackhole.c
+LOCAL_SRC_FILES += lib/route/sch/cbq.c
+LOCAL_SRC_FILES += lib/route/sch/dsmark.c
+LOCAL_SRC_FILES += lib/route/sch/fifo.c
+LOCAL_SRC_FILES += lib/route/sch/htb.c
+LOCAL_SRC_FILES += lib/route/sch/netem.c
+LOCAL_SRC_FILES += lib/route/sch/prio.c
+LOCAL_SRC_FILES += lib/route/sch/red.c
+LOCAL_SRC_FILES += lib/route/sch/sfq.c
+LOCAL_SRC_FILES += lib/route/sch/tbf.c
+
+# NETLINK_ROUTE Classifiers
+LOCAL_SRC_FILES += lib/route/cls/fw.c
+LOCAL_SRC_FILES += lib/route/cls/police.c
+LOCAL_SRC_FILES += lib/route/cls/u32.c
+
+# NETLINK_ROUTE Link Info Modules
+LOCAL_SRC_FILES += lib/route/link/api.c
+LOCAL_SRC_FILES += lib/route/link/vlan.c
+
+# NETLINK_GENERIC
+LOCAL_SRC_FILES += lib/genl/ctrl.c
+LOCAL_SRC_FILES += lib/genl/family.c
+LOCAL_SRC_FILES += lib/genl/genl.c
+LOCAL_SRC_FILES += lib/genl/mngt.c
+
+# fib lookup
+LOCAL_SRC_FILES += lib/fib_lookup/lookup.c
+LOCAL_SRC_FILES += lib/fib_lookup/request.c
+
+# Netfilter
+LOCAL_SRC_FILES += lib/netfilter/ct.c
+LOCAL_SRC_FILES += lib/netfilter/ct_obj.c
+LOCAL_SRC_FILES += lib/netfilter/log.c
+LOCAL_SRC_FILES += lib/netfilter/log_obj.c
+LOCAL_SRC_FILES += lib/netfilter/nfnl.c
+
+# Tests
+LOCAL_SRC_FILES += tests/test-cache-mngr.c
+LOCAL_SRC_FILES += tests/test-genl.c
+LOCAL_SRC_FILES += tests/test-nf-cache-mngr.c
+LOCAL_SRC_FILES += tests/test-socket-creation.c
+
+
+
+LOCAL_C_INCLUDES:= \
+	$(LOCAL_PATH)/src \
+        $(LOCAL_PATH)/include \
+	$(LOCAL_PATH)/lib \
+	$(LOCAL_PATH)/tests
+
+
+LOCAL_CFLAGS += -g -O2 -c -D_GNU_SOURCE
+
+LOCAL_CFLAGS += -Wall -ggdb -fPIC
+
+#LOCAL_LDLIBS += -lm -lnl -L./lib utils.o 
+LOCAL_LDLIBS += -lm
+
+LOCAL_MODULE:=libnl
+
+include $(BUILD_SHARED_LIBRARY)
+	
+#src/f_addr.c 
+#src/f_ct.c
+#src/f_link.c
+#src/f_neigh.c
+#src/f_route.c

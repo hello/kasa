@@ -1,0 +1,823 @@
+diff -up dhcp-4.2.6b1/configure.ac.systemtap dhcp-4.2.6b1/configure.ac
+--- dhcp-4.2.6b1/configure.ac.systemtap	2014-01-23 14:45:04.801357825 +0100
++++ dhcp-4.2.6b1/configure.ac	2014-01-23 14:45:04.844357220 +0100
+@@ -560,6 +560,35 @@ else
+     AC_MSG_RESULT(no)
+ fi
+ 
++AC_MSG_CHECKING([whether to include systemtap tracing support])
++AC_ARG_ENABLE([systemtap],
++              [AS_HELP_STRING([--enable-systemtap],
++                              [Enable inclusion of systemtap trace support])],
++              [ENABLE_SYSTEMTAP="${enableval}"], [ENABLE_SYSTEMTAP='no'])
++AM_CONDITIONAL([ENABLE_SYSTEMTAP], [test x$ENABLE_SYSTEMTAP = xyes])
++AC_MSG_RESULT(${ENABLE_SYSTEMTAP})
++
++if test "x${ENABLE_SYSTEMTAP}" = xyes; then
++  # Additional configuration for --enable-systemtap is HERE
++  AC_CHECK_PROGS(DTRACE, dtrace)
++  if test -z "$DTRACE"; then
++    AC_MSG_ERROR([dtrace not found])
++  fi
++  AC_CHECK_HEADER([sys/sdt.h], [SDT_H_FOUND='yes'],
++                [SDT_H_FOUND='no';
++                   AC_MSG_ERROR([systemtap support needs sys/sdt.h header])])
++  AC_DEFINE([HAVE_SYSTEMTAP], [1], [Define to 1 if using SystemTap probes.])
++  AC_ARG_WITH([tapset-install-dir],
++	      [AS_HELP_STRING([--with-tapset-install-dir], 
++	         [The absolute path where the tapset dir will be installed])],
++	      [if test "x${withval}" = x; then
++		 ABS_TAPSET_DIR="\$(datadir)/systemtap/tapset"
++	       else
++		 ABS_TAPSET_DIR="${withval}"
++	       fi], [ABS_TAPSET_DIR="\$(datadir)/systemtap/tapset"])
++  AC_SUBST(ABS_TAPSET_DIR)
++fi
++
+ # Solaris needs some libraries for functions
+ AC_SEARCH_LIBS(socket, [socket])
+ AC_SEARCH_LIBS(inet_ntoa, [nsl])
+@@ -715,6 +744,7 @@ AC_OUTPUT([
+   tests/Makefile
+   server/tests/Makefile
+   doc/devel/doxyfile
++  tapset/Makefile
+ ])
+ 
+ sh util/bindvar.sh
+diff -up dhcp-4.2.6b1/Makefile.am.systemtap dhcp-4.2.6b1/Makefile.am
+--- dhcp-4.2.6b1/Makefile.am.systemtap	2014-01-23 14:45:04.678359555 +0100
++++ dhcp-4.2.6b1/Makefile.am	2014-01-23 14:45:04.844357220 +0100
+@@ -32,5 +32,8 @@ endif
+ 
+ SUBDIRS += includes tests common omapip client dhcpctl relay server
+ 
++SUBDIRS += tapset
++#DIST_SUBDIRS = $(SUBDIRS)
++
+ nobase_include_HEADERS = dhcpctl/dhcpctl.h
+ 
+diff -up dhcp-4.2.6b1/server/dhcp.c.systemtap dhcp-4.2.6b1/server/dhcp.c
+--- dhcp-4.2.6b1/server/dhcp.c.systemtap	2014-01-23 14:45:04.708359133 +0100
++++ dhcp-4.2.6b1/server/dhcp.c	2014-01-23 14:45:04.846357192 +0100
+@@ -36,7 +36,7 @@
+ #include <errno.h>
+ #include <limits.h>
+ #include <sys/time.h>
+-
++#include "trace.h"
+ static void commit_leases_ackout(void *foo);
+ static void maybe_return_agent_options(struct packet *packet,
+ 				       struct option_state *options);
+@@ -275,6 +275,8 @@ void dhcpdiscover (packet, ms_nulltp)
+ 	dhcp_failover_state_t *peer;
+ #endif
+ 
++	TRACE(DHCPD_DISCOVER_START());
++
+ 	find_lease (&lease, packet, packet -> shared_network,
+ 		    0, &peer_has_leases, (struct lease *)0, MDL);
+ 
+@@ -399,6 +401,8 @@ void dhcpdiscover (packet, ms_nulltp)
+       out:
+ 	if (lease)
+ 		lease_dereference (&lease, MDL);
++
++	TRACE(DHCPD_DISCOVER_DONE());
+ }
+ 
+ void dhcprequest (packet, ms_nulltp, ip_lease)
+@@ -421,6 +425,8 @@ void dhcprequest (packet, ms_nulltp, ip_
+ #endif
+ 	int have_requested_addr = 0;
+ 
++	TRACE(DHCPD_REQUEST_START());
++
+ 	oc = lookup_option (&dhcp_universe, packet -> options,
+ 			    DHO_DHCP_REQUESTED_ADDRESS);
+ 	memset (&data, 0, sizeof data);
+@@ -700,6 +706,9 @@ void dhcprequest (packet, ms_nulltp, ip_
+ 		log_info ("%s: unknown lease %s.", msgbuf, piaddr (cip));
+ 
+       out:
++
++	TRACE(DHCPD_REQUEST_DONE());
++
+ 	if (subnet)
+ 		subnet_dereference (&subnet, MDL);
+ 	if (lease)
+@@ -718,6 +727,7 @@ void dhcprelease (packet, ms_nulltp)
+ 	const char *s;
+ 	char msgbuf [1024], cstr[16]; /* XXX */
+ 
++	TRACE(DHCPD_RELEASE_START());
+ 
+ 	/* DHCPRELEASE must not specify address in requested-address
+ 	   option, but old protocol specs weren't explicit about this,
+@@ -842,6 +852,8 @@ void dhcprelease (packet, ms_nulltp)
+ #endif
+ 	if (lease)
+ 		lease_dereference (&lease, MDL);
++
++	TRACE(DHCPD_RELEASE_DONE());
+ }
+ 
+ void dhcpdecline (packet, ms_nulltp)
+@@ -859,6 +871,8 @@ void dhcpdecline (packet, ms_nulltp)
+ 	struct option_cache *oc;
+ 	struct data_string data;
+ 
++	TRACE(DHCPD_DECLINE_START());
++
+ 	/* DHCPDECLINE must specify address. */
+ 	if (!(oc = lookup_option (&dhcp_universe, packet -> options,
+ 				  DHO_DHCP_REQUESTED_ADDRESS)))
+@@ -970,6 +984,8 @@ void dhcpdecline (packet, ms_nulltp)
+ 		option_state_dereference (&options, MDL);
+ 	if (lease)
+ 		lease_dereference (&lease, MDL);
++
++	TRACE(DHCPD_DECLINE_DONE());
+ }
+ 
+ void dhcpinform (packet, ms_nulltp)
+@@ -993,6 +1009,8 @@ void dhcpinform (packet, ms_nulltp)
+ 	struct interface_info *interface;
+ 	int result;
+ 
++	TRACE(DHCPD_INFORM_START());
++
+ 	/* The client should set ciaddr to its IP address, but apparently
+ 	   it's common for clients not to do this, so we'll use their IP
+ 	   source address if they didn't set ciaddr. */
+@@ -1350,6 +1368,8 @@ void dhcpinform (packet, ms_nulltp)
+ 
+ 	if (subnet)
+ 		subnet_dereference (&subnet, MDL);
++
++	TRACE(DHCPD_INFORM_DONE());
+ }
+ 
+ void nak_lease (packet, cip)
+@@ -1366,6 +1386,8 @@ void nak_lease (packet, cip)
+ 	struct option_state *options = (struct option_state *)0;
+ 	struct option_cache *oc = (struct option_cache *)0;
+ 
++	TRACE(DHCPD_NAK_LEASE_START());
++
+ 	option_state_allocate (&options, MDL);
+ 	memset (&outgoing, 0, sizeof outgoing);
+ 	memset (&raw, 0, sizeof raw);
+@@ -1532,6 +1554,7 @@ void nak_lease (packet, cip)
+                            packet->interface->name);
+         }
+ 
++	TRACE(DHCPD_NAK_LEASE_DONE());
+ }
+ 
+ void ack_lease (packet, lease, offer, when, msg, ms_nulltp, hp)
+@@ -1570,6 +1593,8 @@ void ack_lease (packet, lease, offer, wh
+ 	if (lease -> state)
+ 		return;
+ 
++	TRACE(DHCPD_ACK_LEASE_START());
++
+ 	/* Save original cltt for comparison later. */
+ 	lease_cltt = lease->cltt;
+ 
+@@ -2933,6 +2958,8 @@ void ack_lease (packet, lease, offer, wh
+ #endif
+ 			dhcp_reply(lease);
+ 	}
++
++	TRACE(DHCPD_ACK_LEASE_DONE());
+ }
+ 
+ /*
+@@ -3085,6 +3112,8 @@ void dhcp_reply (lease)
+ 	if (!state)
+ 		log_fatal ("dhcp_reply was supplied lease with no state!");
+ 
++	TRACE(DHCPD_REPLY_START());
++
+ 	/* Compose a response for the client... */
+ 	memset (&raw, 0, sizeof raw);
+ 	memset (&d1, 0, sizeof d1);
+@@ -3306,6 +3335,8 @@ void dhcp_reply (lease)
+ 
+ 	free_lease_state (state, MDL);
+ 	lease -> state = (struct lease_state *)0;
++
++	TRACE(DHCPD_REPLY_DONE());
+ }
+ 
+ int find_lease (struct lease **lp,
+@@ -3328,6 +3359,8 @@ int find_lease (struct lease **lp,
+ 	struct data_string client_identifier;
+ 	struct hardware h;
+ 
++	TRACE(DHCPD_FIND_LEASE_START());
++
+ #if defined(FAILOVER_PROTOCOL)
+ 	/* Quick check to see if the peer has leases. */
+ 	if (peer_has_leases) {
+@@ -4055,6 +4088,9 @@ int find_lease (struct lease **lp,
+ #if defined (DEBUG_FIND_LEASE)
+ 	log_info ("Not returning a lease.");
+ #endif
++
++	TRACE(DHCPD_FIND_LEASE_DONE());
++
+ 	return 0;
+ }
+ 
+diff -up dhcp-4.2.6b1/server/dhcpd.c.systemtap dhcp-4.2.6b1/server/dhcpd.c
+--- dhcp-4.2.6b1/server/dhcpd.c.systemtap	2014-01-23 14:45:04.820357557 +0100
++++ dhcp-4.2.6b1/server/dhcpd.c	2014-01-23 14:45:49.348731180 +0100
+@@ -58,6 +58,8 @@ static const char url [] =
+ #  undef group
+ #endif /* PARANOIA */
+ 
++#include "trace.h"
++
+ #ifndef UNIT_TEST
+ static void usage(void);
+ #endif
+@@ -869,6 +871,8 @@ main(int argc, char **argv) {
+ 	signal(SIGINT, dhcp_signal_handler);   /* control-c */
+ 	signal(SIGTERM, dhcp_signal_handler);  /* kill */
+ 
++	TRACE(DHCPD_MAIN());
++
+ 	/*
+ 	 * Receive packets and dispatch them...
+ 	 * dispatch() will never return.
+diff -up dhcp-4.2.6b1/server/dhcpv6.c.systemtap dhcp-4.2.6b1/server/dhcpv6.c
+--- dhcp-4.2.6b1/server/dhcpv6.c.systemtap	2014-01-23 14:45:04.812357670 +0100
++++ dhcp-4.2.6b1/server/dhcpv6.c	2014-01-23 14:45:04.850357135 +0100
+@@ -15,6 +15,7 @@
+  */
+ 
+ #include "dhcpd.h"
++#include "trace.h"
+ 
+ #ifdef DHCPv6
+ 
+@@ -4351,6 +4352,8 @@ static void
+ dhcpv6_solicit(struct data_string *reply_ret, struct packet *packet) {
+ 	struct data_string client_id;
+ 
++	TRACE(DHCPD_6_SOLICIT_START());
++
+ 	/* 
+ 	 * Validate our input.
+ 	 */
+@@ -4364,6 +4367,8 @@ dhcpv6_solicit(struct data_string *reply
+ 	 * Clean up.
+ 	 */
+ 	data_string_forget(&client_id, MDL);
++
++	TRACE(DHCPD_6_SOLICIT_DONE());
+ }
+ 
+ /*
+@@ -4377,6 +4382,8 @@ dhcpv6_request(struct data_string *reply
+ 	struct data_string client_id;
+ 	struct data_string server_id;
+ 
++	TRACE(DHCPD_6_REQUEST_START());
++
+ 	/*
+ 	 * Validate our input.
+ 	 */
+@@ -4394,6 +4401,8 @@ dhcpv6_request(struct data_string *reply
+ 	 */
+ 	data_string_forget(&client_id, MDL);
+ 	data_string_forget(&server_id, MDL);
++
++	TRACE(DHCPD_6_REQUEST_DONE());
+ }
+ 
+ /* Find a DHCPv6 packet's shared network from hints in the packet.
+@@ -4506,6 +4515,8 @@ dhcpv6_confirm(struct data_string *reply
+ 	struct dhcpv6_packet *reply = (struct dhcpv6_packet *)reply_data;
+ 	int reply_ofs = (int)(offsetof(struct dhcpv6_packet, options));
+ 
++	TRACE(DHCPD_6_CONFIRM_START());
++
+ 	/* 
+ 	 * Basic client message validation.
+ 	 */
+@@ -4692,6 +4703,8 @@ exit:
+ 		option_state_dereference(&cli_enc_opt_state, MDL);
+ 	if (opt_state != NULL)
+ 		option_state_dereference(&opt_state, MDL);
++
++	TRACE(DHCPD_6_CONFIRM_DONE());
+ }
+ 
+ /*
+@@ -4706,6 +4719,8 @@ dhcpv6_renew(struct data_string *reply,
+ 	struct data_string client_id;
+ 	struct data_string server_id;
+ 
++	TRACE(DHCPD_6_RENEW_START());
++
+ 	/* 
+ 	 * Validate the request.
+ 	 */
+@@ -4723,6 +4738,8 @@ dhcpv6_renew(struct data_string *reply,
+ 	 */
+ 	data_string_forget(&server_id, MDL);
+ 	data_string_forget(&client_id, MDL);
++
++	TRACE(DHCPD_6_RENEW_DONE());
+ }
+ 
+ /*
+@@ -4736,6 +4753,8 @@ static void
+ dhcpv6_rebind(struct data_string *reply, struct packet *packet) {
+ 	struct data_string client_id;
+ 
++	TRACE(DHCPD_6_REBIND_START());
++
+ 	if (!valid_client_msg(packet, &client_id)) {
+ 		return;
+ 	}
+@@ -4743,6 +4762,8 @@ dhcpv6_rebind(struct data_string *reply,
+ 	lease_to_client(reply, packet, &client_id, NULL);
+ 
+ 	data_string_forget(&client_id, MDL);
++
++	TRACE(DHCPD_6_REBIND_DONE());
+ }
+ 
+ static void
+@@ -5187,6 +5208,8 @@ dhcpv6_decline(struct data_string *reply
+ 	struct data_string client_id;
+ 	struct data_string server_id;
+ 
++	TRACE(DHCPD_6_DECLINE_START());
++
+ 	/* 
+ 	 * Validate our input.
+ 	 */
+@@ -5207,6 +5230,8 @@ dhcpv6_decline(struct data_string *reply
+ 
+ 	data_string_forget(&server_id, MDL);
+ 	data_string_forget(&client_id, MDL);
++
++	TRACE(DHCPD_6_DECLINE_DONE());
+ }
+ 
+ static void
+@@ -5655,6 +5680,8 @@ dhcpv6_release(struct data_string *reply
+ 	struct data_string client_id;
+ 	struct data_string server_id;
+ 
++	TRACE(DHCPD_6_RELEASE_START());
++
+ 	/* 
+ 	 * Validate our input.
+ 	 */
+@@ -5676,6 +5703,8 @@ dhcpv6_release(struct data_string *reply
+ 
+ 	data_string_forget(&server_id, MDL);
+ 	data_string_forget(&client_id, MDL);
++
++	TRACE(DHCPD_6_RELEASE_DONE());
+ }
+ 
+ /*
+@@ -5688,6 +5717,8 @@ dhcpv6_information_request(struct data_s
+ 	struct data_string client_id;
+ 	struct data_string server_id;
+ 
++	TRACE(DHCPD_6_INFORMATION_REQUEST_START());
++
+ 	/*
+ 	 * Validate our input.
+ 	 */
+@@ -5719,6 +5750,8 @@ dhcpv6_information_request(struct data_s
+ 		data_string_forget(&client_id, MDL);
+ 	}
+ 	data_string_forget(&server_id, MDL);
++
++	TRACE(DHCPD_6_INFORMATION_REQUEST_DONE());
+ }
+ 
+ /* 
+@@ -5747,6 +5780,8 @@ dhcpv6_relay_forw(struct data_string *re
+ 	struct dhcpv6_relay_packet *reply;
+ 	int reply_ofs;
+ 
++	TRACE(DHCPD_6_RELAY_FORW_START());
++
+ 	/* 
+ 	 * Initialize variables for early exit.
+ 	 */
+@@ -6006,6 +6041,8 @@ exit:
+ 	if (enc_packet != NULL) {
+ 		packet_dereference(&enc_packet, MDL);
+ 	}
++
++	TRACE(DHCPD_6_RELAY_FORW_DONE());
+ }
+ 
+ static void
+diff -up dhcp-4.2.6b1/server/failover.c.systemtap dhcp-4.2.6b1/server/failover.c
+--- dhcp-4.2.6b1/server/failover.c.systemtap	2014-01-21 20:29:10.000000000 +0100
++++ dhcp-4.2.6b1/server/failover.c	2014-01-23 14:45:04.852357107 +0100
+@@ -36,6 +36,8 @@
+ #include "dhcpd.h"
+ #include <omapip/omapip_p.h>
+ 
++#include "trace.h"
++
+ #if defined (FAILOVER_PROTOCOL)
+ dhcp_failover_state_t *failover_states;
+ static isc_result_t do_a_failover_option (omapi_object_t *,
+@@ -1710,6 +1712,8 @@ isc_result_t dhcp_failover_set_state (dh
+     struct lease *l;
+     struct timeval tv;
+ 
++    TRACE(DHCPD_FAILOVER_SET_STATE_START(state->me.state, new_state));
++
+     /* If we're in certain states where we're sending updates, and the peer
+      * state changes, we need to re-schedule any pending updates just to
+      * be on the safe side.  This results in retransmission.
+@@ -1937,6 +1941,8 @@ isc_result_t dhcp_failover_set_state (dh
+ 	    break;
+     }
+ 
++    TRACE(DHCPD_FAILOVER_SET_STATE_DONE());
++
+     return ISC_R_SUCCESS;
+ }
+ 
+@@ -2420,6 +2426,8 @@ dhcp_failover_pool_dobalance(dhcp_failov
+ 	if (state -> me.state != normal)
+ 		return 0;
+ 
++	TRACE(DHCPD_FAILOVER_POOL_DOBALANCE_START());
++
+ 	state->last_balance = cur_time;
+ 
+ 	for (s = shared_networks ; s ; s = s->next) {
+@@ -2580,6 +2588,8 @@ dhcp_failover_pool_dobalance(dhcp_failov
+ 	if (leases_queued)
+ 		commit_leases();
+ 
++	TRACE(DHCPD_FAILOVER_POOL_DOBALANCE_DONE());
++
+ 	return leases_queued;
+ }
+ 
+diff -up dhcp-4.2.6b1/server/Makefile.am.systemtap dhcp-4.2.6b1/server/Makefile.am
+--- dhcp-4.2.6b1/server/Makefile.am.systemtap	2014-01-23 14:45:04.802357811 +0100
++++ dhcp-4.2.6b1/server/Makefile.am	2014-01-23 14:45:04.852357107 +0100
+@@ -10,7 +10,7 @@ dist_sysconf_DATA = dhcpd.conf.example
+ sbin_PROGRAMS = dhcpd
+ dhcpd_SOURCES = dhcpd.c dhcp.c bootp.c confpars.c db.c class.c failover.c \
+ 		omapi.c mdb.c stables.c salloc.c ddns.c dhcpleasequery.c \
+-		dhcpv6.c mdb6.c ldap.c ldap_casa.c
++		dhcpv6.c mdb6.c ldap.c ldap_casa.c probes.d trace.h
+ 
+ dhcpd_CFLAGS = $(LDAP_CFLAGS)
+ dhcpd_LDADD = ../common/libdhcp.a ../omapip/libomapi.la \
+@@ -19,3 +19,13 @@ dhcpd_LDADD = ../common/libdhcp.a ../oma
+ man_MANS = dhcpd.8 dhcpd.conf.5 dhcpd.leases.5
+ EXTRA_DIST = $(man_MANS)
+ 
++if ENABLE_SYSTEMTAP
++BUILT_SOURCES = probes.h
++probes.h: probes.d
++	$(DTRACE) -C -h -s $< -o $@
++
++probes.o: probes.d
++	$(DTRACE) -C -G -s $< -o $@
++
++dhcpd_LDADD += probes.o
++endif
+diff -up dhcp-4.2.6b1/server/probes.d.systemtap dhcp-4.2.6b1/server/probes.d
+--- dhcp-4.2.6b1/server/probes.d.systemtap	2014-01-23 14:45:04.852357107 +0100
++++ dhcp-4.2.6b1/server/probes.d	2014-01-23 14:45:04.852357107 +0100
+@@ -0,0 +1,43 @@
++provider dhcpd {
++	 probe main();
++	 probe discover_start()
++	 probe discover_done()
++	 probe request_start()
++	 probe request_done()
++	 probe release_start()
++	 probe release_done()
++	 probe decline_start()
++	 probe decline_done()
++	 probe inform_start()
++	 probe inform_done()
++	 probe nak_lease_start()
++	 probe nak_lease_done()
++	 probe ack_lease_start()
++	 probe ack_lease_done()
++	 probe reply_start()
++	 probe reply_done()
++	 probe find_lease_start()
++	 probe find_lease_done()
++	 probe 6_solicit_start()
++	 probe 6_solicit_done()
++	 probe 6_request_start()
++	 probe 6_request_done()
++	 probe 6_confirm_start()
++	 probe 6_confirm_done()
++	 probe 6_renew_start()
++	 probe 6_renew_done()
++	 probe 6_rebind_start()
++	 probe 6_rebind_done()
++	 probe 6_decline_start()
++	 probe 6_decline_done()
++	 probe 6_release_start()
++	 probe 6_release_done()
++	 probe 6_information_request_start()
++	 probe 6_information_request_done()
++	 probe 6_relay_forw_start()
++	 probe 6_relay_forw_done()
++	 probe failover_pool_dobalance_start()
++	 probe failover_pool_dobalance_done()
++	 probe failover_set_state_start(int, int) /* state, new_state */
++	 probe failover_set_state_done()
++};
+diff -up dhcp-4.2.6b1/server/tests/Makefile.am.systemtap dhcp-4.2.6b1/server/tests/Makefile.am
+--- dhcp-4.2.6b1/server/tests/Makefile.am.systemtap	2014-01-23 14:45:04.803357797 +0100
++++ dhcp-4.2.6b1/server/tests/Makefile.am	2014-01-23 14:45:04.852357107 +0100
+@@ -20,6 +20,10 @@ DHCPSRC = ../dhcp.c ../bootp.c ../confpa
+ DHCPLIBS = $(top_builddir)/common/libdhcp.a $(top_builddir)/omapip/libomapi.la    \
+           $(top_builddir)/dhcpctl/libdhcpctl.la $(BIND9_LIBDIR) -ldns-export -lisc-export
+ 
++if ENABLE_SYSTEMTAP
++DHCPLIBS += ../probes.o
++endif
++
+ ATF_TESTS =
+ TESTS = 
+ if HAVE_ATF
+diff -up dhcp-4.2.6b1/server/trace.h.systemtap dhcp-4.2.6b1/server/trace.h
+--- dhcp-4.2.6b1/server/trace.h.systemtap	2014-01-23 14:45:04.853357093 +0100
++++ dhcp-4.2.6b1/server/trace.h	2014-01-23 14:45:04.853357093 +0100
+@@ -0,0 +1,11 @@
++// trace.h
++
++#include "config.h"
++#ifdef HAVE_SYSTEMTAP
++// include the generated probes header and put markers in code
++#include "probes.h"
++#define TRACE(probe) probe
++#else
++// Wrap the probe to allow it to be removed when no systemtap available
++#define TRACE(probe)
++#endif
+diff -up dhcp-4.2.6b1/tapset/dhcpd.stp.systemtap dhcp-4.2.6b1/tapset/dhcpd.stp
+--- dhcp-4.2.6b1/tapset/dhcpd.stp.systemtap	2014-01-23 14:45:04.853357093 +0100
++++ dhcp-4.2.6b1/tapset/dhcpd.stp	2014-01-23 14:45:04.853357093 +0100
+@@ -0,0 +1,212 @@
++/* dhcpd tapset
++   Copyright (C) 2011, Red Hat Inc.
++ */
++
++probe dhcpd_main = process("dhcpd").mark("main")
++{
++  probestr = sprintf("%s(locals: %s)", $$name, $$locals);
++  
++}
++
++probe dhcpd_discover_start = process("dhcpd").mark("discover_start")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_discover_done = process("dhcpd").mark("discover_done")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_request_start = process("dhcpd").mark("request_start")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_request_done = process("dhcpd").mark("request_done")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_release_start = process("dhcpd").mark("release_start")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_release_done = process("dhcpd").mark("release_done")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_decline_start = process("dhcpd").mark("decline_start")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_decline_done = process("dhcpd").mark("decline_done")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_inform_start = process("dhcpd").mark("inform_start")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_inform_done = process("dhcpd").mark("inform_done")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_nak_lease_start = process("dhcpd").mark("nak_lease_start")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_nak_lease_done = process("dhcpd").mark("nak_lease_done")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_ack_lease_start = process("dhcpd").mark("ack_lease_start")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_ack_lease_done = process("dhcpd").mark("ack_lease_done")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_reply_start = process("dhcpd").mark("reply_start")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_reply_done = process("dhcpd").mark("reply_done")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_find_lease_start = process("dhcpd").mark("find_lease_start")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_find_lease_done = process("dhcpd").mark("find_lease_done")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_6_solicit_start = process("dhcpd").mark("6_solicit_start")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_6_solicit_done = process("dhcpd").mark("6_solicit_done")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_6_request_start = process("dhcpd").mark("6_request_start")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_6_request_done = process("dhcpd").mark("6_request_done")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_6_confirm_start = process("dhcpd").mark("6_confirm_start")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_6_confirm_done = process("dhcpd").mark("6_confirm_done")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_6_renew_start = process("dhcpd").mark("6_renew_start")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_6_renew_done = process("dhcpd").mark("6_renew_done")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_6_rebind_start = process("dhcpd").mark("6_rebind_start")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_6_rebind_done = process("dhcpd").mark("6_rebind_done")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_6_decline_start = process("dhcpd").mark("6_decline_start")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_6_decline_done = process("dhcpd").mark("6_decline_done")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_6_release_start = process("dhcpd").mark("6_release_start")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_6_release_done = process("dhcpd").mark("6_release_done")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_6_information_request_start = process("dhcpd").mark("6_information_request_start")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_6_information_request_done = process("dhcpd").mark("6_information_request_done")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_6_relay_forw_start = process("dhcpd").mark("6_relay_forw_start")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_6_relay_forw_done = process("dhcpd").mark("6_relay_forw_done")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_failover_pool_dobalance_start = process("dhcpd").mark("failover_pool_dobalance_start")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++probe dhcpd_failover_pool_dobalance_done = process("dhcpd").mark("failover_pool_dobalance_done")
++{
++  probestr = sprintf("%s", $$name);
++}
++
++
++probe dhcpd_failover_set_state_start = process("dhcpd").mark("failover_set_state_start")
++{
++  state = $arg1;
++  new_state = $arg2;
++  probestr = sprintf("%s(state=%d, new_state=%d)", $$name, state, new_state);
++}
++
++probe dhcpd_failover_set_state_done = process("dhcpd").mark("failover_set_state_done")
++{
++  probestr = sprintf("%s", $$name);
++}
+diff -up dhcp-4.2.6b1/tapset/Makefile.am.systemtap dhcp-4.2.6b1/tapset/Makefile.am
+--- dhcp-4.2.6b1/tapset/Makefile.am.systemtap	2014-01-23 14:45:04.853357093 +0100
++++ dhcp-4.2.6b1/tapset/Makefile.am	2014-01-23 14:45:04.853357093 +0100
+@@ -0,0 +1,26 @@
++# Makefile.am for dhcp/tapset
++# Jiri Popelka
++
++.PHONY: clean-local install-data-hook uninstall-local
++
++#
++EXTRA_DIST = dhcpd.stp
++TAPSET_FILES = $(EXTRA_DIST)
++TAPSET_INSTALL_DIR = $(DESTDIR)@ABS_TAPSET_DIR@
++
++if ENABLE_SYSTEMTAP
++all-local: $(TAPSET_FILES)
++
++clean-local:
++
++install-data-hook:
++	$(MKDIR_P) $(TAPSET_INSTALL_DIR)
++	$(INSTALL_DATA) $(TAPSET_FILES) $(TAPSET_INSTALL_DIR)
++
++uninstall-local:
++	@list='$(TAPSET_FILES)'; for p in $$list; do \
++	  echo " rm -f '$(TAPSET_INSTALL_DIR)/$$p'"; \
++	  rm -f "$(TAPSET_INSTALL_DIR)/$$p"; \
++	done
++endif
++

@@ -1,0 +1,90 @@
+##
+## unit_test/linux/AmbaConfig
+##
+## History:
+##    2009/09/02 - [Cao Rongrong] Create
+##
+## Copyright (C) 2004-2008, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+menuconfig BUILD_AMBARELLA_PUBLIC_LINUX_UNIT_TESTS
+	bool "Ambarella Public Linux Unit test configs"
+	default n
+	depends on BUILD_AMBARELLA_UNIT_TESTS
+	help
+		Build Ambarella Public Linux Unit tests.
+
+if BUILD_AMBARELLA_PUBLIC_LINUX_UNIT_TESTS
+
+config BUILD_AMBARELLA_UNIT_TESTS_AUDIO
+	bool "Build Ambarella Public Linux Audio unit tests"
+	default n
+	help
+		Build Ambarella Public Linux Audio unit tests.
+
+source unit_test/linux/benchmark/AmbaConfig
+
+config BUILD_AMBARELLA_UNIT_TESTS_CRYPTO
+	bool "Build Ambarella Public Linux Crypto unit tests"
+	default n
+	help
+		Build Ambarella Public Linux Crypto unit tests.
+config BUILD_AMBARELLA_UNIT_TESTS_CRYPTO_SOCKET
+	bool "Build Crypto Test With Socket Interface"
+	default n
+	help
+		Build socket interface
+
+config BUILD_AMBARELLA_UNIT_TESTS_FLASH_FS
+	bool "Build Ambarella Public Linux Flash FS unit tests"
+	default n
+	help
+		Build Ambarella Public Linux Flash file system
+		(ubifs,yaff2) unit tests.
+
+config BUILD_AMBARELLA_UNIT_TESTS_IDE
+	bool "Build Ambarella Public Linux IDE unit tests"
+	default n
+	help
+		Build Ambarella Public Linux IDE unit tests.
+
+config BUILD_AMBARELLA_UNIT_TESTS_MISC
+	bool "Build Ambarella Public Linux Misc unit tests"
+	default n
+	help
+		Build Ambarella Public Linux Misc unit tests.
+
+config BUILD_AMBARELLA_UNIT_TESTS_NAND
+	bool "Build Ambarella Public Linux Nand unit tests"
+	default n
+	help
+		Build Ambarella Public Linux Nand unit tests.
+		This program just do the Fatigue Testing.
+		For functional test, please take MTD-tools.
+
+config BUILD_AMBARELLA_UNIT_TESTS_UPGRADE
+	bool "Build Ambarella Public Linux Upgrade Tool"
+	default n
+	help
+		Build Ambarella Public Linux Upgrade Tool.
+
+config BUILD_AMBARELLA_UNIT_TESTS_USB_STREAM
+	bool "Build Ambarella Public Linux USB_STREAM unit tests"
+	default n
+	help
+		Build Ambarella Public Linux USB_STREAM unit tests.
+		It use a simple protocol to transfer data between
+		host and the platform.
+
+config BUILD_AMBARELLA_UNIT_TESTS_I2C_TOOL
+	bool "Build Linux I2C tool unit tests"
+	default n
+	help
+		Build unit tests for I2C test.
+endif
+

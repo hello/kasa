@@ -1,0 +1,41 @@
+##
+## ambarella/AmbaConfig
+##
+## Following content is generated automatically by
+##  create_root_mkcfg: DO NOT EDIT!!
+##
+
+mainmenu "Ambarella Build Configuration"
+
+##### amboot
+source amboot/AmbaConfig
+
+
+##### app
+source app/AmbaConfig
+
+
+##### kernel
+source kernel/AmbaConfig
+
+
+##### oryx
+source oryx/AmbaConfig
+
+
+##### packages
+source packages/AmbaConfig
+
+
+##### prebuild
+source prebuild/AmbaConfig
+
+
+##### rootfs
+source rootfs/AmbaConfig
+
+
+##### unit_test
+source unit_test/AmbaConfig
+
+

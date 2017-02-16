@@ -1,0 +1,11 @@
+--- ath6kl.orig/Kbuild	2012-05-17 01:04:20.068652488 -0700
++++ ath6kl/Kbuild	2012-05-17 01:19:08.492633708 -0700
+@@ -41,7 +41,7 @@
+ ath6kl_sdio-y += htcoex.o
+ ath6kl_sdio-$(CONFIG_QC_INTERNAL) += intra_reg.o
+ 
+-obj-$(CONFIG_ATH6KL_USB) += ath6kl_usb.o
++obj-m		+= ath6kl_usb.o
+ ath6kl_usb-y += debug.o
+ ath6kl_usb-y += htc_pipe.o
+ ath6kl_usb-y += bmi.o

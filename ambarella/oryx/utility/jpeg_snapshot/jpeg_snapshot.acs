@@ -1,0 +1,18 @@
+-- This is the configuration of Jpeg Snapshot for Motion Handle
+-- md_enable (bool):        true|false, false means disable jpeg encode
+-- fps (float):             < 30.0 capture frame per second when motion detect
+-- source_buffer:           0|1|2|3
+-- jpeg_path (string):      dir of jpeg files saved
+-- max_files (int):         max jpeg files saved
+
+
+
+jpeg_snapshot = {
+  md_enable = false,
+  source_buffer = 1,
+  fps = 10.0,
+  jpeg_path = "/tmp/jpeg",
+  max_files = 50
+}
+
+return jpeg_snapshot

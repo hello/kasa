@@ -1,0 +1,24 @@
+##
+## Kbuild
+##
+## History:
+##    2009/07/09 - [Anthony Ginger] Create
+##
+## Copyright (C) 2004-2008, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+EXTRA_CFLAGS		+= $(AMBARELLA_DRV_CFLAGS) -DREASSOCIATION -DPROC_DEBUG -DFPNUM='"38"'
+EXTRA_AFLAGS		+= $(AMBARELLA_DRV_AFLAGS)
+EXTRA_LDFLAGS		+= $(AMBARELLA_DRV_LDFLAGS)
+
+obj-m := wlan.o
+wlan-y := wlan_main.o wlan_init.o wlan_wext.o wlan_rx.o wlan_tx.o \
+	  wlan_cmd.o wlan_cmdresp.o wlan_scan.o wlan_join.o wlan_priv.o \
+	  wlan_wmm.o wlan_11d.o wlan_11h.o wlan_meas.o wlan_proc.o \
+	  wlan_sdio_mmc.o wlan_debug.o
+

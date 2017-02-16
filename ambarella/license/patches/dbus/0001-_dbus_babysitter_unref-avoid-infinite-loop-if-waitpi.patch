@@ -1,0 +1,57 @@
+From fc600b6a8f0dec5642b45c1026dee24c9adb9bc2 Mon Sep 17 00:00:00 2001
+From: Simon McVittie <simon.mcvittie@collabora.co.uk>
+Date: Wed, 4 Sep 2013 17:53:23 +0100
+Subject: [PATCH] _dbus_babysitter_unref: avoid infinite loop if waitpid()
+ returns EINTR
+
+If waitpid() failed with EINTR, we'd go back for another go, but
+because ret is nonzero, we'd skip the waitpid() and just keep looping.
+
+Also avoid an unnecessary "goto" in favour of a proper loop, to make it
+more clearly correct.
+
+Bug: https://bugs.freedesktop.org/show_bug.cgi?id=68945
+Reviewed-by: Colin Walters <walters@verbum.org>
+---
+ dbus/dbus-spawn.c | 13 ++++++++-----
+ 1 file changed, 8 insertions(+), 5 deletions(-)
+
+diff --git a/dbus/dbus-spawn.c b/dbus/dbus-spawn.c
+index ef00801..6e42f55 100644
+--- a/dbus/dbus-spawn.c
++++ b/dbus/dbus-spawn.c
+@@ -304,23 +304,26 @@ _dbus_babysitter_unref (DBusBabysitter *sitter)
+ 
+           /* If we couldn't reap the child then kill it, and
+            * try again
+            */
+           if (ret == 0)
+             kill (sitter->sitter_pid, SIGKILL);
+ 
+-        again:
+           if (ret == 0)
+-            ret = waitpid (sitter->sitter_pid, &status, 0);
++            {
++              do
++                {
++                  ret = waitpid (sitter->sitter_pid, &status, 0);
++                }
++              while (_DBUS_UNLIKELY (ret < 0 && errno == EINTR));
++            }
+ 
+           if (ret < 0)
+             {
+-              if (errno == EINTR)
+-                goto again;
+-              else if (errno == ECHILD)
++              if (errno == ECHILD)
+                 _dbus_warn ("Babysitter process not available to be reaped; should not happen\n");
+               else
+                 _dbus_warn ("Unexpected error %d in waitpid() for babysitter: %s\n",
+                             errno, _dbus_strerror (errno));
+             }
+           else
+             {
+-- 
+1.8.3.1
+

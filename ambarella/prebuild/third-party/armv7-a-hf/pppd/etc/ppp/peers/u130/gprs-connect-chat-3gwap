@@ -1,0 +1,16 @@
+ABORT 'BUSY'
+ABORT 'NO CARRIER'
+ABORT 'ERROR'
+ABORT '+CME ERROR: 100'
+
+""   AT+CGMI
+""   AT+CGMI
+""   AT+CGMI
+""   AT+CGMI
+""   AT+CGMI
+""   AT+CGMI
+""   AT+CGMI
+""   AT+CGMI
+""   AT+CGDCONT=1,"IP","3gwap"
+OK   ATDT*99#
+CONNECT

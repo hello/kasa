@@ -1,0 +1,329 @@
+##
+## boards/AmbaConfig
+##
+## Following content is generated automatically by
+##  create_board_mkcfg: DO NOT EDIT!!
+##
+
+choice
+	prompt "Board"
+	help
+		Select the board type of the target.
+
+config CONFIG_BSP_BOARD_HAWTHORN
+	bool "HAWTHORN"
+	depends on CONFIG_ARCH_S2L
+
+config CONFIG_BSP_BOARD_S2LM_IRONMAN
+	bool "IRONMAN"
+	depends on CONFIG_ARCH_S2L
+
+config CONFIG_BSP_BOARD_S2LM_KIWI
+	bool "KIWI"
+	depends on CONFIG_ARCH_S2L
+
+endchoice
+
+
+##### hawthorn
+
+choice
+	prompt "Board Revision"
+	default CONFIG_BOARD_VERSION_HAWTHORN_S2L66
+	depends on CONFIG_BSP_BOARD_HAWTHORN
+	help
+		Select the BSP of the HAWTHORN.
+
+config CONFIG_BOARD_VERSION_HAWTHORN_S2L66
+	bool "HAWTHORN (S2L66 + 8Gbit DDR)"
+
+config CONFIG_BOARD_VERSION_HAWTHORN_S2L66_EVKB
+	bool "HAWTHORN (S2L66 + 8Gbit DDR-B)"
+
+config CONFIG_BOARD_VERSION_HAWTHORN_S2L63
+	bool "HAWTHORN (S2L63 + 8Gbit DDR)"
+
+config CONFIG_BOARD_VERSION_HAWTHORN_S2L63_EVKB
+	bool "HAWTHORN (S2L63 + 8Gbit DDR-B)"
+
+endchoice
+
+menuconfig CONFIG_HAWTHORN_DSP_BOOT
+	bool "Start DSP in Amboot"
+	default n
+	depends on CONFIG_BSP_BOARD_HAWTHORN
+	select AMBOOT_BOOT_DSP
+	select AMBOOT_DEV_FAST_BOOT
+	help
+		Select this option to show splash logo, or start
+		preview and encoding in Amboot.
+
+if CONFIG_HAWTHORN_DSP_BOOT
+
+config CONFIG_HAWTHORN_IAV_ENCODING
+	bool "Encoding in Amboot"
+	help
+		Select this option to start preview and encoding in Amboot.
+
+config CONFIG_HAWTHORN_IAV_FASTOSD
+	bool "Show Fast OSD"
+	depends on CONFIG_HAWTHORN_IAV_ENCODING
+	help
+		Select this option to show fast osd.
+
+config CONFIG_HAWTHORN_IAV_SPLASH
+	bool "Show Splash"
+	help
+		Select this option to show splash.
+
+choice
+	prompt "VIN Device"
+	default CONFIG_HAWTHORN_IAV_OV4689
+	depends on CONFIG_HAWTHORN_IAV_ENCODING
+
+config CONFIG_HAWTHORN_IAV_OV4689
+	bool "OV4689"
+	select CONFIG_AMBOOT_ENABLE_IDC
+
+endchoice
+
+choice
+	prompt "VOUT Device"
+	default CONFIG_BOARD_IAV_HAWTHORN_CVBS
+
+config CONFIG_HAWTHORN_IAV_TD043
+	bool "TD043"
+
+config CONFIG_HAWTHORN_IAV_CVBS
+	bool "CVBS"
+
+endchoice
+
+endif ## The end of menuconfig CONFIG_HAWTHORN_DSP_BOOT
+
+
+##### s2lm_ironman
+
+choice
+	prompt "Board Type"
+	default CONFIG_BOARD_VERSION_S2LMIRONMAN_S2L55M
+	depends on CONFIG_BSP_BOARD_S2LM_IRONMAN
+	help
+		Select the BSP of the S2LMIRONMAN.
+
+config CONFIG_BOARD_VERSION_S2LMIRONMAN_S2L55M
+        bool "IRONMAN (S2L55M)"
+
+endchoice
+
+menuconfig CONFIG_S2LMIRONMAN_DSP_BOOT
+	bool "Start DSP in Amboot"
+	default n
+	depends on CONFIG_BSP_BOARD_S2LM_IRONMAN
+	select AMBOOT_BOOT_DSP
+	select AMBOOT_DEV_FAST_BOOT
+	help
+		Select this option to start preview and encoding in Amboot.
+
+if CONFIG_S2LMIRONMAN_DSP_BOOT
+
+choice
+	prompt "VIN Device"
+	default CONFIG_S2LMIRONMAN_IAV_OV4689
+
+config CONFIG_S2LMIRONMAN_IAV_OV4689
+	bool "OV4689"
+	select CONFIG_AMBOOT_ENABLE_IDC
+
+endchoice
+
+choice
+	prompt "VOUT Device"
+	default CONFIG_BOARD_IAV_S2LMIRONMAN_CVBS
+
+config CONFIG_S2LMIRONMAN_IAV_TD043
+	bool "TD043"
+
+config CONFIG_S2LMIRONMAN_IAV_CVBS
+	bool "CVBS"
+
+endchoice
+
+endif ## The end of menuconfig CONFIG_S2LMIRONMAN_DSP_BOOT
+
+menuconfig CONFIG_S2LMIRONMAN_AUDIO_BOOT
+	bool "Start Audio in Amboot"
+	default n
+	depends on CONFIG_BSP_BOARD_S2LM_IRONMAN
+	select AMBOOT_DEV_FAST_BOOT
+	help
+		Select this option to start audio in Amboot.
+
+if CONFIG_S2LMIRONMAN_AUDIO_BOOT
+
+choice
+	prompt "Audio Codec Device"
+	default CONFIG_S2LMIRONMAN_AK4954
+
+config CONFIG_S2LMIRONMAN_AK4954
+	bool "AK4954"
+
+endchoice
+
+endif ## The end of menuconfig CONFIG_S2LMIRONMAN_AUDIO_BOOT
+
+menuconfig CONFIG_S2LMIRONMAN_TURN_ON_LED_IN_BOOTLOADER
+	bool "Turn on LED in Amboot"
+	depends on CONFIG_S2LMIRONMAN_DSP_BOOT
+	default n
+	help
+		Select this option to turn on led in Amboot
+
+menuconfig CONFIG_S2LMIRONMAN_FASTBOOT_CES_DEMO
+	bool "S2lm_ironman Fastboot for CES Demo"
+	depends on CONFIG_S2LMIRONMAN_DSP_BOOT
+	default n
+	help
+		Select this option to config s2lm_ironman fastboot for ces demo
+
+config CONFIG_S2LMIRONMAN_WLAN0_ADDRESS
+	depends on CONFIG_S2LMIRONMAN_FASTBOOT_CES_DEMO
+	string "IP Address"
+	default "192.168.2.10"
+	help
+		IP Address for wlan0.
+
+config CONFIG_S2LMIRONMAN_AP_SSID
+	depends on CONFIG_S2LMIRONMAN_FASTBOOT_CES_DEMO
+	string "AP SSID"
+	default "Ambarella-ces"
+	help
+		AP SSID for fastboot ces demo
+
+config CONFIG_S2LMIRONMAN_HTTP_URL
+	depends on CONFIG_S2LMIRONMAN_FASTBOOT_CES_DEMO
+	string "Http Server Url"
+	default "http://192.168.2.3:6024"
+	help
+		Http Server Url for fastboot ces demo
+
+
+##### s2lm_kiwi
+
+choice
+	prompt "Board Type"
+	default CONFIG_BOARD_VERSION_S2LMKIWI_S2L55M
+	depends on CONFIG_BSP_BOARD_S2LM_KIWI
+	help
+		Select the BSP of the S2LMKIWI.
+
+config CONFIG_BOARD_VERSION_S2LMKIWI_S2L55M
+        bool "KIWI (S2L55M)"
+
+config CONFIG_BOARD_VERSION_S2LMKIWI_S2L33M
+        bool "KIWI (S2L33M)"
+
+config CONFIG_BOARD_VERSION_S2LMKIWI_S2L22M
+        bool "KIWI (S2L22M)"
+
+config CONFIG_BOARD_VERSION_S2LMKIWI_S2L12M
+	bool "KIWI (S2L12M)"
+
+config CONFIG_BOARD_VERSION_S2LMKIWI_S2LMHC
+	bool "KIWI (S2LM High Clock)"
+	endchoice
+
+
+menuconfig CONFIG_S2LMKIWI_FAST_BOOT
+	bool "Amboot Fast Boot Configuration"
+	depends on CONFIG_BSP_BOARD_S2LM_KIWI
+	default n
+	help
+		Boot Sensor, DSP (Vout), Audio in Amboot.
+
+if CONFIG_S2LMKIWI_FAST_BOOT
+
+config CONFIG_S2LMKIWI_SENSOR_BOOT
+	bool "Boot Sensor in Amboot"
+	select CONFIG_AMBOOT_ENABLE_IDC
+	default n
+
+if CONFIG_S2LMKIWI_SENSOR_BOOT
+choice
+	prompt "VIN Device"
+	default CONFIG_S2LMKIWI_SENSOR_BOOT_OV4689
+
+config CONFIG_S2LMKIWI_SENSOR_OV4689
+	bool "OV4689"
+
+config CONFIG_S2LMKIWI_SENSOR_OV9710
+	bool "OV9710"
+
+config CONFIG_S2LMKIWI_SENSOR_AR0230
+	bool "AR0230(Linear)"
+
+config CONFIG_S2LMKIWI_SENSOR_AR0230_HDR_2X
+	bool "AR0230(2X HDR)"
+
+config CONFIG_S2LMKIWI_SENSOR_AR0230_WDR_IN
+	bool "AR0230(Built-in WDR)"
+endchoice
+endif ## END CONFIG_S2LMKIWI_SENSOR_BOOT
+
+config CONFIG_S2LMKIWI_DSP_BOOT
+	bool "Boot DSP to idle state"
+	select AMBOOT_BOOT_DSP
+	select AMBOOT_DEV_FAST_BOOT
+	help
+		Boot DSP to idle state.
+
+if CONFIG_S2LMKIWI_DSP_BOOT
+
+config CONFIG_S2LMKIWI_DSP_PREVIEW
+	bool "Boot DSP to preview state"
+	default n
+
+config CONFIG_S2LMKIWI_DSP_ENCODING
+	depends on CONFIG_S2LMKIWI_DSP_PREVIEW
+	bool "Boot DSP to encoding state"
+	default n
+
+config CONFIG_S2LMKIWI_DSP_FASTOSD
+	bool "Show Fast OSD on stream"
+	depends on CONFIG_S2LMKIWI_DSP_ENCODING
+	default n
+
+config CONFIG_S2LMKIWI_DSP_VOUT
+	bool "Boot DSP Vout"
+	default n
+
+if CONFIG_S2LMKIWI_DSP_VOUT
+choice
+	prompt "VOUT Device"
+	default CONFIG_S2LMKIWI_DSP_VOUT_CVBS
+
+config CONFIG_S2LMKIWI_DSP_VOUT_CVBS
+	bool "CVBS"
+
+config CONFIG_S2LMKIWI_DSP_VOUT_TD043
+	bool "TD043"
+endchoice
+endif
+
+config CONFIG_S2LMKIWI_DSP_SPLASH
+	bool "Show Splash Log on vout"
+	depends on CONFIG_S2LMKIWI_DSP_VOUT
+	default n
+
+endif ## END CONFIG_S2LMKIWI_DSP_BOOT
+
+config CONFIG_S2LMKIWI_AUDIO_AK4954
+	bool "Boot Audio Codec AK4954"
+	select AMBOOT_DEV_FAST_BOOT
+	default n
+	help
+		Boot Audio in Amboot
+
+endif
+
+

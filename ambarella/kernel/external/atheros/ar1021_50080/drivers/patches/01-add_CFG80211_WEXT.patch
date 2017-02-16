@@ -1,0 +1,19 @@
+diff -Naur cfg80211/core.c cfg80211.patch/core.c
+--- cfg80211/core.c	2011-10-13 14:31:51.000000000 +0800
++++ cfg80211.patch/core.c	2011-11-07 13:20:24.857111104 +0800
+@@ -813,6 +813,15 @@
+ 		wdev->sme_state = CFG80211_SME_IDLE;
+ 		mutex_unlock(&rdev->devlist_mtx);
+ #ifdef CONFIG_CFG80211_WEXT
++#ifdef CONFIG_WIRELESS_EXT
++		if (!dev->wireless_handlers)
++			dev->wireless_handlers = &cfg80211_wext_handler;
++#else
++		printk_once(KERN_WARNING "cfg80211: wext will not work because "
++			    "kernel was compiled with CONFIG_WIRELESS_EXT=n. "
++			    "Tools using wext interface, like iwconfig will "
++			    "not work.\n");
++#endif
+ 		wdev->wext.default_key = -1;
+ 		wdev->wext.default_mgmt_key = -1;
+ 		wdev->wext.connect.auth_type = NL80211_AUTHTYPE_AUTOMATIC;

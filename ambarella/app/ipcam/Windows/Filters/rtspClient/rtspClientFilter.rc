@@ -1,0 +1,206 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// 中文(中华人民共和国) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)
+#ifdef _WIN32
+LANGUAGE LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED
+#pragma code_page(936)
+#endif //_WIN32
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_DIALOG_RECORD DIALOGEX 0, 0, 235, 145
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_VISIBLE | WS_SYSMENU
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    LTEXT           "Save as ",IDC_STATIC,17,39,34,12
+    EDITTEXT        IDC_EDIT1,55,36,112,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "...",IDC_BUTTON1,173,39,18,11
+    LTEXT           "Max file size",IDC_STATIC,17,60,46,12
+    EDITTEXT        IDC_EDIT2,75,57,91,14,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "M byte",IDC_STATIC,173,60,36,12
+    CONTROL         "mp4",IDC_RADIO2,"Button",BS_AUTORADIOBUTTON,55,20,44,10
+    CONTROL         "h264/mjpeg",IDC_RADIO3,"Button",BS_AUTORADIOBUTTON,113,20,59,10
+    LTEXT           "Format",IDC_STATIC,17,20,32,12
+    GROUPBOX        "Record",IDC_STATIC,7,7,205,81
+END
+
+IDD_DIALOG_NETWORK DIALOGEX 0, 0, 184, 120
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_SYSMENU
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    CONTROL         "Unicast",IDC_RADIO1,"Button",BS_AUTORADIOBUTTON,17,20,68,10
+    GROUPBOX        "Transfer",IDC_STATIC,7,7,94,88
+    CONTROL         "TCP",IDC_RADIO2,"Button",BS_AUTORADIOBUTTON,17,36,29,10
+    CONTROL         "Multicast",IDC_RADIO3,"Button",BS_AUTORADIOBUTTON,17,53,44,10
+END
+
+IDD_DIALOG_PLAY DIALOGEX 0, 0, 184, 90
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_SYSMENU
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    LTEXT           "Caching Time:",IDC_STATIC,19,25,57,10
+    LTEXT           "Max Buffer Size:",IDC_STATIC,19,45,59,10
+    EDITTEXT        IDC_EDIT2,89,44,56,13,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT1,89,22,56,13,ES_AUTOHSCROLL
+    LTEXT           "ms",IDC_STATIC,151,25,17,10
+    LTEXT           "M byte",IDC_STATIC,151,46,26,10
+    GROUPBOX        "Playing",IDC_STATIC,7,7,170,62
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO 
+BEGIN
+    IDD_DIALOG_RECORD, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 228
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 138
+    END
+
+    IDD_DIALOG_NETWORK, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 177
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 113
+    END
+
+    IDD_DIALOG_PLAY, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 177
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 83
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,3
+ PRODUCTVERSION 1,0,0,3
+ FILEFLAGSMASK 0x17L
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x4L
+ FILETYPE 0x0L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080404b0"
+        BEGIN
+            VALUE "FileDescription", "rtspClientFilter"
+            VALUE "FileVersion", "1, 0, 0, 3"
+            VALUE "InternalName", "AmbaRTSPClient.ax"
+            VALUE "LegalCopyright", "Copyright (C) 2010"
+            VALUE "OriginalFilename", "AmbaRTSPClient.ax"
+            VALUE "ProductName", " rtspClientFilter"
+            VALUE "ProductVersion", "1, 0, 0, 3"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x804, 1200
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// String Table
+//
+
+STRINGTABLE 
+BEGIN
+    IDS_PROPPAGE_RECORD_PARAM "Record"
+    IDS_PROPPAGE_NETWORK    "Network"
+    IDS_PROPPAGE_PLAY       "Play"
+END
+
+#endif    // 中文(中华人民共和国) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////
+// 英语(美国) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+#ifdef _WIN32
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+#endif //_WIN32
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+#endif    // 英语(美国) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

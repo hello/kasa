@@ -1,0 +1,125 @@
+diff --git a/drivers/mmc/host/sdhci-pci.c b/drivers/mmc/host/sdhci-pci.c
+index 2f15cc1..7ae8100 100644
+--- a/drivers/mmc/host/sdhci-pci.c
++++ b/drivers/mmc/host/sdhci-pci.c
+@@ -102,7 +102,8 @@ static const struct sdhci_pci_fixes sdhci_ene_712 = {
+ static const struct sdhci_pci_fixes sdhci_ene_714 = {
+ 	.quirks		= SDHCI_QUIRK_SINGLE_POWER_WRITE |
+ 			  SDHCI_QUIRK_RESET_CMD_DATA_ON_IOS |
+-			  SDHCI_QUIRK_BROKEN_DMA,
++			  SDHCI_QUIRK_BROKEN_DMA |
++			  SDHCI_QUIRK_1BIT_INTERRUPT,
+ };
+ 
+ static const struct sdhci_pci_fixes sdhci_cafe = {
+diff --git a/drivers/mmc/host/sdhci.c b/drivers/mmc/host/sdhci.c
+index fc96f8c..179a690 100644
+--- a/drivers/mmc/host/sdhci.c
++++ b/drivers/mmc/host/sdhci.c
+@@ -227,6 +227,21 @@ static void sdhci_led_control(struct led_classdev *led,
+ }
+ #endif
+ 
++/* handle bus case where controller cannot detect CIRQ reliably when in 4-bit mode */
++static void sdhci_idle_bus_adjust(struct sdhci_host *host, u8 idle)
++{
++	u8 ctrl;
++	if ((host->flags & SDHCI_IN_4BIT_MODE) && (host->quirks & SDHCI_QUIRK_1BIT_INTERRUPT)){
++		/* while bus is idle, leave it in 1-bit mode at the controller level */
++		ctrl = readb(host->ioaddr + SDHCI_HOST_CONTROL);
++		ctrl &= ~SDHCI_CTRL_4BITBUS; 
++		if (!idle) {
++			ctrl |= SDHCI_CTRL_4BITBUS; 
++		} 
++		writeb(ctrl, host->ioaddr + SDHCI_HOST_CONTROL);
++	}
++}
++
+ /*****************************************************************************\
+  *                                                                           *
+  * Core functions                                                            *
+@@ -867,7 +882,7 @@ static void sdhci_send_command(struct sdhci_host *host, struct mmc_command *cmd)
+ 	WARN_ON(host->cmd);
+ 
+ 	/* Wait max 10 ms */
+-	timeout = 10;
++	timeout = (10*256) + 255;
+ 
+ 	mask = SDHCI_CMD_INHIBIT;
+ 	if ((cmd->data != NULL) || (cmd->flags & MMC_RSP_BUSY))
+@@ -888,11 +903,14 @@ static void sdhci_send_command(struct sdhci_host *host, struct mmc_command *cmd)
+ 			return;
+ 		}
+ 		timeout--;
+-		mdelay(1);
++		if (!(timeout & 0xFF)) 
++			mdelay(1);
+ 	}
+ 
+ 	mod_timer(&host->timer, jiffies + 10 * HZ);
+ 
++	sdhci_idle_bus_adjust(host, 0);
++
+ 	host->cmd = cmd;
+ 
+ 	sdhci_prepare_data(host, cmd->data);
+@@ -1144,10 +1162,13 @@ static void sdhci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
+ 
+ 	ctrl = sdhci_readb(host, SDHCI_HOST_CONTROL);
+ 
+-	if (ios->bus_width == MMC_BUS_WIDTH_4)
++	if (ios->bus_width == MMC_BUS_WIDTH_4) {
+ 		ctrl |= SDHCI_CTRL_4BITBUS;
+-	else
++		host->flags |= SDHCI_IN_4BIT_MODE;
++	} else {
+ 		ctrl &= ~SDHCI_CTRL_4BITBUS;
++		host->flags &= ~SDHCI_IN_4BIT_MODE;
++	}
+ 
+ 	if (ios->timing == MMC_TIMING_SD_HS)
+ 		ctrl |= SDHCI_CTRL_HISPD;
+@@ -1299,6 +1320,8 @@ static void sdhci_tasklet_finish(unsigned long param)
+ 	host->cmd = NULL;
+ 	host->data = NULL;
+ 
++	sdhci_idle_bus_adjust(host, 1);
++
+ #ifndef SDHCI_USE_LEDS_CLASS
+ 	sdhci_deactivate_led(host);
+ #endif
+@@ -1540,8 +1563,11 @@ static irqreturn_t sdhci_irq(int irq, void *dev_id)
+ 
+ 	intmask &= ~SDHCI_INT_BUS_POWER;
+ 
+-	if (intmask & SDHCI_INT_CARD_INT)
+-		cardint = 1;
++        if (intmask & SDHCI_INT_CARD_INT) {
++		if (readl(host->ioaddr + SDHCI_INT_ENABLE) & SDHCI_INT_CARD_INT) {
++			cardint = 1;
++		}
++	}
+ 
+ 	intmask &= ~SDHCI_INT_CARD_INT;
+ 
+diff --git a/drivers/mmc/host/sdhci.h b/drivers/mmc/host/sdhci.h
+index c77e9ff..7094236 100644
+--- a/drivers/mmc/host/sdhci.h
++++ b/drivers/mmc/host/sdhci.h
+@@ -232,6 +232,8 @@ struct sdhci_host {
+ #define SDHCI_QUIRK_FORCE_1_BIT_DATA			(1<<22)
+ /* Controller needs 10ms delay between applying power and clock */
+ #define SDHCI_QUIRK_DELAY_AFTER_POWER			(1<<23)
++/* Controller only catchs CIRQ when in 1-bit bus mode  */
++#define SDHCI_QUIRK_1BIT_INTERRUPT			(1<<24)
+ 
+ 	int			irq;		/* Device IRQ */
+ 	void __iomem *		ioaddr;		/* Mapped address */
+@@ -254,6 +256,7 @@ struct sdhci_host {
+ #define SDHCI_USE_ADMA		(1<<1)		/* Host is ADMA capable */
+ #define SDHCI_REQ_USE_DMA	(1<<2)		/* Use DMA for this req. */
+ #define SDHCI_DEVICE_DEAD	(1<<3)		/* Device unresponsive */
++#define SDHCI_IN_4BIT_MODE	(1<<4)		/* bus is in 4-bit mode */
+ 
+ 	unsigned int		version;	/* SDHCI spec. version */
+ 

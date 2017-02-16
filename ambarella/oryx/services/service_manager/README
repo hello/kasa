@@ -1,0 +1,4 @@
+This is service class and service manager.
+these classes are used to create and init the process and wrap up basic IPC 
+into them..
+this libamsrvm.so is used by apps_launcher to do service management

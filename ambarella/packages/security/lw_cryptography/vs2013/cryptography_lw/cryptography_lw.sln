@@ -1,0 +1,49 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 2013
+VisualStudioVersion = 12.0.21005.1
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "cryptography_lw", "cryptography_lw.vcxproj", "{D6F9C702-015C-42E1-B752-CF1815DDD4A4}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "rsasign", "..\rsasign\rsasign.vcxproj", "{91C2FA02-429D-4C94-8ACF-B6569EBD4291}"
+	ProjectSection(ProjectDependencies) = postProject
+		{D6F9C702-015C-42E1-B752-CF1815DDD4A4} = {D6F9C702-015C-42E1-B752-CF1815DDD4A4}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "rsagenkey", "..\rsagenkey\rsagenkey.vcxproj", "{32FA5823-CDB7-4882-A385-67D20F0690E0}"
+	ProjectSection(ProjectDependencies) = postProject
+		{D6F9C702-015C-42E1-B752-CF1815DDD4A4} = {D6F9C702-015C-42E1-B752-CF1815DDD4A4}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "rsaverify", "..\rsaverify\rsaverify.vcxproj", "{056F71B2-CBB3-4567-8612-9DF83854489E}"
+	ProjectSection(ProjectDependencies) = postProject
+		{D6F9C702-015C-42E1-B752-CF1815DDD4A4} = {D6F9C702-015C-42E1-B752-CF1815DDD4A4}
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{D6F9C702-015C-42E1-B752-CF1815DDD4A4}.Debug|Win32.ActiveCfg = Debug|Win32
+		{D6F9C702-015C-42E1-B752-CF1815DDD4A4}.Debug|Win32.Build.0 = Debug|Win32
+		{D6F9C702-015C-42E1-B752-CF1815DDD4A4}.Release|Win32.ActiveCfg = Release|Win32
+		{D6F9C702-015C-42E1-B752-CF1815DDD4A4}.Release|Win32.Build.0 = Release|Win32
+		{91C2FA02-429D-4C94-8ACF-B6569EBD4291}.Debug|Win32.ActiveCfg = Debug|Win32
+		{91C2FA02-429D-4C94-8ACF-B6569EBD4291}.Debug|Win32.Build.0 = Debug|Win32
+		{91C2FA02-429D-4C94-8ACF-B6569EBD4291}.Release|Win32.ActiveCfg = Release|Win32
+		{91C2FA02-429D-4C94-8ACF-B6569EBD4291}.Release|Win32.Build.0 = Release|Win32
+		{32FA5823-CDB7-4882-A385-67D20F0690E0}.Debug|Win32.ActiveCfg = Debug|Win32
+		{32FA5823-CDB7-4882-A385-67D20F0690E0}.Debug|Win32.Build.0 = Debug|Win32
+		{32FA5823-CDB7-4882-A385-67D20F0690E0}.Release|Win32.ActiveCfg = Release|Win32
+		{32FA5823-CDB7-4882-A385-67D20F0690E0}.Release|Win32.Build.0 = Release|Win32
+		{056F71B2-CBB3-4567-8612-9DF83854489E}.Debug|Win32.ActiveCfg = Debug|Win32
+		{056F71B2-CBB3-4567-8612-9DF83854489E}.Debug|Win32.Build.0 = Debug|Win32
+		{056F71B2-CBB3-4567-8612-9DF83854489E}.Release|Win32.ActiveCfg = Release|Win32
+		{056F71B2-CBB3-4567-8612-9DF83854489E}.Release|Win32.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,951 @@
+##
+## config/amboot.hw.in
+##
+## History:
+##    2007/08/22 - [Charles Chiou] created file (branch off)
+##    2007/10/24 - [Charles Chiou] imported to Linux tree
+##    2008/02/19 - [Anthony Ginger] imported to AMBuild
+##
+## Copyright (C) 2004-2007, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+menu "Hardware Options"
+depends on BUILD_AMBARELLA_FIRMWARE
+
+config ARCH_SUPPORT_BCH_ID5
+	bool
+	default y if CONFIG_ARCH_S2 || CONFIG_ARCH_S2E || CONFIG_ARCH_S2L || \
+		     CONFIG_ARCH_S3 || CONFIG_ARCH_S3L
+	default n
+
+config ARCH_SUPPORT_SPINOR
+	bool
+	default y if CONFIG_ARCH_S2E || CONFIG_ARCH_S2L || CONFIG_ARCH_S3 || \
+		     CONFIG_ARCH_S3L
+
+config CONFIG_FLASH_PAGE_256
+	bool
+	default n
+
+config CONFIG_FLASH_PAGE_512
+	bool
+	default n
+
+config CONFIG_FLASH_PAGE_2K
+	bool
+	default n
+
+config CONFIG_FLASH_PAGE_4K
+	bool
+	default n
+
+config CONFIG_FLASH_ERASE_4k
+	bool
+	default n
+
+config CONFIG_FLASH_ERASE_16k
+	bool
+	default n
+
+config CONFIG_FLASH_ERASE_64k
+	bool
+	default n
+
+config CONFIG_FLASH_ERASE_128k
+	bool
+	default n
+
+config CONFIG_FLASH_ERASE_256k
+	bool
+	default n
+
+config CONFIG_AMBOOT_ENABLE_NAND
+	bool "Support NAND Driver"
+	default y
+
+menu "NAND Subsystem Options"
+depends on CONFIG_AMBOOT_ENABLE_NAND
+
+config CONFIG_NAND_ERASE_UNUSED_BLOCK
+	bool "Erase unused NAND block when programming"
+	default y
+
+config CONFIG_NAND_USE_FLASH_BBT
+	bool "NAND Flash use BBT on Flash"
+	default y
+
+### NOTE: CONFIG_NAND_PXXX_EXXX below need to be replaced by
+### CONFIG_FLASH_PAGE_XXX and CONFIG_FLASH_ERASE_XXX finally
+config CONFIG_NAND_P512_E16K
+	bool
+	default n
+
+config CONFIG_NAND_P2K_E64K
+	bool
+	default n
+
+config CONFIG_NAND_P2K_E128K
+	bool
+	default n
+
+config CONFIG_NAND_P4K_E64K
+	bool
+	default n
+
+config CONFIG_NAND_P4K_E128K
+	bool
+	default n
+
+
+choice
+	prompt "NAND Flash Type"
+	default CONFIG_NAND_K9F2G08U0C
+	help
+		Select the onboard NAND flash type
+
+config CONFIG_NAND_K9F2808
+	bool "Samsung K9F2808"
+	select CONFIG_NAND_P512_E16K
+	select CONFIG_FLASH_PAGE_512
+	select CONFIG_FLASH_ERASE_16k
+	help
+		Samsung K9F2808 128Mbit NAND
+
+config CONFIG_NAND_K9F5608
+	bool "Samsung K9F5608"
+	select CONFIG_NAND_P512_E16K
+	select CONFIG_FLASH_PAGE_512
+	select CONFIG_FLASH_ERASE_16k
+	help
+		Samsung K9F5608 256Mbit NAND
+
+config CONFIG_NAND_K9F1208
+	bool "Samsung K9F1208"
+	select CONFIG_NAND_P512_E16K
+	select CONFIG_FLASH_PAGE_512
+	select CONFIG_FLASH_ERASE_16k
+	help
+		Samsung K9F1208 512Mbit NAND
+
+config CONFIG_NAND_K9F1208X0C
+	bool "Samsung K9F1208X0C"
+	select CONFIG_NAND_P512_E16K
+	select CONFIG_FLASH_PAGE_512
+	select CONFIG_FLASH_ERASE_16k
+	help
+		Samsung K9F1208X0C 512Mbit NAND
+
+config CONFIG_NAND_K9F1G08
+	bool "Samsung K9F1G08"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Samsung K9F1G08U0A 1Gbit NAND
+
+config CONFIG_NAND_K9F1G08U0B
+	bool "Samsung K9F1G08U0B"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Samsung K9F1G08U0B 1Gbit NAND
+
+config CONFIG_NAND_K9F1G08U0E
+	bool "Samsung K9F1G08U0E"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Samsung K9F1G08U0E 1Gbit NAND
+
+config CONFIG_NAND_K9F4G08U0E
+	bool "Samsung K9F4G08U0E"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Samsung K9F4G08U0E 4Gbit NAND
+
+config CONFIG_NAND_K9F2G08
+	bool "Samsung K9F2G08"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Samsung K9F2G08 2Gbit NAND
+
+config CONFIG_NAND_K9F2G08U0C
+	bool "Samsung K9F2G08U0C"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Samsung K9F2G08U0C 2Gbit NAND
+
+config CONFIG_NAND_K9W8G08
+	bool "Samsung K9W8G08"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Samsung K9W8G08 4Gbit x 2 bank NAND.
+
+config CONFIG_NAND_K9K4G08
+	bool "Samsung K9K4G08"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Samsung K9K4G08 4Gbit NAND
+
+config CONFIG_NAND_K9K8G08
+	bool "Samsung K9K8G08"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Samsung K9K8G08 8Gbit NAND
+
+config CONFIG_NAND_K9WAG08
+	bool "Samsung K9WAG08"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Samsung K9WAG08 8Gbit x 2 bank NAND.
+
+config CONFIG_NAND_K9NBG08
+	bool "Samsung K9NBG08"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Samsung K9NBG08 8Gbit x 4 bank NAND.
+
+config CONFIG_NAND_HY27US08281A
+	bool "Hynix HY27US08281A"
+	select CONFIG_NAND_P512_E16K
+	select CONFIG_FLASH_PAGE_512
+	select CONFIG_FLASH_ERASE_16k
+	help
+		Hynix HY27US08281A 128Mbit NAND
+
+config CONFIG_NAND_HY27US08561A
+	bool "Hynix HY27US08561A"
+	select CONFIG_NAND_P512_E16K
+	select CONFIG_FLASH_PAGE_512
+	select CONFIG_FLASH_ERASE_16k
+	help
+		Hynix HY27US08561A 128Mbit NAND
+
+config CONFIG_NAND_HY27US08561M
+	bool "Hynix HY27US08561M"
+	select CONFIG_NAND_P512_E16K
+	select CONFIG_FLASH_PAGE_512
+	select CONFIG_FLASH_ERASE_16k
+	help
+		Hynix HY27US08561M 256Mbit NAND
+
+config CONFIG_NAND_HY27US08121M
+	bool "Hynix HY27US08121M"
+	select CONFIG_NAND_P512_E16K
+	select CONFIG_FLASH_PAGE_512
+	select CONFIG_FLASH_ERASE_16k
+	help
+		Hynix HY27US08121M 512Mbit NAND
+
+config CONFIG_NAND_HY27US08121A
+	bool "Hynix HY27US08121A"
+	select CONFIG_NAND_P512_E16K
+	select CONFIG_FLASH_PAGE_512
+	select CONFIG_FLASH_ERASE_16k
+	help
+		Hynix HY27US08121A 512Mbit NAND
+
+config CONFIG_NAND_HY27UA081G1M
+	bool "Hynix HY27UA081G1M"
+	select CONFIG_NAND_P512_E16K
+	select CONFIG_FLASH_PAGE_512
+	select CONFIG_FLASH_ERASE_16k
+	help
+		Hynix HY27UA081G1M 1Gbit NAND
+
+config CONFIG_NAND_HY27UF081G2A
+	bool "Hynix HY27UF081G2A"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Hynix HY27UF081G2A 1Gbit NAND
+
+config CONFIG_NAND_HY27UF082G2A
+	bool "Hynix HY27UF082G2A"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Hynix HY27UF082G2A 2Gbit NAND
+
+config CONFIG_NAND_HY27UF082G2B
+	bool "Hynix HY27UF082G2B"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Hynix HY27UF082G2B 2Gbit NAND
+
+config CONFIG_NAND_HY27UF084G2B
+	bool "Hynix HY27UF084G2B"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Hynix HY27UF084G2B 4Gbit NAND
+
+config CONFIG_NAND_HY27UF084G2M
+	bool "Hynix HY27UF084G2M"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Hynix HY27UF084G2M 4Gbit NAND
+
+config CONFIG_NAND_HY27U1G8F2B
+	bool "Hynix HY27U1G8F2B"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Hynix HY27U1G8F2B 1Gbit NAND
+
+config CONFIG_NAND_H27U518S2c
+	bool "Hynix H27U518S2C"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Hynix H27U518S2C 512Mbit NAND
+
+config CONFIG_NAND_HY27US4G86F2D
+	bool "Hynix HY27US4G86F2D"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Hynix H27US4G86F2D 4Gbit NAND
+
+config CONFIG_NAND_H27U2G8F2D
+	bool "Hynix H27U2G8F2D"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	depends on ARCH_SUPPORT_BCH_ID5
+	help
+		Hynix H27U2G8F2D 2Gbitx8 NAND flash
+
+config CONFIG_NAND_MX30LF1G08AA
+	bool "Macronix MX30LF1G08AA"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Macronix MX30LF1G08AA 1Gb NAND
+
+config CONFIG_NAND_MX30LF1GE8AB
+	bool "Macronix MX30LF1GE8AB"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Macronix MX30LF1GE8AB 1Gb NAND
+
+config CONFIG_NAND_MX30LF2GE8AB
+	bool "Macronix MX30LF2GE8AB"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Macronix MX30LF2GE8AB 2Gb NAND
+
+config CONFIG_NAND_ST128W3A
+	bool "ST NAND128W3A"
+	select CONFIG_NAND_P512_E16K
+	select CONFIG_FLASH_PAGE_512
+	select CONFIG_FLASH_ERASE_16k
+	help
+		ST NAND128W3A 128Mbit NAND
+
+config CONFIG_NAND_ST256W3A
+	bool "ST NAND256W3A"
+	select CONFIG_NAND_P512_E16K
+	select CONFIG_FLASH_PAGE_512
+	select CONFIG_FLASH_ERASE_16k
+	help
+		ST NAND256W3A 256Mbit NAND
+
+config CONFIG_NAND_ST512W3A
+	bool "ST NAND512W3A"
+	select CONFIG_NAND_P512_E16K
+	select CONFIG_FLASH_PAGE_512
+	select CONFIG_FLASH_ERASE_16k
+	help
+		ST NAND512W3A 512Mbit NAND
+
+config CONFIG_NAND_ST01GW3A
+	bool "ST NAND01GW3A"
+	select CONFIG_NAND_P512_E16K
+	select CONFIG_FLASH_PAGE_512
+	select CONFIG_FLASH_ERASE_16k
+	help
+		ST NAND01GW3A 1Gbit NAND
+
+config CONFIG_NAND_ST01GW3B
+	bool "ST NAND01GW3B"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		ST NAND01GW3B 1Gbit NAND
+
+config CONFIG_NAND_ST02GW3B
+	bool "ST NAND02GW3B"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		ST NAND02GW3B2C 2Gbit NAND
+
+config CONFIG_NAND_NUMONYX02GW3B2D
+	bool "NUMONYX NAND02GW3B"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		NUMONYX NAND02GW3B2D 2Gbit NAND
+
+config CONFIG_NAND_TC58BVG0S3H
+	bool "TOSHIBA NANDTC58BVG0S3H"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		TOSHIBA TC58BVG0S3H 1Gbit BENAND
+
+config CONFIG_NAND_TC58BVG1S3H
+	bool "TOSHIBA NANDTC58BVG1S3H"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		TOSHIBA TC58BVG1S3H 2Gbit BENAND
+
+config CONFIG_NAND_TC58DVM72A
+	bool "TOSHIBA NANDTC58DVM72A"
+	select CONFIG_NAND_P512_E16K
+	select CONFIG_FLASH_PAGE_512
+	select CONFIG_FLASH_ERASE_16k
+	help
+		TOSHIBA TC58DVM72A 128Mbit NAND
+
+config CONFIG_NAND_TC58DVM82A
+	bool "TOSHIBA NANDTC58DVM82A"
+	select CONFIG_NAND_P512_E16K
+	select CONFIG_FLASH_PAGE_512
+	select CONFIG_FLASH_ERASE_16k
+	help
+		TOSHIBA TC58DVM82A 256Mbit NAND
+
+config CONFIG_NAND_TC58DVM92A
+	bool "TOSHIBA NANDTC58DVM92A"
+	select CONFIG_NAND_P512_E16K
+	select CONFIG_FLASH_PAGE_512
+	select CONFIG_FLASH_ERASE_16k
+	help
+		TOSHIBA TC58DVM92A 512Mbit NAND
+
+config CONFIG_NAND_TC58NVG0S3C
+	bool "TOSHIBA NANDTC58NVG0S3C"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		TOSHIBA TC58NVG0S3C 1Gbit NAND
+
+config CONFIG_NAND_TC58NVG0S3E
+	bool "TOSHIBA NANDTC58NVG0S3E"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		TOSHIBA TC58NVG0S3E 1Gbit NAND
+
+config CONFIG_NAND_TC58NVG0S3H
+	bool "TOSHIBA NANDTC58NVG0S3H"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	depends on ARCH_SUPPORT_BCH_ID5
+	help
+		TOSHIBA TC58NVG0S3H 1Gbit 8-bit ECC NAND
+
+config CONFIG_NAND_TC58NVG1S3H
+	bool "TOSHIBA NANDTC58NVG1S3H"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	depends on ARCH_SUPPORT_BCH_ID5
+	help
+		TOSHIBA TC58NVG1S3H 2Gbit 8-bit ECC NAND
+
+config CONFIG_NAND_TC58NVG1S3E
+	bool "TOSHIBA NANDTC58NVG1S3E"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		TOSHIBA TC58NVG1S3E 2Gbit NAND
+
+config CONFIG_NAND_TC58NVG2S3E
+	bool "TOSHIBA NANDTC58NVG2S3E"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		TOSHIBA TC58NVG2S3E 4Gbit NAND
+
+
+config CONFIG_NAND_TC58NVM9S3C
+	bool "TOSHIBA NANDTC58NVM9S3C"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		TOSHIBA TC58NVM9S3c 512Mbit NAND
+
+config CONFIG_NAND_MT29F2G08AAC
+	bool "Micron MT29F2G08AAC"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Micron MT29F2G08AAC 2Gbitx8 NAND flash
+
+config CONFIG_NAND_MT29F1G08ABAEA
+	bool "Micron MT29F1G08ABAEA"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	depends on ARCH_SUPPORT_BCH_ID5
+	help
+		Micron MT29F1G08ABAEA 1Gbitx8 NAND flash
+
+config CONFIG_NAND_MT29F2G08ABA
+	bool "Micron MT29F2G08ABA"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	depends on ARCH_SUPPORT_BCH_ID5
+	help
+		Micron MT29F2G08ABA 2Gbitx8 NAND flash
+
+config CONFIG_NAND_MT29F8G08DAA
+	bool "Micron MT29F8G08DAA"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Micron MT29F8G08DAA 8Gbitx8 NAND flash
+
+config CONFIG_NAND_MT29F4G08ABADA
+	bool "Micron MT29F4G08ABADA"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	depends on ARCH_SUPPORT_BCH_ID5
+	help
+		Micron MT29F4G08ABADA 4Gbitx8 NAND flash
+
+config CONFIG_NAND_MT29F2G08ABAFA
+	bool "Micron MT29F2G08ABAFA"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	depends on ARCH_SUPPORT_BCH_ID5
+	help
+		Micron MT29F2G08ABAFA 2Gbitx8 NAND flash
+
+config CONFIG_NAND_CT48248NS486G1
+	bool "Chipsip CT48248NS486G1"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Chipsip CT48248NS486G1 1Gbitx8 NAND
+
+config CONFIG_NAND_ASU1GA30HT
+	bool "POWER_FLASH asu1ga30ht"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		POWER_FLASH ASU1G30HT 1Gbitx8 NAND
+
+config CONFIG_NAND_K9F4G08U0A
+	bool "Samsung K9F4G08U0A"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Samsung K9F4G08U0A 4Gbit NAND
+
+config CONFIG_NAND_F59L1G81A
+	bool "ESMT F59L1G81A (EoN EN27LN1G08)"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		ESMT F59L1G81A (or EoN EN27LN1G08) 1Gbit NAND
+
+config CONFIG_NAND_F59L1G81LA
+	bool "ESMT F59L1G81LA"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		ESMT F59L1G81LA 1Gbit NAND
+
+config CONFIG_NAND_F59L1G81MA
+	bool "ESMT F59L1G81MA"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	depends on ARCH_SUPPORT_BCH_ID5
+	help
+		ESMT F59L1G81MA 1Gbit NAND
+
+config CONFIG_NAND_F59L2G81A
+	bool "ESMT F59L2G81A (EoN EN27LN2G08)"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	depends on ARCH_SUPPORT_BCH_ID5
+	help
+		ESMT F59L2G81A (or EoN EN27LN2G08) 2Gbit NAND
+
+config CONFIG_NAND_F59L4G81A
+	bool "ESMT F59L4G81A (EoN EN27LN4G08)"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	depends on ARCH_SUPPORT_BCH_ID5
+	help
+		ESMT F59L4G81A (or EoN EN27LN4G08) 4Gbit NAND
+
+config CONFIG_NAND_S34ML01G1
+	bool "Spansion S34ML01G1"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Spansion S34ML01G1 1Gbit NAND
+
+config CONFIG_NAND_S34ML02G1
+	bool "Spansion S34ML02G1"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Spansion S34ML02G1 2Gbit NAND
+
+config CONFIG_NAND_S34ML04G1
+	bool "Spansion S34ML04G1"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Spansion S34ML04G1 4Gbit NAND
+
+config CONFIG_NAND_S34ML01G2
+	bool "Spansion S34ML01G2"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	depends on ARCH_SUPPORT_BCH_ID5
+	help
+		Spansion S34ML01G2 1Gbit NAND
+
+config CONFIG_NAND_S34ML02G2
+	bool "Spansion S34ML02G2"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	depends on ARCH_SUPPORT_BCH_ID5
+	help
+		Spansion S34ML02G2 2Gbit NAND
+
+config CONFIG_NAND_S34ML04G2
+	bool "Spansion S34ML04G2"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	depends on ARCH_SUPPORT_BCH_ID5
+	help
+		Spansion S34ML04G2 4Gbit NAND
+
+config CONFIG_NAND_W29N01GVSCAA
+	bool "WINBOND W29N01GVSCAA"
+	select CONFIG_NAND_P2K_E128K
+	help
+		WINBOND W29N01GVSCAA 1Gbit NAND
+
+config CONFIG_NAND_W29N02GVSIAA
+	bool "WINBOND W29N02GVSIAA"
+	select CONFIG_NAND_P2K_E128K
+	help
+		WINBOND W29N02GVSIAA 2Gbit NAND
+endchoice
+
+choice
+	prompt "NAND Flash Devices"
+	default CONFIG_NAND_1DEVICE
+	help
+		Select the number of NAND device(s)/chip(s)
+
+config CONFIG_NAND_1DEVICE
+       bool "1"
+       help
+		1 Device/chip
+
+config CONFIG_NAND_2DEVICE
+       bool "2"
+       help
+		2 Devices/chips
+
+config CONFIG_NAND_4DEVICE
+       bool "4"
+       help
+		4 Devices/chips
+
+endchoice
+
+endmenu
+
+config CONFIG_AMBOOT_ENABLE_CRYPTO_CHIP
+	bool "Support Crypto chip"
+	default n
+
+config CONFIG_AMBOOT_ENABLE_ATSHA204
+	bool "Support Crypto chip, Atmel ATSHA204"
+	depends on CONFIG_AMBOOT_ENABLE_CRYPTO_CHIP
+	default y
+
+config CONFIG_AMBOOT_BUILD_ATSHA204_FROM_SOURCE
+	bool "build Atmel ATSHA204 from source code"
+	depends on CONFIG_AMBOOT_ENABLE_ATSHA204
+	default n
+
+config CONFIG_AMBOOT_ENABLE_SD
+	bool "Support SD Driver"
+	default n
+
+menu "SD Subsystem Options"
+depends on CONFIG_AMBOOT_ENABLE_SD
+
+endmenu
+
+config CONFIG_AMBOOT_ENABLE_SPINOR
+	bool "Support SPI NOR Driver"
+	depends on ARCH_SUPPORT_SPINOR
+	default n
+	help
+		Enable the SPI Nor driver if it is present on the target board
+
+menu "SPI NOR Subsystem Options"
+depends on CONFIG_AMBOOT_ENABLE_SPINOR
+
+config CONFIG_SPINOR_P512_E256K
+	bool
+	default n
+
+config CONFIG_SPINOR_P256_E64K
+	bool
+	default n
+
+choice
+	prompt "SPI NOR Flash Type"
+	default CONFIG_SPI_NOR_FL01GS
+	depends on CONFIG_AMBOOT_ENABLE_SPINOR
+	help
+		Select the onboard SPI NOR flash type
+
+config CONFIG_SPI_NOR_W25Q64FV
+	bool "Winbond W25Q64FV(GigaDevice GD25Q64C)"
+	select CONFIG_SPINOR_P256_E64K
+	select CONFIG_FLASH_PAGE_256
+	select CONFIG_FLASH_ERASE_64k
+	help
+		Winbond W25Q64FV/GigaDevice GD25Q64C 64Mbit NOR
+
+config CONFIG_SPI_NOR_W25Q128FV
+	bool "Winbond W25Q128FV (GigaDevice GD25Q128C)"
+	select CONFIG_SPINOR_P256_E64K
+	select CONFIG_FLASH_PAGE_256
+	select CONFIG_FLASH_ERASE_64k
+	help
+		Winbond W25Q128FV/GigaDevice GD25Q128C 128Mbit NOR
+
+config CONFIG_SPI_NOR_N25Q256A
+	bool "Micron N25Q256A"
+	select CONFIG_SPINOR_P256_E64K
+	select CONFIG_FLASH_PAGE_256
+	select CONFIG_FLASH_ERASE_64k
+	help
+		Micron N25Q256A 256Mbit NOR
+
+config CONFIG_SPI_NOR_FL01GS
+	bool "Spansion FL01GS"
+	select CONFIG_SPINOR_P512_E256K
+	select CONFIG_FLASH_PAGE_512
+	select CONFIG_FLASH_ERASE_256k
+	help
+		Spansion FL01GS NOR
+
+config CONFIG_SPI_NOR_MX25L25645G
+	bool "Macronix MX25L25645G (Winbond W25Q256FV)"
+	select CONFIG_SPINOR_P256_E64K
+	select CONFIG_FLASH_PAGE_256
+	select CONFIG_FLASH_ERASE_64k
+	help
+		Macronix MX25L25645G/Winbond W25Q256FV 256Mbit NOR
+
+config CONFIG_SPI_NOR_GD25Q512
+	bool "GigaDevice GD25Q512"
+	select CONFIG_SPINOR_P256_E64K
+	select CONFIG_FLASH_PAGE_256
+	select CONFIG_FLASH_ERASE_64k
+	help
+		 GigaDevice GD25Q512 512Mbit NOR
+endchoice
+
+endmenu
+
+config CONFIG_AMBOOT_ENABLE_SPI
+	bool "Support SPI Driver"
+	default n
+
+menu "SPI Subsystem Options"
+depends on CONFIG_AMBOOT_ENABLE_SPI
+
+endmenu
+
+config CONFIG_AMBOOT_ENABLE_IDC
+	bool "Support IDC Driver"
+	default n
+
+menu "IDC Subsystem Options"
+depends on CONFIG_AMBOOT_ENABLE_IDC
+
+config CONFIG_AMBOOT_ENABLE_ISL12022M
+	bool "Support ISL12022M"
+	default n
+
+config CONFIG_AMBOOT_ENABLE_PCA953X
+	bool "Support PCA953X"
+	default n
+
+endmenu
+
+config CONFIG_AMBOOT_ENABLE_ETH
+	bool "Support ETH Driver"
+	default y
+	depends on !CONFIG_ARCH_A7L
+
+menu "ETH Subsystem Options"
+depends on CONFIG_AMBOOT_ENABLE_ETH
+
+choice
+	prompt "PHY Clock"
+	default CONFIG_AMBOOT_ETH_PHY_CLK_INTERNAL
+	depends on CONFIG_ARCH_S2 || CONFIG_ARCH_S2E
+
+config CONFIG_AMBOOT_ETH_PHY_CLK_EXTERNAL
+        bool "Use external gtx clock"
+
+config CONFIG_AMBOOT_ETH_PHY_CLK_INTERNAL
+        bool "Use internal gtx clock"
+
+endchoice
+
+endmenu
+
+config CONFIG_AMBOOT_ENABLE_USB
+	bool "Support USB Driver"
+	default y
+
+menu "USB Subsystem Options"
+depends on CONFIG_AMBOOT_ENABLE_USB
+
+endmenu
+
+config CONFIG_AMBOOT_ENABLE_GPIO
+	bool "Support GPIO Driver"
+	default y
+
+menu "GPIO Subsystem Options"
+depends on CONFIG_AMBOOT_ENABLE_GPIO
+
+endmenu
+
+choice
+	prompt "UART Port"
+	default CONFIG_AMBOOT_ENABLE_UART0
+
+config CONFIG_AMBOOT_DISABLE_UART
+	bool "Disable"
+
+config CONFIG_AMBOOT_ENABLE_UART0
+	bool "UART0"
+
+endchoice
+
+menu "UART Subsystem Options"
+depends on !CONFIG_AMBOOT_DISABLE_UART
+
+choice
+	prompt "UART baud rate"
+	default AMBOOT_UART_115200
+	help
+		Select the AMBoot UART baud rate
+
+config AMBOOT_UART_19200
+	bool "19200"
+
+config AMBOOT_UART_38400
+	bool "38400"
+
+config AMBOOT_UART_57600
+	bool "57600"
+
+config AMBOOT_UART_115200
+	bool "115200"
+
+endchoice
+
+endmenu
+
+config CONFIG_AMBOOT_ENABLE_ADC
+	bool "Support ADC diag"
+	default n
+
+config CONFIG_AMBOOT_ENABLE_IR
+	bool "Support IR diag"
+	default n
+
+endmenu
+

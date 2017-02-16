@@ -1,0 +1,32 @@
+#
+# For a description of the syntax of this configuration file,
+# see scripts/kbuild/config-language.txt.
+#
+
+menu "Ambarella Utilities"
+
+config AMBA_DEBUG
+	bool "Ambarella debug tools"
+	default y
+	help
+	  Support Ambarella amba_debug
+
+config LOAD_UCODE
+	bool "Load ucode into Ambarella POWERED DSP"
+	default y
+	help
+	  Support Ambarella load_ucode.
+
+config DSPLOG
+	bool "Fetch dsp log to ARM"
+	default y
+	help
+	  Support Ambarella dsplog.
+
+config DSPLOG2
+	bool "Fetch dsp log to ARM version 2"
+	default y
+	help
+	  Support Ambarella dsplog2.
+
+endmenu

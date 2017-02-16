@@ -1,0 +1,772 @@
+/*******************************************************************************
+ * am_audio_service_msg_action.cpp
+ *
+ * History:
+ *   2014-9-12 - [lysun] created file
+ *
+ * Copyright (C) 2008-2014, Ambarella Co,Ltd.
+ *
+ * All rights reserved. No Part of this file may be reproduced, stored
+ * in a retrieval system, or transmitted, in any form, or by any means,
+ * electronic, mechanical, photocopying, recording, or otherwise,
+ * without the prior consent of Ambarella
+ *
+ ******************************************************************************/
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <signal.h>
+#include "am_base_include.h"
+#include "am_log.h"
+#include "am_audio_device_if.h"
+#include "am_service_frame_if.h"
+#include "am_api_audio.h"
+
+extern AM_SERVICE_STATE  g_service_state;
+extern AMIAudioDevicePtr g_audio_device;
+extern AMIServiceFrame  *g_service_frame;
+
+void ON_SERVICE_INIT(void *msg_data,
+                     int msg_data_size,
+                     void *result_addr,
+                     int result_max_size)
+{
+  am_service_result_t *service_result = (am_service_result_t *)result_addr;
+  if (g_audio_device == NULL) {
+    ERROR("Failed to initialize audio service!");
+    g_service_state = AM_SERVICE_STATE_ERROR;
+  }
+  service_result->ret = 0;
+  service_result->state = g_service_state;
+  switch(g_service_state) {
+    case AM_SERVICE_STATE_INIT_DONE: {
+      INFO("Audio service Init Done...");
+    }break;
+    case AM_SERVICE_STATE_ERROR: {
+      ERROR("Failed to initialize Audio service...");
+    }break;
+    case AM_SERVICE_STATE_NOT_INIT: {
+      INFO("Audio service is still initializing...");
+    }break;
+    default:break;
+  }
+}
+
+void ON_SERVICE_DESTROY(void *msg_data,
+                        int msg_data_size,
+                        void *result_addr,
+                        int result_max_size)
+{
+  INFO("audio service destroy, cleanup\n");
+  g_service_frame->quit(); /* Make run() in main function quit */
+}
+
+void ON_SERVICE_START(void *msg_data,
+                      int msg_data_size,
+                      void *result_addr,
+                      int result_max_size)
+{
+  /*
+   * Audio service is just a auxiliary service, so there
+   * are no additional operations need to be done in
+   * this command.
+   */
+  am_service_result_t *service_result = (am_service_result_t *) result_addr;
+
+  g_service_state = AM_SERVICE_STATE_STARTED;
+  service_result->ret = 0;
+  service_result->state = g_service_state;
+
+  INFO("Audio service has been started!");
+}
+
+void ON_SERVICE_STOP(void *msg_data,
+                     int msg_data_size,
+                     void *result_addr,
+                     int result_max_size)
+{
+  /* The same to ON_SERVICE_START. */
+  am_service_result_t *service_result = (am_service_result_t *) result_addr;
+
+  g_service_state = AM_SERVICE_STATE_STOPPED;
+  service_result->ret = 0;
+  service_result->state = g_service_state;
+
+  INFO("Audio service has been stopped!");
+}
+
+void ON_SERVICE_RESTART(void *msg_data,
+                        int msg_data_size,
+                        void *result_addr,
+                        int result_max_size)
+{
+  // nothing needs to be done.
+}
+
+void ON_SERVICE_STATUS(void *msg_data,
+                       int msg_data_size,
+                       void *result_addr,
+                       int result_max_size)
+{
+  am_service_result_t *service_result = (am_service_result_t *) result_addr;
+
+  service_result->ret = 0;
+  service_result->state = g_service_state;
+  INFO("Audio Service status is: %d\n", service_result->state);
+}
+
+void ON_AUDIO_SAMPLE_RATE_GET(void *msg_data,
+                              int msg_data_size,
+                              void *result_addr,
+                              int result_max_size)
+{
+  am_service_result_t *service_result = NULL;
+  am_audio_format_t audio_format;
+
+  service_result = (am_service_result_t *) result_addr;
+  if ((g_service_state == AM_SERVICE_STATE_ERROR) ||
+      (g_service_state == AM_SERVICE_STATE_STOPPED)) {
+    service_result->ret = -1;
+    INFO("Audio service has not been started!");
+  } else {
+    if (g_audio_device != NULL) {
+      memset(&audio_format, 0, sizeof(audio_format));
+      if (!g_audio_device->get_sample_rate(&audio_format.sample_rate)) {
+        ERROR("Failed to get sample rate");
+        service_result->ret = -1;
+      } else {
+        service_result->ret = 0;
+        memcpy(service_result->data, &audio_format, sizeof(audio_format));
+      }
+    } else {
+      ERROR("Audio service is not initialized!");
+      service_result->ret = -1;
+    }
+  }
+}
+
+void ON_AUDIO_SAMPLE_RATE_SET(void *msg_data,
+                              int msg_data_size,
+                              void *result_addr,
+                              int result_max_size)
+{
+  am_service_result_t *service_result = (am_service_result_t *) result_addr;
+
+  service_result->ret = -1;
+  INFO("Pulsoaudio server's sample rate can't be changed.");
+}
+
+void ON_AUDIO_CHANNEL_GET(void *msg_data,
+                          int msg_data_size,
+                          void *result_addr,
+                          int result_max_size)
+{
+  am_service_result_t *service_result = NULL;
+  am_audio_format_t audio_format;
+
+  service_result = (am_service_result_t *) result_addr;
+  if ((g_service_state == AM_SERVICE_STATE_ERROR)
+      || (g_service_state == AM_SERVICE_STATE_STOPPED)) {
+    service_result->ret = -1;
+    INFO("Audio service has not been started!");
+  } else {
+    if (g_audio_device != NULL) {
+      memset(&audio_format, 0, sizeof(audio_format));
+      if (!g_audio_device->get_channels(&audio_format.channels)) {
+        ERROR("Failed to get sample rate");
+        service_result->ret = -1;
+      } else {
+        service_result->ret = 0;
+        memcpy(service_result->data, &audio_format, sizeof(audio_format));
+      }
+    } else {
+      ERROR("Audio service is not initialized!");
+      service_result->ret = -1;
+    }
+  }
+}
+
+void ON_AUDIO_CHANNEL_SET(void *msg_data,
+                          int msg_data_size,
+                          void *result_addr,
+                          int result_max_size)
+{
+  am_service_result_t *service_result = (am_service_result_t *) result_addr;
+
+  service_result->ret = -1;
+  INFO("Pulsoaudio server's channels can't be changed.");
+}
+
+void ON_AUDIO_DEVICE_VOLUME_GET_BY_INDEX(void *msg_data,
+                                         int msg_data_size,
+                                         void *result_addr,
+                                         int result_max_size)
+{
+  am_service_result_t *service_result = NULL;
+  am_audio_device_t *audio_device = NULL;
+
+  do {
+    service_result = (am_service_result_t *) result_addr;
+    if ((g_service_state == AM_SERVICE_STATE_ERROR)
+        || (g_service_state == AM_SERVICE_STATE_STOPPED)) {
+      ERROR("Audio service has not been started!");
+      service_result->ret = -1;
+      break;
+    }
+
+    if ((msg_data == NULL) || (msg_data_size != sizeof(am_audio_device_t))) {
+      ERROR("Invalid argument: msg_data_size != sizeof (am_audio_device_t)");
+      service_result->ret = -1;
+      break;
+    }
+
+    audio_device = (am_audio_device_t *) msg_data;
+    if (audio_device->type > ((uint8_t) AM_AUDIO_DEVICE_SOURCE_OUTPUT)) {
+      ERROR("No such audio device: %d", audio_device->type);
+      service_result->ret = -1;
+      break;
+    }
+
+    if (g_audio_device != NULL) {
+      if (!g_audio_device->get_volume_by_index(
+          AM_AUDIO_DEVICE_TYPE(audio_device->type),
+          &audio_device->volume,
+          audio_device->index)) {
+        ERROR("Failed to get volume by device's index");
+        service_result->ret = -1;
+        break;
+      } else {
+        service_result->ret = 0;
+        memcpy(service_result->data, audio_device, sizeof(am_audio_device_t));
+      }
+    } else {
+      ERROR("Audio service is not initialized!");
+      service_result->ret = -1;
+    }
+  } while (0);
+}
+
+void ON_AUDIO_DEVICE_VOLUME_SET_BY_INDEX(void *msg_data,
+                                         int msg_data_size,
+                                         void *result_addr,
+                                         int result_max_size)
+{
+  am_service_result_t *service_result = NULL;
+  am_audio_device_t *audio_device = NULL;
+
+  do {
+    service_result = (am_service_result_t *) result_addr;
+    if ((g_service_state == AM_SERVICE_STATE_ERROR)
+        || (g_service_state == AM_SERVICE_STATE_STOPPED)) {
+      ERROR("Audio service has not been started!");
+      service_result->ret = -1;
+      break;
+    }
+
+    if ((msg_data == NULL) || (msg_data_size != sizeof(am_audio_device_t))) {
+      ERROR("Invalid argument: msg_data_size != sizeof (am_audio_device_t)");
+      service_result->ret = -1;
+      break;
+    }
+
+    audio_device = (am_audio_device_t *) msg_data;
+    if (audio_device->type > ((uint8_t) AM_AUDIO_DEVICE_SOURCE_OUTPUT)) {
+      ERROR("No such audio device: %d", audio_device->type);
+      service_result->ret = -1;
+      break;
+    }
+
+    if (g_audio_device != NULL) {
+      if (!g_audio_device->set_volume_by_index(
+          AM_AUDIO_DEVICE_TYPE(audio_device->type),
+          audio_device->volume,
+          audio_device->index)) {
+        ERROR("Failed to set volume by device's index");
+        service_result->ret = -1;
+        break;
+      } else {
+        service_result->ret = 0;
+      }
+    } else {
+      ERROR("Audio service is not initialized!");
+      service_result->ret = -1;
+    }
+  } while (0);
+}
+
+void ON_AUDIO_DEVICE_VOLUME_GET_BY_NAME(void *msg_data,
+                                        int msg_data_size,
+                                        void *result_addr,
+                                        int result_max_size)
+{
+  am_service_result_t *service_result = NULL;
+  am_audio_device_t *audio_device = NULL;
+
+  do {
+    service_result = (am_service_result_t *) result_addr;
+    if ((g_service_state == AM_SERVICE_STATE_ERROR)
+        || (g_service_state == AM_SERVICE_STATE_STOPPED)) {
+      ERROR("Audio service has not been started!");
+      service_result->ret = -1;
+      break;
+    }
+
+    if ((msg_data == NULL) || (msg_data_size != sizeof(am_audio_device_t))) {
+      ERROR("Invalid argument: msg_data_size != sizeof (am_audio_device_t)");
+      service_result->ret = -1;
+      break;
+    }
+
+    audio_device = (am_audio_device_t *) msg_data;
+    if (audio_device->type > ((uint8_t) AM_AUDIO_DEVICE_SOURCE_OUTPUT)) {
+      ERROR("No such audio device: %d", audio_device->type);
+      service_result->ret = -1;
+      break;
+    }
+
+    if (g_audio_device != NULL) {
+      if (!g_audio_device->get_volume_by_name(
+          AM_AUDIO_DEVICE_TYPE(audio_device->type),
+          &audio_device->volume,
+          audio_device->name)) {
+        ERROR("Failed to get volume by device's index");
+        service_result->ret = -1;
+        break;
+      } else {
+        service_result->ret = 0;
+        memcpy(service_result->data, audio_device, sizeof(am_audio_device_t));
+      }
+    } else {
+      ERROR("Audio service is not initialized!");
+      service_result->ret = -1;
+    }
+  } while (0);
+}
+
+void ON_AUDIO_DEVICE_VOLUME_SET_BY_NAME(void *msg_data,
+                                        int msg_data_size,
+                                        void *result_addr,
+                                        int result_max_size)
+{
+  am_service_result_t *service_result = NULL;
+  am_audio_device_t *audio_device = NULL;
+
+  do {
+    service_result = (am_service_result_t *) result_addr;
+    if ((g_service_state == AM_SERVICE_STATE_ERROR)
+        || (g_service_state == AM_SERVICE_STATE_STOPPED)) {
+      ERROR("Audio service has not been started!");
+      service_result->ret = -1;
+      break;
+    }
+
+    if ((msg_data == NULL) || (msg_data_size != sizeof(am_audio_device_t))) {
+      ERROR("Invalid argument: msg_data_size != sizeof (am_audio_device_t)");
+      service_result->ret = -1;
+      break;
+    }
+
+    audio_device = (am_audio_device_t *) msg_data;
+    if (audio_device->type > ((uint8_t) AM_AUDIO_DEVICE_SOURCE_OUTPUT)) {
+      ERROR("No such audio device: %d", audio_device->type);
+      service_result->ret = -1;
+      break;
+    }
+
+    if (g_audio_device != NULL) {
+      if (!g_audio_device->set_volume_by_name(
+          AM_AUDIO_DEVICE_TYPE(audio_device->type),
+          audio_device->volume,
+          audio_device->name)) {
+        ERROR("Failed to get volume by device's name");
+        service_result->ret = -1;
+        break;
+      } else {
+        service_result->ret = 0;
+      }
+    } else {
+      ERROR("Audio service is not initialized!");
+      service_result->ret = -1;
+    }
+  } while (0);
+}
+
+void ON_AUDIO_DEVICE_MUTE_GET_BY_INDEX(void *msg_data,
+                                       int msg_data_size,
+                                       void *result_addr,
+                                       int result_max_size)
+{
+  am_service_result_t *service_result = NULL;
+  am_audio_device_t *audio_device = NULL;
+  bool mute = false;
+
+  do {
+    service_result = (am_service_result_t *) result_addr;
+    if ((g_service_state == AM_SERVICE_STATE_ERROR)
+        || (g_service_state == AM_SERVICE_STATE_STOPPED)) {
+      ERROR("Audio service has not been started!");
+      service_result->ret = -1;
+      break;
+    }
+
+    if ((msg_data == NULL) || (msg_data_size != sizeof(am_audio_device_t))) {
+      ERROR("Invalid argument: msg_data_size != sizeof (am_audio_device_t)");
+      service_result->ret = -1;
+      break;
+    }
+
+    audio_device = (am_audio_device_t *) msg_data;
+    if (audio_device->type > ((uint8_t) AM_AUDIO_DEVICE_SOURCE_OUTPUT)) {
+      ERROR("No such audio device: %d", audio_device->type);
+      service_result->ret = -1;
+      break;
+    }
+
+    if (g_audio_device != NULL) {
+      if (!g_audio_device->is_muted_by_index(
+          AM_AUDIO_DEVICE_TYPE(audio_device->type),
+          &mute,
+          audio_device->index)) {
+        ERROR("Failed to get mute info by device's index");
+        service_result->ret = -1;
+        break;
+      } else {
+        service_result->ret = 0;
+        audio_device->mute = mute ? 1 : 0;
+        memcpy(service_result->data, audio_device, sizeof(am_audio_device_t));
+      }
+    } else {
+      ERROR("Audio service is not initialized!");
+      service_result->ret = -1;
+    }
+  } while (0);
+}
+
+void ON_AUDIO_DEVICE_MUTE_SET_BY_INDEX(void *msg_data,
+                                       int msg_data_size,
+                                       void *result_addr,
+                                       int result_max_size)
+{
+  am_service_result_t *service_result = NULL;
+  am_audio_device_t *audio_device = NULL;
+
+  do {
+    service_result = (am_service_result_t *) result_addr;
+    if ((g_service_state == AM_SERVICE_STATE_ERROR)
+        || (g_service_state == AM_SERVICE_STATE_STOPPED)) {
+      ERROR("Audio service has not been started!");
+      service_result->ret = -1;
+      break;
+    }
+
+    if ((msg_data == NULL) || (msg_data_size != sizeof(am_audio_device_t))) {
+      ERROR("Invalid argument: msg_data_size != sizeof (am_audio_device_t)");
+      service_result->ret = -1;
+      break;
+    }
+
+    audio_device = (am_audio_device_t *) msg_data;
+    if (audio_device->type > ((uint8_t) AM_AUDIO_DEVICE_SOURCE_OUTPUT)) {
+      ERROR("No such audio device: %d", audio_device->type);
+      service_result->ret = -1;
+      break;
+    }
+
+    if (g_audio_device != NULL) {
+      if (!audio_device->mute) {
+        if (!g_audio_device->unmute_by_index(
+            AM_AUDIO_DEVICE_TYPE(audio_device->type),
+            audio_device->index)) {
+          ERROR("Failed to unmute audio device by index!");
+          service_result->ret = -1;
+          break;
+        } else {
+          service_result->ret = 0;
+        }
+      } else {
+        if (!g_audio_device->mute_by_index(
+            AM_AUDIO_DEVICE_TYPE(audio_device->type),
+            audio_device->index)) {
+          ERROR("Failed to mute audio device by index!");
+          service_result->ret = -1;
+          break;
+        } else {
+          service_result->ret = 0;
+        }
+      }
+    } else {
+      ERROR("Audio service is not initialized!");
+      service_result->ret = -1;
+    }
+  } while (0);
+}
+
+void ON_AUDIO_DEVICE_MUTE_GET_BY_NAME(void *msg_data,
+                                      int msg_data_size,
+                                      void *result_addr,
+                                      int result_max_size)
+{
+  am_service_result_t *service_result = NULL;
+  am_audio_device_t *audio_device = NULL;
+  bool mute = false;
+
+  do {
+    service_result = (am_service_result_t *) result_addr;
+    if ((g_service_state == AM_SERVICE_STATE_ERROR)
+        || (g_service_state == AM_SERVICE_STATE_STOPPED)) {
+      ERROR("Audio service has not been started!");
+      service_result->ret = -1;
+      break;
+    }
+
+    if ((msg_data == NULL) || (msg_data_size != sizeof(am_audio_device_t))) {
+      ERROR("Invalid argument: msg_data_size != sizeof (am_audio_device_t)");
+      service_result->ret = -1;
+      break;
+    }
+
+    audio_device = (am_audio_device_t *) msg_data;
+    if (audio_device->type > ((uint8_t) AM_AUDIO_DEVICE_SOURCE_OUTPUT)) {
+      ERROR("No such audio device: %d", audio_device->type);
+      service_result->ret = -1;
+      break;
+    }
+
+    if (g_audio_device != NULL) {
+      if (!g_audio_device->is_muted_by_name(
+          AM_AUDIO_DEVICE_TYPE(audio_device->type),
+          &mute,
+          audio_device->name)) {
+        ERROR("Failed to get mute info by device's index");
+        service_result->ret = -1;
+        break;
+      } else {
+        service_result->ret = 0;
+        audio_device->mute = mute ? 1 : 0;
+        memcpy(service_result->data, audio_device, sizeof(am_audio_device_t));
+      }
+    } else {
+      ERROR("Audio service is not initialized!");
+      service_result->ret = -1;
+    }
+  } while (0);
+}
+
+void ON_AUDIO_DEVICE_MUTE_SET_BY_NAME(void *msg_data,
+                                      int msg_data_size,
+                                      void *result_addr,
+                                      int result_max_size)
+{
+  am_service_result_t *service_result = NULL;
+  am_audio_device_t *audio_device = NULL;
+
+  do {
+    service_result = (am_service_result_t *) result_addr;
+    if ((g_service_state == AM_SERVICE_STATE_ERROR)
+        || (g_service_state == AM_SERVICE_STATE_STOPPED)) {
+      ERROR("Audio service has not been started!");
+      service_result->ret = -1;
+      break;
+    }
+
+    if ((msg_data == NULL) || (msg_data_size != sizeof(am_audio_device_t))) {
+      ERROR("Invalid argument: msg_data_size != sizeof (am_audio_device_t)");
+      service_result->ret = -1;
+      break;
+    }
+
+    audio_device = (am_audio_device_t *) msg_data;
+    if (audio_device->type > ((uint8_t) AM_AUDIO_DEVICE_SOURCE_OUTPUT)) {
+      ERROR("No such audio device: %d", audio_device->type);
+      service_result->ret = -1;
+      break;
+    }
+
+    if (g_audio_device != NULL) {
+      if (!audio_device->mute) {
+        if (!g_audio_device->unmute_by_name(
+            AM_AUDIO_DEVICE_TYPE(audio_device->type),
+            audio_device->name)) {
+          ERROR("Failed to unmute audio device by index!");
+          service_result->ret = -1;
+          break;
+        } else {
+          service_result->ret = 0;
+        }
+      } else {
+        if (!g_audio_device->mute_by_name(
+            AM_AUDIO_DEVICE_TYPE(audio_device->type),
+            audio_device->name)) {
+          ERROR("Failed to mute audio device by index!");
+          service_result->ret = -1;
+          break;
+        } else {
+          service_result->ret = 0;
+        }
+      }
+    } else {
+      ERROR("Audio service is not initialized!");
+      service_result->ret = -1;
+    }
+  } while (0);
+}
+
+void ON_AUDIO_DEVICE_NAME_GET_BY_INDEX(void *msg_data,
+                                       int msg_data_size,
+                                       void *result_addr,
+                                       int result_max_size)
+{
+  am_service_result_t *service_result = NULL;
+  am_audio_device_t *audio_device = NULL;
+
+  do {
+    service_result = (am_service_result_t *) result_addr;
+    if ((g_service_state == AM_SERVICE_STATE_ERROR)
+        || (g_service_state == AM_SERVICE_STATE_STOPPED)) {
+      ERROR("Audio service has not been started!");
+      service_result->ret = -1;
+      break;
+    }
+
+    if ((msg_data == NULL) || (msg_data_size != sizeof(am_audio_device_t))) {
+      ERROR("Invalid argument: msg_data_size != sizeof (am_audio_device_t)");
+      service_result->ret = -1;
+      break;
+    }
+
+    audio_device = (am_audio_device_t *) msg_data;
+    if (audio_device->type > ((uint8_t) AM_AUDIO_DEVICE_SOURCE_OUTPUT)) {
+      ERROR("No such audio device: %d", audio_device->type);
+      service_result->ret = -1;
+      break;
+    }
+
+    if (g_audio_device != NULL) {
+      if (!g_audio_device->get_name_by_index(
+          AM_AUDIO_DEVICE_TYPE(audio_device->type),
+          audio_device->index,
+          audio_device->name,
+          AM_AUDIO_DEVICE_NAME_MAX_LEN)) {
+        ERROR("Failed to get name by device's index");
+        service_result->ret = -1;
+        break;
+      } else {
+        service_result->ret = 0;
+        memcpy(service_result->data, audio_device, sizeof(am_audio_device_t));
+      }
+    } else {
+      ERROR("Audio service is not initialized!");
+      service_result->ret = -1;
+    }
+  } while (0);
+}
+
+void ON_AUDIO_DEVICE_INDEX_LIST_GET(void *msg_data,
+                                    int msg_data_size,
+                                    void *result_addr,
+                                    int result_max_size)
+{
+  am_service_result_t *service_result = NULL;
+  am_audio_device_t *audio_device = NULL;
+  int dev_index_list[AM_AUDIO_DEVICE_NUM_MAX];
+
+  do {
+    service_result = (am_service_result_t *) result_addr;
+    if ((g_service_state == AM_SERVICE_STATE_ERROR)
+        || (g_service_state == AM_SERVICE_STATE_STOPPED)) {
+      ERROR("Audio service has not been started!");
+      service_result->ret = -1;
+      break;
+    }
+
+    if ((msg_data == NULL) || (msg_data_size != sizeof(am_audio_device_t))) {
+      ERROR("Invalid argument: msg_data_size != sizeof (am_audio_device_t)");
+      service_result->ret = -1;
+      break;
+    }
+
+    audio_device = (am_audio_device_t *) msg_data;
+    if (audio_device->type > ((uint8_t) AM_AUDIO_DEVICE_SOURCE_OUTPUT)) {
+      ERROR("No such audio device: %d", audio_device->type);
+      service_result->ret = -1;
+      break;
+    }
+
+    if (g_audio_device != NULL) {
+      service_result->ret = AM_AUDIO_DEVICE_NUM_MAX;
+      if (!g_audio_device->get_index_list(
+          AM_AUDIO_DEVICE_TYPE(audio_device->type),
+          dev_index_list,
+          &service_result->ret)) {
+        ERROR("Failed to get list of audio device: %d!", audio_device->type);
+        service_result->ret = -1;
+        break;
+      } else {
+        memcpy(service_result->data,
+               dev_index_list,
+               service_result->ret * sizeof(int));
+      }
+    } else {
+      ERROR("Audio service is not initialized!");
+      service_result->ret = -1;
+    }
+  } while (0);
+}
+
+#if 0
+void ON_AUDIO_INPUT_SELECT_GET(void *msg_data,
+                               int msg_data_size,
+                               void *result_addr,
+                               int result_max_size)
+{
+  // To be done;
+  INFO("on audio input select get.");
+}
+
+void ON_AUDIO_INPUT_SELECT_SET(void *msg_data,
+                               int msg_data_size,
+                               void *result_addr,
+                               int result_max_size)
+{
+  // To be done;
+  INFO("on audio input select set.");
+}
+
+void ON_AUDIO_AEC_GET(void *msg_data,
+                      int msg_data_size,
+                      void *result_addr,
+                      int result_max_size)
+{
+  // To be done;
+  INFO("on audio aec get.");
+}
+
+void ON_AUDIO_AEC_SET(void *msg_data,
+                      int msg_data_size,
+                      void *result_addr,
+                      int result_max_size)
+{
+  // To be done;
+  INFO("on audio aec set.");
+}
+
+void ON_AUDIO_EFFECT_GET(void *msg_data,
+                         int msg_data_size,
+                         void *result_addr,
+                         int result_max_size)
+{
+  // To be done;
+  INFO("on audio effect get.");
+}
+
+void ON_AUDIO_EFFECT_SET(void *msg_data,
+                         int msg_data_size,
+                         void *result_addr,
+                         int result_max_size)
+{
+  // To be done;
+  INFO("on audio effect set.");
+}
+#endif

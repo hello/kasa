@@ -1,0 +1,276 @@
+diff -Naur WLAN-AIO-SB_orig/drivers/cfg80211/core.c WLAN-AIO-SB/drivers/cfg80211/core.c
+--- WLAN-AIO-SB_orig/drivers/cfg80211/core.c	2013-04-17 12:20:07.543197000 +0800
++++ WLAN-AIO-SB/drivers/cfg80211/core.c	2013-04-17 12:31:33.294156000 +0800
+@@ -304,7 +304,11 @@
+ 	struct cfg80211_registered_device *rdev;
+ 
+ 	rdev = container_of(work, struct cfg80211_registered_device, rfkill_sync);
++#if 0
+ 	cfg80211_rfkill_set_block(rdev, rfkill_blocked(rdev->rfkill));
++#else
++	cfg80211_rfkill_set_block(rdev, false);
++#endif
+ }
+ 
+ static void cfg80211_event_work(struct work_struct *work)
+@@ -388,9 +392,13 @@
+ 	wiphy_net_set(&rdev->wiphy, &init_net);
+ 
+ 	rdev->rfkill_ops.set_block = cfg80211_rfkill_set_block;
++#if 0
+ 	rdev->rfkill = rfkill_alloc(dev_name(&rdev->wiphy.dev),
+ 				   &rdev->wiphy.dev, RFKILL_TYPE_WLAN,
+ 				   &rdev->rfkill_ops, rdev);
++#else
++	rdev->rfkill = ERR_PTR(-ENODEV);
++#endif
+ 
+ 	if (!rdev->rfkill) {
+ 		kfree(rdev);
+@@ -617,7 +625,14 @@
+ 	 * due to a locking dependency this has to be outside of the
+ 	 * cfg80211_mutex lock
+ 	 */
++#if 0
+ 	res = rfkill_register(rdev->rfkill);
++#else
++	if (rdev->rfkill == ERR_PTR(-ENODEV))
++		res = 0;
++	else
++		res = -EINVAL;
++#endif
+ 	if (res)
+ 		goto out_rm_dev;
+ 
+@@ -639,7 +654,9 @@
+ 	if (!rdev->ops->rfkill_poll)
+ 		return;
+ 	rdev->rfkill_ops.poll = cfg80211_rfkill_poll;
++#if 0
+ 	rfkill_resume_polling(rdev->rfkill);
++#endif
+ }
+ EXPORT_SYMBOL(wiphy_rfkill_start_polling);
+ 
+@@ -647,7 +664,9 @@
+ {
+ 	struct cfg80211_registered_device *rdev = wiphy_to_dev(wiphy);
+ 
++#if 0
+ 	rfkill_pause_polling(rdev->rfkill);
++#endif
+ }
+ EXPORT_SYMBOL(wiphy_rfkill_stop_polling);
+ 
+@@ -659,7 +678,9 @@
+ 	rdev->wiphy.registered = false;
+ 	rtnl_unlock();
+ 
++#if 0
+ 	rfkill_unregister(rdev->rfkill);
++#endif
+ 
+ 	/* protect the device list */
+ 	mutex_lock(&cfg80211_mutex);
+@@ -715,7 +736,9 @@
+ void cfg80211_dev_free(struct cfg80211_registered_device *rdev)
+ {
+ 	struct cfg80211_internal_bss *scan, *tmp;
++#if 0
+ 	rfkill_destroy(rdev->rfkill);
++#endif
+ 	mutex_destroy(&rdev->mtx);
+ 	mutex_destroy(&rdev->devlist_mtx);
+ 	mutex_destroy(&rdev->sched_scan_mtx);
+@@ -735,8 +758,13 @@
+ {
+ 	struct cfg80211_registered_device *rdev = wiphy_to_dev(wiphy);
+ 
++#if 0
+ 	if (rfkill_set_hw_state(rdev->rfkill, blocked))
+ 		schedule_work(&rdev->rfkill_sync);
++#else
++	if (blocked)
++		schedule_work(&rdev->rfkill_sync);
++#endif
+ }
+ EXPORT_SYMBOL(wiphy_rfkill_set_hw_state);
+ 
+@@ -770,13 +798,16 @@
+ 	rdev->opencount--;
+ 	mutex_unlock(&rdev->devlist_mtx);
+ 	wake_up(&rdev->dev_wait);
+-
++#if 1
+ 	dev_put(wdev->netdev);
++#endif
+ }
+ 
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,31))
+ static struct device_type wiphy_type = {
+ 	.name	= "wlan",
+ };
++#endif
+ 
+ static int cfg80211_netdev_notifier_call(struct notifier_block * nb,
+ 					 unsigned long state,
+@@ -887,7 +918,11 @@
+ 		break;
+ 	case NETDEV_DOWN:
+ 		dev_hold(dev);
++#ifdef CE_OLD_KERNEL_SUPPORT_2_6_23		
++		wdev_cleanup_work(&wdev->cleanup_work);
++#else
+ 		queue_work(cfg80211_wq, &wdev->cleanup_work);
++#endif
+ 		break;
+ 	case NETDEV_UP:
+ 		/*
+@@ -989,8 +1024,14 @@
+ 	case NETDEV_PRE_UP:
+ 		if (!(wdev->wiphy->interface_modes & BIT(wdev->iftype)))
+ 			return notifier_from_errno(-EOPNOTSUPP);
++#if 0
+ 		if (rfkill_blocked(rdev->rfkill))
+ 			return notifier_from_errno(-ERFKILL);
++#else
++		if (false)
++			return notifier_from_errno(-ERFKILL);
++#endif
++			return notifier_from_errno(-ERFKILL);
+ 		ret = cfg80211_can_add_interface(rdev, wdev->iftype);
+ 		if (ret)
+ 			return notifier_from_errno(ret);
+@@ -1004,6 +1045,7 @@
+ 	.notifier_call = cfg80211_netdev_notifier_call,
+ };
+ 
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,25))
+ static void __net_exit cfg80211_pernet_exit(struct net *net)
+ {
+ 	struct cfg80211_registered_device *rdev;
+@@ -1021,14 +1063,17 @@
+ static struct pernet_operations cfg80211_pernet_ops = {
+ 	.exit = cfg80211_pernet_exit,
+ };
++#endif
+ 
+ static int __init cfg80211_init(void)
+ {
+ 	int err;
+ 
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,25))
+ 	err = register_pernet_device(&cfg80211_pernet_ops);
+ 	if (err)
+ 		goto out_fail_pernet;
++#endif
+ 
+ 	err = wiphy_sysfs_init();
+ 	if (err)
+@@ -1063,7 +1108,9 @@
+ out_fail_notifier:
+ 	wiphy_sysfs_exit();
+ out_fail_sysfs:
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,25))
+ 	unregister_pernet_device(&cfg80211_pernet_ops);
++#endif
+ out_fail_pernet:
+ 	return err;
+ }
+@@ -1076,7 +1123,9 @@
+ 	unregister_netdevice_notifier(&cfg80211_netdev_notifier);
+ 	wiphy_sysfs_exit();
+ 	regulatory_exit();
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,25))
+ 	unregister_pernet_device(&cfg80211_pernet_ops);
++#endif
+ 	destroy_workqueue(cfg80211_wq);
+ }
+ module_exit(cfg80211_exit);
+diff -Naur WLAN-AIO-SB_orig/drivers/cfg80211//Makefile WLAN-AIO-SB/drivers/cfg80211//Makefile
+--- WLAN-AIO-SB_orig/drivers/cfg80211//Makefile	2013-02-26 15:28:53.000000000 +0800
++++ WLAN-AIO-SB/drivers/cfg80211//Makefile	2013-02-27 15:50:43.000000000 +0800
+@@ -1,4 +1,5 @@
+-NOSTDINC_FLAGS := -include ${ATH_DRIVER_TOPDIR}/include_local/linux/compat-2.6.h -I${ATH_DRIVER_TOPDIR}/include_local/ $(ATH_LOCAL_CFLAGS)
++#NOSTDINC_FLAGS := -include ${ATH_DRIVER_TOPDIR}/include_local/linux/compat-2.6.h -I${ATH_DRIVER_TOPDIR}/include_local/ $(ATH_LOCAL_CFLAGS)
++NOSTDINC_FLAGS := -include ${ATH_DRIVER_TOPDIR}/include_local/linux/compatible.h -I${ATH_DRIVER_TOPDIR}/include_local/ $(ATH_LOCAL_CFLAGS)
+ obj-$(CONFIG_CFG80211) += cfg80211.o
+ 
+ obj-$(CONFIG_WEXT_CORE) += wext-core.o
+diff -Naur WLAN-AIO-SB_orig/drivers/cfg80211//nl80211.c WLAN-AIO-SB/drivers/cfg80211//nl80211.c
+--- WLAN-AIO-SB_orig/drivers/cfg80211//nl80211.c	2013-02-26 18:08:49.000000000 +0800
++++ WLAN-AIO-SB/drivers/cfg80211//nl80211.c	2013-02-27 15:50:43.000000000 +0800
+@@ -15,7 +15,9 @@
+ #include <linux/rtnetlink.h>
+ #include <linux/netlink.h>
+ #include <linux/etherdevice.h>
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,25))
+ #include <net/net_namespace.h>
++#endif
+ #include <net/genetlink.h>
+ #include <net/cfg80211.h>
+ #include <net/sock.h>
+diff -Naur WLAN-AIO-SB_orig/drivers/cfg80211//reg.c WLAN-AIO-SB/drivers/cfg80211//reg.c
+--- WLAN-AIO-SB_orig/drivers/cfg80211//reg.c	2013-02-26 15:16:04.000000000 +0800
++++ WLAN-AIO-SB/drivers/cfg80211//reg.c	2013-02-27 15:50:43.000000000 +0800
+@@ -2158,6 +2158,7 @@
+ 	return r;
+ }
+ 
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,25))
+ #ifdef CONFIG_HOTPLUG
+ int reg_device_uevent(struct device *dev, struct kobj_uevent_env *env)
+ {
+@@ -2176,6 +2177,7 @@
+ 	return -ENODEV;
+ }
+ #endif /* CONFIG_HOTPLUG */
++#endif
+ 
+ /* Caller must hold cfg80211_mutex */
+ void reg_device_remove(struct wiphy *wiphy)
+@@ -2215,7 +2217,9 @@
+ 	if (IS_ERR(reg_pdev))
+ 		return PTR_ERR(reg_pdev);
+ 
++#if 0
+ 	reg_pdev->dev.type = &reg_device_type;
++#endif
+ 
+ 	spin_lock_init(&reg_requests_lock);
+ 	spin_lock_init(&reg_pending_beacons_lock);
+diff -Naur WLAN-AIO-SB_orig/drivers/cfg80211//wext-compat.c WLAN-AIO-SB/drivers/cfg80211//wext-compat.c
+--- WLAN-AIO-SB_orig/drivers/cfg80211//wext-compat.c	2013-02-26 15:16:04.000000000 +0800
++++ WLAN-AIO-SB/drivers/cfg80211//wext-compat.c	2013-02-27 15:50:43.000000000 +0800
+@@ -865,7 +865,9 @@
+ 
+ 	/* only change when not disabling */
+ 	if (!data->txpower.disabled) {
++#if 0
+ 		rfkill_set_sw_state(rdev->rfkill, false);
++#endif
+ 
+ 		if (data->txpower.fixed) {
+ 			/*
+@@ -890,7 +892,9 @@
+ 			}
+ 		}
+ 	} else {
++#if 0
+ 		rfkill_set_sw_state(rdev->rfkill, true);
++#endif
+ 		schedule_work(&rdev->rfkill_sync);
+ 		return 0;
+ 	}
+@@ -920,7 +924,11 @@
+ 
+ 	/* well... oh well */
+ 	data->txpower.fixed = 1;
++#if 0
+ 	data->txpower.disabled = rfkill_blocked(rdev->rfkill);
++#else
++	data->txpower.disabled = false;
++#endif
+ 	data->txpower.value = val;
+ 	data->txpower.flags = IW_TXPOW_DBM;
+ 

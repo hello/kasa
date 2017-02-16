@@ -1,0 +1,48 @@
+diff -Naur procps-ng-3.3.8.orig/configure.ac procps-ng-3.3.8/configure.ac
+--- procps-ng-3.3.8.orig/configure.ac	2013-05-25 23:39:39.000000000 +0200
++++ procps-ng-3.3.8/configure.ac	2013-08-06 19:53:49.595654086 +0200
+@@ -111,6 +111,14 @@
+   AC_DEFINE([WITH_WATCH8BIT], [1], [Enable 8 bit clean watch])
+ fi
+ 
++AC_ARG_ENABLE([libselinux],
++              AS_HELP_STRING([--enable-libselinux], [enable libselinux]),
++              [enable_libselinux=$enableval],
++              [enable_libselinux="no"])
++if test "$enable_libselinux" = "yes"; then
++  AC_DEFINE([ENABLE_LIBSELINUX], [1], [Enable libselinux])
++fi
++
+ # Optional packages - AC_ARG_WITH
+ AC_ARG_WITH([ncurses],
+   AS_HELP_STRING([--without-ncurses], [build only applications not needing ncurses]),
+diff -Naur procps-ng-3.3.8.orig/ps/output.c procps-ng-3.3.8/ps/output.c
+--- procps-ng-3.3.8.orig/ps/output.c	2013-05-25 23:39:40.000000000 +0200
++++ procps-ng-3.3.8/ps/output.c	2013-08-06 19:55:32.477650664 +0200
+@@ -1282,6 +1282,8 @@
+ /****************** FLASK & seLinux security stuff **********************/
+ // move the bulk of this to libproc sometime
+ 
++#if !ENABLE_LIBSELINUX
++
+ static int pr_context(char *restrict const outbuf, const proc_t *restrict const pp){
+   char filename[48];
+   size_t len;
+@@ -1310,7 +1312,8 @@
+   return 1;
+ }
+ 
+-#if 0
++#else
++
+ // This needs more study, considering:
+ // 1. the static linking option (maybe disable this in that case)
+ // 2. the -z and -Z option issue
+@@ -1345,6 +1348,7 @@
+   }
+   return len;
+ }
++
+ #endif
+ 
+ 

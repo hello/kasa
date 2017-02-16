@@ -1,0 +1,40 @@
+##
+## kernel/private/drivers/dsp/AmbaConfig
+##
+## History:
+##    2008/01/16 - [Anthony Ginger] Create
+##
+## Copyright (C) 2004-2008, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+menuconfig BUILD_AMBARELLA_IMGPROC_DRV
+	depends on BUILD_AMBARELLA_PRIVATE_MODULES
+	bool "Build Ambarella private IMGPROC module"
+	default n
+	help
+		Build Ambarella private image processing module for Linux.
+
+if BUILD_AMBARELLA_IMGPROC_DRV
+
+choice
+depends on CONFIG_ARCH_S2L
+	prompt "Choose proper memory size for IMGPROC"
+	default CONFIG_IMGPROC_MEM_SMALL
+	help
+		Select the proper memory size for IMGPROC
+
+config CONFIG_IMGPROC_MEM_SMALL
+	bool "Small"
+
+config CONFIG_IMGPROC_MEM_LARGE
+	bool "Large"
+
+endchoice
+
+endif
+

@@ -1,0 +1,13 @@
+diff -Naur cfg80211/nl80211.c cfg80211.patch/nl80211.c
+--- cfg80211/nl80211.c	2011-11-07 13:23:09.681047022 +0800
++++ cfg80211.patch/nl80211.c	2011-11-07 13:23:57.753099472 +0800
+@@ -3884,7 +3884,9 @@
+ 	spin_lock_bh(&rdev->bss_lock);
+ 	cfg80211_bss_expire(rdev);
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,1,0))
+ 	cb->seq = rdev->bss_generation;
++#endif
+ 
+ 	list_for_each_entry(scan, &rdev->bss_list, list) {
+ 		if (++idx <= start)

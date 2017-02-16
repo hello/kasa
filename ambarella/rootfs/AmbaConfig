@@ -1,0 +1,397 @@
+##
+## amboot/image/AmbaConfig
+## History:
+##    2008/02/21 - [Anthony Ginger] Create
+##
+## Copyright (C) 2004-2008, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+menuconfig CONFIG_AMBARELLA_MKFS
+	bool "Ambarella File System Configuration"
+	default n
+	select BUILD_AMBARELLA_FIRMWARE
+	help
+		Build Ambarella File System.
+
+if CONFIG_AMBARELLA_MKFS
+
+choice
+	prompt "Linux Root File System"
+	default CONFIG_AMBARELLA_ROOTFS_JFFS2
+	help
+		Select rootfs.
+
+config CONFIG_AMBARELLA_ROOTFS_RAM
+	bool "Ramdisk"
+
+config CONFIG_AMBARELLA_ROOTFS_CPIO
+	bool "CPIO"
+
+config CONFIG_AMBARELLA_ROOTFS_JFFS2
+	bool "JFFS2"
+
+config CONFIG_AMBARELLA_ROOTFS_YAFFS
+	bool "YAFFS"
+
+config CONFIG_AMBARELLA_ROOTFS_UBIFS
+	bool "UBIFS"
+
+config CONFIG_AMBARELLA_ROOTFS_EXT2
+	bool "EXT2"
+
+config CONFIG_AMBARELLA_ROOTFS_EXT3
+	bool "EXT3"
+
+config CONFIG_AMBARELLA_ROOTFS_EXT4
+	bool "EXT4"
+
+config CONFIG_AMBARELLA_ROOTFS_SQUASHFS
+	bool "SQUASHFS"
+
+endchoice
+
+choice
+	prompt "System Init Method"
+	default CONFIG_AMBARELLA_INIT_SYSTEMD
+	help
+		Select system init method
+
+config CONFIG_AMBARELLA_INIT_LINUXRC
+	select CONFIG_AMBARELLA_LIBSELINUX_SUPPORT
+	select CONFIG_AMBARELLA_LIBCAP_SUPPORT
+	select CONFIG_AMBARELLA_PAM_SUPPORT
+	select CONFIG_AMBARELLA_LIBATTR_SUPPORT
+	bool "linuxrc"
+
+config CONFIG_AMBARELLA_INIT_LINUXRC_FASTBOOT
+	bool "linuxrc fastboot"
+
+config CONFIG_AMBARELLA_INIT_LINUXRC_SMALLBOOT
+	bool "linuxrc smallboot"
+
+config CONFIG_AMBARELLA_INIT_SYSTEMD
+	select CONFIG_AMBARELLA_LIBSELINUX_SUPPORT
+	select CONFIG_AMBARELLA_LIBCAP_SUPPORT
+	select CONFIG_AMBARELLA_PAM_SUPPORT
+	select CONFIG_AMBARELLA_LIBATTR_SUPPORT
+	bool "systemd"
+
+endchoice
+
+menu "Systemd Features"
+	depends on CONFIG_AMBARELLA_INIT_SYSTEMD
+
+config CONFIG_AMBARELLA_SYSTEMD_JOURNAL_GATEWAY
+	select CONFIG_AMBARELLA_LIBMICROHTTPD_SUPPORT
+	bool "Journal gatewayd"
+	default n
+
+config CONFIG_AMBARELLA_SYSTEMD_NETWORKD
+	bool "Network service of systemd"
+	default n
+
+config CONFIG_AMBARELLA_SYSTEMD_RESOLVD
+	bool "Resolv service of systemd"
+	default n
+
+config CONFIG_AMBARELLA_SYSTEMD_TIMESYNCD
+	bool "Time sync service of systemd"
+	default n
+
+endmenu
+
+config CONFIG_AMBARELLA_ROOT_PASSWORD
+	string "Root Password"
+	default ""
+	help
+		Root password
+
+config CONFIG_AMBARELLA_NORMAL_USER
+	bool "create normal user name"
+	default n
+	help
+		create a non-root normal user name
+
+config CONFIG_AMBARELLA_NORMAL_USER_NAME
+	depends on CONFIG_AMBARELLA_NORMAL_USER
+	string "default normal user name"
+	default "ambatest"
+	help
+		create a non-root normal user name string
+
+config CONFIG_AMBARELLA_NORMAL_USER_PASSWORD
+	depends on CONFIG_AMBARELLA_NORMAL_USER
+	string "default normal user password"
+	default "password"
+	help
+		create a non-root normal user password string
+
+config CONFIG_BACKUP_CPIO
+	bool "Ambarella Backup CPIO"
+	default n
+
+## for spinor kernel cpio + jffs2 solution
+config CONFIG_AMBARELLA_ROOTFS_SUBJFFS2
+	depends on CONFIG_BOOT_MEDIA_SPINOR
+	depends on CONFIG_AMBARELLA_ROOTFS_CPIO
+	depends on CONFIG_AMBARELLA_INIT_LINUXRC
+	bool "Ambarella build subjffs2"
+	default n
+
+config CONFIG_AMBARELLA_BUSYBOX_BUILD
+	bool
+	default n
+
+config CONFIG_AMBARELLA_BUSYBOX_BUILD_STATIC
+	bool
+	default n
+
+choice
+	prompt "Busybox"
+	default CONFIG_AMBARELLA_BUSYBOX_PREBUILD
+	help
+		Select how to generate busybox.
+
+config CONFIG_AMBARELLA_BUSYBOX_PREBUILD
+	bool "Prebuild"
+
+config CONFIG_AMBARELLA_BUSYBOX_TOOLCHAIN
+	bool "glibc"
+	select CONFIG_AMBARELLA_BUSYBOX_BUILD
+
+config CONFIG_AMBARELLA_BUSYBOX_TOOLCHAIN_STATIC
+	bool "Static glibc"
+	select CONFIG_AMBARELLA_BUSYBOX_BUILD
+	select CONFIG_AMBARELLA_BUSYBOX_BUILD_STATIC
+endchoice
+
+config CONFIG_AMBARELLA_ROOTFS_SIZE
+	depends on CONFIG_AMBARELLA_ROOTFS_RAM || CONFIG_AMBARELLA_ROOTFS_EXT2 \
+		|| CONFIG_AMBARELLA_ROOTFS_EXT3 || CONFIG_AMBARELLA_ROOTFS_EXT4
+	int "Ambarella RootFS Size(KB)"
+	default 65536
+	help
+		Ambarella RAM disk Size.
+
+config CONFIG_AMBARELLA_ROOTFS_INODES
+	depends on CONFIG_AMBARELLA_ROOTFS_RAM || CONFIG_AMBARELLA_ROOTFS_EXT2 \
+		|| CONFIG_AMBARELLA_ROOTFS_EXT3 || CONFIG_AMBARELLA_ROOTFS_EXT4
+	int "Ambarella RootFS inodes number"
+	default 1500
+	help
+		Ambarella RAM disk Size.
+
+config CONFIG_AMBARELLA_COMPRESS_RAMDISK
+	depends on CONFIG_AMBARELLA_ROOTFS_RAM || CONFIG_AMBARELLA_ROOTFS_CPIO
+	bool "Compress RAM disk"
+	default y
+	help
+		Compress RAM disk.
+
+config CONFIG_AMBARELLA_ETH0
+	bool "Enable eth0"
+	default n
+	help
+		Configuration for eth0.
+
+config CONFIG_AMBARELLA_ETH0_DHCP
+	depends on CONFIG_AMBARELLA_ETH0
+	bool "DHCP on eth0"
+	default y
+	help
+		DHCP on eth0.
+
+config CONFIG_AMBARELLA_ETH0_ADDRESS
+	depends on (CONFIG_AMBARELLA_ETH0 && !CONFIG_AMBARELLA_ETH0_DHCP)
+	string "IP Address"
+	default "10.0.0.2"
+	help
+		IP Address for eth0.
+
+config CONFIG_AMBARELLA_ETH0_GW_ADDRESS
+	depends on (CONFIG_AMBARELLA_ETH0 && !CONFIG_AMBARELLA_ETH0_DHCP)
+	string "GW Address"
+	default "10.0.0.1"
+	help
+		GW Address for eth0.
+
+config CONFIG_AMBARELLA_ETH0_IP_MASK
+	depends on (CONFIG_AMBARELLA_ETH0 && !CONFIG_AMBARELLA_ETH0_DHCP)
+	string "IP Mask"
+	default "255.255.255.0"
+	help
+		IP Mask for eth0.
+
+config CONFIG_AMBARELLA_ETH1
+	depends on CONFIG_ARCH_A7
+	bool "Enable eth1"
+	default n
+	help
+		Configuration for eth1, only A7 has 2nd ETH.
+
+config CONFIG_AMBARELLA_ETH1_DHCP
+	depends on CONFIG_AMBARELLA_ETH1
+	bool "DHCP on eth1"
+	default y
+	help
+		DHCP on eth1.
+
+config CONFIG_AMBARELLA_ETH1_ADDRESS
+	depends on (CONFIG_AMBARELLA_ETH1 && !CONFIG_AMBARELLA_ETH1_DHCP)
+	string "IP Address"
+	default "10.0.0.100"
+	help
+		IP Address for eth1.
+
+config CONFIG_AMBARELLA_ETH1_GW_ADDRESS
+	depends on (CONFIG_AMBARELLA_ETH1 && !CONFIG_AMBARELLA_ETH1_DHCP)
+	string "GW Address"
+	default "10.0.0.1"
+	help
+		GW Address for eth1.
+
+config CONFIG_AMBARELLA_ETH1_IP_MASK
+	depends on (CONFIG_AMBARELLA_ETH1 && !CONFIG_AMBARELLA_ETH1_DHCP)
+	string "IP Mask"
+	default "255.255.255.0"
+	help
+		IP Mask for eth1.
+
+config CONFIG_AMBARELLA_MOUNT_MNT
+	string "Mount configuration for /mnt"
+	default ""
+	help
+		Mount configuration for /mnt.
+		For example:
+		192.168.44.110:/home/sharenfs /mnt nfs defaults,nolock 0 0
+
+config CONFIG_AMBARELLA_EXT_CMD_FILE
+	string "Extra command before build ROOTFS"
+	default ""
+	help
+		Extra command before build ROOTFS.
+
+choice
+	prompt "Run script automatically on start"
+	default CONFIG_AMBARELLA_RUN_DEMO_NONE
+	depends on CONFIG_AMBARELLA_INIT_LINUXRC
+	help
+		Select script to run on start
+
+config CONFIG_AMBARELLA_RUN_DEMO_NONE
+	bool "Don't run any demo automatically"
+	help
+		run demo.sh automatically on Linux start
+
+config CONFIG_AMBARELLA_RUN_AUTO_DEMO
+	bool "Run auto demo script at start"
+	help
+		run demo.sh automatically on Linux start
+
+config CONFIG_AMBARELLA_RUN_AUTO_CLOUD_DEMO
+	bool "Run auto ambarella cloud demo at start"
+	help
+		run ambarella cloud agent automatically on Linux start
+
+config CONFIG_AMBARELLA_RUN_SHMOO_TEST
+	bool "Run shmoo test automatically"
+	select BUILD_AMBARELLA_UNIT_TESTS_BENCHMARK
+	select BUILD_AMBARELLA_UNIT_TESTS_BANDWIDTH
+	help
+		run shmoo.sh automatically on Linux start
+
+config CONFIG_AMBARELLA_RUN_MEDIASERVER
+	bool "Run media server demo script at start"
+	help
+		run mediaserver.sh automatically on Linux start
+
+config CONFIG_AMBARELLA_RUN_DEWARP
+	bool "Run dewarp demo script at start"
+	help
+		run fisheye_dewarp.sh automatically on Linux start
+
+config CONFIG_AMBARELLA_RUN_IVAAPP
+	bool "Run ivaapp script at start"
+	select BUILD_AMBARELLA_APP_IVAAPP
+	depends on CONFIG_ARCH_S2
+	help
+		run ivaapp.sh automatically on Linux start
+endchoice
+
+menu "Serial Port Configuration"
+choice
+	prompt "Serial Port 0 Configuration"
+	default CONFIG_AMBARELLA_UART0_GETTY
+	help
+		Select ttyS0.
+
+config CONFIG_AMBARELLA_SERIAL_PORT0_GETTY
+	bool "Getty"
+	help
+		Put a getty on the serial port 0.
+
+config CONFIG_AMBARELLA_SERIAL_PORT0_NA
+	bool "Not used"
+	help
+		Not used.
+
+endchoice
+
+choice
+	prompt "Serial Port 1 Configuration"
+	default CONFIG_AMBARELLA_SERIAL_PORT1_NA
+	help
+		Select ttyS1.
+
+config CONFIG_AMBARELLA_SERIAL_PORT1_GETTY
+	bool "Getty"
+	help
+		Put a getty on the serial port 1.
+
+config CONFIG_AMBARELLA_SERIAL_PORT1_NA
+	bool "Not used"
+	help
+		Not used.
+
+endchoice
+
+choice
+	prompt "askfirst Console Configuration"
+	default CONFIG_AMBARELLA_ASKFIRST_CONSOLE_NA
+	help
+		Select console.
+
+config CONFIG_AMBARELLA_ASKFIRST_CONSOLE
+	bool "Open console by askfirst action"
+	help
+		Press Enter to active console.
+
+config CONFIG_AMBARELLA_ASKFIRST_CONSOLE_NA
+	bool "Not used"
+	help
+		Not used.
+
+endchoice
+
+config CONFIG_AMBARELLA_SERIAL_PORT_USB0
+	bool "USB serial tty support"
+	default n
+	help
+		Login with usb serial.
+endmenu
+
+config CONFIG_AMBARELLA_ADD_PARTITION
+	depends on CONFIG_AMBARELLA_ROOTFS_SQUASHFS
+	bool "Enable ADD Partition"
+	default n
+	help
+		Enable ADD Partition on fastboot mode
+
+source prebuild/third-party/AmbaConfig
+
+endif

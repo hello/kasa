@@ -1,0 +1,12 @@
+diff -Naur WLAN-AIO-SB_orig/apps/libnl-1/lib/route/link/vlan.c WLAN-AIO-SB_new/apps/libnl-1/lib/route/link/vlan.c
+--- WLAN-AIO-SB_orig/apps/libnl-1/lib/route/link/vlan.c	2012-12-24 17:31:56.000000000 +0800
++++ WLAN-AIO-SB_new/apps/libnl-1/lib/route/link/vlan.c	2013-01-04 14:00:01.000000000 +0800
+@@ -16,7 +16,7 @@
+  *
+  * @{
+  */
+-#if 0
++#if 1
+  enum vlan_flags {
+  	VLAN_FLAG_REORDER_HDR	= 0x1,
+  	VLAN_FLAG_GVRP		= 0x2,

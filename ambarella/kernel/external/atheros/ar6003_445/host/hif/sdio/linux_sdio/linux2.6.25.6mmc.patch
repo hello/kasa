@@ -1,0 +1,229 @@
+diff -Naur /mnt/remote/linux-2.6.25.6/drivers/mmc/core/core.c mmc/core/core.c
+--- /mnt/remote/linux-2.6.25.6/drivers/mmc/core/core.c	2008-06-09 11:27:20.000000000 -0700
++++ mmc/core/core.c	2008-06-27 10:55:00.000000000 -0700
+@@ -486,7 +486,7 @@
+ 	 * This delay should be sufficient to allow the power supply
+ 	 * to reach the minimum voltage.
+ 	 */
+-	mmc_delay(2);
++	mmc_delay(400);
+ 
+ 	host->ios.clock = host->f_min;
+ 	host->ios.power_mode = MMC_POWER_ON;
+diff -Naur /mnt/remote/linux-2.6.25.6/drivers/mmc/core/sdio_irq.c mmc/core/sdio_irq.c
+--- /mnt/remote/linux-2.6.25.6/drivers/mmc/core/sdio_irq.c	2008-06-09 11:27:20.000000000 -0700
++++ mmc/core/sdio_irq.c	2008-07-17 16:40:59.702725942 -0700
+@@ -205,6 +205,11 @@
+ 		return -EBUSY;
+ 	}
+ 
++	func->irq_handler = handler;
++	ret = sdio_card_irq_get(func->card);
++	if (ret)
++		func->irq_handler = NULL;
++
+ 	ret = mmc_io_rw_direct(func->card, 0, 0, SDIO_CCCR_IENx, 0, &reg);
+ 	if (ret)
+ 		return ret;
+@@ -217,11 +222,6 @@
+ 	if (ret)
+ 		return ret;
+ 
+-	func->irq_handler = handler;
+-	ret = sdio_card_irq_get(func->card);
+-	if (ret)
+-		func->irq_handler = NULL;
+-
+ 	return ret;
+ }
+ EXPORT_SYMBOL_GPL(sdio_claim_irq);
+@@ -242,11 +242,6 @@
+ 
+ 	pr_debug("SDIO: Disabling IRQ for %s...\n", sdio_func_id(func));
+ 
+-	if (func->irq_handler) {
+-		func->irq_handler = NULL;
+-		sdio_card_irq_put(func->card);
+-	}
+-
+ 	ret = mmc_io_rw_direct(func->card, 0, 0, SDIO_CCCR_IENx, 0, &reg);
+ 	if (ret)
+ 		return ret;
+@@ -261,6 +256,11 @@
+ 	if (ret)
+ 		return ret;
+ 
++	if (func->irq_handler) {
++		func->irq_handler = NULL;
++		sdio_card_irq_put(func->card);
++	}
++
+ 	return 0;
+ }
+ EXPORT_SYMBOL_GPL(sdio_release_irq);
+diff -Naur /mnt/remote/linux-2.6.25.6/drivers/mmc/host/sdhci.c mmc/host/sdhci.c
+--- /mnt/remote/linux-2.6.25.6/drivers/mmc/host/sdhci.c	2008-06-09 11:27:20.000000000 -0700
++++ mmc/host/sdhci.c	2008-07-17 18:23:45.259148801 -0700
+@@ -57,6 +57,8 @@
+ #define SDHCI_QUIRK_32BIT_DMA_SIZE			(1<<7)
+ /* Controller needs to be reset after each request to stay stable */
+ #define SDHCI_QUIRK_RESET_AFTER_REQUEST			(1<<8)
++/* Controller only catchs CIRQ when in 1-bit bus mode  */
++#define SDHCI_QUIRK_1BIT_INTERRUPT			(1<<9)
+ 
+ static const struct pci_device_id pci_ids[] __devinitdata = {
+ 	{
+@@ -108,8 +110,10 @@
+ 		.device         = PCI_DEVICE_ID_ENE_CB714_SD,
+ 		.subvendor      = PCI_ANY_ID,
+ 		.subdevice      = PCI_ANY_ID,
+-		.driver_data    = SDHCI_QUIRK_SINGLE_POWER_WRITE |
+-				  SDHCI_QUIRK_RESET_CMD_DATA_ON_IOS,
++		.driver_data    = SDHCI_QUIRK_BROKEN_DMA |
++				  SDHCI_QUIRK_SINGLE_POWER_WRITE |
++				  SDHCI_QUIRK_RESET_CMD_DATA_ON_IOS |
++				  SDHCI_QUIRK_1BIT_INTERRUPT,
+ 	},
+ 
+ 	{
+@@ -256,6 +260,21 @@
+ 	writeb(ctrl, host->ioaddr + SDHCI_HOST_CONTROL);
+ }
+ 
++/* handle bus case where controller cannot detect CIRQ reliably when in 4-bit mode */
++static void sdhci_idle_bus_adjust(struct sdhci_host *host, u8 idle)
++{
++	u8 ctrl;
++	if ((host->flags & SDHCI_IN_4BIT_MODE) && (host->chip->quirks & SDHCI_QUIRK_1BIT_INTERRUPT)){
++		/* while bus is idle, leave it in 1-bit mode at the controller level */
++		ctrl = readb(host->ioaddr + SDHCI_HOST_CONTROL);
++		ctrl &= ~SDHCI_CTRL_4BITBUS; 
++		if (!idle) {
++			ctrl |= SDHCI_CTRL_4BITBUS; 
++		} 
++		writeb(ctrl, host->ioaddr + SDHCI_HOST_CONTROL);
++	}
++}
++
+ /*****************************************************************************\
+  *                                                                           *
+  * Core functions                                                            *
+@@ -572,8 +591,6 @@
+ 
+ 	WARN_ON(host->cmd);
+ 
+-	/* Wait max 10 ms */
+-	timeout = 10;
+ 
+ 	mask = SDHCI_CMD_INHIBIT;
+ 	if ((cmd->data != NULL) || (cmd->flags & MMC_RSP_BUSY))
+@@ -584,6 +601,8 @@
+ 	if (host->mrq->data && (cmd == host->mrq->data->stop))
+ 		mask &= ~SDHCI_DATA_INHIBIT;
+ 
++	/* Wait max 10 ms */
++	timeout = (10*256) + 255;
+ 	while (readl(host->ioaddr + SDHCI_PRESENT_STATE) & mask) {
+ 		if (timeout == 0) {
+ 			printk(KERN_ERR "%s: Controller never released "
+@@ -594,11 +613,14 @@
+ 			return;
+ 		}
+ 		timeout--;
+-		mdelay(1);
++        if (!(timeout & 0xFF)) 
++    		mdelay(1);
+ 	}
+ 
+ 	mod_timer(&host->timer, jiffies + 10 * HZ);
+-
++	
++	sdhci_idle_bus_adjust(host, 0);
++	
+ 	host->cmd = cmd;
+ 
+ 	sdhci_prepare_data(host, cmd->data);
+@@ -633,6 +655,22 @@
+ 
+ 	writew(SDHCI_MAKE_CMD(cmd->opcode, flags),
+ 		host->ioaddr + SDHCI_COMMAND);
++
++	mask = SDHCI_CMD_INHIBIT;
++	timeout = (10*256) + 255;
++	while (readl(host->ioaddr + SDHCI_PRESENT_STATE) & mask) {
++		if (timeout == 0) {
++			printk(KERN_ERR "%s: Controller never released(2) "
++				"inhibit bit(s).\n", mmc_hostname(host->mmc));
++			sdhci_dumpregs(host);
++			cmd->error = -EIO;
++			tasklet_schedule(&host->finish_tasklet);
++			return;
++		}
++		timeout--;
++        if (!(timeout & 0xFF)) 
++		    mdelay(1);
++	}
+ }
+ 
+ static void sdhci_finish_command(struct sdhci_host *host)
+@@ -815,10 +853,13 @@
+ 
+ 	ctrl = readb(host->ioaddr + SDHCI_HOST_CONTROL);
+ 
+-	if (ios->bus_width == MMC_BUS_WIDTH_4)
++	if (ios->bus_width == MMC_BUS_WIDTH_4) {
+ 		ctrl |= SDHCI_CTRL_4BITBUS;
+-	else
++		host->flags |= SDHCI_IN_4BIT_MODE;
++	} else {
+ 		ctrl &= ~SDHCI_CTRL_4BITBUS;
++		host->flags &= ~SDHCI_IN_4BIT_MODE;
++	}
+ 
+ 	if (ios->timing == MMC_TIMING_SD_HS)
+ 		ctrl |= SDHCI_CTRL_HISPD;
+@@ -965,6 +1006,8 @@
+ 	host->cmd = NULL;
+ 	host->data = NULL;
+ 
++	sdhci_idle_bus_adjust(host, 1);
++
+ 	sdhci_deactivate_led(host);
+ 
+ 	mmiowb();
+@@ -1139,8 +1182,11 @@
+ 
+ 	intmask &= ~SDHCI_INT_BUS_POWER;
+ 
+-	if (intmask & SDHCI_INT_CARD_INT)
++        if (intmask & SDHCI_INT_CARD_INT) {
++            if (readl(host->ioaddr + SDHCI_INT_ENABLE) & SDHCI_INT_CARD_INT) {
+ 		cardint = 1;
++            }
++        }
+ 
+ 	intmask &= ~SDHCI_INT_CARD_INT;
+ 
+@@ -1161,9 +1207,9 @@
+ 	/*
+ 	 * We have to delay this as it calls back into the driver.
+ 	 */
+-	if (cardint)
++	if (cardint) 
+ 		mmc_signal_sdio_irq(host->mmc);
+-
++	
+ 	return result;
+ }
+ 
+diff -Naur /mnt/remote/linux-2.6.25.6/drivers/mmc/host/sdhci.h mmc/host/sdhci.h
+--- /mnt/remote/linux-2.6.25.6/drivers/mmc/host/sdhci.h	2008-06-09 11:27:20.000000000 -0700
++++ mmc/host/sdhci.h	2008-07-01 17:03:57.000000000 -0700
+@@ -173,6 +173,7 @@
+ 	int			flags;		/* Host attributes */
+ #define SDHCI_USE_DMA		(1<<0)		/* Host is DMA capable */
+ #define SDHCI_REQ_USE_DMA	(1<<1)		/* Use DMA for this req. */
++#define SDHCI_IN_4BIT_MODE	(1<<2)		/* bus is in 4-bit mode */
+ 
+ 	unsigned int		max_clk;	/* Max possible freq (MHz) */
+ 	unsigned int		timeout_clk;	/* Timeout freq (KHz) */

@@ -1,0 +1,81 @@
+diff --git a/src/xz/message.c b/src/xz/message.c
+index abbd171..ce953ac 100644
+--- a/src/xz/message.c
++++ b/src/xz/message.c
+@@ -1110,7 +1110,8 @@ message_help(bool long_help)
+ 
+ 	puts(_(
+ "  -z, --compress      force compression\n"
+-"  -d, --decompress    force decompression\n"
++"  -d, --decompress, --uncompress\n"
++"                      force decompression\n"
+ "  -t, --test          test compressed file integrity\n"
+ "  -l, --list          list information about .xz files"));
+ 
+@@ -1120,7 +1121,8 @@ message_help(bool long_help)
+ 	puts(_(
+ "  -k, --keep          keep (don't delete) input files\n"
+ "  -f, --force         force overwrite of output file and (de)compress links\n"
+-"  -c, --stdout        write to standard output and don't delete input files"));
++"  -c, --stdout, --to-stdout\n"
++"                      write to standard output and don't delete input files"));
+ 
+ 	if (long_help) {
+ 		puts(_(
+@@ -1152,6 +1154,10 @@ message_help(bool long_help)
+ "  -e, --extreme       try to improve compression ratio by using more CPU time;\n"
+ "                      does not affect decompressor memory requirements"));
+ 
++	puts(_(
++"  -T, --threads=NUM   use at most NUM threads; the default is 1; set to 0\n"
++"                      to use the number of processor cores"));
++
+ 	if (long_help) {
+ 		// FIXME? Mention something about threading?
+ 		puts(_(
+@@ -1166,7 +1172,7 @@ message_help(bool long_help)
+ 		puts(_( // xgettext:no-c-format
+ "      --memlimit-compress=LIMIT\n"
+ "      --memlimit-decompress=LIMIT\n"
+-"  -M, --memlimit=LIMIT\n"
++"  -M, --memlimit=LIMIT, (old alias --memory=LIMIT)\n"
+ "                      set memory usage limit for compression, decompression,\n"
+ "                      or both; LIMIT is in bytes, % of RAM, or 0 for defaults"));
+ 
+diff --git a/src/xz/xz.1 b/src/xz/xz.1
+index 0368f05..e5da140 100644
+--- a/src/xz/xz.1
++++ b/src/xz/xz.1
+@@ -912,7 +912,7 @@ See
+ for possible ways to specify the
+ .IR limit .
+ .TP
+-\fB\-M\fR \fIlimit\fR, \fB\-\-memlimit=\fIlimit\fR, \fB\-\-memory=\fIlimit
++\fB\-M\fR \fIlimit\fR, \fB\-\-memlimit=\fIlimit\fR, (old alias \fB\-\-memory=\fIlimit\fR)
+ This is equivalent to specifying \fB\-\-memlimit\-compress=\fIlimit
+ \fB\-\-memlimit\-decompress=\fIlimit\fR.
+ .TP
+diff --git a/src/xzdec/xzdec.c b/src/xzdec/xzdec.c
+index b7830db..48ac1fe 100644
+--- a/src/xzdec/xzdec.c
++++ b/src/xzdec/xzdec.c
+@@ -64,13 +64,15 @@ help(void)
+ "Usage: %s [OPTION]... [FILE]...\n"
+ "Uncompress files in the ." TOOL_FORMAT " format to the standard output.\n"
+ "\n"
+-"  -c, --stdout       (ignored)\n"
+-"  -d, --decompress   (ignored)\n"
+-"  -k, --keep         (ignored)\n"
+ "  -q, --quiet        specify *twice* to suppress errors\n"
+-"  -Q, --no-warn      (ignored)\n"
+ "  -h, --help         display this help and exit\n"
+ "  -V, --version      display the version number and exit\n"
++"  -c, --stdout, --to-stdout\n"
++"                     ignored, data are always written to standard output\n"
++"  -d, --decompress, --uncompress\n"
++"                     ignored, only decompression is supported\n"
++"  -k, --keep         ignored, we never create/remove any files\n"
++"  -Q, --no-warn      ignored, we never use exit status 2\n"
+ "\n"
+ "With no FILE, or when FILE is -, read standard input.\n"
+ "\n"

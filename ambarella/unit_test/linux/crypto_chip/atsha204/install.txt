@@ -1,0 +1,7 @@
+modprobe atsha204-i2c
+echo atsha204-i2c 0x64 | tee /sys/class/i2c-dev/i2c-0/device/new_device
+
+chgrp i2c /dev/atsha0
+chmod 664 /dev/atsha0
+
+atsha204_test

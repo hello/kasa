@@ -1,0 +1,21 @@
+#/etc/ppp/peers/gprs
+# This is pppd script for China Uni-com, used SimT5218 WCDMA
+# Usage:   root>pppd call gprs
+/dev/ttyUSB2
+115200
+logfile /var/log/pppd.log
+nocrtscts
+#local
+#noauth
+debug 
+nodetach
+usepeerdns
+noipdefault
+defaultroute
+user ""
+0.0.0.0:0.0.0.0
+ipcp-accept-local
+ipcp-accept-remote
+#noccp
+connect '/usr/sbin/chat -s -v -f /etc/ppp/peers/mu739/gprs-connect-chat-3gwap'
+disconnect '/usr/sbin/chat -s -v -f /etc/ppp/peers/mu739/gprs-disconnect-chat'

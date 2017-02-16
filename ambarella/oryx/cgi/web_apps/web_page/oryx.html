@@ -1,0 +1,325 @@
+<!doctype html>
+<html>
+  <header>
+    <title>Oryx Service Test</title>
+    <link rel="stylesheet"  type="text/css" href="css/jquery-ui-1.11.4.custom.min.css">
+    <script src="js/jquery-1.11.3.min.js"></script>
+    <script src="js/jquery-ui-1.11.4.custom.min.js"></script>
+    <script src="js/oryx.js"></script>
+    <script>
+$(function() {
+  $( ".accordion" ).accordion({collapsible: true,active:false, heightStyle:"content"});
+  $( "#tabs" ).tabs({collapsible: false,event: "mouseover",active:0});
+
+  $( ".radio" ).buttonset();
+  $(".input_button").button();
+  $("#stream_state_control").button({create: function(event, ui){set_stream_control_init_state();}});
+
+  $("#success_dialog").dialog({autoOpen: false,modal:true,resizable: false});
+  $("#err_dialog").dialog({autoOpen: false,modal:true,resizable: false});
+
+  $("#overlay_font_type").autocomplete({minLength:0,autoFocus: true,
+    create: function(event, ui){get_overlay_available_fonts_from_remote();},
+  });
+  $("#overlay_picture_file").autocomplete({minLength:0,autoFocus: true,
+    create: function(event, ui){get_overlay_available_bmps_from_remote();},
+  });
+
+  $( "#overlay_font_r,#overlay_font_g,#overlay_font_b" ).slider({min:0,max: 255,value: 127,step:1,
+    orientation: "horizontal", range: "min",
+    slide: function( event, ui ) { refresh_font_color_swatch();},
+    change: function( event, ui ) {refresh_font_color_swatch();}
+  });
+  $( "#overlay_font_r,#overlay_font_g,#overlay_font_b" ).slider( "value", 127 );
+  $( "#zoom_slider" ).slider({min : 0.25, max : 8.00, step: 0.01,
+    create: function( event, ui ) { $("#zoom").val(1.00); $( "#zoom_slider" ).slider( "value",1.00);},
+    slide: function(event, ui) { $("#zoom").val(ui.value); },
+    stop: function(event, ui) { set_dptz_zoom(ui.value); },
+  });
+  $( "#pan_slider" ).slider({min : -1.0, max : 1.0, step: 0.1,
+    create: function( event, ui ) { $("#pan").val(0); },
+    slide: function(event, ui) { $("#pan").val(ui.value); },
+    stop: function(event, ui) { set_dptz_pan(ui.value); },
+  });
+  $( "#tilt_slider" ).slider({min : -1.0, max : 1.0, step: 0.1,
+    create: function( event, ui ) { $("#tilt").val(0); },
+    slide: function(event, ui) { $("#tilt").val(ui.value); },
+    stop: function(event, ui) { set_dptz_tilt(ui.value); },
+  });
+  $( "#strength_slider" ).slider({min : 0.00, max : 20.00, step: 0.01,
+    create: function( event, ui ) { $("#strength").val(0);$( "#strength_slider" ).slider( "value",0);},
+    slide: function(event, ui) { $("#strength").val(ui.value); },
+    stop: function(event, ui) { set_dewarp(ui.value); },
+  });
+})
+    </script>
+    <style type="text/css">
+.ui-slider-horizontal {
+  height: 15px;
+  width: 300px;
+}
+.accordion{
+  margin:-17.6px -24.64px;
+}
+div{
+  margin-bottom:20px;
+}
+#overlay_font_r .ui-slider-range { background: #ef2929; }
+#overlay_font_r .ui-slider-handle { border-color: #ef2929; }
+#overlay_font_g .ui-slider-range { background: #8ae234; }
+#overlay_font_g .ui-slider-handle { border-color: #8ae234; }
+#overlay_font_b .ui-slider-range { background: #729fcf; }
+#overlay_font_b .ui-slider-handle { border-color: #729fcf; }
+    </style>
+  </header>
+
+  <body>
+    <div id="header" class="ui-accordion-header ui-state-default ui-corner-all ui-accordion-icons ui-accordion-header-icon"  style="margin-bottom:0px;">
+      <img src="css/images/logo.gif"  style="float:left;margin:5px 50px;" onload="adjust_log_size(this)" />
+      <h1 style="padding-left:200px;">Ambarella Oryx</h1>
+    </div>
+
+    <div id="tabs">
+      <ul>
+        <li><a href="#tabs-1">Video</a></li>
+        <li><a href="#tabs-2">Media</a></li>
+        <li><a href="#tabs-3">Audio</a></li>
+        <li><a href="#tabs-4">Image</a></li>
+        <li><a href="#tabs-5">Event</a></li>
+        <li><a href="#tabs-6">System</a></li>
+        <li><a href="#tabs-7">Sip</a></li>
+      </ul>
+
+      <div id="tabs-1">
+        <div class=accordion>
+          <h3>Encode control</h3>
+          <div>
+            <div id="video_enc_ctrl_stream">
+              <label>1.Stream:  </label>
+              <button id="stream_state_control"   onclick="stream_state_control()">Start</button>
+              <button id="get_stream_status"  class=input_button    onclick="get_stream_status()">Get status</button>
+            </div>
+            <div id="video_enc_ctrl_forceidr">
+              <label>2.Forceidr:  </label>
+              <label for="forceidr_stream_id">Stream ID</label>
+              <input id="forceidr_stream_id" class="ui-corner-all"  style="float:center;height:30px;width:60px" value=0 />
+              <button id="force_idr"  class=input_button   onclick="force_idr()">Set</button>
+            </div>
+          </div>
+
+          <h3>Overlay</h3>
+          <div>
+            <div id="video_overlay_add">
+              <label>1.Add area: </label>
+              <div style="border-style: solid;border-color: rgb(221, 221, 221);border-width: 2px;border-radius: 8px;padding:20px;">
+                <label for="overlay_add_stream_id">Stream ID</label>
+                <input id="overlay_add_stream_id" class="ui-corner-all"  style="float:center;height:30px;width:60px" value=0 />
+                <label for="overlay_rotate">Rotate</label>
+                <button id="overlay_rotate"  value=1 onclick="overlay_rotate()" class="input_button" >true</button>
+                <label for="overlay_state">State</label>
+                <button id="overlay_state"  value="enable" onclick="overlay_state()" class="input_button" >enable</button>
+                <br/>
+                <label for="overlay_layout_select">Layout</label>
+                <select  id="overlay_layout_select"  class="ui-state-default ui-corner-all" style="float:center;height:37px;margin:10px 0px;"  onclick="overlay_layout()">
+                  <option value=0 selected="selected">left top</option>
+                  <option value=1 >right top</option>
+                  <option value=2 >left bottom</option>
+                  <option value=3 >right bottom</option>
+                  <option value=4 >custom</option>
+                </select>
+                <span id="overlay_area_offset"  style="display:none">
+                  <label for="overlay_area_startx">start x</label>
+                  <input id="overlay_area_startx"  class="ui-corner-all"  style="float:center;height:30px;width:60px" value=0 />
+                  <label for="overlay_area_starty">start y</label>
+                  <input id="overlay_area_starty"  class="ui-corner-all" style="float:center;height:30px;width:60px"value=0 />
+                </span> <br/>
+
+                <div class="radio" id=type_radio style="border-radius: 0px;margin-bottom:0;">
+                  <label for="type_radio">Type</label>
+                  <input type="radio" id="overlay_type_string"  name="radio"  onclick="show_overlay_string()" class="ui-corner-custom"/>
+                  <label for="overlay_type_string">string</label>
+                  <input type="radio" id="overlay_type_time"  name="radio"  onclick="show_overlay_time()" />
+                  <label for="overlay_type_time">time</label>
+                  <input type="radio" id="overlay_type_picture"  name="radio" checked="checked" onclick="show_overlay_picture()" />
+                  <label for="overlay_type_picture">picture</label>
+                  <input type="radio" id="overlay_type_test"  name="radio"  onclick="show_overlay_test()" />
+                  <label for="overlay_type_test">test mode</label>
+                </div>
+
+                <div style="border-style: solid;border-color: rgb(221, 221, 221);border-width: 2px;border-radius: 8px;padding:10px;margin-bottom:10px">
+                  <div id="overlay_area_size" style="display:none;margin-bottom:10px">
+                    <label for="overlay_area_width">Area width</label>
+                    <input id="overlay_area_width"  type="text" class="ui-corner-all"  style="float:center;height:30px;width:60px" value=0 /> &nbsp
+                    <label for="overlay_area_height">Area height</label>
+                    <input id="overlay_area_height" type="text" class="ui-corner-all" style="float:center;height:30px;width:60px" value=0 />
+                  </div>
+
+                  <div id="overlay_text" style="display:none;margin-bottom:10px;">
+                    <span>Font setting: </span> <br />
+                    <div style="border-style: solid;border-color: rgb(221, 221, 221);border-width: 2px;border-radius: 8px;padding:5px;margin-bottom:10px">
+                      <label for="overlay_font_type">Type</label> 
+                      <input id="overlay_font_type"  type="text"  class="ui-corner-all"  style="float:center;height:30px;width:240px" value="" />
+                      <label for="overlay_font_size">Size</label>
+                      <input id="overlay_font_size"  type="text" class="ui-corner-all"  style="float:center;height:30px;width:60px" value=0 />
+                      <br/>
+                      <label for="overlay_font_outwidth">Outline width</label>
+                      <input id="overlay_font_outwidth"  type="text" class="ui-corner-all"  style="float:center;height:30px;width:100px" value=0 />
+                      <label for="overlay_font_italic">Italic size</label>
+                      <input id="overlay_font_italic"  type="text" class="ui-corner-all"  style="float:center;height:30px;width:100px" value=0 />
+                      <br/>
+                      <label for="overlay_font_horbold">Horizontal bold</label>
+                      <input id="overlay_font_horbold"  type="text" class="ui-corner-all"  style="float:center;height:30px;width:80px" value=0 />
+                      <label for="overlay_font_verbold">Vertical bold</label>
+                      <input id="overlay_font_verbold"  type="text" class="ui-corner-all"  style="float:center;height:30px;width:80px" value=0 />
+                      <br/>
+                      <label for="overlay_font_color">Color:</label>
+                      <div id="overlay_font_color" >
+                        <div id="overlay_font_r" style="float: left;clear: left;margin-left:10px;margin-top:5px;width: 250px;"></div>
+                        <div id="overlay_font_g" style="float: left;clear: left;margin-left:10px;width: 250px;"></div>
+                        <div id="overlay_font_b" style="float: left;clear: left;margin-left:10px;width: 250px;"></div>
+                        <div id="font_color_swatch" class="ui-widget-content ui-corner-all" style="width: 120px;height: 100px;margin-left: 280px;background-image: none;"></div>
+                      </div> <!-- end of  <div id="overlay_font_color">-->
+                    </div>
+                    <div id=overlay_string style="display:none;margin-bottom:10px;">
+                      <label for="overlay_string_text">Text</label>
+                      <input id="overlay_string_text"  type="text"  class="ui-corner-all"  style="float:center;height:30px;width:365px" value="" />
+                    </div>
+                  </div><!-- end of <div id="overlay_text" style="display:none"> -->
+
+                  <div id="overlay_picture" style="margin-bottom:10px;">
+                    <label for="overlay_picture_file">Bmp file</label>
+                    <input id="overlay_picture_file"  type="text" class="ui-corner-all"  style="float:center;height:30px;width:330px; margin-bottom:10px;" value=""/>
+                    <br/>
+                    <span>Bmp transparent setting: </span>
+                    <div style="border-style: solid;border-color: rgb(221, 221, 221);border-width: 2px;border-radius: 8px;padding:5px;margin-bottom:0px;">
+                      <label for="overlay_bmp_color_r">R</label>
+                      <input id="overlay_bmp_color_r"  type="text"  class="ui-corner-all"  style="float:center;height:30px;width:50px" value=255 />
+                      <label for="overlay_bmp_color_g">G</label>
+                      <input id="overlay_bmp_color_g"  type="text"  class="ui-corner-all"  style="float:center;height:30px;width:50px" value=255 />
+                      <label for="overlay_bmp_color_b">B</label>
+                      <input id="overlay_bmp_color_b"  type="text"  class="ui-corner-all"  style="float:center;height:30px;width:50px" value=255 />
+                      <label for="overlay_bmp_color_a">A</label>
+                      <input id="overlay_bmp_color_a"  type="text"  class="ui-corner-all"  style="float:center;height:30px;width:50px" value=255 />
+                      <label for="overlay_bmp_color_range">Range</label>
+                      <input id="overlay_bmp_color_range"  type="text" class="ui-corner-all"  style="float:center;height:30px;width:50px" value=20 /> <br />
+                    </div>
+                  </div>
+                </div>
+                <button id="add_overlay" class=input_button onclick="add_overlay()" style="margin: 0% 10%;">Apply</button>
+              </div>
+            </div><!-- end of  <div id="video_overlay_add">  -->
+
+            <div id="video_overlay_manipulate">
+              <label>2.Area manipulate:  </label>
+              <div style="border-style: solid;border-color: rgb(221, 221, 221);border-width: 2px;border-radius: 8px;padding:20px">
+                <div>
+                  <label for="overlay_stream_id">Stream ID</label>
+                  <input id="overlay_stream_id" class="ui-corner-all"  style="float:center;height:30px;width:60px" value=0 />
+                  <label for="overlay_area_id">Area ID</label>
+                  <input id="overlay_area_id" class="ui-corner-all"  style="float:center;height:30px;width:60px" value=0 />
+                  <select  id="overlay_manipulate_select"  class="ui-state-default ui-corner-all" style="float:center;height:37px;"  onclick="overlay_manipulate()">
+                    <option selected="selected">Enable</option>
+                    <option>Disable</option>
+                    <option>Delete</option>
+                    <option>Get</option>
+                  </select>
+                </div>
+                <button id="destroy_overlay"  class=input_button   onclick="destroy_overlay()">Delete all areas</button>
+                <button id="save_overlay_config"  class=input_button   onclick="save_overlay_config()">Save all configs</button>
+              </div>
+            </div>
+          </div>
+
+          <h3>Dptz/Dewarp</h3>
+          <div>
+            <div id="dptz">
+              <label>1.Dptz:  </label>
+              <label for="dptz_buffer_id">Buffer ID</label>
+              <input id="dptz_buffer_id" class="ui-corner-all"  style="float:center;height:30px;width:60px" value=0 />
+              <button id="set_dptz_buffer"  class=input_button   onclick="set_dptz_buffer()">Choose</button><br/><br/>
+              <div id="zoom_slider" style="margin-bottom:5px;margin-top:0px"></div>
+              <label for="zoom" >Zoom:</label>
+              <input type="text" id="zoom" readonly style="border:0; color:#f6931f; font-weight:bold;" />
+              <div id="pan_slider" style="margin-bottom:5px;margin-top:10px"></div>
+              <label for="pan">Pan:</label>
+              <input type="text" id="pan" readonly style="border:0; color:#f6931f; font-weight:bold;" />
+              <div id="tilt_slider" style="margin-bottom:5px;margin-top:10px"></div>
+              <label for="tilt">Tilt:</label>
+              <input type="text" id="tilt" readonly style="border:0; color:#f6931f; font-weight:bold;" />
+            </div>
+            <div id="dewarp">
+              <label>2.Dewarp:  </label>
+              <div id="strength_slider" style="margin-bottom:5px;margin-top:10px"></div>
+              <label for="strength">Strength:</label>
+              <input type="text" id="strength" readonly style="border:0; color:#f6931f; font-weight:bold;" />
+            </div>
+          </div>
+
+        </div> <!-- end of  <div class=accordion> -->
+      </div> <!-- end of  <div id="tabs-1">-->
+
+      <div id="tabs-2">
+        <div class=accordion>
+          <h3>Recording</h3>
+          <div id="media_recording">
+            <div id="media_recording_switch">
+              <label>1.Media:  </label>
+              <button id="media_start_recording"  class=input_button   onclick="media_start_recording()">Start</button>
+              <button id="media_stop_recording"  class=input_button    onclick="media_stop_recording()">Stop</button>
+            </div><!-- end of <div id="media_recording_switch"> -->
+            <div id="media_file_recording">
+              <label>2.File:  </label>
+              <button id="media_file_recording_start"  class=input_button   onclick="media_file_recording_start()">Start</button>
+              <button id="media_file_recording_stop"  class=input_button    onclick="media_file_recording_stop()">Stop</button>
+            </div><!-- end of <div id="media_file_recording"> -->
+            <div id="media_event_recording">
+              <label>3.Event:  </label>
+              <button id="media_event_recording"  class=input_button   onclick="media_event_recording()">Send</button>
+            </div><!-- end of <div id="media_event_recording"> -->
+          </div> <!-- end of <div id="media_recording">-->
+
+          <h3>Playback</h3>
+          <div id="media_playback">
+            <div id="media_playback_audio">
+              <label>Audio:  </label>
+              <div id="media_playback_audio_file" >
+                <div style="margin-bottom:5px;">Path
+                  <input id="media_playback_audio_file0"  type="text"  class="ui-corner-all"  style="float:center;height:30px;width:350px" value="" />
+                  <button onclick="media_playback_add_audio_file()" class="ui-corner-all" style="height:35px;width:35px">+</button>
+                </div>
+              </div><!-- end of <div id="media_playback_audio_file"> -->
+              <button id="media_palyback_audio_add"  class="input_button" style="icons:ui-icon-play;margin-left:35px;" onclick="media_palyback_audio_add()">Add file</button>
+              <button id="media_palyback_audio_play"  class="input_button" style="icons:ui-icon-play;" onclick="media_palyback_audio_play()">Play</button>
+              <button id="media_palyback_audio_pause"  class="input_button" style="icons:ui-icon-play;" onclick="media_palyback_audio_pause()">Pause</button>
+              <button id="media_palyback_audio_stop"  class="input_button" style="icons:ui-icon-play;" onclick="media_palyback_audio_stop()">Stop</button>
+            </div><!-- end of <div id="media_playback_audio">-->
+          </div><!-- end of <div id="media_playback"> -->
+        </div><!-- end of   <div class=accordion>-->
+      </div><!-- end of  <div id="tabs-2">-->
+
+      <div id="tabs-3">
+        <p>Audio to be continued</p>
+      </div><!-- end of  <div id="tabs-3">-->
+
+      <div id="tabs-4">
+        <p>Image to be continued</p>
+      </div><!-- end of  <div id="tabs-4">-->
+
+      <div id="tabs-5">
+        <p>Event to be continued</p>
+      </div><!-- end of  <div id="tabs-5">-->
+
+      <div id="tabs-6">
+        <p>System to be continued</p>
+      </div><!-- end of  <div id="tabs-6">-->
+
+      <div id="tabs-7">
+        <p>Sip to be continued</p>
+      </div><!-- end of  <div id="tabs-7">-->
+
+      <p id=success_dialog title=OK></p>
+      <p id="err_dialog" title=ERROR></p>
+    </div><!-- end of <div id="tabs"> -->
+  </body>
+</html>
+

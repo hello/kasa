@@ -1,0 +1,51 @@
+--- a/drivers/net/wireless/ath/ath6kl/debug.c
++++ b/drivers/net/wireless/ath/ath6kl/debug.c
+@@ -39,16 +39,23 @@ struct ath6kl_fwlog_slot {
+ 
+ int ath6kl_printk(const char *level, const char *fmt, ...)
+ {
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
+ 	struct va_format vaf;
++#endif
+ 	va_list args;
+ 	int rtn;
+ 
+ 	va_start(args, fmt);
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
+ 	vaf.fmt = fmt;
+ 	vaf.va = &args;
+ 
+ 	rtn = printk("%sath6kl: %pV", level, &vaf);
++#else
++	printk("%sath6kl: ", level);
++	rtn = vprintk(fmt, args);
++#endif
+ 
+ 	va_end(args);
+ 
+--- a/drivers/net/wireless/ath/main.c
++++ b/drivers/net/wireless/ath/main.c
+@@ -59,15 +59,22 @@ EXPORT_SYMBOL(ath_rxbuf_alloc);
+ 
+ void ath_printk(const char *level, const char *fmt, ...)
+ {
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
+ 	struct va_format vaf;
++#endif
+ 	va_list args;
+ 
+ 	va_start(args, fmt);
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
+ 	vaf.fmt = fmt;
+ 	vaf.va = &args;
+ 
+ 	printk("%sath: %pV", level, &vaf);
++#else
++	printk("%sath: ", level);
++	vprintk(fmt, args);
++#endif
+ 
+ 	va_end(args);
+ }

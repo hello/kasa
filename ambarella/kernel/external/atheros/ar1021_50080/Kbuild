@@ -1,0 +1,110 @@
+EXTRA_CFLAGS	+= $(AMBARELLA_DRV_CFLAGS)
+EXTRA_AFLAGS	+= $(AMBARELLA_DRV_AFLAGS)
+EXTRA_LDFLAGS	+= $(AMBARELLA_DRV_LDFLAGS)
+
+LOCAL_COMPAT	= $(AMB_TOPDIR)/kernel/external/atheros/ar1021_50080/drivers
+
+EXTRA_CFLAGS	+= -I$(LOCAL_COMPAT)	\
+		-I$(LOCAL_COMPAT)/include_local	\
+		-I$(LOCAL_COMPAT)/include_local/net			\
+		-I$(LOCAL_COMPAT)/drivers/net/wireless/ath/ath6kl	\
+		-include $(LOCAL_COMPAT)/include_local/linux/compat-2.6.h	\
+		-include $(LOCAL_COMPAT)/include_local/linux/compat_autoconf.h
+
+EXTRA_CFLAGS += -include $(LOCAL_COMPAT)/include_local/linux/ieee80211.h	\
+	-include $(LOCAL_COMPAT)/include_local/linux/nl80211.h	\
+	-include $(LOCAL_COMPAT)/include_local/net/regulatory.h	\
+	-include $(LOCAL_COMPAT)/include_local/net/cfg80211.h
+
+EXTRA_CFLAGS	+= -D__KERNEL__ -DCONFIG_ATH6KL_DEBUG=y \
+	-DCONFIG_CFG80211_INTERNAL_REGDB=y -DCONFIG_ATH6KL_REGDB_AS_CFG80211_REGDB \
+	-DCONFIG_CFG80211=y -DCONFIG_CFG80211_WEXT=y -DCONFIG_CFG80211_DEFAULT_PS=y \
+	-DATH6KL_SUPPORT_NETLINK_KERNEL3_8 -DATH6KL_SUPPORT_NETLINK_KERNEL3_7
+
+#############################################
+
+obj-m += compat.o
+compat-y := drivers/compat/main.o
+
+#############################################
+
+obj-m += cfg80211.o
+cfg80211-y += drivers/cfg80211/core.o \
+	drivers/cfg80211/sysfs.o \
+	drivers/cfg80211/radiotap.o \
+	drivers/cfg80211/util.o \
+	drivers/cfg80211/reg.o \
+	drivers/cfg80211/scan.o \
+	drivers/cfg80211/nl80211.o \
+	drivers/cfg80211/mlme.o \
+	drivers/cfg80211/ibss.o \
+	drivers/cfg80211/sme.o \
+	drivers/cfg80211/chan.o \
+	drivers/cfg80211/ethtool.o \
+	drivers/cfg80211/mesh.o
+
+cfg80211-$(CONFIG_CFG80211_DEBUGFS) += drivers/debugfs.o
+cfg80211-$(CONFIG_CFG80211_WEXT) += drivers/cfg80211/wext-compat.o \
+	drivers/cfg80211/wext-sme.o
+
+cfg80211-y += drivers/cfg80211/regdb.o
+
+ccflags-y += -D__CHECK_ENDIAN__
+
+#############################################
+obj-$(CONFIG_ATH6KL_SDIO) := ath6kl_sdio.o
+ath6kl_sdio-y += drivers/ath6kl/debug.o
+ath6kl_sdio-y += drivers/ath6kl/hif.o
+ath6kl_sdio-y += drivers/ath6kl/htc.o
+ath6kl_sdio-y += drivers/ath6kl/bmi.o
+ath6kl_sdio-y += drivers/ath6kl/cfg80211.o
+ath6kl_sdio-y += drivers/ath6kl/cfg80211_btcoex.o
+ath6kl_sdio-y += drivers/ath6kl/init.o
+ath6kl_sdio-y += drivers/ath6kl/main.o
+ath6kl_sdio-y += drivers/ath6kl/txrx.o
+ath6kl_sdio-y += drivers/ath6kl/wmi.o
+ath6kl_sdio-y += drivers/ath6kl/wmi_btcoex.o
+ath6kl_sdio-y += drivers/ath6kl/sdio.o
+ath6kl_sdio-$(CONFIG_NL80211_TESTMODE) += testmode.o
+ath6kl_sdio-y += drivers/ath6kl/rttm.o
+ath6kl_sdio-y += drivers/ath6kl/diag.o
+ath6kl_sdio-y += drivers/ath6kl/htcoex.o
+ath6kl_sdio-y += drivers/ath6kl/ath_netlink.o
+ath6kl_sdio-$(CONFIG_QC_INTERNAL) += drivers/ath6kl/intra_reg.o
+ath6kl_sdio-y += drivers/ath6kl/pm.o
+ath6kl_sdio-y += drivers/ath6kl/p2p.o
+ath6kl_sdio-y += drivers/ath6kl/ap.o
+ath6kl_sdio-y += drivers/ath6kl/reg.o
+ath6kl_sdio-y += drivers/ath6kl/regdb.o
+
+obj-$(CONFIG_ATH6KL_USB)+= ath6kl_usb.o
+ath6kl_usb-y += drivers/ath6kl/debug.o
+ath6kl_usb-y += drivers/ath6kl/htc_pipe.o
+ath6kl_usb-y += drivers/ath6kl/bmi.o
+ath6kl_usb-y += drivers/ath6kl/cfg80211.o
+ath6kl_usb-y += drivers/ath6kl/cfg80211_btcoex.o
+ath6kl_usb-y += drivers/ath6kl/init.o
+ath6kl_usb-y += drivers/ath6kl/main.o
+ath6kl_usb-y += drivers/ath6kl/txrx.o
+ath6kl_usb-y += drivers/ath6kl/wmi.o
+ath6kl_usb-y += drivers/ath6kl/wmi_btcoex.o
+ath6kl_usb-y += drivers/ath6kl/usb.o
+ath6kl_usb-$(CONFIG_NL80211_TESTMODE) += drivers/ath6kl/testmode.o
+ath6kl_usb-y += drivers/ath6kl/rttm.o
+ath6kl_usb-y += drivers/ath6kl/diag.o
+ath6kl_usb-y += drivers/ath6kl/htcoex.o
+ath6kl_usb-y += drivers/ath6kl/ath_netlink.o
+ath6kl_usb-$(CONFIG_QC_INTERNAL) += drivers/ath6kl/intra_reg.o
+ath6kl_usb-y += drivers/ath6kl/pm.o
+ath6kl_usb-y += drivers/ath6kl/p2p.o
+ath6kl_usb-y += drivers/ath6kl/ap.o
+ath6kl_usb-y += drivers/ath6kl/reg.o
+ath6kl_usb-y += drivers/ath6kl/regdb.o
+ath6kl_usb-$(CONFIG_ATHTST_SUPPORT) += drivers/ath6kl/ce_athtst.o
+ath6kl_usb-$(CONFIG_ACS_SUPPORT) += drivers/ath6kl/acs.o
+ath6kl_usb-$(CONFIG_ACL_SUPPORT) += drivers/ath6kl/acl_ioctl.o
+ath6kl_usb-$(CONFIG_TX99_SUPPORT) += drivers/ath6kl/tx99_ioctl.o
+ath6kl_usb-$(CONFIG_DIRECT_AUDIO_SUPPORT) += drivers/ath6kl/direct_audio.o
+
+#############################################
+

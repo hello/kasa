@@ -1,0 +1,14 @@
+ambarella/oryx/services:
+  this directory includes the instantiation of the oryx classes.
+  Each service/server is a process, and child process of service_manager.
+  service_manager spawns the services and wait for the services to register,
+  and service_manager call init process of the services in a pre-defined order.
+
+  After init done, service_manager does not exit, instead, it monitors the child
+  processes and acts as watchdog.
+
+  When exiting, service_manager will be responsible for stopping the services in
+  required order (if needed).
+
+  "base" is the base class of all services/server, because they all look similar.
+  Any other types of services derive from "AMServiceBase". 

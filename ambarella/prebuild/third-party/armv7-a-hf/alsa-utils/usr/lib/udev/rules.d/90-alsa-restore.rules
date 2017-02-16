@@ -1,0 +1,8 @@
+ACTION=="add", SUBSYSTEM=="sound", KERNEL=="controlC*", KERNELS!="card*", GOTO="alsa_restore_go"
+GOTO="alsa_restore_end"
+
+LABEL="alsa_restore_go"
+TEST!="/etc/alsa/state-daemon.conf", RUN+="/usr/sbin/alsactl -E ALSA_CONFIG_PATH=/etc/alsa/alsactl.conf --initfile=/usr/lib/alsa/init/00main restore /dev/$name"
+TEST=="/etc/alsa/state-daemon.conf", RUN+="/usr/sbin/alsactl -E ALSA_CONFIG_PATH=/etc/alsa/alsactl.conf --initfile=/usr/lib/alsa/init/00main nrestore /dev/$name"
+
+LABEL="alsa_restore_end"

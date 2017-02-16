@@ -1,0 +1,198 @@
+<html>
+
+<header>
+  <link rel="stylesheet" href="css/jquery-ui-1.10.1.custom.css">
+  <script src="js/jquery-1.9.1.js"></script>
+  <script src="js/jquery-ui-1.10.1.custom.js"></script>
+  <script>
+  var vin_width = 0;
+  var vin_height = 0;
+
+  var circle_offset_x = 0;
+  var circle_offset_y = 0;
+
+  var strength = 0;
+
+  var zoom_num = 1;
+  var zoom_denum = 1;
+  var zoom = zoom_num / zoom_denum;
+  var mode = 1;
+  var pano_h_fov = 0;
+
+  $(function() {
+    $( "#accordion" ).accordion();
+    $("#input_button").button();
+    $( "#radio" ).buttonset();
+    $("#panorama").hide();
+    $("#panorama_h").val(pano_h_fov);
+
+    $.get("/cgi-bin/get_vin.cgi",{}, function (data, textStatus){
+	var vin = data.split("x");
+	vin_width = parseInt(vin[0]);
+	vin_height = parseInt(vin[1]);
+	circle_offset_x = vin_width / 2;
+	circle_offset_y = vin_height / 2;
+	$("#circle_x").val(circle_offset_x);
+	$("#circle_y").val(circle_offset_y);
+	});
+  });
+
+  function show_pano() {
+    $("#panorama").show();
+    mode = 2;
+  }
+
+  function hide_pano() {
+    $("#panorama").hide();
+    mode = 1;
+  }
+
+
+  function input_offset() {
+    if ($("#input").val() == "" || $("#pixel_width_in_um").val() == "" || $("#h_width_mm").val() == "") {
+	$("<div>Please input all fields</div>").dialog();
+	return -1;
+    }
+    $( "#accordion" ).accordion({ active: 1 });
+  if (strength == 0) {
+    $( "#slider" ).slider({
+      min : 0,
+      max : 20,
+      step: 0.01,
+      value : 0,
+      slide: function(event, ui) {
+              $("#strength").val(ui.value);
+             },
+      stop: function(event, ui) {
+              //$("#strength").val($("#slider").slider('value'));
+/*
+              var real_hfov = $("#input").val() * $("#pixel_width_in_um").val() * vin_width / $("#h_width_mm").val() / 1000;
+              var theta=(real_hfov - 1) * $("#slider").slider('value') / 20 + 1;
+              theta = theta / 2 * Math.PI / 180;
+              theta = Math.atan(theta)/theta;
+              theta = theta * real_hfov;
+              theta = theta.toFixed(2);
+
+              $("#H_FOV").val(theta);
+*/
+              $.get("/cgi-bin/ldc.cgi", {STRENGTH: ui.value, X: $("#circle_x").val(), Y:$("#circle_y").val(), zoom_num:zoom_num, zoom_denum:zoom_denum, mode: mode, pano_h_fov: pano_h_fov  });
+              strength = $("#slider").slider('value');
+            },
+    });
+  }
+
+    $("#slider").slider("enable");
+    $("#strength").val($("#slider").slider('value'));
+    if ($("#panorama_h").val() != "") {
+      pano_h_fov = $("#panorama_h").val();
+    }
+
+
+  if (zoom_num == 1) {
+    $( "#zoom_slider" ).slider({
+      min : -3,
+      max : 3,
+      step: 0.01,
+      value : 0,
+      slide: function(event, ui) {
+        if (ui.value > 0 ) {
+                zoom_num = (ui.value + 1)  * 1000;
+                zoom_denum = 1000;
+        } else if (ui.value < 0 ) {
+                zoom_num = 1000;
+                zoom_denum = (ui.value - 1) * (-1000);
+        } else if (ui.value == 0 ) {
+                zoom_num = 1;
+                zoom_denum = 1;
+        }
+
+        zoom = zoom_num / zoom_denum;
+        $("#zoom").val(zoom.toFixed(2));
+      },
+      stop: function(event, ui) {
+	$.get("/cgi-bin/ldc.cgi", {STRENGTH: $("#slider").slider('value'), X: $("#circle_x").val(), Y:$("#circle_y").val(), zoom_num:zoom_num, zoom_denum:zoom_denum, mode: mode, pano_h_fov: pano_h_fov  });
+
+      },
+    });
+  }
+
+    $("#zoom").val(zoom.toFixed(2));
+
+    if (!$("#jpeg").length) {
+      var img = $('<img id="jpeg" src="http://10.0.0.2:8080/" width=50%>');
+      img.attr("src", "http://" + window.location.hostname + ":8080/");
+      img.appendTo("#stream");
+    }
+  }
+  </script>
+
+<style type="text/css">
+.ui-slider-horizontal {
+    height: 15px;
+    width: 300px;
+}
+
+</style>
+
+</header>
+
+
+<body>
+<div id="header" class="ui-accordion-header ui-state-default ui-corner-all ui-accordion-icons ui-accordion-header-icon">
+<h1>
+Ambarella Smart LDC
+</h1>
+</div>
+
+<div id="accordion">
+
+<h3>Step 1 : Input Circle Center Position</h3>
+<div>
+<label>Circle Center Position</label>
+<p>
+<label for="circle_x">X :</label>
+<input id="circle_x" class="ui-corner-all" style="float:center;height:30px;width:100px">
+<label for="circle_y">Y :</label>
+<input id="circle_y" class="ui-corner-all" style="float:center;height:30px;width:100px">
+</p>
+
+<div id="radio">
+  <input type="radio" id="radio1" name="radio" checked="checked" onclick="hide_pano()"><label for="radio1">Rectilinear</label>
+  <input type="radio" id="radio2" name="radio" onclick="show_pano()"><label for="radio2">Panorama</label>
+</div>
+
+<p>
+<div id="panorama">
+<label for="panorama">Panorama H FOV :</label>
+<input id="panorama_h" class="ui-corner-all" style="float:center;height:30px;width:100px">
+</div>
+</p>
+
+<div title="Next" value="Next">
+<button id="input_button" clasee="ui-corner-all" onclick="input_offset()" >Next</button>
+</div>
+
+</div>
+
+<h3>Step 2 : Specify the Strength</h3>
+<div style="height:10%;">
+<div id="slider"></div>
+<label for="strength">Strength:</label>
+<input type="text" id="strength" readonly style="border:0; color:#f6931f; font-weight:bold;">
+
+<p>
+<div id="zoom_slider"></div>
+<label for="zoom">Zoom:</label>
+<input type="text" id="zoom" readonly style="border:0; color:#f6931f; font-weight:bold;">
+
+</div>
+
+
+</div>
+
+<div id="stream" style="text-align:center">
+</div>
+
+</body>
+</html>
+

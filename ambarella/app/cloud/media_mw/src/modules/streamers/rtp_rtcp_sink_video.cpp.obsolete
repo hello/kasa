@@ -1,0 +1,1503 @@
+/*
+ * rtp_rtcp_sink_video.cpp
+ *
+ * History:
+ *    2013/11/24 - [Zhi He] created file
+ *
+ * Copyright (C) 2013, Ambarella, Inc.
+ *
+ * All rights reserved. No Part of this file may be reproduced, stored
+ * in a retrieval system, or transmitted, in any form, or by any means,
+ * electronic, mechanical, photocopying, recording, or otherwise,
+ * without the prior consent of Ambarella, Inc.
+ */
+
+#include <unistd.h>
+#include <fcntl.h>
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <semaphore.h>
+#include <errno.h>
+
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <netdb.h>
+#include <pthread.h>
+#include <poll.h>
+
+#include "common_config.h"
+#include "common_types.h"
+#include "common_osal.h"
+#include "common_utils.h"
+
+#include "common_log.h"
+
+#include "common_base.h"
+
+#include "common_network_utils.h"
+
+#include "media_mw_if.h"
+#include "media_mw_utils.h"
+#include "framework_interface.h"
+#include "mw_internal.h"
+#include "dsp_platform_interface.h"
+#include "streaming_if.h"
+#include "modules_interface.h"
+
+#include "rtp_rtcp_sink_video.h"
+
+DCONFIG_COMPILE_OPTION_CPPFILE_IMPLEMENT_BEGIN
+DCODE_DELIMITER;
+
+static TU8* _find_next_start_code(TU8* p, TMemSize len)
+{
+    TUint state = 0;
+
+    while (len) {
+        switch (state) {
+            case 0:
+                if (!(*p)) {
+                    state = 1;
+                }
+                break;
+
+            case 1: //0
+                if (!(*p)) {
+                    state = 2;
+                } else {
+                    state = 0;
+                }
+                break;
+
+            case 2: //0 0
+                if (!(*p)) {
+                    state = 3;
+                } else {
+                    state = 0;
+                }
+                break;
+
+            case 3: //0 0 0
+                if (!(*p)) {
+                    state = 3;
+                } else if (1 == (*p)) {
+                    return (p + 1);
+                } else {
+                    state = 0;
+                }
+                break;
+
+            default:
+                LOG_FATAL("impossible to comes here\n");
+                break;
+
+        }
+        p++;
+        len --;
+    }
+
+    return NULL;
+}
+
+IStreamingTransmiter* gfCreateVideoRtpRtcpTransmiter(const TChar* pname, const volatile SPersistMediaConfig * pPersistMediaConfig, IMsgSink* pMsgSink, TComponentIndex index)
+{
+    return CVideoRTPRTCPSink::Create(pname, pPersistMediaConfig, pMsgSink, index);
+}
+
+IStreamingTransmiter* CVideoRTPRTCPSink::Create(const TChar* pname, const volatile SPersistMediaConfig * pPersistMediaConfig, IMsgSink* pMsgSink, TComponentIndex index)
+{
+    CVideoRTPRTCPSink *result = new CVideoRTPRTCPSink(pname, pPersistMediaConfig, pMsgSink, index);
+    if (result && result->Construct() != EECode_OK) {
+        delete result;
+        result = NULL;
+    }
+    return result;
+}
+
+CVideoRTPRTCPSink::CVideoRTPRTCPSink(const TChar* pname, const volatile SPersistMediaConfig * pPersistMediaConfig, IMsgSink* pMsgSink, TComponentIndex index)
+    : inherited(pname, index)
+    , mStreamingType(IMediaParameters::StreamTransportType_RTP)
+    , mProtocolType(IMediaParameters::ProtocolType_UDP)
+    , mFormat(IMediaParameters::StreamFormat_H264)
+    , mType(IMediaParameters::StreamType_Video)
+    , mpClockReference(NULL)
+    //, mpMutex(NULL)
+    , mpConfig(pPersistMediaConfig)
+    , mpMsgSink(pMsgSink)
+    , mbRTPSocketSetup(0)
+    , mPayloadType(RTP_PT_H264)
+    , mbSrBuilt(0)
+    , mRTPSocket(-1)
+    , mRTCPSocket(-1)
+    , mRTPPort(1800)
+    , mRTCPPort(1801)
+    , mCurrentTime(0)
+    , mpRTPBuffer(NULL)
+    , mRTPBufferLength(0)
+    , mRTPBufferTotalLength(DRecommandMaxUDPPayloadLength + 32)
+    , mpRTCPBuffer(NULL)
+    , mRTCPBufferLength(0)
+    , mRTCPBufferTotalLength(128)
+    , mpExtraData(NULL)
+    , mExtraDataSize(0)
+//    , mpDumpFile(NULL)
+//    , mpDumpFile1(NULL)
+{
+    memset(&mInfo, 0x0, sizeof(mInfo));
+    new(&mSubSessionList) CIDoubleLinkedList();
+    new(&mTCPSubSessionList) CIDoubleLinkedList();
+}
+
+EECode CVideoRTPRTCPSink::Construct()
+{
+    DSET_MODULE_LOG_CONFIG(ELogModuleStreamingTransmiter);
+    //mConfigLogLevel = ELogLevel_Info;
+#if 0
+    if ((mpMutex = CIMutex::Create(false)) == NULL){
+        LOGM_FATAL("CVideoRTPRTCPSink::Construct(), CMutex::Create() fail.\n");
+        return EECode_NoMemory;
+    }
+#endif
+    mpRTPBuffer = (TU8*)malloc(mRTPBufferTotalLength);
+    if (DUnlikely(!mpRTPBuffer)) {
+        LOGM_FATAL("NO Memory.\n");
+        return EECode_NoMemory;
+    }
+
+    mpRTCPBuffer = (TU8*)malloc(mRTCPBufferTotalLength);
+    if (DUnlikely(!mpRTCPBuffer)) {
+        LOGM_FATAL("NO Memory.\n");
+        return EECode_NoMemory;
+    }
+
+    mpClockReference = mpConfig->p_system_clock_reference;
+
+#if 0
+    //clear dump file
+    TChar filename[128] = {0};
+    snprintf(filename, 127, "streaming_in_%d.h264", mIndex);
+    mpDumpFile = fopen(filename, "wb");
+
+    if (DLikely(mpDumpFile)) {
+        fclose(mpDumpFile);
+        mpDumpFile = NULL;
+    } else {
+        LOG_WARN("open mpDumpFile fail.\n");
+    }
+
+    //clear dump file
+    snprintf(filename, 127, "streaming_out_udp_%d.h264", mIndex);
+    mpDumpFile1 = fopen(filename, "wb");
+
+    if (DLikely(mpDumpFile1)) {
+        fclose(mpDumpFile1);
+        mpDumpFile1 = NULL;
+    } else {
+        LOG_WARN("open mpDumpFile1 fail.\n");
+    }
+
+    snprintf(filename, 127, "streaming_out_tcp_%d.h264", mIndex);
+    mpDumpFile1 = fopen(filename, "wb");
+
+    if (DLikely(mpDumpFile1)) {
+        fclose(mpDumpFile1);
+        mpDumpFile1 = NULL;
+    } else {
+        LOG_WARN("open mpDumpFile1 fail.\n");
+    }
+#endif
+
+    return EECode_OK;
+}
+
+void CVideoRTPRTCPSink::Delete()
+{
+#if 0
+    if (mpMutex) {
+        mpMutex->Delete();
+        mpMutex = NULL;
+    }
+#endif
+
+    if (mpRTPBuffer) {
+        free(mpRTPBuffer);
+        mpRTPBuffer = NULL;
+    }
+
+    if (mpRTCPBuffer) {
+        free(mpRTCPBuffer);
+        mpRTCPBuffer = NULL;
+    }
+
+    if (mRTPSocket >= 0) {
+        ::close(mRTPSocket);
+        mRTPSocket = -1;
+    }
+
+    if (mRTCPSocket >= 0) {
+        ::close(mRTCPSocket);
+        mRTCPSocket = -1;
+    }
+
+    if (mpExtraData) {
+        free(mpExtraData);
+        mpExtraData = NULL;
+    }
+
+    inherited::Delete();
+}
+
+CVideoRTPRTCPSink::~CVideoRTPRTCPSink()
+{
+#if 0
+    if (mpMutex) {
+        mpMutex->Delete();
+        mpMutex = NULL;
+    }
+#endif
+
+    if (mpRTPBuffer) {
+        free(mpRTPBuffer);
+        mpRTPBuffer = NULL;
+    }
+
+    if (mpRTCPBuffer) {
+        free(mpRTCPBuffer);
+        mpRTCPBuffer = NULL;
+    }
+
+    if (mRTPSocket >= 0) {
+        ::close(mRTPSocket);
+        mRTPSocket = -1;
+    }
+
+    if (mRTCPSocket >= 0) {
+        ::close(mRTCPSocket);
+        mRTCPSocket = -1;
+    }
+
+    if (mpExtraData) {
+        free(mpExtraData);
+        mpExtraData = NULL;
+    }
+
+    mSubSessionList.~CIDoubleLinkedList();
+    mTCPSubSessionList.~CIDoubleLinkedList();
+}
+
+EECode CVideoRTPRTCPSink::SetupContext(IMediaParameters::StreamTransportType type, IMediaParameters::ProtocolType protocol_type, const SStreamCodecInfos* infos, TTime start_pts)
+{
+    return EECode_OK;
+}
+
+EECode CVideoRTPRTCPSink::DestroyContext()
+{
+    return EECode_OK;
+}
+
+EECode CVideoRTPRTCPSink::UpdateStreamFormat(IMediaParameters::StreamType type, IMediaParameters::StreamFormat format)
+{
+    ASSERT(IMediaParameters::StreamType_Video == type);
+    ASSERT(IMediaParameters::StreamFormat_H264 == format);
+    return EECode_OK;
+}
+
+EECode CVideoRTPRTCPSink::Start()
+{
+    return EECode_OK;
+}
+
+EECode CVideoRTPRTCPSink::Stop()
+{
+    return EECode_OK;
+}
+void CVideoRTPRTCPSink::udpSendData(TU8* p_data, TMemSize size, TTime pts, TUint update_time_stamp, TUint key_frame)
+{
+    CIDoubleLinkedList::SNode* p_node = mSubSessionList.FirstNode();
+    SSubSessionInfo* sub_session = NULL;
+    while (p_node) {
+        sub_session = (SSubSessionInfo*)p_node->p_context;
+        if (DLikely(sub_session)) {
+            if (DUnlikely(sub_session->is_closed)) {
+                LOGM_WARN("sub_session %p is_closed\n", sub_session);
+                p_node = mSubSessionList.NextNode(p_node);
+                continue;
+            }
+
+            if (DUnlikely(sub_session->wait_first_key_frame)) {
+                if (!key_frame) {
+                    LOGM_WARN("wait key frame, skip\n");
+                    p_node = mSubSessionList.NextNode(p_node);
+                    continue;
+                } else if (1 == key_frame) {
+                    sub_session->wait_first_key_frame = 0;
+                } else if (DLikely(2 == key_frame)) {
+                    sub_session->send_extradata = 1;
+                }
+            } else {
+                ASSERT(1 == sub_session->send_extradata);
+            }
+
+            if (DUnlikely(!sub_session->is_started)) {
+                sub_session->cur_pts = sub_session->start_pts;
+                sub_session->start_ts = (TU32)pts;
+                sub_session->is_started = 1;
+            }
+            TU32 timestamp = sub_session->cur_pts;//(TU32)sub_session->start_pts + (TU32)pts - (TU32)sub_session->start_ts;
+            updateSendRtcp(sub_session, timestamp,(TU32)size);
+            //printf("CVideoRTPRTCPSink::udpSendData --- original[%u], new[%u], ts[%u][%u],start_pts[%lld]\n",(TU32)sub_session->cur_pts,timestamp,(TU32)pts,sub_session->start_ts,sub_session->start_pts);
+
+            p_data[2] = sub_session->seq_number >> 8;
+            p_data[3] = sub_session->seq_number & 0xff;
+            p_data[4] = (timestamp >> 24) & 0xff;
+            p_data[5] = (timestamp >> 16) & 0xff;
+            p_data[6] = (timestamp >> 8) & 0xff;
+            p_data[7] = timestamp & 0xff;
+            TU32 ssrc = sub_session->rtp_ssrc;
+            p_data[8] = (ssrc >> 24) & 0xff;
+            p_data[9] = (ssrc >> 16) & 0xff;
+            p_data[10] = (ssrc >> 8) & 0xff;
+            p_data[11] = ssrc & 0xff;
+
+            sub_session->seq_number ++;
+            LOGM_DEBUG("[video pts]: sub_session->cur_pts %lld\n", sub_session->cur_pts);
+            LOGM_DEBUG("send data, size %ld, %02x %02x %02x %02x, %02x %02x %02x %02x\n", size, p_data[12], p_data[13], p_data[14], p_data[15], p_data[16], p_data[17], p_data[18], p_data[19]);
+retry_sendto:
+            TInt ret = sendto(mRTPSocket, p_data, size, 0, (struct sockaddr*)&sub_session->addr_port, sizeof(struct sockaddr));
+            if (DUnlikely(ret < 0)) {
+                TInt err = errno;
+                if(err == EINTR || err == EWOULDBLOCK || err == EAGAIN) {
+                    LOGM_ERROR("try again\n");
+                    goto retry_sendto;
+                }
+                perror("sendto");
+                LOGM_ERROR("udpSendData failed --- errno = %d, mRTPSocket %d\n", err, mRTPSocket);
+
+                sub_session->is_closed = 1;
+                {
+                    LOGM_INFO("send EMSGType_StreamingError_TCPSocketConnectionClose msg, sub_session %p\n", sub_session);
+                    SMSG msg;
+                    memset(&msg, 0x0, sizeof(msg));
+                    msg.owner_id = DGENERIC_ID_FROM_COMPONENT_TYPE_INDEX(EGenericComponentType_StreamingTransmiter, 0);
+                    msg.owner_type = EGenericComponentType_StreamingTransmiter;
+                    msg.owner_index= 0;
+                    msg.pExtra = NULL;
+                    msg.needFreePExtra = 0;
+
+                    msg.code = EMSGType_StreamingError_UDPSocketInvalidArgument;
+                    msg.p0 = (TULong)sub_session->parent;
+                    msg.p1 = (TULong)sub_session->parent->p_streaming_transmiter_filter;
+                    msg.p2 = (TULong)sub_session->parent->p_server;
+                    mpMsgSink->MsgProc(msg);
+                }
+            }else{
+                rtcp_stat_t *s = &sub_session->rtcp_stat;
+                s->octet_count += size;
+                ++s->packet_count;
+            }
+
+            if (update_time_stamp) {
+                if (DLikely(sub_session->p_content && (90000 == sub_session->p_content->video_framerate_num) && (sub_session->p_content->video_framerate_den))) {
+                    sub_session->cur_pts += sub_session->p_content->video_framerate_den;
+                    //LOGM_PRINTF("sub_session->cur_pts, framerate den %d\n", sub_session->p_content->video_framerate_den);
+                } else {
+                    sub_session->cur_pts += 3003;
+                }
+#if 0
+                TTime time_diff = ((TU64)(mpClockReference->GetCurrentTime() - sub_session->begin_time)) >> 7;
+                TTime pts_diff = ((TU64)(sub_session->cur_pts - sub_session->start_pts)) >> 7;
+
+                time_diff = time_diff * 9;
+                pts_diff = pts_diff * 100;
+                // 1/70000
+                if ((21000 + time_diff) < pts_diff) {
+                    LOGM_INFO("force pts drift backword, time_diff %lld, pts_diff %lld, diff %lld\n", time_diff, pts_diff, pts_diff - time_diff);
+                    sub_session->cur_pts -= (sub_session->p_content->video_framerate_den) >> 2;
+                } else if ((21000 + pts_diff) < time_diff) {
+                    LOGM_INFO("force pts drift forward, time_diff %lld, pts_diff %lld, diff %lld\n", time_diff, pts_diff, time_diff - pts_diff);
+                    sub_session->cur_pts += (sub_session->p_content->video_framerate_den) >> 2;
+                }
+#endif
+            }
+        }
+        p_node = mSubSessionList.NextNode(p_node);
+    }
+}
+
+void CVideoRTPRTCPSink::tcpSendData(TU8* p_data, TMemSize size, TTime pts, TUint update_time_stamp, TUint key_frame)
+{
+    CIDoubleLinkedList::SNode* p_node = mTCPSubSessionList.FirstNode();
+    SSubSessionInfo* sub_session = NULL;
+    while (p_node) {
+        sub_session = (SSubSessionInfo*)p_node->p_context;
+        if (DLikely(sub_session)) {
+
+            if (DUnlikely(sub_session->is_closed)) {
+                LOGM_WARN("sub_session %p is_closed\n", sub_session);
+                p_node = mTCPSubSessionList.NextNode(p_node);
+                continue;
+            }
+
+            if (DUnlikely(sub_session->wait_first_key_frame)) {
+                if (!key_frame) {
+                    LOGM_NOTICE("wait key frame, skip\n");
+                    p_node = mTCPSubSessionList.NextNode(p_node);
+                    continue;
+                } else if (1 == key_frame) {
+                    sub_session->wait_first_key_frame = 0;
+                } else if (DLikely(2 == key_frame)) {
+                    sub_session->send_extradata = 1;
+                }
+            } else {
+                ASSERT(1 == sub_session->send_extradata);
+            }
+
+            if (DUnlikely(!sub_session->is_started)) {
+
+                sub_session->statistics.first_seq_num = sub_session->seq_number;
+                sub_session->statistics.cur_seq_num = sub_session->seq_number;
+
+                sub_session->statistics.octet_count = size;
+                sub_session->statistics.packet_count = 1;
+                sub_session->statistics.last_octet_count = size;
+
+                sub_session->rtcp_sr_cooldown = 128;
+                sub_session->rtcp_sr_current_count = 0;
+
+                sub_session->cur_pts = sub_session->start_pts;
+            }
+
+            ASSERT(sub_session->rtp_over_rtsp);
+            p_data[1] = sub_session->rtp_channel;
+
+#if 0
+            TTime time_gap = mpClockReference->GetCurrentTime() - sub_session->begin_time;
+            TU32 time_gap_u32 = time_gap & 0xffffffff;
+            LOGM_PRINTF("time_gap %lld, time_gap_u32 %d, sub_session->cur_pts %d\n", time_gap, time_gap_u32, sub_session->cur_pts);
+            if (time_gap_u32 > (sub_session->cur_pts + 18000)) {
+                sub_session->cur_pts += sub_session->p_content->video_framerate_den;
+                LOGM_WARN("too slow, gap %d\n", time_gap_u32 - sub_session->cur_pts);
+            } else if ((time_gap_u32 + 18000) < sub_session->cur_pts) {
+                sub_session->cur_pts -= 1000;
+                LOGM_WARN("too fast, gap %d\n", sub_session->cur_pts - time_gap_u32);
+            }
+#endif
+
+            TTime value = sub_session->cur_pts;
+            p_data[6] = sub_session->seq_number >> 8;
+            p_data[7] = sub_session->seq_number & 0xff;
+            p_data[8] = (value >> 24) & 0xff;
+            p_data[9] = (value >> 16) & 0xff;
+            p_data[10] = (value >> 8) & 0xff;
+            p_data[11] = value & 0xff;
+            value = sub_session->rtp_ssrc;
+            p_data[12] = (value >> 24) & 0xff;
+            p_data[13] = (value >> 16) & 0xff;
+            p_data[14] = (value >> 8) & 0xff;
+            p_data[15] = value & 0xff;
+            LOGM_DEBUG("tcp sub_session->cur_pts %lld\n", sub_session->cur_pts);
+            LOGM_DEBUG("tcp send data, size %ld, %02x %02x %02x %02x, %02x %02x %02x %02x\n", size, p_data[12], p_data[13], p_data[14], p_data[15], p_data[16], p_data[17], p_data[18], p_data[19]);
+
+#if 0
+retry_sendto:
+            TInt ret = send(sub_session->rtsp_fd, p_data, size, 0);
+            if (ret < 0) {
+                TInt err = errno;
+                if(err == EINTR || err == EWOULDBLOCK || err == EAGAIN) {
+                    LOGM_ERROR("try again\n");
+                    goto retry_sendto;
+                }
+                perror("send");
+                LOGM_ERROR("tcpSendData failed --- errno = %d, sub_session->rtsp_fd %d\n", err, sub_session->rtsp_fd);
+            }
+#else
+            //LOGM_PRINTF("send data, size %ld, %02x %02x %02x %02x, %02x %02x %02x %02x\n", size, p_data[16], p_data[17], p_data[18], p_data[19], p_data[20], p_data[21], p_data[22], p_data[23]);
+            //LOGM_PRINTF("tcp header, %02x %02x %02x %02x, size %d\n", p_data[0], p_data[1], p_data[2], p_data[3], (p_data[2] << 8) | p_data[3]);
+            //LOGM_PRINTF("rtp header, %02x %02x %02x %02x, %02x %02x %02x %02x, %02x %02x %02x %02x\n", p_data[4], p_data[5], p_data[6], p_data[7], p_data[8], p_data[9], p_data[10], p_data[11], p_data[12], p_data[13], p_data[14], p_data[15]);
+            //TInt ret = gfNet_Send(sub_session->rtsp_fd, p_data, size, 0);
+            TInt ret = gfNet_Send_timeout(sub_session->rtsp_fd, p_data, size, 0, 3);
+            if (DUnlikely(ret != ((TInt) size))) {
+                LOGM_ERROR("gfNet_Send error, ret %d, expected %ld, mpMsgSink %p\n", ret, size, mpMsgSink);
+                if ((!sub_session->is_closed) && (0 == ret)) {
+                    LOGM_INFO("send EMSGType_StreamingError_TCPSocketConnectionClose msg, sub_session %p\n", sub_session);
+                    SMSG msg;
+                    memset(&msg, 0x0, sizeof(msg));
+                    msg.owner_id = DGENERIC_ID_FROM_COMPONENT_TYPE_INDEX(EGenericComponentType_StreamingTransmiter, 0);
+                    msg.owner_type = EGenericComponentType_StreamingTransmiter;
+                    msg.owner_index= 0;
+                    msg.pExtra = NULL;
+                    msg.needFreePExtra = 0;
+
+                    msg.code = EMSGType_StreamingError_TCPSocketConnectionClose;
+                    msg.p0 = (TULong)sub_session->parent;
+                    msg.p1 = (TULong)sub_session->parent->p_streaming_transmiter_filter;
+                    msg.p2 = (TULong)sub_session->parent->p_server;
+                    mpMsgSink->MsgProc(msg);
+                }
+                sub_session->is_closed = 1;
+
+                p_node = mTCPSubSessionList.NextNode(p_node);
+                continue;
+            }
+#endif
+
+            if (DUnlikely(!sub_session->is_started)) {
+                sub_session->is_started = 1;
+                sub_session->begin_time = sub_session->ntp_time = sub_session->ntp_time_base = mpClockReference->GetCurrentTime();
+                LOGM_INFO("video ntp time:\t %lld, mpClockReference %p\n", sub_session->ntp_time, mpClockReference);
+                //processRTCP(sub_session, sub_session->ntp_time, (TU32)sub_session->start_pts);
+                sub_session->rtcp_sr_current_count = 0;
+            } else {
+                sub_session->statistics.cur_seq_num = sub_session->seq_number;
+                sub_session->statistics.last_octet_count = size;
+
+                sub_session->statistics.octet_count += size;
+                sub_session->statistics.packet_count ++;
+
+                sub_session->rtcp_sr_current_count ++;
+
+                if (DUnlikely(sub_session->rtcp_sr_current_count > sub_session->rtcp_sr_cooldown)) {
+                    sub_session->ntp_time = mpClockReference->GetCurrentTime();
+                    LOGM_INFO("video ntp time:\t %lld, mpClockReference %p\n", sub_session->ntp_time, mpClockReference);
+                    //processRTCP(sub_session, sub_session->ntp_time, sub_session->cur_pts);
+                    sub_session->rtcp_sr_current_count = 0;
+                }
+            }
+
+            if (update_time_stamp) {
+                if (DLikely(sub_session->p_content && (90000 == sub_session->p_content->video_framerate_num) && (sub_session->p_content->video_framerate_den))) {
+                    sub_session->cur_pts += sub_session->p_content->video_framerate_den;
+                    //LOGM_PRINTF("sub_session->cur_pts, framerate den %d\n", sub_session->p_content->video_framerate_den);
+                } else {
+                    sub_session->cur_pts += 3003;
+                }
+
+#if 1
+                TTime time_diff = ((TU64)(mpClockReference->GetCurrentTime() - sub_session->begin_time)) >> 7;
+                TTime pts_diff = ((TU64)(sub_session->cur_pts - sub_session->start_pts)) >> 7;
+
+                time_diff = time_diff * 9;
+                pts_diff = pts_diff * 100;
+                // 1/70000
+                if ((21000 + time_diff) < pts_diff) {
+                    LOGM_INFO("force pts drift backword, time_diff %lld, pts_diff %lld, diff %lld\n", time_diff, pts_diff, pts_diff - time_diff);
+                    sub_session->cur_pts -= (sub_session->p_content->video_framerate_den) >> 2;
+                } else if ((21000 + pts_diff) < time_diff) {
+                    LOGM_INFO("force pts drift forward, time_diff %lld, pts_diff %lld, diff %lld\n", time_diff, pts_diff, time_diff - pts_diff);
+                    sub_session->cur_pts += (sub_session->p_content->video_framerate_den) >> 2;
+                }
+#endif
+            }
+            sub_session->seq_number ++;
+        }
+        p_node = mTCPSubSessionList.NextNode(p_node);
+    }
+}
+
+void CVideoRTPRTCPSink::udpSendSr(SSubSessionInfo* sub_session)
+{
+    TInt ret = 0;
+
+    ASSERT(sub_session);
+
+retry_udpSendSr_sendto:
+    ret = sendto(mRTCPSocket, mpRTCPBuffer, mRTCPBufferLength, 0, (struct sockaddr*)&sub_session->addr_port_ext, sizeof(struct sockaddr));
+    if (ret < 0) {
+        TInt err = errno;
+        if(err == EINTR || err == EWOULDBLOCK || err == EAGAIN) {
+            LOGM_ERROR("try again\n");
+            goto retry_udpSendSr_sendto;
+        }
+        perror("sendto");
+        LOGM_ERROR("udpSendSr failed --- errno = %d, mRTPSocket %d\n", err, mRTPSocket);
+    }
+}
+
+EECode CVideoRTPRTCPSink::SetExtraData(TU8* pdata, TMemSize size){
+    //AUTO_LOCK(mpMutex);
+    return do_SetExtraData(pdata,size);
+}
+EECode CVideoRTPRTCPSink::do_SetExtraData(TU8* pdata, TMemSize size)
+{
+    //LOGM_WARN("SetExtraData, size %ld\n", size);
+    if ((mpExtraData) && (mExtraDataSize < size)) {
+        free(mpExtraData);
+        mpExtraData = NULL;
+        mExtraDataSize = 0;
+    }
+
+    if (!mpExtraData) {
+        mpExtraData = (TU8*) malloc(size);
+        if (DUnlikely(!mpExtraData)) {
+            return EECode_NoMemory;
+        }
+        mExtraDataSize = size;
+    }
+
+    memcpy(mpExtraData, pdata, mExtraDataSize);
+
+#if 0
+    //debug dump file
+    TChar filename[128] = {0};
+    snprintf(filename, 127, "streaming_in_%d.h264", mIndex);
+    mpDumpFile = fopen(filename, "ab");
+
+    if (DLikely(mpDumpFile)) {
+        fwrite(mpExtraData, 1, mExtraDataSize, mpDumpFile);
+        fclose(mpDumpFile);
+        mpDumpFile = NULL;
+    } else {
+        LOGM_WARN("open  mpDumpFile fail.\n");
+    }
+
+    //debug dump file
+    snprintf(filename, 127, "streaming_out_udp_%d.h264", mIndex);
+    mpDumpFile1 = fopen(filename, "ab");
+
+    if (DLikely(mpDumpFile1)) {
+        fwrite(mpExtraData, 1, mExtraDataSize, mpDumpFile1);
+        fclose(mpDumpFile1);
+        mpDumpFile1 = NULL;
+    } else {
+        LOGM_WARN("open  mpDumpFile fail.\n");
+    }
+
+    snprintf(filename, 127, "streaming_out_tcp_%d.h264", mIndex);
+    mpDumpFile1 = fopen(filename, "ab");
+
+    if (DLikely(mpDumpFile1)) {
+        fwrite(mpExtraData, 1, mExtraDataSize, mpDumpFile1);
+        fclose(mpDumpFile1);
+        mpDumpFile1 = NULL;
+    } else {
+        LOGM_WARN("open  mpDumpFile fail.\n");
+    }
+#endif
+
+    return EECode_OK;
+}
+
+
+static inline TU8* _findPPSEnd(TU8* data_base, TInt data_size)
+{
+    TU8* ptr = data_base;
+    TUint find_pps = 0;
+    TUint find_sps = 0;
+    TUint nal_type = 0;
+
+    if (NULL == ptr)//check for safety
+        return NULL;
+
+    while (ptr < data_base + data_size - 4) {
+        if (*ptr == 0x00)
+        {
+            if (*(ptr + 1)== 0x00)
+            {
+                if (*(ptr + 2)== 0x00)
+                {
+                    if (*(ptr + 3)== 0x01)
+                    {
+                        nal_type = ptr[4] & 0x1F;
+                        if (ENalType_IDR == nal_type) {
+                            ASSERT(find_sps);
+                            ASSERT(find_pps);
+                            return ptr;
+                        } else if (ENalType_SPS == nal_type) {
+                            find_sps = 1;
+                        } else if (ENalType_PPS == nal_type) {
+                            find_pps = 1;
+                        } else {
+                            if (find_pps) {
+                                ASSERT(find_sps);
+                                return ptr;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        ++ptr;
+    }
+    return NULL;
+}
+
+EECode CVideoRTPRTCPSink::SendData(CIBuffer* pBuffer)
+{
+    //AUTO_LOCK(mpMutex);
+    EECode ret = EECode_OK;
+
+#if 0
+    //debug dump file
+    TChar filename[128] = {0};
+    snprintf(filename, 127, "streaming_in_%d.h264", mIndex);
+    mpDumpFile = fopen(filename, "ab");
+
+    if (DLikely(mpDumpFile)) {
+        fwrite(pBuffer->GetDataPtr(), 1, pBuffer->GetDataSize(), mpDumpFile);
+        fclose(mpDumpFile);
+        mpDumpFile = NULL;
+    } else {
+        LOGM_WARN("open  mpDumpFile fail.\n");
+    }
+#endif
+
+    if (DLikely(pBuffer)) {
+        if (DUnlikely((!mSubSessionList.NumberOfNodes()) && (!mTCPSubSessionList.NumberOfNodes()))) {
+            //LOGM_DEBUG("idle loop\n");
+            return EECode_OK;
+        }
+        if (DLikely(IMediaParameters::StreamFormat_H264 == mFormat)) {
+            if (DUnlikely(pBuffer->GetBufferFlags() & CIBuffer::WITH_EXTRA_DATA)) {
+                TU8* ptr_data  = _findPPSEnd(pBuffer->GetDataPtr(), pBuffer->GetDataSize());
+                TU8* ppp = pBuffer->GetDataPtr();
+
+                if (DLikely(ptr_data)) {
+                    LOGM_INFO("extra data len(%d), start %02x %02x %02x %02x %02x %02x %02x %02x\n", ptr_data - pBuffer->GetDataPtr(), ppp[0], ppp[1], ppp[2], ppp[3], ppp[4], ppp[5], ppp[6], ppp[7]);
+
+                    CIBuffer tmpBuffer;
+                    memset(&tmpBuffer, 0x0, sizeof(CIBuffer));
+                    tmpBuffer.SetDataPtrBase(NULL);
+                    tmpBuffer.SetDataMemorySize(0);
+                    tmpBuffer.SetBufferPTS(pBuffer->GetBufferPTS());
+                    tmpBuffer.SetBufferType(EBufferType_VideoExtraData);
+                    tmpBuffer.SetDataPtr(pBuffer->GetDataPtr());
+                    tmpBuffer.SetDataSize(ptr_data - pBuffer->GetDataPtr());
+
+                    if (mSubSessionList.NumberOfNodes()) {
+                        ret = sendDataH264(&tmpBuffer);
+                        ASSERT_OK(ret);
+                    }
+                    if (mTCPSubSessionList.NumberOfNodes()) {
+                        ret = sendDataH264TCP(&tmpBuffer);
+                        ASSERT_OK(ret);
+                    }
+
+                    LOGM_INFO("other len(%ld), start %02x %02x %02x %02x %02x %02x %02x %02x\n", pBuffer->GetDataSize() - (ptr_data - pBuffer->GetDataPtr()), ptr_data[0], ptr_data[1], ptr_data[2], ptr_data[3], ptr_data[4], ptr_data[5], ptr_data[6], ptr_data[7]);
+
+                    tmpBuffer.SetDataPtr(ptr_data);
+                    tmpBuffer.SetDataSize(pBuffer->GetDataSize() - (ptr_data - pBuffer->GetDataPtr()));
+                    tmpBuffer.SetBufferType(EBufferType_VideoES);
+                    if (mSubSessionList.NumberOfNodes()) {
+                        ret = sendDataH264(&tmpBuffer);
+                        ASSERT_OK(ret);
+                    }
+                    if (mTCPSubSessionList.NumberOfNodes()) {
+                        ret = sendDataH264TCP(&tmpBuffer);
+                        ASSERT_OK(ret);
+                    }
+                } else {
+                    LOGM_INFO("do not find pps end(%ld), %02x %02x %02x %02x %02x %02x %02x %02x\n", pBuffer->GetDataSize(), ppp[0], ppp[1], ppp[2], ppp[3], ppp[4], ppp[5], ppp[6], ppp[7]);
+                    if (mSubSessionList.NumberOfNodes()) {
+                        ret = sendDataH264(pBuffer);
+                        ASSERT_OK(ret);
+                    }
+
+                    if (mTCPSubSessionList.NumberOfNodes()) {
+                        ret = sendDataH264TCP(pBuffer);
+                        ASSERT_OK(ret);
+                    }
+                }
+
+            }else {
+                if (mSubSessionList.NumberOfNodes()) {
+                    ret = sendDataH264(pBuffer);
+                    ASSERT_OK(ret);
+                }
+
+                if (mTCPSubSessionList.NumberOfNodes()) {
+                    ret = sendDataH264TCP(pBuffer);
+                    ASSERT_OK(ret);
+                }
+            }
+        } else {
+            LOGM_FATAL("video format is not h264?\n");
+            ret = EECode_NotSupported;
+        }
+    } else {
+        LOGM_FATAL("NULL pBuffer\n");
+        ret = EECode_BadParam;
+    }
+
+    return ret;
+}
+
+EECode CVideoRTPRTCPSink::sendDataH264(CIBuffer* pBuffer)
+{
+    TMemSize data_size = 0;
+    TU8* p_data = NULL;
+    TUint key_frame = 0;
+
+#if 0
+    //debug dump file
+    TChar filename[128] = {0};
+    snprintf(filename, 127, "streaming_out_udp_%d.h264", mIndex);
+    mpDumpFile1 = fopen(filename, "ab");
+
+    if (DLikely(mpDumpFile1)) {
+        fwrite(pBuffer->GetDataPtr(), 1, pBuffer->GetDataSize(), mpDumpFile1);
+        fclose(mpDumpFile1);
+        mpDumpFile1 = NULL;
+    } else {
+        LOGM_WARN("open  mpDumpFile1 fail.\n");
+    }
+#endif
+
+    //printf("CVideoRTPRTCPSink::sendDataH264 --- timestamp[%u],pts [%u]\n",(TU32)pBuffer->GetBufferNativePTS(),(TU32)pBuffer->GetBufferPTS());
+
+    if (DUnlikely(EBufferType_VideoExtraData == pBuffer->GetBufferType())) {
+        TU8* p1 = NULL;
+        TMemSize size1 = 0;
+
+        data_size = pBuffer->GetDataSize();
+        p_data = pBuffer->GetDataPtr();
+
+        //debug assert
+        ASSERT(!p_data[0]);
+        ASSERT(!p_data[1]);
+        ASSERT(!p_data[2]);
+        ASSERT(1 == p_data[3]);
+        p_data += 4;
+        data_size -= 4;
+
+        p1 = _find_next_start_code(p_data, data_size);
+        //LOGM_NOTICE("!!!p_data %p, p1 %p, %ld, %ld\n", p_data, p1, (TMemSize)(p1 - p_data), (TMemSize)(p_data + data_size - p1));
+        //LOGM_NOTICE("%02x %02x %02x %02x %02x %02x %02x %02x\n", p1[0], p1[1], p1[2], p1[3], p1[4], p1[5], p1[6], p1[7]);
+
+        ASSERT(data_size <= DRecommandMaxRTPPayloadLength);
+
+        if (DLikely(p1)) {
+            mpRTPBuffer[0] = (RTP_VERSION << 6);
+            mpRTPBuffer[1] = (RTP_PT_H264 & 0x7f) | 0x80;
+            size1 = (TMemSize)(p1 - p_data - 4);
+            ASSERT(((TMemSize)(p1 - 4)) > ((TMemSize)(p_data)));
+
+            memcpy(mpRTPBuffer + 12, p_data, size1);
+            udpSendData(mpRTPBuffer, size1 + 12, pBuffer->GetBufferPTS(), 0, 2);
+
+            size1 = (TMemSize)(p_data + data_size - p1);
+            ASSERT(((TMemSize)(p_data + data_size)) > ((TMemSize)(p1)));
+
+            memcpy(mpRTPBuffer + 12, p1, size1);
+            udpSendData(mpRTPBuffer, size1 + 12, pBuffer->GetBufferPTS(), 0, 2);
+        }
+        return EECode_OK;
+    }
+
+    //LOGM_DEBUG("udp send data, size %ld, time %lld\n", data_size, mCurrentTime);
+    data_size = pBuffer->GetDataSize();
+    p_data = pBuffer->GetDataPtr();
+    //LOGM_DEBUG("[debug flow]: streamer send size %ld, start data: %02x %02x %02x %02x, %02x %02x %02x %02x, end data %02x %02x %02x %02x\n", data_size, p_data[0], p_data[1], p_data[2], p_data[3], p_data[4], p_data[5], p_data[6], p_data[7], p_data[data_size - 4], p_data[data_size - 3], p_data[data_size - 2], p_data[data_size - 1]);
+    /*ASSERT(!p_data[0]);
+    ASSERT(!p_data[1]);
+    ASSERT(!p_data[2]);
+    ASSERT(1 == p_data[3]);*/
+
+    if (DUnlikely(pBuffer->GetBufferFlags() & CIBuffer::KEY_FRAME)) {
+        key_frame = 1;
+    }
+
+    if (DLikely((0x0 == p_data[0]) && (0x0 == p_data[1]) && (0x0 == p_data[2]) && (0x1 == p_data[3]))) {
+        LOGM_DEBUG("4 start code %02x %02x %02x %02x, %2x %2x\n", p_data[0], p_data[1], p_data[2], p_data[3], p_data[4], p_data[5]);
+        p_data += 4;
+        data_size -= 4;
+    } else if (DLikely((0x0 == p_data[0]) && (0x0 == p_data[1]) && (0x1 == p_data[2]))) {
+        LOGM_DEBUG("3 start code %02x %02x %02x %02x, %2x %2x\n", p_data[0], p_data[1], p_data[2], p_data[3], p_data[4], p_data[5]);
+        p_data += 3;
+        data_size -= 3;
+    } else {
+        LOGM_DEBUG("no start code's case, %02x %02x %02x %02x, %02x %02x %02x %02x\n", p_data[0], p_data[1], p_data[2], p_data[3], p_data[4], p_data[5], p_data[6], p_data[7]);
+        p_data += 4;
+        data_size -= 4;
+    }
+
+    if (data_size <= DRecommandMaxRTPPayloadLength) {
+        mpRTPBuffer[0] = (RTP_VERSION << 6);
+        mpRTPBuffer[1] = (RTP_PT_H264 & 0x7f) | 0x80;
+        memcpy(mpRTPBuffer + 12, p_data, data_size);
+        udpSendData(mpRTPBuffer, data_size + 12, pBuffer->GetBufferPTS(), 1, key_frame);
+    } else {
+        TU8 type = p_data[0] & 0x1F;
+        TU8 nri = p_data[0] & 0x60;
+        TU8 indicator = 28 | nri;
+        TU8 fu_header = type | (1 << 7);
+        p_data += 1;
+        data_size -= 1;
+
+        while ((data_size + 2) > DRecommandMaxRTPPayloadLength) {
+            //RTP header
+            mpRTPBuffer[0] = (RTP_VERSION << 6);
+            mpRTPBuffer[1] = (RTP_PT_H264 & 0x7f);//m and payload type
+            mpRTPBuffer[12] = indicator;
+            mpRTPBuffer[13] = fu_header;
+            memcpy(mpRTPBuffer + 14, p_data, DRecommandMaxRTPPayloadLength - 2);
+            udpSendData(mpRTPBuffer, DRecommandMaxRTPPayloadLength + 12, pBuffer->GetBufferPTS(), 0, key_frame);
+            p_data += DRecommandMaxRTPPayloadLength - 2;
+            data_size -= DRecommandMaxRTPPayloadLength - 2;
+            fu_header &= ~(1 << 7);
+        }
+
+        fu_header |= 1 << 6;
+        mpRTPBuffer[0] = (RTP_VERSION << 6);
+        mpRTPBuffer[1] = (RTP_PT_H264 & 0x7f) | 0x80;//m and payload type
+        mpRTPBuffer[12] = indicator;
+        mpRTPBuffer[13] = fu_header;
+        memcpy(&mpRTPBuffer[14], p_data, data_size);
+        udpSendData(mpRTPBuffer, data_size + 14, pBuffer->GetBufferPTS(), 1, key_frame);
+    }
+
+    mCurrentTime += 3003;
+
+    return EECode_OK;
+}
+
+EECode CVideoRTPRTCPSink::sendDataH264TCP(CIBuffer* pBuffer)
+{
+    TMemSize data_size = 0;
+    TU8* p_data = NULL;
+    TUint key_frame = 0;
+
+#if 0
+    //debug dump file
+    TChar filename[128] = {0};
+    snprintf(filename, 127, "streaming_out_tcp_%d.h264", mIndex);
+    mpDumpFile1 = fopen(filename, "ab");
+
+    if (DLikely(mpDumpFile1)) {
+        fwrite(pBuffer->GetDataPtr(), 1, pBuffer->GetDataSize(), mpDumpFile1);
+        fclose(mpDumpFile1);
+        mpDumpFile1 = NULL;
+    } else {
+        LOGM_WARN("open  mpDumpFile1 fail.\n");
+    }
+#endif
+
+    if (DUnlikely(EBufferType_VideoExtraData == pBuffer->GetBufferType())) {
+        TU8* p1 = NULL;
+        TMemSize size1 = 0;
+
+        data_size = pBuffer->GetDataSize();
+        p_data = pBuffer->GetDataPtr();
+
+        //debug assert
+        ASSERT(!p_data[0]);
+        ASSERT(!p_data[1]);
+        ASSERT(!p_data[2]);
+        ASSERT(1 == p_data[3]);
+        p_data += 4;
+        data_size -= 4;
+
+        p1 = _find_next_start_code(p_data, data_size);
+        //LOGM_INFO("!!!p_data %p, p1 %p, %ld, %ld\n", p_data, p1, (TMemSize)(p1 - p_data), (TMemSize)(p_data + data_size - p1));
+        //LOGM_INFO("%02x %02x %02x %02x %02x %02x %02x %02x\n", p1[0], p1[1], p1[2], p1[3], p1[4], p1[5], p1[6], p1[7]);
+
+        //ASSERT(data_size <= DRecommandMaxRTPPayloadLength);
+        if (DUnlikely(data_size > DRecommandMaxRTPPayloadLength)) {
+            LOGM_WARN("extra data, size %ld exceed %d\n", data_size, DRecommandMaxRTPPayloadLength);
+            TU8* p2 = pBuffer->GetDataPtr();
+            LOGM_PRINTF("start %02x %02x %02x %02x %02x %02x %02x %02x\n", p2[0], p2[1], p2[2], p2[3], p2[4], p2[5], p2[6], p2[7]);
+            if (p1) {
+                LOGM_PRINTF("next start, gap %ld, %02x %02x %02x %02x %02x %02x %02x %02x\n", (TMemSize)(p1 - p2), p1[0], p1[1], p1[2], p1[3], p1[4], p1[5], p1[6], p1[7]);
+            }
+        }
+
+        if (DLikely(p1)) {
+            mpRTPBuffer[0] = DRTP_OVER_RTSP_MAGIC;
+            mpRTPBuffer[1] = 0;
+
+            mpRTPBuffer[4] = (RTP_VERSION << 6);
+            mpRTPBuffer[5] = (RTP_PT_H264 & 0x7f) | 0x80;
+
+            size1 = (TMemSize)(p1 - p_data - 4);
+            ASSERT(((TMemSize)(p1 - 4)) > ((TMemSize)(p_data)));
+
+            mpRTPBuffer[2] = ((size1 + 12) >> 8) & 0xff;
+            mpRTPBuffer[3] = (size1 + 12) & 0xff;
+
+            memcpy(mpRTPBuffer + 12 + 4, p_data, size1);
+            tcpSendData(mpRTPBuffer, size1 + 12 + 4, pBuffer->GetBufferPTS(), 0, 2);
+
+            size1 = (TMemSize)(p_data + data_size - p1);
+            ASSERT(((TMemSize)(p_data + data_size)) > ((TMemSize)(p1)));
+
+            mpRTPBuffer[2] = ((size1 + 12) >> 8) & 0xff;
+            mpRTPBuffer[3] = (size1 + 12) & 0xff;
+
+            memcpy(mpRTPBuffer + 12 + 4, p1, size1);
+            tcpSendData(mpRTPBuffer, size1 + 12 + 4, pBuffer->GetBufferPTS(), 0, 2);
+        }
+        return EECode_OK;
+    } else if (DUnlikely(CIBuffer::KEY_FRAME & pBuffer->GetBufferFlags())) {
+
+#if 1
+        CIDoubleLinkedList::SNode* p_node = mTCPSubSessionList.FirstNode();
+        SSubSessionInfo* sub_session = NULL;
+
+        LOGM_INFO("key frame comes\n");
+        ASSERT(mExtraDataSize);
+        ASSERT(mpExtraData);
+
+        {
+
+            while (p_node) {
+                sub_session = (SSubSessionInfo*)p_node->p_context;
+                if (DLikely(sub_session)) {
+                    if (DUnlikely(!sub_session->send_extradata)) {
+                        if (DUnlikely((!mExtraDataSize) && (!mpExtraData))) {
+                            LOGM_WARN("no extra data: mExtraDataSize %ld, mpExtraData %p\n", mExtraDataSize, mpExtraData);
+                            p_node = mTCPSubSessionList.NextNode(p_node);
+                            continue;
+                        }
+                        sub_session->send_extradata = 1;
+
+                        TU8* p1 = NULL;
+                        //TU8* p2 = mpExtraData;
+                        TMemSize size1 = 0;
+                        LOGM_INFO("extra data comes\n");
+                        data_size = mExtraDataSize - 4;
+                        p_data = mpExtraData + 4;
+
+                        p1 = _find_next_start_code(p_data, data_size);
+                        //p1 = p_data + data_size - 4;
+                        ASSERT(data_size <= DRecommandMaxRTPPayloadLength);
+                        if (DUnlikely(data_size >= DRecommandMaxRTPPayloadLength)) {
+                            LOGM_FATAL("data_size %ld, p_data %p\n", data_size, p_data);
+                            return EECode_Error;
+                        }
+/*
+                        LOGM_FATAL("mExtraDataSize %ld, mpExtraData %p\n", mExtraDataSize, mpExtraData);
+                        LOGM_FATAL("%02x %02x %02x %02x %02x %02x %02x %02x\n", p2[0], p2[1], p2[2], p2[3], p2[4], p2[5], p2[6], p2[7]);
+                        p2 += 8;
+                        LOGM_FATAL("%02x %02x %02x %02x %02x %02x %02x %02x\n", p2[0], p2[1], p2[2], p2[3], p2[4], p2[5], p2[6], p2[7]);
+                        p2 += 8;
+                        LOGM_FATAL("%02x %02x %02x %02x %02x %02x %02x %02x\n", p2[0], p2[1], p2[2], p2[3], p2[4], p2[5], p2[6], p2[7]);
+                        p2 += 8;
+                        LOGM_FATAL("%02x %02x %02x %02x %02x %02x %02x %02x\n", p2[0], p2[1], p2[2], p2[3], p2[4], p2[5], p2[6], p2[7]);
+                        p2 += 8;
+                        LOGM_FATAL("%02x %02x %02x %02x %02x %02x %02x %02x\n", p2[0], p2[1], p2[2], p2[3], p2[4], p2[5], p2[6], p2[7]);
+                        p2 += 8;
+                        LOGM_FATAL("%02x %02x %02x %02x %02x %02x %02x %02x\n", p2[0], p2[1], p2[2], p2[3], p2[4], p2[5], p2[6], p2[7]);
+                        p2 += 8;
+                        LOGM_FATAL("%02x %02x %02x %02x %02x %02x %02x %02x\n", p2[0], p2[1], p2[2], p2[3], p2[4], p2[5], p2[6], p2[7]);
+                        p2 += 8;
+*/
+#if 1
+                        if (DLikely(p1)) {
+                            mpRTPBuffer[0] = DRTP_OVER_RTSP_MAGIC;
+                            mpRTPBuffer[1] = 0;
+
+                            mpRTPBuffer[4] = (RTP_VERSION << 6);
+                            mpRTPBuffer[5] = (RTP_PT_H264 & 0x7f) | 0x80;
+
+                            size1 = (TMemSize)(p1 - p_data - 4);
+                            ASSERT(((TMemSize)(p1 - 4)) > ((TMemSize)(p_data)));
+
+                            mpRTPBuffer[2] = ((size1 + 12) >> 8) & 0xff;
+                            mpRTPBuffer[3] = (size1 + 12) & 0xff;
+
+                            memcpy(mpRTPBuffer + 12 + 4, p_data, size1);
+                            tcpSendData(mpRTPBuffer, size1 + 12 + 4, pBuffer->GetBufferPTS(), 0, 2);
+
+                            size1 = (TMemSize)(p_data + data_size - p1);
+                            ASSERT(((TMemSize)(p_data + data_size)) > ((TMemSize)(p1)));
+
+                            mpRTPBuffer[2] = ((size1 + 12) >> 8) & 0xff;
+                            mpRTPBuffer[3] = (size1 + 12) & 0xff;
+
+                            memcpy(mpRTPBuffer + 12 + 4, p1, size1);
+                            tcpSendData(mpRTPBuffer, size1 + 12 + 4, pBuffer->GetBufferPTS(), 0, 2);
+
+                        } else {
+                            LOGM_FATAL("bad extra data\n");
+                        }
+#endif
+                    }
+                }
+                p_node = mTCPSubSessionList.NextNode(p_node);
+            }
+        }
+#endif
+
+        key_frame = 1;
+    }
+
+    //LOGM_DEBUG("udp send data, size %ld, time %lld\n", data_size, mCurrentTime);
+    data_size = pBuffer->GetDataSize();
+    p_data = pBuffer->GetDataPtr();
+    //LOGM_DEBUG("[debug flow]: streamer send size %ld, start data: %02x %02x %02x %02x, %02x %02x %02x %02x, end data %02x %02x %02x %02x\n", data_size, p_data[0], p_data[1], p_data[2], p_data[3], p_data[4], p_data[5], p_data[6], p_data[7], p_data[data_size - 4], p_data[data_size - 3], p_data[data_size - 2], p_data[data_size - 1]);
+    /*ASSERT(!p_data[0]);
+    ASSERT(!p_data[1]);
+    ASSERT(!p_data[2]);
+    ASSERT(1 == p_data[3]);*/
+
+    if (DLikely((0x0 == p_data[0]) && (0x0 == p_data[1]) && (0x0 == p_data[2]) && (0x1 == p_data[3]))) {
+        LOGM_DEBUG("4 start code %02x %02x %02x %02x, %2x %2x\n", p_data[0], p_data[1], p_data[2], p_data[3], p_data[4], p_data[5]);
+        p_data += 4;
+        data_size -= 4;
+    } else if (DLikely((0x0 == p_data[0]) && (0x0 == p_data[1]) && (0x1 == p_data[2]))) {
+        LOGM_DEBUG("3 start code %02x %02x %02x %02x, %2x %2x\n", p_data[0], p_data[1], p_data[2], p_data[3], p_data[4], p_data[5]);
+        p_data += 3;
+        data_size -= 3;
+    } else {
+        LOGM_DEBUG("no start code's case, %02x %02x %02x %02x, %02x %02x %02x %02x\n", p_data[0], p_data[1], p_data[2], p_data[3], p_data[4], p_data[5], p_data[6], p_data[7]);
+        p_data += 4;
+        data_size -= 4;
+    }
+
+    mpRTPBuffer[0] = DRTP_OVER_RTSP_MAGIC;
+    mpRTPBuffer[1] = 0;
+
+    if (data_size <= DRecommandMaxRTPPayloadLength) {
+        mpRTPBuffer[4] = (RTP_VERSION << 6);
+        mpRTPBuffer[5] = (RTP_PT_H264 & 0x7f) | 0x80;
+
+        mpRTPBuffer[2] = ((data_size + 12) >> 8) & 0xff;
+        mpRTPBuffer[3] = (data_size + 12) & 0xff;
+
+        memcpy(mpRTPBuffer + 12 + 4, p_data, data_size);
+        tcpSendData(mpRTPBuffer, data_size + 12 + 4, pBuffer->GetBufferPTS(), 1, key_frame);
+    } else {
+        TU8 type = p_data[0] & 0x1F;
+        TU8 nri = p_data[0] & 0x60;
+        TU8 indicator = 28 | nri;
+        TU8 fu_header = type | (1 << 7);
+        p_data += 1;
+        data_size -= 1;
+
+        while ((data_size + 2) > DRecommandMaxRTPPayloadLength) {
+            //RTP header
+            mpRTPBuffer[4] = (RTP_VERSION << 6);
+            mpRTPBuffer[5] = (RTP_PT_H264 & 0x7f);//m and payload type
+            mpRTPBuffer[16] = indicator;
+            mpRTPBuffer[17] = fu_header;
+
+            mpRTPBuffer[2] = ((DRecommandMaxRTPPayloadLength + 12) >> 8) & 0xff;
+            mpRTPBuffer[3] = (DRecommandMaxRTPPayloadLength + 12) & 0xff;
+
+            memcpy(mpRTPBuffer + 18, p_data, DRecommandMaxRTPPayloadLength - 2);
+            tcpSendData(mpRTPBuffer, DRecommandMaxRTPPayloadLength + 16, pBuffer->GetBufferPTS(), 0, key_frame);
+            p_data += DRecommandMaxRTPPayloadLength - 2;
+            data_size -= DRecommandMaxRTPPayloadLength - 2;
+            fu_header &= ~(1 << 7);
+        }
+
+        fu_header |= 1 << 6;
+        mpRTPBuffer[4] = (RTP_VERSION << 6);
+        mpRTPBuffer[5] = (RTP_PT_H264 & 0x7f) | 0x80;//m and payload type
+        mpRTPBuffer[16] = indicator;
+        mpRTPBuffer[17] = fu_header;
+
+        mpRTPBuffer[2] = ((data_size + 14)>> 8) & 0xff;
+        mpRTPBuffer[3] = (data_size + 14) & 0xff;
+
+        memcpy(&mpRTPBuffer[18], p_data, data_size);
+        tcpSendData(mpRTPBuffer, data_size + 18, pBuffer->GetBufferPTS(), 1, key_frame);
+    }
+
+    mCurrentTime += 3003;
+
+    return EECode_OK;
+}
+
+EECode CVideoRTPRTCPSink::AddSubSession(SSubSessionInfo* p_sub_session)
+{
+    //AUTO_LOCK(mpMutex);
+
+    if (DLikely(p_sub_session)) {
+        memset(&p_sub_session->statistics, 0, sizeof(p_sub_session->statistics));
+        p_sub_session->wait_first_key_frame = 1;
+        memset(&p_sub_session->rtcp_stat, 0, sizeof(p_sub_session->rtcp_stat));
+        p_sub_session->rtcp_stat.first_packet = 1;
+        p_sub_session->is_started = 0;
+        p_sub_session->is_closed = 0;
+
+        if (!p_sub_session->rtp_over_rtsp) {
+            LOGM_INFO("CVideoRTPRTCPSink::AddSubSession(), udp mode: addr 0x%08x, socket 0x%x, rtp port %u, rtcp port %u.\n", p_sub_session->addr, p_sub_session->socket, p_sub_session->client_rtp_port, p_sub_session->client_rtcp_port);
+            mSubSessionList.InsertContent(NULL, (void*)p_sub_session, 0);
+        } else {
+            LOGM_INFO("CVideoRTPRTCPSink::AddSubSession(), tcp mode, over rtsp: addr 0x%08x, rtsp_fd %d.\n", p_sub_session->addr, p_sub_session->rtsp_fd);
+            mTCPSubSessionList.InsertContent(NULL, (void*)p_sub_session, 0);
+        }
+
+        return EECode_OK;
+    }
+    LOGM_FATAL("NULL pointer in CVideoRTPRTCPSink::AddSubSession.\n");
+    return EECode_BadParam;
+}
+
+EECode CVideoRTPRTCPSink::RemoveSubSession(SSubSessionInfo* p_sub_session)
+{
+    //AUTO_LOCK(mpMutex);
+    if (DLikely(p_sub_session)) {
+        //send RTCP:BYE to client before remove session
+        if(p_sub_session->is_started){
+            processBYE(p_sub_session);
+        }
+        if (!p_sub_session->rtp_over_rtsp) {
+            LOGM_INFO("CVideoRTPRTCPSink::RemoveSubSession(), udp mode: addr 0x%08x, socket 0x%x, rtp port %u, rtcp port %u.\n", p_sub_session->addr, p_sub_session->socket, p_sub_session->client_rtp_port, p_sub_session->client_rtcp_port);
+            mSubSessionList.RemoveContent((void*)p_sub_session);
+        } else {
+            LOGM_INFO("CVideoRTPRTCPSink::RemoveSubSession(), tcp mode, over rtsp: addr 0x%08x, rtsp_fd %d.\n", p_sub_session->addr, p_sub_session->rtsp_fd);
+            mTCPSubSessionList.RemoveContent((void*)p_sub_session);
+        }
+        return EECode_OK;
+    }
+    LOGM_FATAL("NULL pointer in CVideoRTPRTCPSink::RemoveSubSession.\n");
+    return EECode_BadParam;
+}
+
+EECode CVideoRTPRTCPSink::SetSrcPort(TU16 port, TU16 port_ext)
+{
+    //AUTO_LOCK(mpMutex);
+
+    if (!mbRTPSocketSetup) {
+        LOGM_INFO("CVideoRTPRTCPSink::SetSrcPort[video](%hu, %hu).\n", port, port_ext);
+        mbRTPSocketSetup = 1;
+        mRTPPort = port;
+        mRTCPPort = port_ext;
+
+        setupUDPSocket();
+        return EECode_OK;
+    } else {
+        LOGM_INFO("RTP socket(video) has been setup, port %hu, %hu.\n", mRTPPort, mRTCPPort);
+    }
+
+    return EECode_Error;
+}
+
+EECode CVideoRTPRTCPSink::GetSrcPort(TU16& port, TU16& port_ext)
+{
+    //AUTO_LOCK(mpMutex);
+    //ASSERT(IMediaParameters::StreamType_Video == mType);
+
+    port = mRTPPort;
+    port_ext = mRTCPPort;
+    LOGM_INFO("CVideoRTPRTCPSink::GetSrcPort(%hu, %hu).\n", port, port_ext);
+
+    return EECode_OK;
+}
+
+EECode CVideoRTPRTCPSink::QueryStreamingTransmiterInfo(const SStreamingTransmiterInfo*& streaming_transmiter_info) const
+{
+    streaming_transmiter_info = &mInfo;
+    return EECode_OK;
+}
+
+EECode CVideoRTPRTCPSink::setupUDPSocket()
+{
+    //ASSERT(mType == IMediaParameters::StreamType_Video);
+
+    if (mRTPSocket >= 0) {
+        LOGM_WARN("close previous socket here, %d.\n", mRTPSocket);
+        close(mRTPSocket);
+        mRTPSocket = -1;
+    }
+
+    if (mRTCPSocket >= 0) {
+        LOGM_WARN("close previous socket here, %d.\n", mRTCPSocket);
+        close(mRTCPSocket);
+        mRTCPSocket = -1;
+    }
+
+    LOGM_INFO(" before SetupDatagramSocket, port %d.\n", mRTPPort);
+    mRTPSocket = gfNet_SetupDatagramSocket(INADDR_ANY, mRTPPort, 0, 0, 0);
+    LOGM_INFO(" mRTPSocket %d.\n", mRTPSocket);
+    if (mRTPSocket < 0) {
+        //need change port and retry?
+        LOGM_FATAL("SetupDatagramSocket(RTP) fail, port %d, socket %d, need change port and retry, todo?\n", mRTPPort, mRTPSocket);
+        return EECode_Error;
+    }
+    /* limit the tx buf size to limit latency */
+    TInt tmp = 32768;
+    if (setsockopt(mRTPSocket, SOL_SOCKET, SO_SNDBUF, &tmp, sizeof(tmp)) < 0) {
+        LOGM_FATAL("setsockopt(SO_SNDBUF): %s\n", strerror(errno));
+        return EECode_Error;
+    }
+    LOGM_INFO(" before SetupDatagramSocket, port %d.\n", mRTCPPort);
+    mRTCPSocket = gfNet_SetupDatagramSocket(INADDR_ANY, mRTCPPort, 0, 0, 0);
+    LOGM_INFO(" mRTCPSocket %d.\n", mRTCPSocket);
+    if (mRTCPSocket < 0) {
+        //need change port and retry?
+        LOGM_FATAL("SetupDatagramSocket(RTCP) fail, port %d, socket %d, need change port and retry, todo?\n", mRTCPPort, mRTCPSocket);
+        return EECode_Error;
+    }
+    tmp = 4096;
+    if (setsockopt(mRTCPSocket, SOL_SOCKET, SO_SNDBUF, &tmp, sizeof(tmp)) < 0) {
+        LOGM_FATAL("setsockopt(SO_SNDBUF): %s\n", strerror(errno));
+        return EECode_Error;
+    }
+
+    return EECode_OK;
+}
+
+typedef struct AVRational{
+   int num; ///< numerator
+   int den; ///< denominator
+}AVRational;
+static TS64 my_av_rescale_q(TS64 a, AVRational bq, AVRational cq){
+    TS64 b= bq.num * (TS64)cq.den;
+    TS64 c= cq.num * (TS64)bq.den;
+    return my_av_rescale(a, b, c);
+}
+int CVideoRTPRTCPSink::updateSendRtcp(SSubSessionInfo* sub_session,TU32 timestamp,TU32 len){
+    struct timeval tv;
+    gettimeofday(&tv,NULL);
+    TS64 systime = (TS64)tv.tv_sec * 1000000 + tv.tv_usec;
+
+    #define NTP_OFFSET 2208988800ULL
+    #define NTP_OFFSET_US (NTP_OFFSET * 1000000ULL)
+    TS64 ntp_time = (systime/1000 * 1000) + NTP_OFFSET_US;
+
+    rtcp_stat_t *s = &sub_session->rtcp_stat;
+    TS32 rtcp_bytes = (s->octet_count - s->last_octet_count) * 5/1000;
+    if (s->first_packet || ((rtcp_bytes >= 28) &&
+            (ntp_time - s->last_rtcp_ntp_time > 5000000) && (s->timestamp != timestamp))) {
+
+        if(s->first_packet){
+            s->first_rtcp_ntp_time = ntp_time;
+            s->base_timestamp = timestamp;
+            s->first_packet = 0;
+        }
+        //timebase, hard code now
+        AVRational time_base;
+        time_base.den = 90000;
+        time_base.num = 1;
+
+        TU32 rtp_ts = my_av_rescale_q(ntp_time - s->first_rtcp_ntp_time, (AVRational){1, 1000000},time_base) + s->base_timestamp;
+        buildSr(sub_session->rtp_ssrc,ntp_time,rtp_ts,s->packet_count,s->octet_count);
+        udpSendSr(sub_session);
+
+        //AMLOG_WARN("updateSendRtcp---- is_video = %d\n",is_video);
+        s->last_octet_count = s->octet_count;
+        s->last_rtcp_ntp_time = ntp_time;
+        s->timestamp = timestamp;
+    }
+    return 0;
+}
+
+void CVideoRTPRTCPSink::processRTCP(SSubSessionInfo* sub_session, TTime ntp_time, TU32 timestamp)
+{
+    ASSERT(sub_session);
+
+    if (DUnlikely(!mbSrBuilt)) {
+        mbSrBuilt = 1;
+        buildSr(sub_session->rtp_ssrc, ntp_time, timestamp, sub_session->statistics.packet_count, sub_session->statistics.octet_count);
+    } else {
+        updateSr(sub_session->rtp_ssrc, ntp_time, timestamp, sub_session->statistics.packet_count, sub_session->statistics.octet_count);
+    }
+
+    udpSendSr(sub_session);
+}
+
+void CVideoRTPRTCPSink::buildSr(TUint ssrc, TS64 ntp_time,TUint timestamp,TUint packet_count,TUint octet_count)
+{
+    if (DUnlikely((!mpRTCPBuffer) || (mRTCPBufferTotalLength < 28))) {
+        LOGM_FATAL("NULL mpRTCPBuffer, mRTCPBuffer %p, TotalLength %ld\n", mpRTCPBuffer, mRTCPBufferTotalLength);
+        return;
+    }
+
+    mpRTCPBuffer[0]  = (2 << 6); //RTP_VERSION
+    mpRTCPBuffer[1]  = (200); //RTCP_SR
+    mpRTCPBuffer[2]  = 0;
+    mpRTCPBuffer[3]  = 6; // length in words - 1
+    mpRTCPBuffer[4]  = (ssrc >> 24) & 0xff;
+    mpRTCPBuffer[5]  = (ssrc >> 16) & 0xff;
+    mpRTCPBuffer[6]  = (ssrc >> 8) & 0xff;
+    mpRTCPBuffer[7]  = (ssrc >> 0) & 0xff;
+    TUint ntp_time_1 = ntp_time / 1000000;
+    TUint ntp_time_2 = ((ntp_time % 1000000) << 32) / 1000000;
+    mpRTCPBuffer[8]  = (ntp_time_1 >> 24) & 0xff;
+    mpRTCPBuffer[9]  = (ntp_time_1 >> 16) & 0xff;
+    mpRTCPBuffer[10]  = (ntp_time_1 >> 8) & 0xff;
+    mpRTCPBuffer[11]  = (ntp_time_1 >> 0) & 0xff;
+    mpRTCPBuffer[12]  = (ntp_time_2 >> 24) & 0xff;
+    mpRTCPBuffer[13]  = (ntp_time_2 >> 16) & 0xff;
+    mpRTCPBuffer[14]  = (ntp_time_2 >> 8) & 0xff;
+    mpRTCPBuffer[15]  = (ntp_time_2 >> 0) & 0xff;
+    mpRTCPBuffer[16]  = (timestamp >> 24) & 0xff;
+    mpRTCPBuffer[17]  = (timestamp >> 16) & 0xff;
+    mpRTCPBuffer[18]  = (timestamp >> 8) & 0xff;
+    mpRTCPBuffer[19]  = (timestamp >> 0) & 0xff;
+    mpRTCPBuffer[20]  = (packet_count >> 24) & 0xff;
+    mpRTCPBuffer[21]  = (packet_count >> 16) & 0xff;
+    mpRTCPBuffer[22]  = (packet_count >> 8) & 0xff;
+    mpRTCPBuffer[23]  = (packet_count >> 0) & 0xff;
+    mpRTCPBuffer[24]  = (octet_count >> 24) & 0xff;
+    mpRTCPBuffer[25]  = (octet_count >> 16) & 0xff;
+    mpRTCPBuffer[26]  = (octet_count >> 8) & 0xff;
+    mpRTCPBuffer[27]  = (octet_count >> 0) & 0xff;
+
+    mRTCPBufferLength = 28;
+}
+
+void CVideoRTPRTCPSink::updateSr(TUint ssrc, TS64 ntp_time,TUint timestamp,TUint packet_count,TUint octet_count)
+{
+    if (DUnlikely((!mpRTCPBuffer) || (mRTCPBufferTotalLength < 28))) {
+        LOGM_FATAL("NULL mpRTCPBuffer, mRTCPBuffer %p, TotalLength %ld\n", mpRTCPBuffer, mRTCPBufferTotalLength);
+        return;
+    }
+
+    mpRTCPBuffer[4]  = (ssrc >> 24) & 0xff;
+    mpRTCPBuffer[5]  = (ssrc >> 16) & 0xff;
+    mpRTCPBuffer[6]  = (ssrc >> 8) & 0xff;
+    mpRTCPBuffer[7]  = (ssrc >> 0) & 0xff;
+    TUint ntp_time_1 = ntp_time / 1000000;
+    TUint ntp_time_2 = ((ntp_time % 1000000) << 32) / 1000000;
+    mpRTCPBuffer[8]  = (ntp_time_1 >> 24) & 0xff;
+    mpRTCPBuffer[9]  = (ntp_time_1 >> 16) & 0xff;
+    mpRTCPBuffer[10]  = (ntp_time_1 >> 8) & 0xff;
+    mpRTCPBuffer[11]  = (ntp_time_1 >> 0) & 0xff;
+    mpRTCPBuffer[12]  = (ntp_time_2 >> 24) & 0xff;
+    mpRTCPBuffer[13]  = (ntp_time_2 >> 16) & 0xff;
+    mpRTCPBuffer[14]  = (ntp_time_2 >> 8) & 0xff;
+    mpRTCPBuffer[15]  = (ntp_time_2 >> 0) & 0xff;
+    mpRTCPBuffer[16]  = (timestamp >> 24) & 0xff;
+    mpRTCPBuffer[17]  = (timestamp >> 16) & 0xff;
+    mpRTCPBuffer[18]  = (timestamp >> 8) & 0xff;
+    mpRTCPBuffer[19]  = (timestamp >> 0) & 0xff;
+    mpRTCPBuffer[20]  = (packet_count >> 24) & 0xff;
+    mpRTCPBuffer[21]  = (packet_count >> 16) & 0xff;
+    mpRTCPBuffer[22]  = (packet_count >> 8) & 0xff;
+    mpRTCPBuffer[23]  = (packet_count >> 0) & 0xff;
+    mpRTCPBuffer[24]  = (octet_count >> 24) & 0xff;
+    mpRTCPBuffer[25]  = (octet_count >> 16) & 0xff;
+    mpRTCPBuffer[26]  = (octet_count >> 8) & 0xff;
+    mpRTCPBuffer[27]  = (octet_count >> 0) & 0xff;
+
+}
+
+void CVideoRTPRTCPSink::buildBye(TUint ssrc)
+{
+    if (DUnlikely((!mpRTCPBuffer) || (mRTCPBufferTotalLength < 28))) {
+        LOGM_FATAL("NULL mpRTCPBuffer, mRTCPBuffer %p, TotalLength %ld\n", mpRTCPBuffer, mRTCPBufferTotalLength);
+        return;
+    }
+
+    mpRTCPBuffer[0] = (2 << 6); //RTP_VERSION
+    mpRTCPBuffer[0] = (mpRTCPBuffer[0] & 0xe0) | 0x1;//ssrc count
+    mpRTCPBuffer[1] = 203;//BYE
+    mpRTCPBuffer[2] = 0;
+    mpRTCPBuffer[3] = 1;
+    mpRTCPBuffer[4]  = (ssrc >> 24) & 0xff;
+    mpRTCPBuffer[5]  = (ssrc >> 16) & 0xff;
+    mpRTCPBuffer[6]  = (ssrc >> 8) & 0xff;
+    mpRTCPBuffer[7]  = (ssrc >> 0) & 0xff;
+
+    mRTCPBufferLength = 8;
+}
+
+void CVideoRTPRTCPSink::processBYE(SSubSessionInfo* sub_session)
+{
+    buildBye(sub_session->rtp_ssrc);
+    if (!sub_session->rtp_over_rtsp) {
+        udpSendSr(sub_session);
+    } else {
+        //rtp over rtsp
+    }
+}
+
+DCONFIG_COMPILE_OPTION_CPPFILE_IMPLEMENT_END
+

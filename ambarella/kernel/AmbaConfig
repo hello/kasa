@@ -1,0 +1,131 @@
+##
+## public_linux/AmbaConfig
+##
+## History:
+##    2008/05/04 - [Anthony Ginger] Create
+##
+## Copyright (C) 2004-2008, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+menuconfig BUILD_AMBARELLA_LINUX_KERNEL
+	bool "Ambarella Linux Configuration"
+	default n
+	help
+		Build Ambarella Linux Kernel.
+
+if BUILD_AMBARELLA_LINUX_KERNEL
+
+config CONFIG_LINUX_KERNEL_VERSION
+	string "Linux Kernel Version"
+	default "3.10"
+
+config CONFIG_KERNEL_DEFCONFIG_STRING
+	string "Linux Default Configuration"
+	default ""
+
+config CONFIG_KERNEL_DUAL_CPU
+	depends on CONFIG_ARCH_I1 || CONFIG_ARCH_S2
+	bool "Build Linux for both Cortex and ARM11"
+	default n
+
+config CONFIG_KERNEL_2NDCONFIG_STRING
+	depends on CONFIG_KERNEL_DUAL_CPU
+	string "Linux Second Configuration"
+	default ""
+
+config CONFIG_KERNEL_MODULES_INSTALL_DIR
+	string "Install kernel Modules"
+	default "$(FAKEROOT_DIR)"
+	help
+		Install kernel Modules to the defined DIR.
+
+##
+## kernel/AmbaConfig
+##
+## Following content are generated automatically by
+##  create_mkcfg: DO NOT EDIT!!
+##
+
+##### external
+
+menuconfig BUILD_AMBARELLA_EXTERNAL_MODULES
+	bool "Ambarella External Linux Configuration"
+	default n
+	depends on BUILD_AMBARELLA_LINUX_KERNEL
+	help
+		Build Ambarella External Linux modules.
+
+if BUILD_AMBARELLA_EXTERNAL_MODULES
+
+config BUILD_WIFI_BLUETOOTH_MODULES
+	bool "External WiFi-Bluetooth Configuration"
+	default n
+	depends on BUILD_AMBARELLA_LINUX_KERNEL
+	help
+
+if BUILD_WIFI_BLUETOOTH_MODULES
+source kernel/external/marvell/AmbaConfig
+source kernel/external/atheros/AmbaConfig
+source kernel/external/broadcom/AmbaConfig
+source kernel/external/realtek/AmbaConfig
+source kernel/external/compat/AmbaConfig
+endif
+
+menuconfig BUILD_MULTIVINFPGA_MODULES
+	bool "MULTIVIN FPGA Driver Configuration"
+	default n
+	depends on BUILD_AMBARELLA_LINUX_KERNEL
+	depends on CONFIG_ARCH_S2
+	help
+
+if BUILD_MULTIVINFPGA_MODULES
+source kernel/external/multivinfpga/AmbaConfig
+endif
+
+config BUILD_EXTERNAL_CRYPTO_MODULES
+	bool "External Cryptographic Chip Configuration"
+	default n
+	depends on BUILD_AMBARELLA_LINUX_KERNEL
+	help
+
+if BUILD_EXTERNAL_CRYPTO_MODULES
+source kernel/external/atmel/AmbaConfig
+endif
+
+endif
+
+
+
+##### private
+
+menuconfig BUILD_AMBARELLA_PRIVATE_MODULES
+	bool "Ambarella Private Drivers Configuration"
+	default n
+	depends on BUILD_AMBARELLA_LINUX_KERNEL
+	help
+		Build Ambarella private Linux modules.
+
+if BUILD_AMBARELLA_PRIVATE_MODULES
+
+source kernel/private/drivers/AmbaConfig
+source kernel/private/lib/AmbaConfig
+
+config BUILD_DRIVERS_FROM_BINARY
+	bool "Build Ambarella private moduels from binary"
+	default n
+	depends on BUILD_AMBARELLA_PRIVATE_MODULES
+	help
+		Build Ambarella private moduels from .o_shipped
+
+
+endif
+
+
+## The end of AmbaConfig file
+endif
+

@@ -1,0 +1,5 @@
+NAME=Flexible
+ID=S2LM
+VERSION_ID=2.5.0
+PRETTY_NAME="Ambarella Flexible Linux S2LM (2.5.0)"
+ANSI_COLOR="1;32"

@@ -1,0 +1,442 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#define APSTUDIO_HIDDEN_SYMBOLS
+#include "windows.h"
+#undef APSTUDIO_HIDDEN_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// Chinese (P.R.C.) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)
+#ifdef _WIN32
+LANGUAGE LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED
+#pragma code_page(936)
+#endif //_WIN32
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_DIALOG_ABOUT DIALOGEX 0, 0, 255, 288
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    GROUPBOX        "",IDC_STATIC,69,25,102,59
+    CONTROL         133,IDC_STATIC,"Static",SS_BITMAP,70,30,100,52
+    LTEXT           "Copyright (c) 2008 Ambarella, Inc.",IDC_STATIC,66,95,
+                    122,12
+END
+
+IDD_DIALOG_ENCODE_FORMAT DIALOGEX 0, 0, 255, 288
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_SYSMENU
+FONT 8, "MS Shell Dlg", 400, 0, 0x0
+BEGIN
+    GROUPBOX        "VIN",IDC_STATIC,7,7,226,63
+    GROUPBOX        "VOUT",IDC_STATIC,7,75,226,32
+    GROUPBOX        "Main Stream Format",IDC_STATIC,7,114,226,68
+    LTEXT           "Sensor input mode:",IDC_STATIC_SENSOR_INPUT_MODE,14,16,
+                    98,8
+    LTEXT           "Frame rate",IDC_STATIC_FRAME_RATE,112,15,65,8
+    LTEXT           "Sensor mirror pattern:",
+                    IDC_STATIC_SENSOR_MIRROR_PATTERN,14,42,98,8
+    LTEXT           "Bayer pattern:",IDC_STATIC_SENSOR_BAYER_PATTERN,112,41,
+                    65,8
+    LTEXT           "Resolution",IDC_STATIC_RESOLUTION_VOUT,21,85,40,8
+    COMBOBOX        IDC_VIN_MODE,14,25,82,140,CBS_DROPDOWNLIST | WS_VSCROLL | 
+                    WS_TABSTOP
+    COMBOBOX        IDC_VIN_FRAME_RATE,112,25,72,140,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    COMBOBOX        IDC_VIN_MIRROR_PATTERN,14,52,82,140,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    COMBOBOX        IDC_VIN_BAYER_PATTERN,112,52,72,140,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    COMBOBOX        IDC_VOUT_RESOLUTION,71,85,110,140,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    GROUPBOX        "Encode Type",IDC_STATIC,16,123,74,49
+    CONTROL         "None",IDC_MAIN_NONE,"Button",BS_AUTORADIOBUTTON | 
+                    WS_GROUP,21,135,49,10
+    CONTROL         "H.264",IDC_MAIN_H264,"Button",BS_AUTORADIOBUTTON,21,146,
+                    55,10
+    CONTROL         "MJPEG",IDC_MAIN_MJPEG,"Button",BS_AUTORADIOBUTTON,21,
+                    157,56,10
+    LTEXT           "Resolution",IDC_STATIC,99,132,34,8
+    COMBOBOX        IDC_MAIN_RESOLUTION,138,132,78,106,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Frame interval",IDC_STATIC,99,155,47,8
+    EDITTEXT        IDC_MAIN_FRAME_INTERVAL,159,154,55,13,ES_AUTOHSCROLL
+    GROUPBOX        "Second Stream Format",IDC_STATIC,7,189,226,68
+    GROUPBOX        "Encode Type",IDC_STATIC,16,198,74,49
+    CONTROL         "None",IDC_SECOND_NONE,"Button",BS_AUTORADIOBUTTON | 
+                    WS_GROUP,21,210,49,10
+    CONTROL         "H.264",IDC_SECOND_H264,"Button",BS_AUTORADIOBUTTON,21,
+                    221,55,10
+    CONTROL         "MJPEG",IDC_SECOND_MJPEG,"Button",BS_AUTORADIOBUTTON,21,
+                    232,56,10
+    LTEXT           "Resolution",IDC_STATIC,99,207,34,8
+    COMBOBOX        IDC_SECOND_RESOLUTION,138,207,78,106,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Frame interval",IDC_STATIC,99,230,47,8
+    EDITTEXT        IDC_SECOND_FRAME_INTERVAL,159,229,55,13,ES_AUTOHSCROLL
+END
+
+IDD_DIALOG_ENCODE_PARAM DIALOGEX 0, 0, 255, 288
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_SYSMENU
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    GROUPBOX        "Main (H.264)",IDC_STATIC,7,7,242,122
+    LTEXT           "M",IDC_STATIC,14,19,9,8
+    LTEXT           "N",IDC_STATIC,92,18,9,8
+    LTEXT           "IDR interval",IDC_STATIC,157,19,40,8
+    GROUPBOX        "Bitrate control",IDC_STATIC,17,34,71,24
+    GROUPBOX        "GOP model",IDC_STATIC,103,34,100,24
+    CONTROL         "CBR",IDC_RADIO1,"Button",BS_AUTORADIOBUTTON | WS_GROUP,
+                    21,45,29,10
+    CONTROL         "VBR",IDC_RADIO2,"Button",BS_AUTORADIOBUTTON,55,45,29,10
+    COMBOBOX        IDC_COMBO1,23,18,45,65,CBS_DROPDOWNLIST | WS_VSCROLL | 
+                    WS_TABSTOP
+    EDITTEXT        IDC_EDIT1,103,17,31,13,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT2,200,18,37,13,ES_AUTOHSCROLL
+    CONTROL         "Simple",IDC_RADIO3,"Button",BS_AUTORADIOBUTTON | 
+                    WS_GROUP,109,45,36,10
+    CONTROL         "Advanced",IDC_RADIO4,"Button",BS_AUTORADIOBUTTON,148,45,
+                    48,10
+    GROUPBOX        "Profile",IDC_STATIC,17,62,48,40
+    CONTROL         "Main",IDC_MAIN_PROFILE_MAIN,"Button",BS_AUTORADIOBUTTON | 
+                    WS_GROUP,21,73,31,10
+    CONTROL         "Baseline",IDC_MAIN_PROFILE_BASELINE,"Button",
+                    BS_AUTORADIOBUTTON,21,87,42,10
+    RTEXT           "VBRness (0-99)",IDC_STATIC,125,65,56,8
+    EDITTEXT        IDC_EDIT3,185,63,55,13,ES_AUTOHSCROLL
+    RTEXT           "Min VBR rate factor (0-100)",IDC_STATIC,90,81,91,8
+    EDITTEXT        IDC_EDIT4,185,79,55,13,ES_AUTOHSCROLL
+    RTEXT           "Max VBR rate factor (0-400)",IDC_STATIC,87,97,94,8
+    EDITTEXT        IDC_EDIT5,185,95,55,13,ES_AUTOHSCROLL
+    RTEXT           "Average bitrate (bps)",IDC_STATIC,106,113,75,8
+    EDITTEXT        IDC_EDIT6,185,111,55,13,ES_AUTOHSCROLL
+    GROUPBOX        "Secondary (H.264)",IDC_STATIC,7,132,242,122
+    LTEXT           "M",IDC_STATIC,14,145,9,8
+    LTEXT           "N",IDC_STATIC,92,145,9,8
+    LTEXT           "IDR interval",IDC_STATIC,157,145,40,8
+    GROUPBOX        "Bitrate control",IDC_STATIC,17,159,71,24
+    GROUPBOX        "GOP model",IDC_STATIC,103,159,100,24
+    CONTROL         "CBR",IDC_RADIO5,"Button",BS_AUTORADIOBUTTON | WS_GROUP,
+                    21,170,29,10
+    CONTROL         "VBR",IDC_RADIO6,"Button",BS_AUTORADIOBUTTON,55,170,29,
+                    10
+    COMBOBOX        IDC_COMBO3,23,143,45,65,CBS_DROPDOWNLIST | WS_VSCROLL | 
+                    WS_TABSTOP
+    EDITTEXT        IDC_EDIT7,103,143,31,13,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT8,200,143,37,13,ES_AUTOHSCROLL
+    CONTROL         "Simple",IDC_RADIO7,"Button",BS_AUTORADIOBUTTON | 
+                    WS_GROUP,109,170,36,10
+    CONTROL         "Advanced",IDC_RADIO8,"Button",BS_AUTORADIOBUTTON,148,
+                    170,48,10
+    GROUPBOX        "Profile",IDC_STATIC,17,188,48,40
+    CONTROL         "Main",IDC_SECOND_PROFILE_MAIN,"Button",
+                    BS_AUTORADIOBUTTON | WS_GROUP,21,199,31,10
+    CONTROL         "Baseline",IDC_SECOND_PROFILE_BASELINE,"Button",
+                    BS_AUTORADIOBUTTON,21,213,42,10
+    RTEXT           "VBRness (0-99)",IDC_STATIC,125,190,56,8
+    EDITTEXT        IDC_EDIT9,185,188,55,13,ES_AUTOHSCROLL
+    RTEXT           "Min VBR rate factor (0-100)",IDC_STATIC,87,206,94,8
+    EDITTEXT        IDC_EDIT10,185,204,55,13,ES_AUTOHSCROLL
+    RTEXT           "Max VBR rate factor (0-400)",IDC_STATIC,87,222,94,8
+    EDITTEXT        IDC_EDIT11,185,220,55,13,ES_AUTOHSCROLL
+    RTEXT           "Average bitrate (bps)",IDC_STATIC,106,238,75,8
+    EDITTEXT        IDC_EDIT12,185,236,55,13,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT13,61,259,55,13,ES_AUTOHSCROLL
+    LTEXT           "JPEG quality",IDC_STATIC,17,261,40,8
+END
+
+IDD_DIALOG_IMG_PARAM DIALOGEX 0, 0, 255, 288
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_SYSMENU
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    GROUPBOX        "",IDC_STATIC,7,7,242,261
+    GROUPBOX        "Anti-flicker mode",IDC_STATIC_ANTI_FLICKER_MODE,23,57,
+                    114,25
+    CONTROL         "60Hz",IDC_RADIO_ANTI_FLICKER_60Hz,"Button",
+                    BS_AUTORADIOBUTTON | WS_GROUP,36,70,32,10
+    CONTROL         "50Hz",IDC_RADIO_ANTI_FLICKER_50Hz,"Button",
+                    BS_AUTORADIOBUTTON,89,70,32,10
+    LTEXT           "Lense Type",IDC_STATIC_SENSOR_INPUT_MODE,21,24,98,8
+    COMBOBOX        IDC_COMBO_LENS_TYPE,19,36,147,89,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    GROUPBOX        "Black-white mode",IDC_STATIC_BLACK_WHITE_MODE,23,86,159,
+                    26
+    CONTROL         "On",IDC_RADIO_BLACK_WHITE_ON,"Button",
+                    BS_AUTORADIOBUTTON | WS_GROUP,89,98,25,10
+    CONTROL         "Off",IDC_RADIO_BLACK_WHITE_OFF,"Button",
+                    BS_AUTORADIOBUTTON,36,98,27,10
+    CONTROL         "Auto",IDC_RADIO_BLACK_WHITE_AUTO,"Button",
+                    BS_AUTORADIOBUTTON,140,98,31,10
+    GROUPBOX        "Slow-shutter mode",IDC_STATIC_SLOW_SHUTTER_MODE,23,116,
+                    159,27
+    CONTROL         "On",IDC_RADIO_SLOW_SHUTTER_ON,"Button",
+                    BS_AUTORADIOBUTTON | WS_GROUP,89,127,25,10
+    CONTROL         "Off",IDC_RADIO_SLOW_SHUTTER_OFF,"Button",
+                    BS_AUTORADIOBUTTON,37,127,27,10
+    CONTROL         "Auto",IDC_RADIO_SLOW_SHUTTER_AUTO,"Button",
+                    BS_AUTORADIOBUTTON,139,127,31,10
+    GROUPBOX        "3A Enable",IDC_STATIC_3A_ENABLE_MODE,23,147,159,26
+    CONTROL         "On",IDC_RADIO_3A_ENABLE_ON,"Button",BS_AUTORADIOBUTTON | 
+                    WS_GROUP,89,159,25,10
+    CONTROL         "Off",IDC_RADIO_3A_ENABLE_OFF,"Button",
+                    BS_AUTORADIOBUTTON,36,159,27,10
+    GROUPBOX        "3A Function",IDC_STATIC_3A_FUNCTION_MODE,23,178,159,82
+    CONTROL         "On",IDC_RADIO_3A_AE_ON,"Button",BS_AUTORADIOBUTTON | 
+                    WS_GROUP,143,191,25,10
+    CONTROL         "Off",IDC_RADIO_3A_AE_OFF,"Button",BS_AUTORADIOBUTTON,89,
+                    191,27,10
+    CONTROL         "On",IDC_RADIO_3A_AWB_ON,"Button",BS_AUTORADIOBUTTON | 
+                    WS_GROUP,143,208,25,10
+    CONTROL         "Off",IDC_RADIO_3A_AWB_OFF,"Button",BS_AUTORADIOBUTTON,
+                    89,208,27,10
+    CONTROL         "On",IDC_RADIO_3A_AF_ON,"Button",BS_AUTORADIOBUTTON | 
+                    WS_GROUP,143,225,25,10
+    CONTROL         "Off",IDC_RADIO_3A_AF_OFF,"Button",BS_AUTORADIOBUTTON,89,
+                    225,27,10
+    CONTROL         "On",IDC_RADIO_3A_ADJ_ON,"Button",BS_AUTORADIOBUTTON | 
+                    WS_GROUP,143,242,25,10
+    CONTROL         "Off",IDC_RADIO_3A_ADJ_OFF,"Button",BS_AUTORADIOBUTTON,
+                    89,242,27,10
+    LTEXT           " AE :",IDC_STATIC,49,191,27,9
+    LTEXT           "AWB :",IDC_STATIC,49,208,28,9
+    LTEXT           " AF :",IDC_STATIC,49,225,25,9
+    LTEXT           "ADJ :",IDC_STATIC,49,242,26,9
+END
+
+IDD_DIALOG_MD_PARAM DIALOGEX 0, 0, 255, 288
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_SYSMENU
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    CONTROL         "AAA statistics",IDC_RADIO_MD_SRC_AAA,"Button",
+                    BS_AUTORADIOBUTTON | WS_GROUP,21,232,60,10
+    CONTROL         "Preview",IDC_RADIO_MD_SRC_PREV,"Button",
+                    BS_AUTORADIOBUTTON,116,234,41,10
+    RTEXT           "x_lu",IDC_STATIC,55,28,14,8
+    EDITTEXT        IDC_EDIT_ROI1_LU_X,73,26,22,13,ES_AUTOHSCROLL
+    RTEXT           "y_lu",IDC_STATIC,53,41,16,8
+    EDITTEXT        IDC_EDIT_ROI1_LU_Y,73,40,22,13,ES_AUTOHSCROLL
+    GROUPBOX        "ROI#1",IDC_STATIC_ROI1,14,16,197,41
+    RTEXT           "x_rd",IDC_STATIC,102,29,16,8
+    EDITTEXT        IDC_EDIT_ROI1_RD_X,122,26,22,13,ES_AUTOHSCROLL
+    RTEXT           "y_rd",IDC_STATIC,98,41,20,8
+    EDITTEXT        IDC_EDIT_ROI1_RD_Y,122,40,22,13,ES_AUTOHSCROLL
+    GROUPBOX        "ROI info (x: 0-12  y: 0-8  THR: 1-1000  SENS: 1-100)",
+                    IDC_STATIC_ROI_INFO,7,7,242,200
+    GROUPBOX        "Motion data source",IDC_STATIC_MD_DATA_SRC,7,218,201,31
+    RTEXT           "THR",IDC_STATIC,156,29,14,8
+    EDITTEXT        IDC_EDIT_ROI1_THR,175,26,27,13,ES_AUTOHSCROLL
+    RTEXT           "SENS",IDC_STATIC,153,42,18,8
+    EDITTEXT        IDC_EDIT_ROI1_SENS,175,40,27,13,ES_AUTOHSCROLL
+    RTEXT           "x_lu",IDC_STATIC,53,71,14,8
+    EDITTEXT        IDC_EDIT_ROI2_LU_X,73,68,22,13,ES_AUTOHSCROLL
+    RTEXT           "y_lu",IDC_STATIC,51,84,16,8
+    EDITTEXT        IDC_EDIT_ROI2_LU_Y,73,83,22,13,ES_AUTOHSCROLL
+    GROUPBOX        "ROI#2",IDC_STATIC_ROI2,14,58,197,43
+    RTEXT           "x_rd",IDC_STATIC,101,71,16,8
+    EDITTEXT        IDC_EDIT_ROI2_RD_X,122,68,22,13,ES_AUTOHSCROLL
+    RTEXT           "y_rd",IDC_STATIC,97,84,20,8
+    EDITTEXT        IDC_EDIT_ROI2_RD_Y,122,83,22,13,ES_AUTOHSCROLL
+    RTEXT           "THR",IDC_STATIC,155,72,14,8
+    EDITTEXT        IDC_EDIT_ROI2_THR,175,68,27,13,ES_AUTOHSCROLL
+    RTEXT           "SENS",IDC_STATIC,153,85,18,8
+    EDITTEXT        IDC_EDIT_ROI2_SENS,175,83,27,13,ES_AUTOHSCROLL
+    RTEXT           "x_lu",IDC_STATIC,53,113,14,8
+    EDITTEXT        IDC_EDIT_ROI3_LU_X,73,110,22,13,ES_AUTOHSCROLL
+    RTEXT           "y_lu",IDC_STATIC,51,126,16,8
+    EDITTEXT        IDC_EDIT_ROI3_LU_Y,73,124,22,13,ES_AUTOHSCROLL
+    GROUPBOX        "ROI#3",IDC_STATIC_ROI3,14,101,197,41
+    RTEXT           "x_rd",IDC_STATIC,101,114,16,8
+    EDITTEXT        IDC_EDIT_ROI3_RD_X,122,110,22,13,ES_AUTOHSCROLL
+    RTEXT           "y_rd",IDC_STATIC,97,126,20,8
+    EDITTEXT        IDC_EDIT_ROI3_RD_Y,122,124,22,13,ES_AUTOHSCROLL
+    RTEXT           "THR",IDC_STATIC,155,114,14,8
+    EDITTEXT        IDC_EDIT_ROI3_THR,175,110,27,13,ES_AUTOHSCROLL
+    RTEXT           "SENS",IDC_STATIC,153,126,18,8
+    EDITTEXT        IDC_EDIT_ROI3_SENS,175,124,27,13,ES_AUTOHSCROLL
+    RTEXT           "x_lu",IDC_STATIC,53,156,14,8
+    EDITTEXT        IDC_EDIT_ROI4_LU_X,73,153,22,13,ES_AUTOHSCROLL
+    RTEXT           "y_lu",IDC_STATIC,51,169,16,8
+    EDITTEXT        IDC_EDIT_ROI4_LU_Y,73,167,22,13,ES_AUTOHSCROLL
+    GROUPBOX        "ROI#4",IDC_STATIC_ROI4,14,144,197,43
+    RTEXT           "x_rd",IDC_STATIC,101,156,16,8
+    EDITTEXT        IDC_EDIT_ROI4_RD_X,122,153,22,13,ES_AUTOHSCROLL
+    RTEXT           "y_rd",IDC_STATIC,97,169,20,8
+    EDITTEXT        IDC_EDIT_ROI4_RD_Y,122,168,22,13,ES_AUTOHSCROLL
+    RTEXT           "THR",IDC_STATIC,155,155,14,8
+    EDITTEXT        IDC_EDIT_ROI4_THR,175,154,27,13,ES_AUTOHSCROLL
+    RTEXT           "SENS",IDC_STATIC,153,168,18,8
+    EDITTEXT        IDC_EDIT_ROI4_SENS,175,168,27,13,ES_AUTOHSCROLL
+    CONTROL         "On",IDC_RADIO_ROI1_ON,"Button",BS_AUTORADIOBUTTON | 
+                    WS_GROUP,22,28,25,10
+    CONTROL         "Off",IDC_RADIO_ROI1_OFF,"Button",BS_AUTORADIOBUTTON,22,
+                    41,27,10
+    CONTROL         "On",IDC_RADIO_ROI2_ON,"Button",BS_AUTORADIOBUTTON | 
+                    WS_GROUP,22,71,25,10
+    CONTROL         "Off",IDC_RADIO_ROI2_OFF,"Button",BS_AUTORADIOBUTTON,22,
+                    84,27,10
+    CONTROL         "On",IDC_RADIO_ROI3_ON,"Button",BS_AUTORADIOBUTTON | 
+                    WS_GROUP,22,112,25,10
+    CONTROL         "Off",IDC_RADIO_ROI3_OFF,"Button",BS_AUTORADIOBUTTON,22,
+                    126,27,10
+    CONTROL         "On",IDC_RADIO_ROI4_ON,"Button",BS_AUTORADIOBUTTON | 
+                    WS_GROUP,22,156,25,10
+    CONTROL         "Off",IDC_RADIO_ROI4_OFF,"Button",BS_AUTORADIOBUTTON,22,
+                    170,27,10
+END
+
+IDD_DIALOG_MUXER_PARAM DIALOGEX 0, 0, 255, 288
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_SYSMENU
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    GROUPBOX        "mp4Muxer",IDC_STATIC,17,7,197,69
+    CONTROL         "Disabled",IDC_RADIO1,"Button",BS_AUTORADIOBUTTON | 
+                    WS_GROUP,30,23,38,9
+    CONTROL         "mp4",IDC_RADIO2,"Button",BS_AUTORADIOBUTTON,81,23,30,9
+    CONTROL         "f4v",IDC_RADIO3,"Button",BS_AUTORADIOBUTTON,121,23,30,9
+    CONTROL         "h264/mjpeg",IDC_RADIO4,"Button",BS_AUTORADIOBUTTON,160,
+                    23,51,9
+    LTEXT           "Save as",IDC_STATIC,29,41,28,9
+    EDITTEXT        IDC_EDIT3,73,39,87,13,ES_AUTOHSCROLL
+    PUSHBUTTON      "...",IDC_BUTTON1,167,41,18,10
+    LTEXT           "Max file size",IDC_STATIC,29,55,40,11
+    EDITTEXT        IDC_EDIT4,73,55,56,13,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "M    (4M~2G)",IDC_STATIC,135,57,62,9
+END
+
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#define APSTUDIO_HIDDEN_SYMBOLS\r\n"
+    "#include ""windows.h""\r\n"
+    "#undef APSTUDIO_HIDDEN_SYMBOLS\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO 
+BEGIN
+    IDD_DIALOG_ABOUT, DIALOG
+    BEGIN
+        RIGHTMARGIN, 248
+        BOTTOMMARGIN, 279
+    END
+
+    IDD_DIALOG_ENCODE_FORMAT, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 247
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 281
+    END
+
+    IDD_DIALOG_ENCODE_PARAM, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 249
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 276
+    END
+
+    IDD_DIALOG_IMG_PARAM, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 249
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 276
+    END
+
+    IDD_DIALOG_MD_PARAM, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 249
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 280
+    END
+
+    IDD_DIALOG_MUXER_PARAM, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 249
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 280
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Bitmap
+//
+
+IDB_BITMAP_LOGO         BITMAP                  "Amba-24.bmp"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// String Table
+//
+
+STRINGTABLE 
+BEGIN
+    IDS_PROPPAGE_ENCODE_FORMAT "Format"
+    IDS_PROPPAGE_ENCODE_PARAM "Paramters"
+    IDS_PROPPAGE_ABOUT      "About"
+    IDS_PROPPAGE_IMG_PARAM  "Imgproc"
+    IDS_PROPPAGE_MD_PARAM   "Motion detection"
+    IDS_PROPPAGE_MUXER_PARAM "Muxer "
+END
+
+#endif    // Chinese (P.R.C.) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

@@ -1,0 +1,5 @@
+_key_input_ = {
+  long_press_time = 2000
+}
+
+return _key_input_

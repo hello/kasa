@@ -1,0 +1,279 @@
+##
+## kernel/private/drivers/vin/sensors/AmbaConfig
+##
+## History:
+##    2008/01/16 - [Anthony Ginger] Create
+##
+## Copyright (C) 2004-2008, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+
+menu "Ambarella Sensor Configuration"
+	depends on BUILD_AMBARELLA_VIN
+
+config CONFIG_SENSOR_MT9T002
+	bool "Micron MT9T002 3.4M CMOS sensor(Hispi)"
+	default n
+	help
+		Select MICRON MT9T002 3.4M CMOS sensor, with hispi output.
+
+config CONFIG_SENSOR_MT9T002_MIPI
+	bool "Micron MT9T002 3.4M CMOS sensor(MIPI)"
+	default n
+	help
+		Select MICRON MT9T002 3.4M CMOS sensor, with MIPI output.
+
+config CONFIG_SENSOR_MT9T002_PARALLEL
+	bool "Micron MT9T002 3.4M CMOS sensor(Parallel LVCMOS)"
+	default n
+	help
+		Select MICRON MT9T002 3.4M CMOS sensor, with parallel output.
+
+config CONFIG_SENSOR_AR0130
+	bool "Aptina AR0130 1.2M CMOS sensor(Parallel LVCMOS)"
+	default n
+	help
+		Select APTINA AR0130 1.2M CMOS sensor.
+
+config CONFIG_SENSOR_AR0141
+	bool "Aptina AR0141 1.0M CMOS sensor(Hispi)"
+	default n
+	help
+		Select APTINA AR0141 1.0M CMOS sensor.
+
+config CONFIG_SENSOR_AR0230
+	bool "Aptina AR0230 2.1M CMOS sensor(Hispi)"
+	default n
+	help
+		Select APTINA AR0230 2.1M CMOS sensor.
+
+config CONFIG_SENSOR_AR0230P
+	bool "Aptina AR0230 2.1M CMOS sensor(Parallel LVCMOS)"
+	default n
+	help
+		Select APTINA AR0230 2.1M CMOS sensor, with parallel output.
+
+config CONFIG_SENSOR_AR0237
+	bool "Onsemi AR0237 2.1M CMOS sensor(Hispi)"
+	default n
+	help
+		Select Onsemi AR0237 2.1M CMOS sensor.
+
+config CONFIG_SENSOR_AR0237P
+	bool "Onsemi AR0237 2.1M CMOS sensor(Parallel LVCMOS))"
+	default n
+	help
+		Select Onsemi AR0237 2.1M CMOS sensor, with parallel output.
+
+config CONFIG_SENSOR_AR0331
+	bool "Aptina AR0331 3.1M CMOS sensor(Hispi)"
+	default n
+	help
+		Select APTINA AR0331 3.1M CMOS sensor.
+
+config CONFIG_SENSOR_OV2710P
+	bool "Omnivision OV2710 2M CMOS sensor(Parallel LVCMOS)"
+	default n
+	help
+		Select Omnivision OV2710 2M CMOS sensor, with parallel output.
+
+config CONFIG_SENSOR_OV2718_MIPI
+	bool "Omnivision OV2718 2.1M CMOS sensor(MIPI)"
+	default n
+	help
+		Select Omnivision OV2718 2.1M CMOS sensor with MIPI output.
+
+config CONFIG_SENSOR_OV4689_MIPI
+	bool "Omnivision OV4689 4M CMOS sensor(MIPI)"
+	default n
+	help
+		Select Omnivision OV4689 4M CMOS sensor with MIPI output.
+
+config CONFIG_SENSOR_OV5653
+	bool "Omnivision OV5653 5M CMOS sensor(Parallel LVCMOS)"
+	default n
+	help
+		Select Omnivision OV5653 5M CMOS sensor, with parallel output.
+
+config CONFIG_SENSOR_OV9710
+	bool "Omnivision OV9710 1M CMOS sensor(Parallel LVCMOS)"
+	default n
+	help
+		Select Omnivision OV9710 1M CMOS sensor, with parallel output.
+
+config CONFIG_SENSOR_OV9718_MIPI
+	bool "Omnivision OV9718 1M CMOS sensor(MIPI)"
+	default n
+	help
+		Select Omnivision OV9718 1M CMOS sensor, with MIPI output.
+
+config CONFIG_SENSOR_OV9732_MIPI
+	bool "Omnivision OV9732 0.95M CMOS sensor(MIPI)"
+	default n
+	help
+		Select Omnivision OV9732 0.95M CMOS sensor, with MIPI output.
+
+config CONFIG_SENSOR_OV9732_PARALLEL
+	bool "Omnivision OV9732 0.95M CMOS sensor(Parallel LVCMOS)"
+	default n
+	help
+		Select Omnivision OV9732 0.95M CMOS sensor, with PARALLEL output.
+
+config CONFIG_SENSOR_OV9750_MIPI
+	bool "Omnivision OV9750 1.2M CMOS sensor(MIPI)"
+	default n
+	help
+		Select Omnivision OV9750 1.2M CMOS sensor, with MIPI output.
+
+config CONFIG_SENSOR_OV9750_PARALLEL
+	bool "Omnivision OV9750 1.2M CMOS sensor(Parallel LVCMOS)"
+	default n
+	help
+		Select Omnivision OV9750 1.2M CMOS sensor, with PARALLEL output.
+
+config CONFIG_SENSOR_OV5658_MIPI
+	bool "Omnivision OV5658 5M CMOS sensor(MIPI)"
+	default n
+	help
+		Select Omnivision OV5658 5M CMOS sensor with MIPI output.
+
+config CONFIG_SENSOR_IMX122
+	bool "Sony IMX122 2M CMOS sensor(Parallel LVCMOS)"
+	default n
+	help
+		Select Sony IMX122 2M CMOS sensor.
+
+config CONFIG_SENSOR_IMX104
+	bool "Sony IMX104/IMX138 1.3M CMOS sensor(Serial LVDS)"
+	default n
+	help
+		Select Sony IMX104/IMX138 1.3M CMOS sensor.
+
+config CONFIG_SENSOR_IMX136
+	bool "Sony IMX136 2.3M CMOS sensor(Serial LVDS)"
+	default n
+	help
+		Select Sony IMX136 2.3M CMOS sensor.
+
+config CONFIG_SENSOR_IMX136P
+	bool "Sony IMX136 2.3M CMOS sensor(Parallel LVCMOS)"
+	default n
+	help
+		Select Sony IMX136 2.3M CMOS sensor.
+
+config CONFIG_SENSOR_IMX172
+	bool "Sony IMX172 12M CMOS sensor(Serial LVDS)"
+	default n
+	help
+		Select Sony IMX172 12M CMOS sensor.
+
+config CONFIG_SENSOR_IMX226
+	bool "Sony IMX226 12M CMOS sensor(Serial LVDS)"
+	default n
+	help
+		Select Sony IMX226 12M CMOS sensor.
+
+config CONFIG_SENSOR_IMX174
+	bool "Sony IMX174 2.35M CMOS sensor(Serial LVDS)"
+	default n
+	help
+		Select Sony IMX174 2.35M CMOS sensor.
+
+config CONFIG_SENSOR_IMX178
+	bool "Sony IMX178 6.44M CMOS sensor(Serial LVDS)"
+	default n
+	help
+		Select Sony IMX178 6.44M CMOS sensor.
+source kernel/private/drivers/vin/sensors/sony_imx178/AmbaConfig
+
+config CONFIG_SENSOR_IMX185
+	bool "Sony IMX185 2.38M CMOS sensor(Serial LVDS)"
+	default n
+	help
+		Select Sony IMX185 2.38M CMOS sensor.
+
+config CONFIG_SENSOR_IMX123
+	bool "Sony IMX123 3.2M CMOS sensor(Serial LVDS)"
+	default n
+	help
+		Select Sony IMX123 3.2M CMOS sensor.
+
+config CONFIG_SENSOR_IMX322
+	bool "Sony IMX322 2.12M CMOS sensor(Parallel LVCMOS)"
+	default n
+	help
+		Select Sony IMX322 2.12M CMOS sensor.
+source kernel/private/drivers/vin/sensors/sony_imx322/AmbaConfig
+
+config CONFIG_SENSOR_IMX124
+	bool "Sony IMX124 3.2M CMOS sensor(Serial LVDS)"
+	default n
+	help
+		Select Sony IMX124 3.2M CMOS sensor.
+
+config CONFIG_SENSOR_IMX224
+	bool "Sony IMX224 1.23M CMOS sensor(Serial LVDS)"
+	default n
+	help
+		Select Sony IMX224 1.23M CMOS sensor.
+
+config CONFIG_SENSOR_IMX224_MIPI
+	bool "Sony IMX224 1.23M CMOS sensor(MIPI)"
+	default n
+	help
+		Select Sony IMX224 1.23M CMOS sensor, with MIPI output.
+
+config CONFIG_SENSOR_IMX290
+	bool "Sony IMX290 2.13M CMOS sensor(Serial LVDS)"
+	default n
+	help
+		Select Sony IMX290 2.13M CMOS sensor.
+
+config CONFIG_SENSOR_IMX291
+	bool "Sony IMX291 2.13M CMOS sensor(Serial LVDS)"
+	default n
+	help
+		Select Sony IMX291 2.13M CMOS sensor.
+
+config CONFIG_SENSOR_MN34041PL
+	bool "Panasonic MN34041PL 2.1M CMOS sensor(Serial LVDS)"
+	default n
+	help
+		Select Panasonic MN34041PL 2.1M CMOS sensor, with subLVDS output.
+
+config CONFIG_SENSOR_MN34210PL
+	bool "Panasonic MN34210PL 1.3M CMOS sensor(Serial LVDS)"
+	default n
+	help
+		Select Panasonic MN34210PL 1.3M CMOS sensor, with subLVDS output.
+
+config CONFIG_SENSOR_MN34220PL
+	bool "Panasonic MN34220PL 2.4M CMOS sensor(Serial LVDS)"
+	default n
+	help
+		Select Panasonic MN34220PL 2.4M CMOS sensor, with subLVDS output.
+
+config CONFIG_SENSOR_MN34227PL
+	bool "Panasonic MN34227PL 2.1M CMOS sensor(Serial LVDS)"
+	default n
+	help
+		Select Panasonic MN34227PL 2.1M CMOS sensor, with subLVDS output.
+
+config CONFIG_SENSOR_FPGA
+	bool "FPGA pattern card for S2L atb(Serial LVDS)"
+	default n
+	help
+		Select FPGA pattern card for S2L atb.
+
+config CONFIG_SENSOR_AMBDS
+	bool "Ambarella Dummy Sensor(Serial LVDS)"
+	default n
+	help
+		Select Ambarella Dummy Sensor.
+endmenu
+

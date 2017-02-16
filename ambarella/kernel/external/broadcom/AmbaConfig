@@ -1,0 +1,151 @@
+##################################
+#### WiFi SDIO Interface
+##################################
+
+config BUILD_BROADCOM_WIFI_SDIO
+	bool "Broadcom WiFi SDIO BCM43362/BCM43340/BCM43341/BCM43438"
+#	depends on MMC
+	---help---
+		This module adds support for wireless adapters based on
+		Broadcom 43362/43340/43341/43438 chipset.
+
+config BUILD_BROADCOM_WIFI_ARP_OFFLOAD
+	depends on BUILD_BROADCOM_WIFI_SDIO
+	bool "Support WiFi ARP offload"
+	default n
+	help
+		Select Support WiFi ARP offload
+
+config BUILD_BROADCOM_WIFI_TXGLOM
+	depends on BUILD_BROADCOM_WIFI_SDIO
+	bool "Support WiFi txglom"
+	default n
+	help
+		Select Support WiFi txglom
+
+config BUILD_BROADCOM_WIFI_SDIO_OOB
+	depends on BUILD_BROADCOM_WIFI_SDIO
+	bool "Out-of-Band Interrupt"
+	default n
+	help
+		Select the BCM WiFi SDIO OOB, otherwise Interrupt from SDIO DAT[1]
+
+config BUILD_BROADCOM_WIFI_SDIO_TCPKA
+	depends on BUILD_BROADCOM_WIFI_SDIO
+	bool "TCP Keepalive and wowl_pattern"
+	default n
+	help
+		Select the TCP Keeplalive nvram config, otherwise use UDP Keepalive config
+
+config GPIO_BCM_WL_HOST_WAKE
+	depends on BUILD_BROADCOM_WIFI_SDIO
+	int "The GPIO of Platform to control WiFi WL_HOST_WAKE"
+	default 4
+	help
+		Config GPIO_BCM_WL_HOST_WAKE(Ironman 4)
+
+config GPIO_BCM_WL_REG_ON
+	depends on BUILD_BROADCOM_WIFI_SDIO
+	int "The GPIO of Platform to control WiFi WL_REG_ON"
+	default 102
+	help
+		Config GPIO_BCM_WL_REG_ON(Ironman 102, Kiwi 113)
+
+#########
+choice
+	prompt "Broadcom WiFi driver Version"
+	depends on BUILD_BROADCOM_WIFI_SDIO
+	help
+		Select the WiFi driver base on Kernel version.
+
+config BUILD_BROADCOM_WIFI_SDIO_V3_0
+	bool "Kernel 3.8, 3.10; Driver 1.88.45.4 (r420671)"
+	help
+		Select driver base on Kernel [3.0, 3.10)
+		Verified on Kernel 3.8, 3.10
+
+config BUILD_BROADCOM_WIFI_SDIO_V2_V3_0
+	bool "Kernel 3.10; Driver 1.201.34 (r491657)"
+	help
+		Select driver base on Kernel [3.0, 3.10)
+		Verified on Kernel 3.10
+
+endchoice
+######### END of prompt "Broadcom WiFi driver Version"
+
+########
+choice
+	prompt "Broadcom WiFi Firmware and nvram Version"
+	depends on BUILD_BROADCOM_WIFI_SDIO
+	help
+		Select the Broadcom WiFi Firmware and nvram version.
+
+config BUILD_BROADCOM_WIFI_SDIO_CHIP_BCM43362
+	bool "BCM43362(AP6181)"
+	help
+		Select BCM43362(AP6181)
+
+config BUILD_BROADCOM_WIFI_SDIO_MODULE_AP6441
+	bool "BCM43341(AP6441)"
+	help
+		Select BCM43341(AP6441)
+
+config BUILD_BROADCOM_WIFI_SDIO_MODULE_AP6234
+	bool "BCM43340(AP6234)"
+	help
+		Select BCM43340(AP6234)
+
+config BUILD_BROADCOM_WIFI_SDIO_MODULE_AP6234_PS
+	bool "BCM43340(AP6234) PowerSave"
+	help
+		Select BCM43340(AP6234) Power Save Firmware
+		Power save in the bottom of current and the wide of pulse
+
+config BUILD_BROADCOM_WIFI_SDIO_MODULE_AP6212
+	bool "BCM43438(AP6212)"
+	help
+		Select BCM43438(AP6212)
+
+endchoice
+######### END of prompt "Broadcom WiFi Firmware and nvram Version"
+
+##################################
+#### WiFi USB Interface
+##################################
+
+config BUILD_BROADCOM_WIFI_USB
+	bool "Broadcom WiFi USB BCM43143"
+	---help---
+	  This module adds support for wireless adapters based on
+	  Broadcom FullMAC, BCM43143 chipset.
+
+########
+choice
+	prompt "Broadcom WiFi driver Version"
+	depends on BUILD_BROADCOM_WIFI_USB
+	help
+		Select the WiFi driver base on Kernel version.
+
+config BUILD_BROADCOM_WIFI_USB_V3_0
+	bool "Kernel 3.10; Driver 1.88.56.3.1 (r)"
+	help
+		Select driver version base on Kernel [3.0,  3.10)
+		Verified on Kernel 3.10
+
+endchoice
+
+########
+choice
+	prompt "Broadcom USB WiFi Firmware and nvram Version"
+	depends on BUILD_BROADCOM_WIFI_USB
+	help
+		Select the Broadcom WiFi Firmware and nvram version.
+
+config BUILD_BROADCOM_WIFI_USB_BCM43143
+	bool "BCM43143"
+	help
+		Select BCM43143
+
+endchoice
+##prompt "Broadcom BCM43143 driver Version"
+

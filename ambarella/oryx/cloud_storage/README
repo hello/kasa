@@ -1,0 +1,3 @@
+ambarella/oryx/cloud_storage:
+	this directory is for cloud storage accessing APIs, 
+	for example, using Amazon AWS to upload data to Cloud

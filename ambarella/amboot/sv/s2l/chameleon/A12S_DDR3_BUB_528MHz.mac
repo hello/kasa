@@ -1,0 +1,158 @@
+; A12 BUB startup macro for the Signum Chameleon Debugger Interfacea
+;refresh_mode_disable ; Disable display of windows
+if __CPU_STATE__ == "Unknown"
+	echo off
+	echo
+	echo Error: cannot access the CPU
+	echo
+	echo on
+	exit
+endif
+
+if __CPU_STATE__ == "NoPower"
+	echo off
+	echo
+	echo Error: target has no power!
+	echo Please connect power to the target now...
+	echo
+	while __CPU_STATE__ == "NoPower"
+	endwhile
+	echo on
+	pause 2000
+endif
+
+if __CPU_STATE__ == "InReset"
+	echo off
+	echo
+	echo CPU is resetting!
+	echo Waiting for release from reset...
+	echo
+	while __CPU_STATE__ == "InReset"
+	endwhile
+	echo on
+endif
+
+if __CPU_STATE__ == "Running"
+	echo off
+	echo
+	echo Stopping the CPU...
+	echo
+	stop
+	echo on
+endif
+
+;
+; Load definition file of registers for A7Ln;
+
+loadreg a12.def
+
+;
+; Initialize the board
+;
+map	all	none				; Clear old mapping
+
+map	0x00000000 0xDFFFFFFF	user
+map	0xE0000000 0xE7FFFFFF	user volatile
+map	0xE8000000 0xEFFFFFFF	user volatile
+map	0xF0000000 0xFFFFFFFF	user
+
+map						; Display current mapping
+;dram pll setting
+PLL_DDR_CTRL_REG = 0x15001100
+
+PLL_DDR_CTRL2_REG = 0x3f770000
+
+PLL_DDR_CTRL3_REG = 0x00068300
+
+PLL_DDR_CTRL_REG = 0x15001101
+
+PLL_DDR_CTRL_REG = 0x15001100
+
+DDRIO0_DLL0_REG = 0x00242223
+
+DDRIO0_DLL1_REG = 0x00242223
+
+DDRIO0_DLL2_REG = 0x00242223
+
+DDRIO0_DLL3_REG = 0x00242223
+
+DDRIO0_DLL_CTRL_SEL_0_REG = 0x00008001
+
+DDRIO0_DLL_CTRL_SEL_1_REG = 0x00008001
+
+DDRIO0_DLL_CTRL_SEL_2_REG = 0x00008001
+
+DDRIO0_DLL_CTRL_SEL_3_REG = 0x00008001
+
+DDRIO0_DLL_CTRL_SEL_MISC_REG = 0x12e50000
+
+pause 1
+DRAM_CFG_REG = 0x08270974
+
+DRAM_TIMING1_REG = 0x1916155d
+
+DRAM_TIMING2_REG = 0x564aa6a3
+
+DRAM_TIMING3_REG = 0x70447101
+
+DRAM_DQS_SYNC_REG = 0x000000a0
+
+DRAM_ZQ_CALIB = 0x00000060
+
+DRAM_PAD_TERM = 0x0002002d
+
+DRAM_CTL_REG = 0x00000008
+
+pause 1
+DRAM_CTL_REG = 0x0000000c
+
+pause 1
+DRAM_MODE_REG = 0x01020008
+
+while (DRAM_MODE_REG & 0x80000000) != 0x00000000
+endwhile
+
+DRAM_MODE_REG = 0x01030000
+
+while (DRAM_MODE_REG & 0x80000000) != 0x00000000
+endwhile
+
+DRAM_MODE_REG = 0x01010040
+
+while (DRAM_MODE_REG & 0x80000000) != 0x00000000
+endwhile
+
+DRAM_MODE_REG = 0x01001941
+
+while (DRAM_MODE_REG & 0x80000000) != 0x00000000
+endwhile
+
+DRAM_INIT_CTL_REG = 0x00000010
+
+while (DRAM_INIT_CTL_REG & 0x00000010) != 0x00000000
+endwhile
+
+DRAM_INIT_CTL_REG = 0x00000008
+
+while (DRAM_INIT_CTL_REG & 0x00000008) != 0x00000000
+endwhile
+
+DRAM_CTL_REG = 0x0000000e
+
+DRAM_INIT_CTL_REG = 0x00000020
+
+while (DRAM_INIT_CTL_REG & 0x00000020) != 0x00000000
+endwhile
+
+DRAM_INIT_CTL_REG = 0x00000004
+
+while (DRAM_INIT_CTL_REG & 0x00000004) != 0x00000000
+endwhile
+
+DRAM_DQS_SYNC_REG = 0x00000040
+
+DRAM_ZQ_CALIB = 0x00000026
+
+DRAM_CTL_REG = 0x0000000f
+
+;DRAM controller is initialized...

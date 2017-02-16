@@ -1,0 +1,26 @@
+##
+## app/utility/jpg_enc/AmbaConfig
+##
+## History:
+##	2014/11/19 - [Shaohua Fan] Create
+##
+##
+
+
+
+menuconfig BUILD_AMBARELLA_APP_UTILITY_JPG
+	bool "Build JPG utility"
+	select BUILD_AMBARELLA_DATATX_PACKAGE
+	select CONFIG_AMBARELLA_LIBJPEG_TURBO_SUPPORT
+	default n
+	help
+		Build JPG utility APP
+
+if BUILD_AMBARELLA_APP_UTILITY_JPG
+
+config BUILD_JPG_ENC
+	bool "Build jpg_enc"
+	default n
+	help
+		Build jpg_enc
+endif

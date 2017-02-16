@@ -1,0 +1,116 @@
+#!/bin/sh
+#$1 = <dev>
+
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:$PATH
+
+# Default options to use for mounting
+mopts='errors=remount-ro,relatime,noatime,nodiratime,user'
+
+log() {
+    echo "media-automount: $*"
+}
+
+if ! [ "$1" ]
+then
+    log "missing arguments! a device name must be provided"
+    exit 1
+else
+    dev=/dev/${1##*/}
+fi
+
+# Directory to use for mounting the devices
+case ${1##*/} in
+    *sd*)
+    mdir=/storage
+    dir=${mdir}/${dev##*/}
+    ;;
+    *mmcblk*)
+    mdir=/sdcard
+    dir=${mdir}
+    ;;
+    *)
+    mdir=/media
+    dir="${mdir}/${LABEL:-${dev##*/}}.$TYPE"
+    ;;
+esac
+
+# Check if the device exists, if not but mounted, umount it
+if ! [ -b $dev ]
+then
+    if grep /etc/mtab -qe "^$dev"
+    then
+        log "Device $dev is removed, umounting and cleaning ${mdir}"
+        if umount -l "$dev"
+        then
+            exitcode=0
+        else
+            log "Error umounting $dev errcode:$?"
+            exitcode=$?
+        fi
+    else
+        log "Device $dev doesn't exist anymore"
+        exitcode=0
+    fi
+
+    # cleanup
+    for dir in "$mdir"/*
+    do
+        [ -d "$dir" ] && ! mountpoint -q "$dir" && rmdir "$dir"
+    done
+    exit $exitcode
+else
+    if blkid -po export $dev 2>&1 | grep -q "No medium found"
+    then
+        for medium in $(find /dev -name "${dev##*/}[0-9]*")
+        do
+            mountpoint=$(grep /etc/mtab -e "^${medium}" | awk '{print $2}')
+            log "Unmounting device ${medium} from ${mountpoint}"
+            umount -l "${medium}" && ! mountpoint -q ${mountpoint} && rmdir "${mountpoint}"
+        done
+        exit 0
+    fi
+fi
+
+# Load additional info for the block device
+eval $(blkid -po export $dev)
+
+# Check /etc/fstab for an entry corresponding to the device
+[ "$UUID" ] && fstab=$(grep /etc/fstab -e "${UUID/\-/\\\-}") || \
+[ "$LABEL" ] && fstab=$(grep /etc/fstab -e "${LABEL/\-/\\\-}") || \
+fstab=$(grep /etc/fstab -e "^[ \t]*$dev[ \t]")
+
+# Don't manage devices that are already in fstab
+if [ "$fstab" ]
+then
+    log "$dev already in /etc/fstab, automount won't manage it: ${fstab/[ \t][ \t]/ }"
+    exit 1
+fi
+
+mtype=${TYPE}
+
+case $TYPE in
+    vfat)
+        mopts="$mopts,utf8,flush,gid=100,dmask=000"
+        ;;
+    exfat)
+        mopts="$mopts,utf8,flush,gid=100,dmask=000"
+        ;;
+    ext4)
+        mopts="$mopts,flush,discard"
+        ;;
+    *)
+        mopts="$mopts,sync"
+        ;;
+esac
+
+log "Mounting device $dev on $dir"
+mkdir -p "$dir"
+if mount -t "${mtype:-auto}" -o "$mopts" "$dev" "$dir"
+then
+    log "Device $dev successfully mounted on $dir"
+    exit 0
+else
+    log "Mount error: $?"
+    rmdir "$dir"
+    exit 1
+fi

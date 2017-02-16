@@ -1,0 +1,54 @@
+#!/bin/sh
+#
+# PulseAudio.
+#
+
+export XDG_RUNTIME_DIR=/var/run
+[ -d /.config/pulse ] && /bin/rm -rf /.config/pulse/*
+[ -d /var/lib/pulse ] && /bin/rm -rf /var/lib/pulse/*
+[ -d /var/run/pulse ] || /bin/mkdir -p /var/run/pulse
+[ -d /var/lib/pulse ] || /bin/mkdir -p /var/lib/pulse
+
+start()
+{
+    echo -n "Starting PulseAudio Daemon: "
+    /usr/bin/pulseaudio --check
+    if [ $? -ne 0 ]
+    then
+        /usr/bin/pulseaudio --system -D > /dev/null 2>&1 &
+    fi
+    echo "OK"
+}
+
+stop()
+{
+    echo -n "Stopping PulseAudio Daemon: "
+    /usr/bin/killall pulseaudio > /dev/null 2>&1
+    echo "OK"
+}
+
+restart()
+{
+    stop
+    sleep 1
+    start
+}
+
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart)
+        restart
+        ;;
+    *)
+        echo $"Usage: $0 {start|stop|restart}"
+        exit 1
+esac
+
+exit $?
+

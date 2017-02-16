@@ -1,0 +1,44 @@
+##
+## app/utility/dsp_tool/AmbaConfig
+##
+## History:
+##    2014/08/04 - [Jian Tang] Create
+##
+## Copyright (C) 2012-2016, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+
+menuconfig BUILD_AMBARELLA_APP_UTILITY_DSP
+	bool "Build DSP utility APP"
+	default n
+	---help---
+		Build DSP Utility APP
+
+if BUILD_AMBARELLA_APP_UTILITY_DSP
+
+config BUILD_AMBARELLA_APP_UTILITY_LOAD_UCODE
+	bool "Build load ucode utility"
+	default n
+	help
+		Build load ucode utility
+
+config BUILD_AMBARELLA_APP_UTILITY_DSPLOG
+	bool "Build DSP log capture / parse utility"
+	default n
+	help
+		Build DSP log capture / parse utility
+
+config BUILD_AMBARELLA_APP_UTILITY_GEN_FASTBOOT_UCODE
+	depends on (CONFIG_ARCH_S2L)
+	bool "Build gen fast boot ucode utility"
+	default n
+	help
+		Build generate fast boot ucode utility
+
+endif
+

@@ -1,0 +1,47 @@
+-- This is the configuration of DPTZ Warp
+--pan_ratio: -1.0~1.0, -1.0: left most,  1.0: right most
+--tilt_ratio: -1.0~1.0, -1.0: top most,  1.0: bottom most
+--zoom_ratio: 0.1~8.0, 0.1: zoom in most, 1: original, 8.0: zoom out most
+
+--proj_mode: 0|1|2, 0: equidistant 1: stereo graphic 2: lookup table
+--warp_mode: 0|1|2, 0: none 1: rectilinear 2: panorama 3:sub-region dewarp
+--ldc_strength: 0.0~20.0, NOTE: when warp_mode using 2 panorama, must be set 18.5 while using Sunex250 lens, or refer to the spec while using other lens.
+--pano_hfov_degree: 1.0~180.0, only effective when warp_mode set 2:panorama
+
+dptz_warp = {
+  ptz = {
+    --main source buffer (DPTZ-I)
+    {
+      pan_ratio = 0.0,
+      tilt_ratio = 0.0,
+      zoom_ratio = 1.0,
+    },
+    --2nd source buffer (DPTZ-II)
+    {
+      pan_ratio = 0.0,
+      tilt_ratio = 0.0,
+      zoom_ratio = 1.0,
+    },
+    --3rd source buffer (DPTZ-II)
+    {
+      pan_ratio = 0.0,
+      tilt_ratio = 0.0,
+      zoom_ratio = 1.0,
+    },
+    --4th source buffer (DPTZ-II)
+    {
+      pan_ratio = 0.0,
+      tilt_ratio = 0.0,
+      zoom_ratio = 1.0,
+    },
+  },
+
+  warp = {
+    proj_mode = 0,
+    warp_mode = 1,
+    ldc_strength = 12,
+    pano_hfov_degree = 180,
+  },
+}
+
+return dptz_warp

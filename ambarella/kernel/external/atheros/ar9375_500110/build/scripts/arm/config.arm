@@ -1,0 +1,22 @@
+#
+# Please modify KERNELPATH, KERNELARCH and TOOLPREFIX to meet your environment
+#
+
+# MIPS-PB92 example ###########################################################################################################
+export KERNELPATH ?=undefined
+export KERNELARCH ?=arm
+export TOOLPREFIX ?=arm-linux-gnueabihf-
+
+# Use local libnl library or not
+#export BUILD_LIBNL=y
+export INCLUDE_LIBNL11_HEADER=${ATH_TOPDIR}/apps/libnl-1/include
+export INCLUDE_LIBNL11_LIB=-lm ${ATH_TOPDIR}/apps/libnl-1/lib/libnl.a 
+
+export TOOLCHAIN?=undefined
+#export PATH:=${TOOLCHAIN}:${PATH}
+
+export DEF_CFG80211_INTERNAL_REGDB=y
+
+# Select Board Data.
+#export BUILD_BDATA_DB7=y
+#export BUILD_BDATA_XPA=y

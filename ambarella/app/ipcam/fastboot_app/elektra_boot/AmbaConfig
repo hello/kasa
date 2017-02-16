@@ -1,0 +1,23 @@
+##
+## app/ipcam/fastboot_app/elektra_boot/AmbaConfig
+##
+## History:
+##    2014/12/08 - [Chu Chen] Create
+##
+## Copyright (C) 2014, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+
+config BUILD_AMBARELLA_APP_ELEKTRA_BOOT
+  bool "Build App Elektra Boot"
+  select CONFIG_AMBARELLA_LIBCURL_SUPPORT
+  select CONFIG_AMBARELLA_JSONC_SUPPORT
+  select CONFIG_AMBARELLA_ALSA_SUPPORT
+  default n
+  help
+    Build App Elektra Boot

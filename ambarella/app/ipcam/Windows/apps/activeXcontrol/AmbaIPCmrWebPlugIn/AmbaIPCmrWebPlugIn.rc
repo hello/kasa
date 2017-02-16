@@ -1,0 +1,247 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// 中文(中华人民共和国) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)
+#ifdef _WIN32
+LANGUAGE LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED
+#pragma code_page(936)
+#endif //_WIN32
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "1 TYPELIB ""AmbaIPCmrWebPlugIn.tlb""\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,33
+ PRODUCTVERSION 1,0,0,33
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x4L
+ FILETYPE 0x2L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080403a8"
+        BEGIN
+            VALUE "CompanyName", "TODO: <Ambarella>"
+            VALUE "FileDescription", "TODO: <IpCamera Web PlugIn>"
+            VALUE "FileVersion", "1.0.0.32"
+            VALUE "InternalName", "AmbaIPCmrWebPlugIn.ocx"
+            VALUE "LegalCopyright", "TODO: (c) <Ambarella>.  All rights reserved."
+            VALUE "OriginalFilename", "AmbaIPCmrWebPlugIn.ocx"
+            VALUE "ProductName", "TODO: <IpCamera Web PlugIn>"
+            VALUE "ProductVersion", "1.0.0.33"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x804, 936
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Bitmap
+//
+
+IDB_AMBAIPCMRWEBPLUGIN  BITMAP                  "AmbaIPCmrWebPlugInCtrl.bmp"
+IDB_LOGO                BITMAP                  "img\\logo.bmp"
+IDB_SMALL_LOGO          BITMAP                  "img\\small_logo.bmp"
+IDB_BITMAP_UP           BITMAP                  "img\\up02.bmp"
+IDB_BITMAP_DOWN         BITMAP                  "img\\down02.bmp"
+IDB_BITMAP_LEFT         BITMAP                  "img\\left02.bmp"
+IDB_BITMAP_RIGHT        BITMAP                  "img\\right02.bmp"
+IDB_BITMAP_BACK         BITMAP                  "img\\back.bmp"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_ABOUTBOX_AMBAIPCMRWEBPLUGIN DIALOGEX 34, 22, 279, 54
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION
+CAPTION "About AmbaIPCmrWebPlugIn Control"
+FONT 9, "MS Sans Serif", 0, 0, 0x0
+BEGIN
+    CONTROL         207,IDC_STATIC,"Static",SS_BITMAP | SS_CENTERIMAGE | SS_REALSIZEIMAGE,7,7,42,28
+    LTEXT           "AmbaIPCmrWebPlugIn Control",IDC_STATIC,53,7,111,8
+    LTEXT           "Copyright (C) 2010,Ambarella Inc",IDC_STATIC,73,23,133,8
+    DEFPUSHBUTTON   "OK",IDOK,240,7,32,16,WS_GROUP
+    LTEXT           "AmbaTCPClient.ax ",IDC_STATIC,61,33,95,8,NOT WS_VISIBLE
+    LTEXT           "AmbaRTSPClient.ax ",IDC_STATIC,59,42,96,8,NOT WS_VISIBLE
+    LTEXT           "1.0.0",IDC_STATIC_VMain,205,7,34,9
+    LTEXT           "Version",IDC_STATIC_Version2,157,33,29,9,NOT WS_VISIBLE
+    LTEXT           "1.0.0",IDC_STATIC_Vtcp,189,33,28,9,NOT WS_VISIBLE
+    LTEXT           "Version",IDC_STATIC_Version3,155,41,28,9,NOT WS_VISIBLE
+    LTEXT           "1.0.0",IDC_STATIC_Vrtsp,187,41,35,9,NOT WS_VISIBLE
+    LTEXT           "Version",IDC_STATIC_Version,173,7,27,9
+END
+
+IDD_PROPPAGE_AMBAIPCMRWEBPLUGIN DIALOGEX 0, 0, 279, 78
+STYLE DS_SETFONT | WS_POPUP
+FONT 9, "MS Sans Serif", 0, 0, 0x0
+BEGIN
+    CONTROL         204,IDC_STATIC,"Static",SS_BITMAP | SS_CENTERIMAGE,7,7,92,64
+    LTEXT           "Server",IDC_STATIC,107,15,31,8
+    LTEXT           "Decoder",IDC_STATIC,107,36,38,10
+    COMBOBOX        IDC_COMBO_TRANSFER,170,14,79,33,CBS_DROPDOWN | CBS_SORT | WS_VSCROLL | WS_TABSTOP
+    COMBOBOX        IDC_COMBO_DECODER,170,34,79,37,CBS_DROPDOWN | CBS_SORT | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON      "OK",IDC_BUTTON1,103,57,38,14
+    PUSHBUTTON      "Cancel",IDC_BUTTON2,151,57,41,14
+    PUSHBUTTON      "Default Config",IDC_BUTTON3,202,57,70,14
+END
+
+IDD_VIDEODIALOG DIALOGEX 0, 0, 731, 163
+STYLE DS_SETFONT | WS_CHILD | WS_SYSMENU
+FONT 11, "MS PMincho", 700, 0, 0x0
+BEGIN
+    LTEXT           "bitrate (kbps):",IDC_STATIC1,15,8,48,10
+    EDITTEXT        IDC_EDIT1,64,6,27,12,ES_AUTOHSCROLL,WS_EX_TRANSPARENT
+    LTEXT           "framerate (fps):",IDC_STATIC2,102,8,53,10
+    EDITTEXT        IDC_EDIT2,156,6,30,12,ES_AUTOHSCROLL,WS_EX_TRANSPARENT
+    LTEXT           "pts:",IDC_STATIC3,196,8,13,10
+    EDITTEXT        IDC_EDIT3,210,6,27,12,ES_AUTOHSCROLL,WS_EX_TRANSPARENT
+    CONTROL         "",IDC_SLIDER1,"msctls_trackbar32",TBS_AUTOTICKS | TBS_VERT | TBS_BOTH | NOT WS_VISIBLE | WS_TABSTOP,18,55,20,69,WS_EX_TRANSPARENT
+    PUSHBUTTON      "<",IDC_BUTTON_LEFT,14,36,9,9,BS_BITMAP | NOT WS_VISIBLE,WS_EX_TRANSPARENT
+    PUSHBUTTON      ">",IDC_BUTTON_RIGHT,32,36,9,9,BS_BITMAP | NOT WS_VISIBLE,WS_EX_TRANSPARENT
+    PUSHBUTTON      "A",IDC_BUTTON_UP,23,27,9,9,BS_BITMAP | NOT WS_VISIBLE,WS_EX_TRANSPARENT
+    PUSHBUTTON      "V",IDC_BUTTON_DOWN,23,44,9,9,BS_BITMAP | NOT WS_VISIBLE,WS_EX_TRANSPARENT
+    PUSHBUTTON      "+",IDC_BUTTON_BACK,23,36,9,9,BS_BITMAP | NOT WS_VISIBLE,WS_EX_TRANSPARENT
+    LTEXT           "",IDC_STATIC_FOCUS,241,3,8,12,NOT WS_VISIBLE
+    LTEXT           "gain(db):",IDC_STATIC4,250,8,31,10
+    EDITTEXT        IDC_EDIT4,283,6,26,12,ES_AUTOHSCROLL,WS_EX_TRANSPARENT
+    LTEXT           "shutter(1/s):",IDC_STATIC5,319,8,43,10
+    EDITTEXT        IDC_EDIT5,363,6,38,12,ES_AUTOHSCROLL,WS_EX_TRANSPARENT
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO 
+BEGIN
+    IDD_ABOUTBOX_AMBAIPCMRWEBPLUGIN, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 272
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 50
+    END
+
+    IDD_PROPPAGE_AMBAIPCMRWEBPLUGIN, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 272
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 71
+    END
+
+    IDD_VIDEODIALOG, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 724
+        BOTTOMMARGIN, 156
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Menu
+//
+
+IDR_MENU1 MENU 
+BEGIN
+    POPUP "setting"
+    BEGIN
+        MENUITEM "Set up",                      ID_SETTING_SETTING
+        MENUITEM "Camera Property",             ID_SETTING_RECORDSETTING
+        MENUITEM "Decoder Property",            ID_SETTING_DECODER
+        MENUITEM "Render Property",             32773
+        MENUITEM "About us",                    ID_SETTING_ABOUTUS
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// String Table
+//
+
+STRINGTABLE 
+BEGIN
+    IDS_AMBAIPCMRWEBPLUGIN  "AmbaIPCmrWebPlugIn Control"
+    IDS_AMBAIPCMRWEBPLUGIN_PPG "AmbaIPCmrWebPlugIn Property Page"
+END
+
+STRINGTABLE 
+BEGIN
+    IDS_AMBAIPCMRWEBPLUGIN_PPG_CAPTION "General"
+END
+
+#endif    // 中文(中华人民共和国) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+1 TYPELIB "AmbaIPCmrWebPlugIn.tlb"
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

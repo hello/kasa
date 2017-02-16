@@ -1,0 +1,25 @@
+# /etc/security/console.perms
+#
+# This file determines the permissions that will be given to priviledged
+# users of the console at login time, and the permissions to which to
+# revert when the users log out.
+
+# format is:
+#   <class>=list of regexps specifying consoles or globs specifying files
+#   file-glob|<class> perm dev-regex|<dev-class> \
+#     revert-mode revert-owner[.revert-group]
+# the revert-mode, revert-owner, and revert-group are optional, and default
+# to 0600, root, and root, respectively.
+#
+# For more information:
+# man 5 console.perms
+#
+# This file should not be modified.
+# Rather a new file in the console.perms.d directory should be created.
+
+# file classes -- these are regular expressions
+<console>=tty[0-9][0-9]* ttyS[0-9][0-9]* vc/[0-9][0-9]* :[0-9]+\.[0-9]+ :[0-9]+
+<xconsole>=:[0-9]+\.[0-9]+ :[0-9]+
+
+# device classes -- see console.perms.d/50-default.perms
+# permission definitions -- see console.perms.d/50-default.perms

@@ -1,0 +1,72 @@
+--Applications to be launched by AppsLauncher
+--please check oryx/include/services/am_service_impl.h to know the definition
+--of each type
+--Api Proxy will do the API routing based on type value
+--type 0 is used by system, type 9 currently is only for debugging and cannot
+--be used now.
+--Known dependency:
+--img_svc should init before video_svc (and video_svc will check)
+
+apps = {
+  {
+    filename ="img_svc",
+    type = 4,
+    enable  = true
+  },
+    {
+    filename ="media_svc",
+    type = 5,
+    enable  = true
+  },
+  {
+    filename ="video_svc",
+    type = 8,
+    enable  = true,
+  -- video_svc handles motion event to do SmartAVC (bitrate adjustment)
+    event_handle_motion = true
+  },
+  {
+    filename ="audio_svc",
+    type = 2,
+    enable  = true
+  },
+  {
+    filename ="event_svc",
+    type = 3,
+    enable  = true
+  },
+  {
+    filename ="net_svc",
+    type = 6,
+    enable  = true
+  },
+  {
+    filename ="sys_svc",
+    type = 7,
+    enable  = true,
+  -- sys_svc needs to handle button to do wifi setup and etc
+    event_handle_button = true,
+  -- sys_svc may handle motion event to turn on light(LED)
+    event_handle_motion = true,
+  -- sys_svc may handle audio event to light on  light(LED)
+    event_handle_audio = true,
+  },
+  {
+  -- usr_svc is an example and place holder, but by default disabled
+    filename ="usr_svc",
+    type = 11,
+    enable = false,
+  },
+  {
+    filename ="rtsp_svc",
+    type = 9,
+    enable = true,
+  },
+  {
+    filename ="sip_svc",
+    type = 10,
+    enable = true,
+  },
+}
+
+return apps

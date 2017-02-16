@@ -1,0 +1,104 @@
+##
+## ambarella/oryx/AmbaConfig
+##
+## History:
+##    2014/06/23 - [Louis Sun] Create
+##
+## Copyright (C) 2004-2016, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+
+menuconfig BUILD_AMBARELLA_ORYX_MW
+  bool "Ambarella Oryx(MW) Configuration"
+  depends on CONFIG_ARCH_S2L || CONFIG_ARCH_S2E
+  default n
+  help
+    Build Oryx MW
+
+if BUILD_AMBARELLA_ORYX_MW
+
+menu "Ambarella Oryx MW File Path"
+config BUILD_AMBARELLA_ORYX_LIB_DIR
+  string "Library install dir"
+  default "/usr/lib"
+  help
+    Install oryx's library to the defined directory
+
+config BUILD_AMBARELLA_ORYX_DEMUXER_DIR
+  string "Demuxer plugin install dir"
+  default "/usr/lib/oryx/demuxer"
+  help
+    Install oryx's demuxer library to the defined directory
+
+config BUILD_AMBARELLA_ORYX_MUXER_DIR
+  string "Muxer plugin install dir"
+  default "/usr/lib/oryx/muxer"
+  help
+    Install oryx's muxer library to the defined directory
+
+config BUILD_AMBARELLA_ORYX_CODEC_DIR
+  string "Codecs plugin install dir"
+  default "/usr/lib/oryx/codec"
+  help
+    Install oryx's codec library to the defined directory
+
+config BUILD_AMBARELLA_ORYX_FILTER_DIR
+  string "Filter plugin install dir"
+  default "/usr/lib/oryx/filter"
+  help
+    Install oryx's filter library to the defined directory
+
+config BUILD_AMBARELLA_ORYX_BIN_DIR
+  string "Executable install dir"
+  default "/usr/bin"
+  help
+    Install camera's applications to the defined directory
+
+config BUILD_AMBARELLA_ORYX_CONF_DIR
+  string "Configuration install dir"
+  default "/etc/oryx"
+  help
+    Install oryx's configuration files to the defined directory
+endmenu
+endif
+
+if BUILD_AMBARELLA_ORYX_MW
+source oryx/vendors/AmbaConfig
+source oryx/app/AmbaConfig
+source oryx/analytics/AmbaConfig
+source oryx/audio/AmbaConfig
+source oryx/cloud_storage/AmbaConfig
+source oryx/configure/AmbaConfig
+source oryx/discovery/AmbaConfig
+source oryx/event/AmbaConfig
+source oryx/image_quality/AmbaConfig
+source oryx/ipc/AmbaConfig
+source oryx/led/AmbaConfig
+source oryx/network/AmbaConfig
+source oryx/protocol/AmbaConfig
+source oryx/services/AmbaConfig
+source oryx/cgi/AmbaConfig
+source oryx/stream/AmbaConfig
+source oryx/upgrade/AmbaConfig
+source oryx/utility/AmbaConfig
+if CONFIG_ARCH_S2L
+source oryx/video/AmbaConfig
+endif
+
+if CONFIG_ARCH_S2L || CONFIG_ARCH_S2E
+source oryx/video_new/AmbaConfig
+endif
+source oryx/watchdog/AmbaConfig
+source oryx/playback_new/AmbaConfig
+
+config ENABLE_ORYX_PERFORMANCE_PROFILE
+  bool "Enable Oryx Performance Profile"
+  default n
+  help
+    Enable oryx performance profile by print current time
+endif

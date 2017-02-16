@@ -1,0 +1,135 @@
+The 2.6.31 kernel has threaded IRQ support and b43 is the first
+wireless driver that makes use of it. To support threaded IRSs
+on older kernels we built our own struct compat_threaded_irq
+to queue_work() onto it as the kernel thread be running the
+thread in process context as well.
+
+--- a/drivers/net/wireless/b43/main.c
++++ b/drivers/net/wireless/b43/main.c
+@@ -4184,8 +4184,13 @@ redo:
+ 	if (b43_bus_host_is_sdio(dev->dev)) {
+ 		b43_sdio_free_irq(dev);
+ 	} else {
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)
++		compat_synchronize_threaded_irq(&dev->irq_compat);
++		compat_free_threaded_irq(&dev->irq_compat);
++#else
+ 		synchronize_irq(dev->dev->irq);
+ 		free_irq(dev->dev->irq, dev);
++#endif
+ 	}
+ 	mutex_lock(&wl->mutex);
+ 	dev = wl->current_dev;
+@@ -4225,9 +4230,17 @@ static int b43_wireless_core_start(struc
+ 			goto out;
+ 		}
+ 	} else {
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)
++		err = compat_request_threaded_irq(&dev->irq_compat,
++						  dev->dev->irq,
++						  b43_interrupt_handler,
++						  b43_interrupt_thread_handler,
++						  IRQF_SHARED, KBUILD_MODNAME, dev);
++#else
+ 		err = request_threaded_irq(dev->dev->irq, b43_interrupt_handler,
+ 					   b43_interrupt_thread_handler,
+ 					   IRQF_SHARED, KBUILD_MODNAME, dev);
++#endif
+ 		if (err) {
+ 			b43err(dev->wl, "Cannot request IRQ-%d\n",
+ 			       dev->dev->irq);
+@@ -5016,6 +5029,10 @@ static int b43_setup_bands(struct b43_wl
+ 
+ static void b43_wireless_core_detach(struct b43_wldev *dev)
+ {
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)
++	if (dev->dev->sdev->bus->bustype != SSB_BUSTYPE_SDIO)
++		compat_destroy_threaded_irq(&dev->irq_compat);
++#endif
+ 	/* We release firmware that late to not be required to re-request
+ 	 * is all the time when we reinit the core. */
+ 	b43_release_firmware(dev);
+--- a/drivers/net/wireless/b43/b43.h
++++ b/drivers/net/wireless/b43/b43.h
+@@ -843,6 +843,9 @@ struct b43_wldev {
+ 	unsigned int tx_count;
+ 	unsigned int rx_count;
+ #endif
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)
++	struct compat_threaded_irq irq_compat;
++#endif
+ };
+ 
+ /* Data structure for the WLAN parts (802.11 cores) of the b43 chip. */
+--- a/drivers/net/wireless/wl12xx/spi.c
++++ b/drivers/net/wireless/wl12xx/spi.c
+@@ -406,10 +406,14 @@ static int __devinit wl1271_probe(struct
+ 	wl->tcxo_clock = pdata->board_tcxo_clock;
+ 	wl->platform_quirks = pdata->platform_quirks;
+ 
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,32)
++	irqflags = IRQF_TRIGGER_RISING;
++#else
+ 	if (wl->platform_quirks & WL12XX_PLATFORM_QUIRK_EDGE_IRQ)
+ 		irqflags = IRQF_TRIGGER_RISING;
+ 	else
+ 		irqflags = IRQF_TRIGGER_HIGH | IRQF_ONESHOT;
++#endif
+ 
+ 	wl->irq = spi->irq;
+ 	if (wl->irq < 0) {
+@@ -418,9 +422,16 @@ static int __devinit wl1271_probe(struct
+ 		goto out_free;
+ 	}
+ 
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)
++	ret = compat_request_threaded_irq(&wl->irq_compat, wl->irq,
++					  wl1271_hardirq, wl1271_irq,
++					  irqflags,
++					  DRIVER_NAME, wl);
++#else
+ 	ret = request_threaded_irq(wl->irq, wl1271_hardirq, wl1271_irq,
+ 				   irqflags,
+ 				   DRIVER_NAME, wl);
++#endif
+ 	if (ret < 0) {
+ 		wl1271_error("request_irq() failed: %d", ret);
+ 		goto out_free;
+@@ -439,7 +450,11 @@ static int __devinit wl1271_probe(struct
+ 	return 0;
+ 
+  out_irq:
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)
++	compat_free_threaded_irq(&wl->irq_compat);
++#else
+ 	free_irq(wl->irq, wl);
++#endif
+ 
+  out_free:
+ 	wl1271_free_hw(wl);
+@@ -452,7 +467,12 @@ static int __devexit wl1271_remove(struc
+ 	struct wl1271 *wl = dev_get_drvdata(&spi->dev);
+ 
+ 	wl1271_unregister_hw(wl);
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)
++	compat_free_threaded_irq(&wl->irq_compat);
++	compat_destroy_threaded_irq(&wl->irq_compat);
++#else
+ 	free_irq(wl->irq, wl);
++#endif
+ 	wl1271_free_hw(wl);
+ 
+ 	return 0;
+--- a/drivers/net/wireless/wl12xx/wl12xx.h
++++ b/drivers/net/wireless/wl12xx/wl12xx.h
+@@ -632,6 +632,10 @@ struct wl1271 {
+ 
+ 	/* AP-mode - number of currently connected stations */
+ 	int active_sta_count;
++
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)
++	struct compat_threaded_irq irq_compat;
++#endif
+ };
+ 
+ struct wl1271_station {

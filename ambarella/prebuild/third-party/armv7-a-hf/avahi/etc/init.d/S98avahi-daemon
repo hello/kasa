@@ -1,0 +1,106 @@
+#!/bin/sh
+#
+# avahi-daemon  Starts avahi-daemon.
+#
+
+#Make sure the amba.service file exists, and create a new one every time, in case the MAC address change.
+mac=`ifconfig | awk '/eth0/{if ($1 == "eth0") print $5}' | awk -F[\:] '{print $1 $2 $3 $4 $5 $6}'`
+if [ -e /etc/resolv.conf ]
+then
+    dns1=`cat /etc/resolv.conf | awk '{print $2}'`
+    dns2=`cat /etc/resolv.conf | awk '{print $3}'`
+    dns3=`cat /etc/resolv.conf | awk '{print $4}'`
+else
+    dns1=""
+    dns2=""
+    dns3=""
+fi
+cat >/etc/avahi/services/amba.service<<-EOF
+<?xml version="1.0" standalone='no'?><!--*-nxml-*-->
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<service-group>
+
+    <name replace-wildcards="yes">%h - $mac</name>
+
+    <service>
+        <type>_amba-video._tcp</type>
+        <port>80</port>
+        <txt-record>macaddress=$mac</txt-record>
+        <txt-record>dns1=$dns1</txt-record>
+        <txt-record>dns2=$dns2</txt-record>
+        <txt-record>dns3=$dns3</txt-record>
+    </service>
+
+</service-group>
+EOF
+
+start()
+{
+    echo -n "Starting Avahi-Daemon: "
+    /usr/sbin/avahi-daemon --check
+    if [ $? -eq 0 ]
+    then
+        echo "Avahi-Daemon is already running"
+    else
+        /usr/sbin/avahi-daemon -D --no-drop-root --file=/etc/avahi/avahi-daemon.conf
+    fi
+    /usr/sbin/avahi-autoipd --check eth0
+    if [ $? -eq 0 ]
+    then
+        echo "Avahi-Autoipd is already running"
+    else
+        /usr/sbin/avahi-autoipd -D --no-drop-root eth0
+    fi
+    echo "OK"
+}
+
+stop()
+{
+    echo -n "Stopping Avahi-Daemon: "
+    /usr/sbin/avahi-daemon --check
+    if [ $? -eq 0 ]
+    then
+        /usr//sbin/avahi-daemon --kill
+    fi
+    /usr/sbin/avahi-autoipd --check eth0
+    if [ $? -eq 0 ]
+    then
+        /usr/sbin/avahi-autoipd --kill eth0
+    fi
+    echo "OK"
+}
+
+restart()
+{
+    stop
+    sleep 2
+    start
+}
+
+reload()
+{
+    echo -n "Reloading static services: "
+    /usr/sbin/avahi-daemon --reload eth0
+    /usr/sbin/avahi-autoipd --refresh
+    echo "OK"
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart)
+        restart
+        ;;
+    reload)
+        reload
+        ;;
+    *)
+        echo $"Usage: $0 {start|stop|restart|reload}"
+        exit 1
+esac
+
+exit $?

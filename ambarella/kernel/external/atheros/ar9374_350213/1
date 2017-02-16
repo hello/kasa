@@ -1,0 +1,1 @@
+./drivers/net/wireless/ath/ath6kl-3.5/ath_netlink.c:96:		ath_nl_sock = (struct sock *)netlink_kernel_create(

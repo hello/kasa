@@ -1,0 +1,36 @@
+--[[
+/S2l/oryx/stream/common/codecs/aac/codec-aac.acs
+
+History:
+  2014-Nov-3 - [ypchang] created file
+
+Copyright (C) 2008-2014, Ambarella Co, Ltd.
+
+All rights reserved. No Part of this file may be reproduced, stored
+in a retrieval system, or transmitted, in any form, or by any means,
+electronic, mechanical, photocopying, recording, or otherwise,
+without the prior consent of Ambarella.
+--]]
+
+_codec_aac_ = {
+  encode = {
+    enc_buf_size      = 106000,
+    enc_out_buf_size  = 1636,     -- 6144 / 8 * 2 + 100
+    format            = "aac",    -- aac, aacplus aacplusps
+    sample_rate       = 8000,     -- audio sampling frequency
+    bitrate           = 12000,    -- 48kbps
+    fftype            = "t",
+    tns               = 1,
+    quantizer_quality = "high",   -- low, high, highest
+    output_channel    = "mono",   -- mono, stereo
+  },
+
+  decode = {
+    output_resolution = 16,       -- 16, 32
+    dec_buf_size      = 25000,
+    dec_out_buf_size  = 16384,    -- 4*SAMPLES_PER_FRAME
+    output_channel    = "stereo", -- mono, stereo
+  },
+}
+
+return _codec_aac_

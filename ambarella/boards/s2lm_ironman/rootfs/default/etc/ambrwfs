@@ -1,0 +1,35 @@
+#!/bin/sh
+#
+# Check ro file system and ....
+#
+
+ROOTFS_RO=`cat /proc/mounts | grep /dev/root | awk '{print $4}'`
+
+if [ "$ROOTFS_RO" = "" ]; then
+ROOTFS_RO=`cat /proc/mounts | grep rootfs | grep 'ro 0 0' | awk '{print $4}'`
+fi
+
+if [ "$ROOTFS_RO" = "ro" ]; then
+	mkdir /tmp/dev
+	cp -a /dev/* /tmp/dev
+	mount --bind /tmp/dev /dev
+
+	mkdir /tmp/tmp_root
+	cp -a /root/* /tmp/tmp_root
+	mount --bind /tmp/tmp_root /root
+else
+	mount -o remount,rw,sync /
+fi
+
+test -e /dev/shm || mkdir -p /dev/shm
+test -e /dev/pts || mkdir -p /dev/pts
+
+DEV_NODES="iav:248:0 ucode:248:1 overlay:248:2 eis:248:10 amb_gadget:248:128 ambac:248:144 amb_iris:248:145 amb_lens:248:146 fdet:248:148 ambad:248:248 dsplog:248:249"
+# make ambarella device node
+for dev in ${DEV_NODES}
+do
+	DEV=`echo ${dev} | awk -F: '{print $1}'`
+	MAJ=`echo ${dev} | awk -F: '{print $2}'`
+	MIN=`echo ${dev} | awk -F: '{print $3}'`
+	/bin/mknod /dev/${DEV} c ${MAJ} ${MIN} -m 666
+done

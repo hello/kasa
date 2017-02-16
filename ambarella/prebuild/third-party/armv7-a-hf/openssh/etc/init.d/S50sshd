@@ -1,0 +1,94 @@
+#!/bin/sh
+#
+# sshd    Start up the OpenSSH server daemon
+#
+
+SSH_KEY_PATH=/etc/ssh
+
+for key in ssh_host_key ssh_host_rsa_key ssh_host_dsa_key ssh_host_ecdsa_key
+do
+	if [ -f ${SSH_KEY_PATH}/${key} ]
+	then
+		if [ 0 = $($(which du) ${SSH_KEY_PATH}/${key} | $(which awk) '{print $1}') ]
+		then
+			rm -f ${SSH_KEY_PATH}/${key} ${SSH_KEY_PATH}/${key}.pub
+		fi
+	else
+		rm -f ${SSH_KEY_PATH}/${key} ${SSH_KEY_PATH}/${key}.pub
+	fi
+	if [ -f ${SSH_KEY_PATH}/${key}.pub ]
+	then
+		if [ 0 = $($(which du) ${SSH_KEY_PATH}/${key}.pub | $(which awk) '{print $1}') ]
+		then
+			rm -f ${SSH_KEY_PATH}/${key} ${SSH_KEY_PATH}/${key}.pub
+		fi
+	else
+		rm -f ${SSH_KEY_PATH}/${key} ${SSH_KEY_PATH}/${key}.pub
+	fi
+done
+
+# Make sure the ssh-keygen progam exists
+[ -f /usr/bin/ssh-keygen ] || exit 0
+
+# Check for the SSH1 RSA key
+if [ ! -f ${SSH_KEY_PATH}/ssh_host_key ] ; then
+	echo Generating RSA Key...
+	/usr/bin/ssh-keygen -t rsa1 -f ${SSH_KEY_PATH}/ssh_host_key -C '' -N ''
+fi
+
+# Check for the SSH2 RSA key
+if [ ! -f ${SSH_KEY_PATH}/ssh_host_rsa_key ] ; then
+	echo Generating RSA Key...
+	/usr/bin/ssh-keygen -t rsa -f ${SSH_KEY_PATH}/ssh_host_rsa_key -C '' -N ''
+fi
+
+# Check for the SSH2 DSA key
+if [ ! -f ${SSH_KEY_PATH}/ssh_host_dsa_key ] ; then
+	echo Generating DSA Key...
+	echo THIS CAN TAKE A MINUTE OR TWO DEPENDING ON YOUR PROCESSOR!
+	echo
+        /usr/bin/ssh-keygen -t dsa -f ${SSH_KEY_PATH}/ssh_host_dsa_key -C '' -N ''
+fi
+
+# Check for the SSH2 ECDSA key
+if [ ! -f ${SSH_KEY_PATH}/ssh_host_ecdsa_key ]; then
+	echo Generating ECDSA Key...
+	echo THIS CAN TAKE A MINUTE OR TWO DEPENDING ON YOUR PROCESSOR!
+	echo
+	/usr/bin/ssh-keygen -t ecdsa -f ${SSH_KEY_PATH}/ssh_host_ecdsa_key -C '' -N ''
+fi
+
+umask 077
+
+start() {
+	echo -n "Starting sshd: "
+	/usr/sbin/sshd && touch /var/lock/sshd && echo "OK" || echo "Failed"
+}
+
+stop() {
+	echo -n "Stopping sshd: "
+	killall	sshd 
+	rm -f /var/lock/sshd
+	echo "OK" 
+}
+restart() {
+	stop
+	start
+}
+
+case "$1" in
+	start)
+		start
+	;;
+	stop)
+		stop
+	;;
+	restart|reload)
+		restart
+	;;
+	*)
+		echo $"Usage: $0 {start|stop|restart}"
+		exit 1
+esac
+
+exit $?

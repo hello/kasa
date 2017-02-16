@@ -1,0 +1,22 @@
+#
+# Please modify KERNELPATH, KERNELARCH and TOOLPREFIX to meet your environment
+#
+
+# MIPS-PB92 example ###########################################################################################################
+export KERNELPATH=/ATHR_LSDK_PATH/linux/kernels/mips-linux-2.6.31
+export KERNELARCH=mips
+export TOOLPREFIX=mips-linux-uclibc-
+
+# Use local libnl library or not
+export BUILD_LIBNL=y
+export INCLUDE_LIBNL11_HEADER=${ATH_TOPDIR}/apps/libnl-1/include
+export INCLUDE_LIBNL11_LIB=-lm ${ATH_TOPDIR}/apps/libnl-1/lib/libnl.a 
+
+export TOOLCHAIN=/ATHR_LSDK_PATH/build/gcc-4.3.3/build_mips/staging_dir/usr/bin
+export PATH:=${TOOLCHAIN}:${PATH}
+
+export DEF_CFG80211_INTERNAL_REGDB=y
+
+# Select Board Data.
+#export BUILD_BDATA_DB7=y
+#export BUILD_BDATA_XPA=y

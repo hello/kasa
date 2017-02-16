@@ -1,0 +1,9 @@
+[Setup Hooks]
+AMC=AMC
+
+[Version]
+Signature="$CHICAGO$"
+AdvancedINF=2.0
+
+[AMC]
+Run="""%EXTRACT_DIR%\setup.exe""" %EXTRACT_DIR%\setup.bat

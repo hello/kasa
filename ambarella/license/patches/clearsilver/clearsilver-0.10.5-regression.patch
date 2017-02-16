@@ -1,0 +1,12 @@
+diff -ur clearsilver-0.10.5/cs/csparse.c clearsilver-0.10.5-option3/cs/csparse.c
+--- clearsilver-0.10.5/cs/csparse.c	2007-07-12 04:37:34.000000000 +0200
++++ clearsilver-0.10.5-option3/cs/csparse.c	2008-04-14 18:55:58.000000000 +0200
+@@ -3717,7 +3717,7 @@
+   if (val.op_type & (CS_TYPE_VAR | CS_TYPE_STRING))
+   {
+     char *s = arg_eval(parse, &val);
+-    if (s) result->n = ne_crc((unsigned char *)s, strlen(s));
++    if (s) result->n = (int) ne_crc((unsigned char *)s, strlen(s));
+   }
+   if (val.alloc) free(val.s);
+   return STATUS_OK;

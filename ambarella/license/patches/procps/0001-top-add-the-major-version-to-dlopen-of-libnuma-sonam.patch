@@ -1,0 +1,42 @@
+From a6dfe2648a39d5fed8de0361aecf0e035ad80222 Mon Sep 17 00:00:00 2001
+From: Jim Warner <james.warner@comcast.net>
+Date: Thu, 6 Jun 2013 00:00:00 -0500
+Subject: [PATCH] top: add the major version to dlopen of libnuma soname
+
+When the plug-in approach to NUMA support was added, I
+carelessly employed the compile-time linker convention
+for naming the library. Technically this then required
+the 'devel' package for NUMA support to be present for
+the unqualified soname symlink to be available. Either
+that or one must have manually created such a symlink.
+
+This commit adds the missing major version to dlopen()
+of libnuma.so.1 so simply having a more likely package
+such as 'numactl' will enable both '2' & '3' commands.
+
+References(s):
+http://www.freelists.org/post/procps/top-NUMA-node-CPU-utilization-support,25
+. initial dlopen support
+commit edba932a7e9b950dd91bc486e107788e977a5186
+
+Signed-off-by: Jim Warner <james.warner@comcast.net>
+---
+ top/top.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/top/top.c b/top/top.c
+index c1853ee..1d38c0f 100644
+--- a/top/top.c
++++ b/top/top.c
+@@ -3246,7 +3246,7 @@ static void before (char *me) {
+ #if defined(PRETEND_NUMA) || defined(PRETEND8CPUS)
+    Numa_node_tot = Numa_max_node() + 1;
+ #else
+-   Libnuma_handle = dlopen("libnuma.so", RTLD_LAZY);
++   Libnuma_handle = dlopen("libnuma.so.1", RTLD_LAZY);
+    if (Libnuma_handle) {
+       Numa_max_node = dlsym(Libnuma_handle, "numa_max_node");
+       Numa_node_of_cpu = dlsym(Libnuma_handle, "numa_node_of_cpu");
+-- 
+1.8.1.2
+

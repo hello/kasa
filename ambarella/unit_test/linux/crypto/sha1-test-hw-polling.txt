@@ -1,0 +1,84 @@
+SHA1 HARDWARE ALG TEST POLLING MODE
+========================A7============================================
+# modprobe tcrypt mode=303 sec=1
+testing speed of sha1
+test  0 (   16 byte blocks,   16 bytes per update,   1 updates): 202307 opers/sec,   3236912 bytes/sec
+test  1 (   64 byte blocks,   16 bytes per update,   4 updates):  98178 opers/sec,   6283392 bytes/sec
+test  2 (   64 byte blocks,   64 bytes per update,   1 updates): 124103 opers/sec,   7942592 bytes/sec
+test  3 (  256 byte blocks,   16 bytes per update,  16 updates):  36440 opers/sec,   9328640 bytes/sec
+test  4 (  256 byte blocks,   64 bytes per update,   4 updates):  51826 opers/sec,  13267456 bytes/sec
+test  5 (  256 byte blocks,  256 bytes per update,   1 updates):  59678 opers/sec,  15277568 bytes/sec
+test  6 ( 1024 byte blocks,   16 bytes per update,  64 updates):  10373 opers/sec,  10621952 bytes/sec
+test  7 ( 1024 byte blocks,  256 bytes per update,   4 updates):  18356 opers/sec,  18796544 bytes/sec
+test  8 ( 1024 byte blocks, 1024 bytes per update,   1 updates):  19228 opers/sec,  19689472 bytes/sec
+test  9 ( 2048 byte blocks,   16 bytes per update, 128 updates):   5312 opers/sec,  10878976 bytes/sec
+test 10 ( 2048 byte blocks,  256 bytes per update,   8 updates):   9562 opers/sec,  19582976 bytes/sec
+test 11 ( 2048 byte blocks, 1024 bytes per update,   2 updates):  10020 opers/sec,  20520960 bytes/sec
+test 12 ( 2048 byte blocks, 2048 bytes per update,   1 updates):  10103 opers/sec,  20690944 bytes/sec
+test 13 ( 4096 byte blocks,   16 bytes per update, 256 updates):   2689 opers/sec,  11014144 bytes/sec
+test 14 ( 4096 byte blocks,  256 bytes per update,  16 updates):   4891 opers/sec,  20033536 bytes/sec
+test 15 ( 4096 byte blocks, 1024 bytes per update,   4 updates):   5123 opers/sec,  20983808 bytes/sec
+test 16 ( 4096 byte blocks, 4096 bytes per update,   1 updates):   5186 opers/sec,  21241856 bytes/sec
+test 17 ( 8192 byte blocks,   16 bytes per update, 512 updates):   1352 opers/sec,  11075584 bytes/sec
+test 18 ( 8192 byte blocks,  256 bytes per update,  32 updates):   2473 opers/sec,  20258816 bytes/sec
+test 19 ( 8192 byte blocks, 1024 bytes per update,   8 updates):   2591 opers/sec,  21225472 bytes/sec
+test 20 ( 8192 byte blocks, 4096 bytes per update,   2 updates):   2622 opers/sec,  21479424 bytes/sec
+test 21 ( 8192 byte blocks, 8192 bytes per update,   1 updates):   2617 opers/sec,  21438464 bytes/sec
+
+=========================IONE============================================
+
+# modprobe tcrypt mode=303 sec=1
+testing speed of sha1
+test  0 (   16 byte blocks,   16 bytes per update,   1 updates): 240559 opers/sec,   3848944 bytes/sec
+test  1 (   64 byte blocks,   16 bytes per update,   4 updates): 112964 opers/sec,   7229696 bytes/sec
+test  2 (   64 byte blocks,   64 bytes per update,   1 updates): 159828 opers/sec,  10228992 bytes/sec
+test  3 (  256 byte blocks,   16 bytes per update,  16 updates):  42193 opers/sec,  10801408 bytes/sec
+test  4 (  256 byte blocks,   64 bytes per update,   4 updates):  66179 opers/sec,  16941824 bytes/sec
+test  5 (  256 byte blocks,  256 bytes per update,   1 updates):  80767 opers/sec,  20676352 bytes/sec
+test  6 ( 1024 byte blocks,   16 bytes per update,  64 updates):  11631 opers/sec,  11910144 bytes/sec
+test  7 ( 1024 byte blocks,  256 bytes per update,   4 updates):  25327 opers/sec,  25934848 bytes/sec
+test  8 ( 1024 byte blocks, 1024 bytes per update,   1 updates):  27163 opers/sec,  27814912 bytes/sec
+test  9 ( 2048 byte blocks,   16 bytes per update, 128 updates):   6097 opers/sec,  12486656 bytes/sec
+test 10 ( 2048 byte blocks,  256 bytes per update,   8 updates):  13227 opers/sec,  27088896 bytes/sec
+test 11 ( 2048 byte blocks, 1024 bytes per update,   2 updates):  13818 opers/sec,  28299264 bytes/sec
+test 12 ( 2048 byte blocks, 2048 bytes per update,   1 updates):  14433 opers/sec,  29558784 bytes/sec
+test 13 ( 4096 byte blocks,   16 bytes per update, 256 updates):   3082 opers/sec,  12623872 bytes/sec
+test 14 ( 4096 byte blocks,  256 bytes per update,  16 updates):   6788 opers/sec,  27803648 bytes/sec
+test 15 ( 4096 byte blocks, 1024 bytes per update,   4 updates):   7261 opers/sec,  29741056 bytes/sec
+test 16 ( 4096 byte blocks, 4096 bytes per update,   1 updates):   7242 opers/sec,  29663232 bytes/sec
+test 17 ( 8192 byte blocks,   16 bytes per update, 512 updates):   1550 opers/sec,  12697600 bytes/sec
+test 18 ( 8192 byte blocks,  256 bytes per update,  32 updates):   3433 opers/sec,  28123136 bytes/sec
+test 19 ( 8192 byte blocks, 1024 bytes per update,   8 updates):   3676 opers/sec,  30113792 bytes/sec
+test 20 ( 8192 byte blocks, 4096 bytes per update,   2 updates):   3747 opers/sec,  30695424 bytes/sec
+test 21 ( 8192 byte blocks, 8192 bytes per update,   1 updates):   3656 opers/sec,  29949952 bytes/sec
+
+=========================S2 arm11============================================
+# insmod ambarella_crypto.ko config_polling_mode=1
+ambarella-crypto ambarella-crypto: Ambarella Media Processor Cryptography Engine probed(polling mode).
+# modprobe tcrypt mode=303 sec=1
+
+testing speed of sha1
+test  0 (   16 byte blocks,   16 bytes per update,   1 updates): 331228 opers/sec,   5299648 bytes/sec
+test  1 (   64 byte blocks,   16 bytes per update,   4 updates): 148783 opers/sec,   9522112 bytes/sec
+test  2 (   64 byte blocks,   64 bytes per update,   1 updates): 219249 opers/sec,  14031936 bytes/sec
+test  3 (  256 byte blocks,   16 bytes per update,  16 updates):  52583 opers/sec,  13461248 bytes/sec
+test  4 (  256 byte blocks,   64 bytes per update,   4 updates):  89016 opers/sec,  22788096 bytes/sec
+test  5 (  256 byte blocks,  256 bytes per update,   1 updates): 114010 opers/sec,  29186560 bytes/sec
+test  6 ( 1024 byte blocks,   16 bytes per update,  64 updates):  14656 opers/sec,  15007744 bytes/sec
+test  7 ( 1024 byte blocks,  256 bytes per update,   4 updates):  35570 opers/sec,  36423680 bytes/sec
+test  8 ( 1024 byte blocks, 1024 bytes per update,   1 updates):  39017 opers/sec,  39953408 bytes/sec
+test  9 ( 2048 byte blocks,   16 bytes per update, 128 updates):   7473 opers/sec,  15304704 bytes/sec
+test 10 ( 2048 byte blocks,  256 bytes per update,   8 updates):  18640 opers/sec,  38174720 bytes/sec
+test 11 ( 2048 byte blocks, 1024 bytes per update,   2 updates):  20376 opers/sec,  41730048 bytes/sec
+test 12 ( 2048 byte blocks, 2048 bytes per update,   1 updates):  20802 opers/sec,  42602496 bytes/sec
+test 13 ( 4096 byte blocks,   16 bytes per update, 256 updates):   3772 opers/sec,  15450112 bytes/sec
+test 14 ( 4096 byte blocks,  256 bytes per update,  16 updates):   9559 opers/sec,  39153664 bytes/sec
+test 15 ( 4096 byte blocks, 1024 bytes per update,   4 updates):  10464 opers/sec,  42860544 bytes/sec
+test 16 ( 4096 byte blocks, 4096 bytes per update,   1 updates):  10703 opers/sec,  43839488 bytes/sec
+test 17 ( 8192 byte blocks,   16 bytes per update, 512 updates):   1896 opers/sec,  15532032 bytes/sec
+test 18 ( 8192 byte blocks,  256 bytes per update,  32 updates):   4840 opers/sec,  39649280 bytes/sec
+test 19 ( 8192 byte blocks, 1024 bytes per update,   8 updates):   5303 opers/sec,  43442176 bytes/sec
+test 20 ( 8192 byte blocks, 4096 bytes per update,   2 updates):   5423 opers/sec,  44425216 bytes/sec
+test 21 ( 8192 byte blocks, 8192 bytes per update,   1 updates):   5353 opers/sec,  43851776 bytes/sec
+
+

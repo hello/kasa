@@ -1,0 +1,29 @@
+From 116f212581c93dba56ce5bc7b3f28237b2940145 Mon Sep 17 00:00:00 2001
+From: Colin Walters <walters@verbum.org>
+Date: Thu, 18 Jul 2013 15:14:58 -0400
+Subject: [PATCH] name-test: Don't run test-autolaunch if we don't have dbus-launch
+
+libdbus will look for its compiled-in path to find dbus-launch, and
+not find it when running in a buildroot that doesn't have dbus
+installed (the typical case for pbuilder/mock).
+---
+ test/name-test/run-test.sh |    6 +++++-
+ 1 files changed, 5 insertions(+), 1 deletions(-)
+
+diff --git a/test/name-test/run-test.sh b/test/name-test/run-test.sh
+index cad5937..0bb0aee 100755
+--- a/test/name-test/run-test.sh
++++ b/test/name-test/run-test.sh
+@@ -57,4 +57,8 @@ elif ! $PYTHON $DBUS_TOP_SRCDIR/test/name-test/test-activation-forking.py; then
+ fi
+ 
+ echo "running test-autolaunch"
+-${DBUS_TOP_BUILDDIR}/libtool --mode=execute $DEBUG $DBUS_TOP_BUILDDIR/test/name-test/test-autolaunch || die "test-autolaunch failed"
++if which dbus-launch 2>/dev/null; then
++    ${DBUS_TOP_BUILDDIR}/libtool --mode=execute $DEBUG $DBUS_TOP_BUILDDIR/test/name-test/test-autolaunch || die "test-autolaunch failed"
++else
++    echo "Skipping test-autolaunch, no dbus-launch in $PATH"
++fi
+-- 
+1.7.1
+

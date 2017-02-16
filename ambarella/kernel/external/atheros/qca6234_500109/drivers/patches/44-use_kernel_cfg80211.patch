@@ -1,0 +1,258 @@
+diff -Naur ath6kl.org/core.h ath6kl/core.h
+--- ath6kl.org/core.h	2014-02-14 10:50:40.000000000 +0800
++++ ath6kl/core.h	2014-02-18 11:01:24.130618641 +0800
+@@ -23,6 +23,17 @@
+ #endif
+ #endif
+ 
++#ifdef CONFIG_ANDROID
++#undef CONFIG_ANDROID
++#endif
++
++#ifdef ACS_SUPPORT
++#undef ACS_SUPPORT
++#endif
++
++#define ATH6KL_SUPPORT_NL80211_KERNEL3_8
++
++
+ #include <linux/etherdevice.h>
+ #include <linux/rtnetlink.h>
+ #include <linux/firmware.h>
+diff -Naur ath6kl.org/Kbuild ath6kl/Kbuild
+--- ath6kl.org/Kbuild	2014-02-14 10:53:28.000000000 +0800
++++ ath6kl/Kbuild	2014-02-18 10:58:57.673047790 +0800
+@@ -20,7 +20,7 @@
+ #
+ # Author(s): ="Atheros"
+ #------------------------------------------------------------------------------
+-NOSTDINC_FLAGS := -include ${ATH_DRIVER_TOPDIR}/include_local/linux/compat-2.6.h -I${ATH_DRIVER_TOPDIR}/include_local/ $(ATH_LOCAL_CFLAGS)
++NOSTDINC_FLAGS := -include /usr/src/linux-headers-${shell uname -r}/include/linux/compat.h -I/usr/src/linux-headers-${shell uname -r}/include/ $(ATH_LOCAL_CFLAGS) 
+ 
+ obj-$(CONFIG_ATH6KL_SDIO) := ath6kl_sdio.o
+ ath6kl_sdio-y += debug.o
+@@ -81,5 +81,6 @@
+ ccflags-y += -D__CHECK_ENDIAN__
+ ccflags-y += -DCONFIG_BTCOEX_OLCA_3_5
+ ccflags-$(CONFIG_ATH6KL_UB134) += -DCONFIG_ATH6KL_UDP_TPUT_WAR
++ccflags-y += -DCONFIG_KERNEL_3_8_2=1
+ 
+ EXTRA_CFLAGS += -I${KBUILDPATH}/drivers/net/wireless/ath/ath6kl
+
+diff -Naur ath6kl.org/cfg80211.c ath6kl/cfg80211.c
+--- ath6kl.org/cfg80211.c	2014-01-06 15:29:29.000000000 +0800
++++ ath6kl/cfg80211.c	2014-01-06 15:29:53.000000000 +0800
+@@ -6748,7 +6748,6 @@
+ 			(ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_5G) ?
+ 			"driver" : "board-data"));
+ 	}
+-	wiphy->bands[IEEE80211_BAND_DSRC] = &ath6kl_band_dsrc;
+ 	wiphy->signal_type = CFG80211_SIGNAL_TYPE_MBM;
+ 
+ 	wiphy->cipher_suites = cipher_suites;
+@@ -7220,21 +7219,6 @@
+ 		}
+ 	}
+ 
+-	/* Create dsrc interface */
+-	if (ath6kl_dsrc) {
+-		rtnl_lock();
+-		params.use_4addr = 0;
+-		if (ath6kl_cfg80211_add_iface(
+-					ar->wiphy,
+-					ATH6KL_DEVNAME_DEF_DSRC,
+-					NL80211_IFTYPE_STATION,
+-					NULL,
+-					&params) == NULL) {
+-			ath6kl_err("Create dsrc interface fail!\n");
+-		}
+-		rtnl_unlock();
+-	}
+-
+ 	/* Wait target report WMI_REGDOMAIN_EVENTID done */
+ 	for (i = 0; i < MAX_RD_WAIT_CNT; i++) {
+ 		if (ath6kl_reg_is_init_done(ar)) {
+diff -Naur ath6kl.org/main.c ath6kl/main.c
+--- ath6kl.org/main.c	2014-01-06 15:29:29.000000000 +0800
++++ ath6kl/main.c	2014-01-06 15:33:21.000000000 +0800
+@@ -2450,99 +2450,11 @@
+ 	return true;
+ }
+ 
+-static bool ath6kl_check_ocb_channel_support(struct wiphy *wiphy, u16 channel)
+-{
+-	bool chan_supported;
+-	int i;
+-	int num_channels = wiphy->bands[IEEE80211_BAND_DSRC]->n_channels;
+-
+-	if (!channel) {
+-		/* Special case for channel = 0 */
+-		/* This is to disable a channel op */
+-		return true;
+-	}
+-
+-        chan_supported = false;
+-	for (i = 0; i < num_channels; i++) {
+-		if (channel ==
+-				wiphy->bands[IEEE80211_BAND_DSRC]->
+-				channels[i].hw_value) {
+-			chan_supported = true;
+-			break;
+-		}
+-	}
+-
+-	return chan_supported;
+-}
+-
+-static bool ath6kl_validate_ocb_tx_params(struct wiphy *wiphy,
+-	struct ath6kl_ocb_channel_op *channel_op)
+-{
+-	int i;
+-	bool ret = false;
+-
+-	/* Verify Channel */
+-	if (!ath6kl_check_ocb_channel_support(wiphy,
+-		channel_op->u.tx_op.default_channel)) {
+-		ath6kl_err("OCB Channel TX op: Invalid channel specified\n");
+-		return ret;
+-	}
+-
+-	/* Verify TX rate. Rates are specified for 20 MHz channels */
+-	switch (channel_op->u.tx_op.tx_rate) {
+-		case 0:
+-		case 6:
+-		case 9:
+-		case 12:
+-		case 18:
+-		case 24:
+-		case 36:
+-		case 48:
+-		case 54:
+-			/* Valid TX rate value */
+-			break;
+-		default:
+-			ath6kl_err("OCB Channel TX op: Invalid rate specified\n");
+-			return ret;
+-	}
+-
+-	/* Verify QoS Params */
+-	for (i = 0; i < WMM_NUM_AC; i++) {
+-		if ((channel_op->u.tx_op.qos_params[i].aifsn == 0) &&
+-			(channel_op->u.tx_op.qos_params[i].cwmin == 0) &&
+-			(channel_op->u.tx_op.qos_params[i].cwmax ==0)) {
+-			/* All three parameters are 0. Firmware will use default values */
+-			continue;
+-		}
+-
+-		if ((channel_op->u.tx_op.qos_params[i].aifsn < AIFSN_MIN) ||
+-			(channel_op->u.tx_op.qos_params[i].aifsn > AIFSN_MAX)) {
+-			ath6kl_err("OCB Channel TX op: Invalid QoS params specified\n");
+-			return ret;
+-		}
+-
+-		if ((channel_op->u.tx_op.qos_params[i].cwmin < CW_MIN) ||
+-			(channel_op->u.tx_op.qos_params[i].cwmin > CW_MAX)) {
+-			ath6kl_err("OCB Channel TX op: Invalid QoS params specified\n");
+-			return ret;
+-		}
+-
+-		if ((channel_op->u.tx_op.qos_params[i].cwmax < CW_MIN) ||
+-			(channel_op->u.tx_op.qos_params[i].cwmax > CW_MAX)) {
+-			ath6kl_err("OCB Channel TX op: Invalid QoS params specified\n");
+-			return ret;
+-		}
+-	}
+-
+-	return true;
+-}
+-
+ static int ath6kl_ioctl_standard(struct net_device *dev,
+ 				struct ifreq *rq, int cmd)
+ {
+ 	struct ath6kl_vif *vif = netdev_priv(dev);
+ 	void *data = (void *)(rq->ifr_data);
+-	struct wiphy *wiphy;
+ 	int ret = 0;
+ 
+ 	switch (cmd) {
+@@ -2680,72 +2592,6 @@
+ 		}
+ 		break;
+ 	}
+-	case ATH6KL_IOCTL_STANDARD04:
+-	{
+-		struct ath6kl_ocb_channel_op channel_op;
+-		struct wmi_set_ocb_channel_op_cmd channel_op_cmd = {0};
+-		if (copy_from_user(&channel_op,
+-				data,
+-				sizeof(struct ath6kl_ocb_channel_op)))
+-			ret = -EIO;
+-		else {
+-			if (!ath6kl_ioctl_ready(vif)) {
+-				ret = -EIO;
+-				break;
+-			}
+-
+-			if (down_interruptible(&vif->ar->sem)) {
+-				ath6kl_err("busy, couldn't get access\n");
+-				ret = -ERESTARTSYS;
+-				break;
+-			}
+-
+-			wiphy = vif->ar->wiphy;
+-			if (channel_op.type == ATH6KL_OCB_CHANNEL_OP_TX) {
+-				if (!ath6kl_validate_ocb_tx_params(wiphy, &channel_op)) {
+-					up(&vif->ar->sem);
+-					ret = -EOPNOTSUPP;
+-					break;
+-				}
+-
+-				channel_op_cmd.type = ATH6KL_OCB_CHANNEL_OP_TX;
+-				channel_op_cmd.channel = channel_op.u.tx_op.default_channel;
+-				channel_op_cmd.tx_power = channel_op.u.tx_op.tx_power;
+-				channel_op_cmd.tx_rate = channel_op.u.tx_op.tx_rate;
+-				memcpy(channel_op_cmd.qos_params, channel_op.u.tx_op.qos_params,
+-					sizeof(struct wmi_ocb_qos_params) * WMM_NUM_AC);
+-
+-				ret = ath6kl_wmi_set_ocb_channel_op(vif->ar->wmi, vif->fw_vif_idx,
+-					&channel_op_cmd);
+-			} else if (channel_op.type == ATH6KL_OCB_CHANNEL_OP_RX) {
+-				if (!ath6kl_check_ocb_channel_support(wiphy,
+-					channel_op.u.rx_op.rx_channel)) {
+-					ath6kl_err("OCB Channel RX op: Invalid channel specified\n");
+-					up(&vif->ar->sem);
+-					ret = -EOPNOTSUPP;
+-					break;
+-				}
+-
+-				channel_op_cmd.type = ATH6KL_OCB_CHANNEL_OP_RX;
+-				channel_op_cmd.channel = channel_op.u.rx_op.rx_channel;
+-				channel_op_cmd.per_packet_rx_stats = channel_op.u.rx_op.rx_stats;
+-
+-				ret = ath6kl_wmi_set_ocb_channel_op(vif->ar->wmi, vif->fw_vif_idx,
+-					&channel_op_cmd);
+-			} else {
+-				ret = -EIO;
+-			}
+-
+-			up(&vif->ar->sem);
+-
+-			if (!ret) {
+-				set_bit(CONNECTED, &vif->flags);
+-				netif_carrier_on(dev);
+-				netif_wake_queue(dev);
+-			}
+-		}
+-		break;
+-	}
+ 	default:
+ #ifdef ACS_SUPPORT
+ 		return ath6kl_acs_ioctl(dev, rq, cmd);
+@@ -2889,7 +2735,6 @@
+ 	case ATH6KL_IOCTL_STANDARD02:	/* supplicant escape purpose to
+ 					   support WiFi-Direct Cert. */
+ 	case ATH6KL_IOCTL_STANDARD03:	/* BTC command */
+-	case ATH6KL_IOCTL_STANDARD04:	/* OCB command */
+ 	case ATH6KL_IOCTL_STANDARD12:	/* hole, please reserved */
+ #ifdef ATHTST_SUPPORT
+ 	case ATHCFG_WCMD_IOCTL:	/* athtst */

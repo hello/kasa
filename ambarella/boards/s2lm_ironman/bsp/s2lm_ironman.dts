@@ -1,0 +1,179 @@
+/*
+ * Copyright (C) 2013 Ambarella,Inc. - http://www.ambarella.com/
+ * Author: Cao Rongrong <rrcao@ambarella.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
+/dts-v1/;
+
+/include/ "ambarella-s2l.dtsi"
+
+/ {
+	model = "Ambarella S2LM IronMan Board";
+	compatible = "ambarella,s2lmironman", "ambarella,s2l";
+
+	chosen {
+		bootargs = "console=ttyS0 ubi.mtd=lnx root=ubi0:rootfs rw rootfstype=ubifs init=/linuxrc";
+	};
+
+	apb@e8000000 {
+		i2c0: i2c@e8003000 {
+			clock-frequency = <200000>;
+			status = "ok";
+
+			ak4951: codec@12 {
+				compatible = "ambarella,ak4951";
+				reg = <0x12>;
+				gpios = <&gpio 95 0x0>;
+			};
+
+			ak7719: codec@18 {
+				compatible = "ambarella,ak7719";
+				reg = <0x18>;
+				gpios = <&gpio 107 0x0>;
+			};
+
+			ambvin0@01 {
+				compatible = "ambarella,ambvin";
+				reg = <0x01>;	/* fake address, will be overwritten in runtime */
+			};
+	        };
+
+		ir@e8006000 {
+			status = "disabled";
+		};
+	};
+
+	ahb@e0000000 {
+		sdmmc0@e0002000 {
+			slot@0 {
+				/* pwr-gpios = <&pca9539 14 0x1>; */
+				max-frequency = <50000000>;
+				bus-width = <4>;
+				no-1-8-v = <1>;
+				/* broken-cd; */
+				/* cap-sdio-irq; */
+			};
+		};
+
+		uart1: uart@e0032000 {
+			compatible = "ambarella,uart";
+			reg = <0xe0032000 0x1000>;
+			interrupts = <25 0x4>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&uart1_pins_d &uart1_flow_pins_e>;
+			status = "ok";
+		};
+		mac0: ethernet@e000e000 {
+			phy@0 {
+				rst-gpios = <&gpio 104 0x0>;
+			};
+		};
+	};
+
+	rct@ec170000 {
+		usbphy: usbphy@ec170050 {
+			/* high will trigger the ocp interrupt */
+			amb,ocp-polarity = <0>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&usb_host0_pins>;
+			md-gpios = <&gpio 31 0x1>;
+			hub-gpios = <&gpio 105 0x0>;
+		};
+	};
+
+	gpio_keys {
+		compatible = "gpio-keys";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		key1_button {
+			label = "key1";
+			gpios = <&gpio 24 1>;
+			debounce-interval = <10>;
+			linux,code = <116>;	/*KEY_POWER*/
+		};
+
+		key2_button {
+			label = "key2";
+			gpios = <&gpio 32 1>;
+			debounce-interval = <10>;
+			linux,code = <238>;	/*KEY_POWER*/
+		};
+
+	};
+
+	pir {
+		compatible = "gpio-keys";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		PIR {
+			label = "pir";
+			gpios = <&gpio 38 0>;
+			debounce-interval = <10>;
+			linux,code = <175>;	/*KEY_MOVE*/
+		};
+	};
+
+	sound {
+		compatible = "ambarella,audio-board";
+		amb,model = "ak4951 @ Ambarella";
+		amb,i2s-controllers = <&i2s0>;
+		amb,audio-codec = <&ak4951>;
+		amb,dummy-codec = <&dummycodec>;
+		amb,dai_fmt = <0>;
+		amb,clk_fmt = <1>;
+		amb,dummy_dai_fmt = <4>;
+		amb,codec-name = "ak4951";
+		amb,stream-name = "ak4951 PCM";
+		amb,codec-dai-name = "ak4951-hifi";
+		amb,audio-routing = "LIN2", "Mic internal",
+				    "RIN2", "Mic external",
+				    "LIN3", "Line In",
+				    "RIN3", "Line In",
+				    "Line Out", "SPKLO",
+				    "Line Out", "SPKLO",
+				    "HP Jack", "HPR",
+				    "HP Jack", "HPL",
+				    "Speaker", "SPKLO",
+				    "Speaker", "SPKLO";
+	};
+
+	bogus_bus {
+		pwm_bl@0 {
+			compatible = "pwm-backlight";
+			reg = <0>;
+			pwms = <&pwm 0 100000 0>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&pwm0_pins_c>;
+			brightness-levels =
+						<0  3   6   9   12  15  18  21
+						24  27  30  33  36  39  42  45
+						48  51  54  57  60  63  66  69
+						72  75  78  81  84  87  90  92
+						94  96  98  100 102 104 106 108
+						110 112 114 116 118 120 122 124
+						126 128 130 132 134 136 138 140
+						142 144 146 148 150 152 154 156
+						158 160 162 164 166 168 170 172
+						174 177 180 183 186 189 192 195
+						198 201 204 207 210 213 216 219
+						222 225 228 231 234 237 240 243
+						246 249 252 255>;
+			default-brightness-level = <0>;
+		};
+	};
+
+	iav {
+		compatible = "ambarella,iav";
+		/* node for vin controller */
+		vinc0 {
+		vinrst-gpios = <&gpio 98 0>;
+		vinpwr-gpios = <&gpio 100 1>;
+		};
+	};
+};
+

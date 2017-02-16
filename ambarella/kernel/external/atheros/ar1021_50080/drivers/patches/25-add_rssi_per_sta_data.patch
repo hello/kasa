@@ -1,0 +1,53 @@
+diff -Naur ath6kl.ori/debug.c ath6kl/debug.c
+--- ath6kl.ori/debug.c	2012-11-22 17:41:44.000000000 +0800
++++ ath6kl/debug.c	2012-11-28 11:08:51.000000000 +0800
+@@ -3828,7 +3828,14 @@
+ 
+ 				if (per_sta_stat->aid) {
+ 					len += scnprintf(p + len, buf_len - len,
+-						" STA - AID %02d tx_bytes/pkts/error %d/%d/%d rx_bytes/pkts/error %d/%d/%d tx_ucast_rate %d last_txrx_time %d\n",
++						" STA - mac=%02x:%02x:%02x:%02x:%02x:%02x\n"
++						" AID %02d tx_bytes/pkts/error %d/%d/%d rx_bytes/pkts/error %d/%d/%d tx_ucast_rate %d last_txrx_time %d rssi=%d\n",
++						per_sta_stat->mac[0],
++						per_sta_stat->mac[1],
++						per_sta_stat->mac[2],
++						per_sta_stat->mac[3],
++						per_sta_stat->mac[4],
++						per_sta_stat->mac[5],
+ 						per_sta_stat->aid,
+ 						per_sta_stat->tx_bytes,
+ 						per_sta_stat->tx_pkts,
+@@ -3837,7 +3844,8 @@
+ 						per_sta_stat->rx_pkts,
+ 						per_sta_stat->rx_error,
+ 						per_sta_stat->tx_ucast_rate,
+-						per_sta_stat->last_txrx_time);
++						per_sta_stat->last_txrx_time,
++						per_sta_stat->rsRssi);
+ 				}
+ 			}
+ 		}
+diff -Naur ath6kl.ori/main.c ath6kl/main.c
+--- ath6kl.ori/main.c	2012-11-22 17:41:44.000000000 +0800
++++ ath6kl/main.c	2012-11-28 11:09:38.000000000 +0800
+@@ -1251,6 +1251,8 @@
+ 							st_p->tx_ucast_rate;
+ 					st_ap->last_txrx_time =
+ 					le16_to_cpu(st_p->last_txrx_time);
++					memcpy(st_ap->mac, st_p->mac, ETH_ALEN);
++					st_ap->rsRssi = st_p->rsRssi;
+ 				}
+ 			}
+ 		}
+diff -Naur ath6kl.ori/wmi.h ath6kl/wmi.h
+--- ath6kl.ori/wmi.h	2012-11-22 17:41:44.000000000 +0800
++++ ath6kl/wmi.h	2012-11-28 11:10:12.000000000 +0800
+@@ -2299,6 +2299,8 @@
+ 
+ 	/* unit is (ms./1024). Target time, not host time. */
+ 	__le16 last_txrx_time;
++	u8 mac[ETH_ALEN];
++	char rsRssi;
+ } __packed;
+ 
+ struct wmi_ap_mode_stat {

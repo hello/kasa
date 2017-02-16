@@ -1,0 +1,43 @@
+From 8ec06ee49bac9191260b21e52c932da1101d83ef Mon Sep 17 00:00:00 2001
+From: Kamil Dudka <kdudka@redhat.com>
+Date: Mon, 9 Sep 2013 13:10:53 +0200
+Subject: [PATCH] url: handle abortion by read/write callbacks, too
+
+Otherwise, the FTP protocol would unnecessarily hang 60 seconds if
+aborted in the CURLOPT_HEADERFUNCTION callback.
+
+Reported by: Tomas Mlcoch
+Bug: https://bugzilla.redhat.com/1005686
+
+[upstream commit c639d725a37c91fb49bb3a689cb2596fad3a0645]
+---
+ lib/url.c |    8 +++++++-
+ 1 files changed, 7 insertions(+), 1 deletions(-)
+
+diff --git a/lib/url.c b/lib/url.c
+index 7cec5bc..80e1e67 100644
+--- a/lib/url.c
++++ b/lib/url.c
+@@ -5666,12 +5666,18 @@ CURLcode Curl_done(struct connectdata **connp,
+     conn->dns_entry = NULL;
+   }
+ 
+-  if(status == CURLE_ABORTED_BY_CALLBACK)
++  switch(status) {
++  case CURLE_ABORTED_BY_CALLBACK:
++  case CURLE_READ_ERROR:
++  case CURLE_WRITE_ERROR:
+     /* When we're aborted due to a callback return code it basically have to
+        be counted as premature as there is trouble ahead if we don't. We have
+        many callbacks and protocols work differently, we could potentially do
+        this more fine-grained in the future. */
+     premature = TRUE;
++  default:
++    break;
++  }
+ 
+   /* this calls the protocol-specific function pointer previously set */
+   if(conn->handler->done)
+-- 
+1.7.1
+

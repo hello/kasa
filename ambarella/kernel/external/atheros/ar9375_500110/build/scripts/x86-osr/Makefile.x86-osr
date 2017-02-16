@@ -1,0 +1,58 @@
+# Build list
+
+targetList := udev drivers drivers_firmware
+ifdef BUILD_LIBNL
+targetList += libnl
+endif
+# targetList += iw wpa_supplicant rootfs_build 
+targetList += wpa_supplicant rootfs_build 
+# targetList += wireless_tools_build
+#targetList += spe_package
+#targetList += wfadut_build
+
+default: ${targetList}
+
+#################################################################################################################################
+export WFDSIGMA_TOPDIR=${ATH_TOPDIR}/apps/wfa-sigma-dut
+export BE_TEST_TOPDIR=${ATH_TOPDIR}/build/scripts/x86
+export WLAN_DRIVER_TOPDIR=$(ATH_TOPDIR)/drivers
+
+#################################################################################################################################
+#
+# driver build
+#
+drivers_patch:
+	@echo Build drivers patch
+	cd ${WLAN_DRIVER_TOPDIR} && patch -p0 < patches/44-use_kernel_cfg80211.patch; \
+	cd ${WLAN_DRIVER_TOPDIR} && patch -p0 < patches/45-ath6kl_kbuild_for_osr.patch; \
+	cd ${WLAN_DRIVER_TOPDIR}/../apps/hostap/src/ && patch -p0 < ${WLAN_DRIVER_TOPDIR}/patches/08-hostap_make_libnl.patch; \
+	cd ${WLAN_DRIVER_TOPDIR}/../apps/hostap/src/ && patch -p0 < ${WLAN_DRIVER_TOPDIR}/patches/46-disable_ioctlapp_for_osr.patch
+	@cd ${WLAN_DRIVER_TOPDIR} && patch -p0 < patches/12-intra_reg.patch
+
+#################################################################################################################################
+#
+# WFA-Sigma package
+#
+wfadut_build: rootfs_prep wfadut_clean
+	@echo Build WFA-Sigma
+	cd $(WFDSIGMA_TOPDIR) && \
+	${MAKEARCH} && \
+	cp $(WFDSIGMA_TOPDIR)/ca/wfa_ca $(WFDSIGMA_TOPDIR)/dut/wfa_dut $(INSTALL_ROOT)/sbin
+
+wfadut_clean:
+	@echo Clean WFA-Sigma
+	cd $(WFDSIGMA_TOPDIR) && \
+	${MAKEARCH} clean
+
+udev:
+	@echo build udev
+	cd $(ATH_TOPDIR)/build/util/udev && \
+	./compat_firmware_install
+
+#
+# SPE_BE_TEST package
+#
+spe_package:
+	@echo Build SPE_BE_TEST
+	cd ${BE_TEST_TOPDIR} && \
+	./gen_spe_package.sh

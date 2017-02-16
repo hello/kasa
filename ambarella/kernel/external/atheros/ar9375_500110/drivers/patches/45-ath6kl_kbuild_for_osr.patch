@@ -1,0 +1,21 @@
+diff -Naur ath6kl-old/Kbuild ath6kl/Kbuild
+--- ath6kl-old/Kbuild	2014-03-06 15:20:54.663746761 +0800
++++ ath6kl/Kbuild	2014-03-06 15:20:46.067746531 +0800
+@@ -20,7 +20,7 @@
+ #
+ # Author(s): ="Atheros"
+ #------------------------------------------------------------------------------
+-NOSTDINC_FLAGS := -include ${ATH_DRIVER_TOPDIR}/include_local/linux/compat-2.6.h -I${ATH_DRIVER_TOPDIR}/include_local/ $(ATH_LOCAL_CFLAGS)
++NOSTDINC_FLAGS := -include /usr/src/linux-headers-${shell uname -r}/include/linux/compat.h -I/usr/src/linux-headers-${shell uname -r}/include/ $(ATH_LOCAL_CFLAGS)
+ 
+ obj-$(CONFIG_ATH6KL_SDIO) := ath6kl_sdio.o
+ ath6kl_sdio-y += debug.o
+@@ -82,4 +82,8 @@
+ ccflags-y += -DCONFIG_BTCOEX_OLCA_3_5
+ ccflags-$(CONFIG_ATH6KL_UB134) += -DCONFIG_ATH6KL_UDP_TPUT_WAR
+ 
++ccflags-$(CONFIG_KERNEL_3_8) += -DCONFIG_KERNEL_3_8_2=1 -DATH6KL_SUPPORT_NL80211_KERNEL3_8
++ccflags-$(CONFIG_KERNEL_3_12) += -DCONFIG_KERNEL_3_8_2=1 -DCONFIG_KERNEL_3_12 -DATH6KL_SUPPORT_NL80211_KERNEL3_12
++
++
+ EXTRA_CFLAGS += -I${KBUILDPATH}/drivers/net/wireless/ath/ath6kl

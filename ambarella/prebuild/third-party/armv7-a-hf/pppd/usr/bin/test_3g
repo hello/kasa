@@ -1,0 +1,193 @@
+#!/bin/sh
+
+linux_version=$(uname -r)
+if [ $# = 0 ]
+then
+    help="yes"
+fi
+
+m_type="3gnet"
+ARGS='getopt m:t:h "$@"'
+eval set -- "${ARGS}"
+
+while [ -n "$1" ]
+do
+    case "$1" in
+    -m)
+        m_module="$2"
+        help="no"
+        ;;
+    -t)
+        m_type="$2"
+        ;;
+    -h)
+        help="yes"
+        ;;
+    --)
+        shift
+        break
+        ;;
+    esac
+shift
+done
+
+
+power_up_sim5320() {
+    if [ ! -e /sys/class/gpio/gpio96/value ]
+    then
+        echo 96 > /sys/class/gpio/export
+    fi
+    echo high > /sys/class/gpio/gpio96/direction
+}
+
+power_down_sim5320() {
+    echo low > /sys/class/gpio/gpio96/direction
+}
+
+power_up_u130(){
+    rmmod usbserial
+    sleep 2
+    modprobe usbserial vendor=0x1546 product=0x1101
+}
+
+power_up() {
+    echo Power up $1 module,Please wait ...
+    if [ "$1" = "sim5320" ]
+    then
+        power_up_sim5320
+    fi
+    if [ "$1" = "u130" ]
+    then
+        power_up_u130
+    fi
+}
+
+power_down() {
+    echo Power down $1 module
+    if [ "$1" = "sim5320" ]
+    then
+        power_down_sim5320
+    fi
+    if [ "$1" = "mu739" ]
+    then
+        echo Please reboot mu739 power by reset button
+	sleep 30
+    fi
+}
+
+start_pppd() {
+    echo start PPPD server on $2 module $1 protocol
+    ## test dependency
+    if [ ! -e /usr/sbin/pppd ]
+    then
+        echo "Error: You need to compile pppd into firmware"
+        return
+    fi
+    if [ ! -e /lib/modules/${linux_version}/kernel/drivers/usb/serial/usb_wwan.ko ]
+    then
+        echo "Error: You need to compile usb_wwan.ko into firmware"
+        return
+    fi
+    if [ ! -e /lib/modules/${linux_version}/kernel/drivers/usb/serial/option.ko ]
+    then
+        echo "Error: You need to compile option.ko into firmware"
+        return
+    fi
+    if [ -e /etc/ppp/resolv.conf ]
+    then
+        rm /etc/ppp/resolv.conf
+    fi
+
+    if [ -e /proc/ambarella/uport ]
+    then
+        echo host > /proc/ambarella/uport
+    fi
+    echo shutdown eth0
+    ifconfig eth0 down
+    needpowerdown=0
+
+    pppd_server="pppd call $2/$1 &"
+    while true
+    do
+        if [ -e /var/log/pppd.log ]
+        then
+            rm /var/log/pppd.log
+        fi
+        power_up $2
+        sleep 10
+        if [ -e /etc/ppp/resolv.conf ]
+        then
+            rm /etc/ppp/resolv.conf
+        fi
+
+        echo run pppd_server
+        eval $pppd_server
+        waitsec=60
+
+        while [ $waitsec -gt 0 ]
+        do
+            echo wait $((waitsec--)) seconds
+            sleep 1
+            if [ -e /etc/ppp/resolv.conf ]
+            then
+                echo found resolv.conf
+                break
+            fi
+            logout=`grep -o "Connection terminated" /var/log/pppd.log | wc -l`
+            if [ $logout -ge 1 ]
+            then
+                echo restart
+                break
+            fi
+        done
+        if [ -e /etc/ppp/resolv.conf ]
+        then
+            echo copy dns file
+            cp /etc/ppp/resolv.conf /etc/
+            echo pppd succeed !!!
+            while true
+            do
+                pppd_num=$(ps | grep -c pppd )
+
+                #echo pppd_num is $pppd_num
+                if [ $pppd_num -lt 2 ]
+                then
+                    break
+                fi
+                #check link every 10 seconds
+                sleep 10
+            done
+        else
+            echo pppd failed,restart...
+            ps | grep pppd | awk 'NR==1{print $1}' | xargs kill -9
+            ps | grep chat | awk 'NR==1{print $1}' | xargs kill -9
+            sleep 5
+            #sim5320 must connect twice
+            if [ $needpowerdown -gt 1 ]
+            then
+            power_down $2
+            fi
+            $((needpowerdown++))
+            continue
+        fi
+    done
+
+
+
+}
+
+
+
+
+
+
+
+if [ "${help}" == "yes" ]
+then
+echo 'test_3g'
+echo '    -m: module. like sim5320, mu739,u130'
+echo '    -t: type,3gnet or 3gwap'
+echo '    -h: help'
+else
+    start_pppd ${m_type} ${m_module}
+fi

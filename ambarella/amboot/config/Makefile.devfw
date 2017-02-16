@@ -1,0 +1,958 @@
+##
+## amboot/config/Makefile.devfw
+##
+## History:
+##    2005/02/27 - [Charles Chiou] created file
+##
+## Copyright (C) 2004-2014, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+# Requirements:
+#	(1) Please define the following before including this Makefile,
+#	$(TOP)
+#	$(BSP)
+#	$(CROSS) and all the compilation tool variables.
+#
+#	(2) Define the following variables to point to the file locations of
+#	the payload of firmwares.
+#	$(KERNEL)
+#	$(RAMDISK)
+#	$(ROMFS)
+#	$(DSP)
+
+ifeq ($(BUILD_DEVFW),y)
+
+ifndef DATE
+DATE :=			$(shell date +%Y%m%d)
+endif
+
+YEAR :=			$(shell date +%Y | sed s/^0//)
+MONTH :=		$(shell date +%m | sed s/^0//)
+DAY :=			$(shell date +%d | sed s/^0//)
+
+# Because of the quoted string format that Kconfig uses, we need to
+# destringify the following variables before processing them:
+PBA :=			$(shell echo $(PBA))
+PBA_VIF :=		$(shell echo $(PBA_VIF))
+KERNEL :=		$(shell echo $(KERNEL))
+KERNEL_VIF :=		$(shell echo $(KERNEL_VIF))
+SECONDARY :=		$(shell echo $(SECONDARY))
+SECONDARY_VIF :=	$(shell echo $(SECONDARY_VIF))
+BACKUP :=		$(shell echo $(BACKUP))
+BACKUP_VIF :=		$(shell echo $(BACKUP_VIF))
+RAMDISK :=		$(shell echo $(RAMDISK))
+RAMDISK_VIF :=		$(shell echo $(RAMDISK_VIF))
+ROMFS :=		$(shell echo $(ROMFS))
+ROMFS_VIF :=		$(shell echo $(ROMFS_VIF))
+LNX :=			$(shell echo $(LNX))
+LNX_VIF :=		$(shell echo $(LNX_VIF))
+SWP :=			$(shell echo $(SWP))
+SWP_VIF :=		$(shell echo $(SWP_VIF))
+ADD :=			$(shell echo $(ADD))
+ADD_VIF :=		$(shell echo $(ADD_VIF))
+ADC :=			$(shell echo $(ADC))
+ADC_VIF :=		$(shell echo $(ADC_VIF))
+
+HOST_PERMUTATE_ARG =	bst bld
+
+ifeq ($(AMBOOT_BOOT_DSP),y)
+DSP = dsp.bin
+DSP_VIF = $(AMB_TOPDIR)/amboot/vif/dsp.info
+__HAS_DSP__ = 1
+HOST_PERMUTATE_ARG +=   dsp
+endif
+
+ifneq ($(PBA),)
+ifeq ($(wildcard $(PBA)),$(PBA))
+__HAS_PBA__ = 1
+HOST_PERMUTATE_ARG +=	pba
+endif
+endif
+
+ifneq ($(KERNEL),)
+ifeq ($(wildcard $(KERNEL)),$(KERNEL))
+__HAS_KERNEL__ = 1
+HOST_PERMUTATE_ARG +=	kernel
+endif
+endif
+
+ifneq ($(SECONDARY),)
+ifeq ($(wildcard $(SECONDARY)),$(SECONDARY))
+__HAS_SECONDARY__ = 1
+HOST_PERMUTATE_ARG +=	secondary
+endif
+endif
+
+ifneq ($(BACKUP),)
+ifeq ($(wildcard $(BACKUP)),$(BACKUP))
+__HAS_BACKUP__ = 1
+HOST_PERMUTATE_ARG +=	backup
+endif
+endif
+
+ifneq ($(RAMDISK),)
+ifeq ($(wildcard $(RAMDISK)),$(RAMDISK))
+__HAS_RAMDISK__ = 1
+HOST_PERMUTATE_ARG +=	ramdisk
+endif
+endif
+
+ifneq ($(ROMFS),)
+ifeq ($(wildcard $(ROMFS)),$(ROMFS))
+__HAS_ROMFS__ = 1
+HOST_PERMUTATE_ARG +=	romfs
+endif
+endif
+
+ifneq ($(LNX),)
+ifeq ($(wildcard $(LNX)),$(LNX))
+__HAS_LNX__ = 1
+HOST_PERMUTATE_ARG +=	lnx
+endif
+endif
+
+ifneq ($(SWP),)
+ifeq ($(wildcard $(SWP)),$(SWP))
+__HAS_SWP__ = 1
+HOST_PERMUTATE_ARG +=	swp
+endif
+endif
+
+ifneq ($(ADD),)
+ifeq ($(wildcard $(ADD)),$(ADD))
+__HAS_ADD__ = 1
+HOST_PERMUTATE_ARG +=	add
+endif
+endif
+
+ifneq ($(ADC),)
+ifeq ($(wildcard $(ADC)),$(ADC))
+__HAS_ADC__ = 1
+HOST_PERMUTATE_ARG +=	adc
+endif
+endif
+
+ifeq (.fwlist,$(wildcard .fwlist))
+include .fwlist
+FIRMWARES :=	$(foreach i,$(FIRMWARES),devfw/$i)
+endif
+
+PAYLOAD_DEBUG =	\
+		.temp/bst_debug.fw \
+		.temp/bld_debug.fw \
+		.temp/splash.fw \
+		.temp/pba.fw \
+		.temp/kernel.fw \
+		.temp/secondary.fw \
+		.temp/backup.fw \
+		.temp/ramdisk.fw \
+		.temp/romfs.fw \
+		.temp/dsp.fw \
+		.temp/lnx.fw \
+		.temp/swp.fw \
+		.temp/add.fw \
+		.temp/adc.fw
+
+PAYLOAD_RELEASE = \
+		.temp/bst_release.fw \
+		.temp/bld_release.fw \
+		.temp/splash.fw \
+		.temp/pba.fw \
+		.temp/kernel.fw \
+		.temp/secondary.fw \
+		.temp/backup.fw \
+		.temp/ramdisk.fw \
+		.temp/romfs.fw \
+		.temp/dsp.fw \
+		.temp/lnx.fw \
+		.temp/swp.fw \
+		.temp/add.fw \
+		.temp/adc.fw
+
+DEVFW_DEBUG =	$(addsuffix _debug.efw,$(FIRMWARES)) \
+		$(addsuffix _debug.bin,$(FIRMWARES))
+
+DEVFW_RELEASE = $(addsuffix _release.efw,$(FIRMWARES)) \
+		$(addsuffix _release.bin,$(FIRMWARES))
+
+#DEVFW = $(DEVFW_DEBUG) $(DEVFW_RELEASE)
+DEVFW = $(DEVFW_RELEASE)
+
+MEMFWPROG_OBJS = \
+		run_once.o \
+		mmu.o \
+		armcache.o \
+		cache.o \
+		gpio.o \
+		vic.o \
+		rct.o \
+		memcpy.o \
+		memmove.o \
+		memzero.o \
+		memcmp.o \
+		crc32.o \
+		uart.o \
+		firmfl.o \
+		partition.o \
+		memfwprog.o \
+		$(NANDDB_OBJS) \
+		$(SPINORDB_OBJS)
+
+ifeq ($(CONFIG_AMBOOT_BD_FDT_SUPPORT),y)
+MEMFWPROG_OBJS += \
+		dtb.o \
+		fdt_boot.o \
+		fdt.o \
+		fdt_ro.o \
+		fdt_rw.o \
+		fdt_strerror.o \
+		fdt_sw.o \
+		fdt_wip.o \
+		fdt_empty_tree.o
+endif
+
+ifeq ($(wildcard $(BSP_DIR)/bsp_fw.c),$(BSP_DIR)/bsp_fw.c)
+MEMFWPROG_OBJS += bsp_fw.o
+endif
+
+ifeq ($(wildcard $(BSP_DIR)/make.devfw),$(BSP_DIR)/make.devfw)
+include $(BSP_DIR)/make.devfw
+endif
+
+ifeq ($(CONFIG_AMBOOT_ENABLE_NAND),y)
+MEMFWPROG_OBJS += nand.o
+ifeq ($(CONFIG_NAND_USE_FLASH_BBT),y)
+MEMFWPROG_OBJS += nand_bbt.o
+endif
+endif
+
+ifeq ($(CONFIG_AMBOOT_ENABLE_SD),y)
+MEMFWPROG_OBJS += sdmmc.o
+endif
+
+ifeq ($(CONFIG_AMBOOT_ENABLE_SPINOR),y)
+MEMFWPROG_OBJS += spinor.o
+endif
+
+MEMFWPROG_DEBUG_OBJS = $(patsubst %.o,%_debug.o,$(MEMFWPROG_OBJS))
+MEMFWPROG_RELEASE_OBJS = $(patsubst %.o,%_release.o,$(MEMFWPROG_OBJS))
+
+MEMFWPROG_DEBUG = $(addsuffix _debug.elf,$(subst devfw,memfwprog,$(FIRMWARES)))
+MEMFWPROG_RELEASE = $(addsuffix _release.elf,$(subst devfw,memfwprog,$(FIRMWARES)))
+MEMFWPROG_RELEASE_BIN = $(addsuffix _release.bin,$(subst devfw,memfwprog,$(FIRMWARES)))
+
+MEMFWPROG = $(MEMFWPROG_RELEASE) $(MEMFWPROG_RELEASE_BIN)
+ifeq ($(BUILD_DEBUG_MEMFWPROG),y)
+MEMFWPROG += $(MEMFWPROG_DEBUG)
+endif
+
+# MEMFWPROG targets
+
+memfwprog/%_debug.elf: .temp/header_%.fw $(PAYLOAD_DEBUG) \
+		$(MEMFWPROG_DEBUG_OBJS) .temp/memfwprog/%.lds
+	@mkdir -p memfwprog
+	$(ECHO_LD) $(CROSS)$(CC) -Wl,-T,.temp/$(subst _debug.elf,.lds,$@) \
+		-nostartfiles -o $@ $(MEMFWPROG_DEBUG_OBJS) $< \
+		$(PAYLOAD_DEBUG)
+
+memfwprog/%_release.elf: .temp/header_%.fw $(PAYLOAD_RELEASE) \
+		$(MEMFWPROG_RELEASE_OBJS) .temp/memfwprog/%.lds
+	@mkdir -p memfwprog
+	$(ECHO_LD) $(CROSS)$(CC) -Wl,-T,.temp/$(subst _release.elf,.lds,$@) \
+		-nostartfiles -o $@ $(MEMFWPROG_RELEASE_OBJS) $< \
+		$(PAYLOAD_RELEASE)
+	@$(CROSS)$(STRIP) --remove-section=.trash $@ 2> /dev/null
+
+memfwprog/%.bin: memfwprog/%.elf
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -O binary $< $@
+
+# DEVFW targets
+
+devfw/%_debug.bin: .temp/devfw/%_debug.efw
+	@mkdir -p devfw
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O binary $< $@
+
+.temp/devfw/%_debug.efw: .temp/header_%.fw $(PAYLOAD_DEBUG) .temp/devfw/%.lds
+	@mkdir -p .temp/devfw
+	$(ECHO_LD) $(CROSS)$(LD) -T$(subst _debug.efw,.lds,$@) -o $@ \
+		$< $(PAYLOAD_DEBUG)
+
+devfw/%_release.bin: .temp/devfw/%_release.efw
+	@mkdir -p devfw
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O binary $< $@
+
+.temp/devfw/%_release.efw: .temp/header_%.fw $(PAYLOAD_RELEASE) .temp/devfw/%.lds
+	@mkdir -p .temp
+	$(ECHO_LD) $(CROSS)$(LD) -T$(subst _release.efw,.lds,$@) -o $@ \
+		$< $(PAYLOAD_RELEASE)
+
+# Object targets
+
+.temp/header_%.fw: .temp/header_%.S
+	@mkdir -p .temp
+	$(ASM_NDEBUG_OBJ)
+
+%_debug.o: $(TOP)/src/bld/%.S
+	$(ASM_DEBUG_OBJ)
+
+%_debug.o: $(TOP)/src/bld/%.c
+	$(MAKE_DEBUG_OBJ)
+
+%_release.o: $(TOP)/src/bld/%.S
+	$(ASM_NDEBUG_OBJ)
+
+%_release.o: $(TOP)/src/bld/%.c
+	$(MAKE_NDEBUG_OBJ)
+
+
+# DTB targets
+ifeq ($(DTC),)
+$(error DTC is not specified)
+endif
+
+ifeq ($(BSP_DIR)/$(BSP_BOARD_VER).dts,$(wildcard $(BSP_DIR)/$(BSP_BOARD_VER).dts))
+BOARD_DTS := $(BSP_BOARD_VER).dts
+else
+BOARD_DTS := $(BSP_LO).dts
+endif
+
+BOARD_DTS_ASM := $(addsuffix .S,$(BOARD_DTS))
+
+$(BOARD_DTS_ASM): $(BSP_DIR)/$(BOARD_DTS)
+	@$(DTC) -I dts -O asm $(DTC_INCLUDES) -p 1024 -o $@ $<
+	@$(DTC) -I dts -O dtb $(DTC_INCLUDES) -p 1024 -o $(patsubst %.S,%.dtb,$@) $<
+
+dtb_debug.o: $(BOARD_DTS_ASM)
+	$(ASM_DEBUG_OBJ)
+
+dtb_release.o: $(BOARD_DTS_ASM)
+	$(ASM_NDEBUG_OBJ)
+
+# Linker script targets
+
+.temp/devfw/%.lds: $(TOP)/src/bld/devfw.lds.cpp
+	@mkdir -p .temp/devfw
+	@mydefs=""; \
+	if [ "$(findstring bst,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_BST__"; \
+	fi; \
+	if [ "$(findstring bld,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_BLD__"; \
+	fi; \
+	if [ "$(findstring splash,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_SPL__"; \
+	fi; \
+	if [ "$(findstring pba,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_PBA__"; \
+	fi; \
+	if [ "$(findstring kernel,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_KERNEL__"; \
+	fi; \
+	if [ "$(findstring secondary,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_SECONDARY__"; \
+	fi; \
+	if [ "$(findstring backup,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_BACKUP__"; \
+	fi; \
+	if [ "$(findstring ramdisk,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_RAMDISK__"; \
+	fi; \
+	if [ "$(findstring romfs,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_ROMFS__"; \
+	fi; \
+	if [ "$(findstring dsp,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_DSP__"; \
+	fi; \
+	if [ "$(findstring lnx,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_LNX__"; \
+	fi; \
+	if [ "$(findstring swp,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_SWP__"; \
+	fi; \
+	if [ "$(findstring add,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_ADD__"; \
+	fi; \
+	if [ "$(findstring adc,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_ADC__"; \
+	fi; \
+	echo $(CROSS)$(CPP) $(CFLAGS_DEBUG) -D__BSP_$(BSP)__ -D__ASM__ $$mydefs $< | sed /^#/d > $@; \
+	$(CROSS)$(CPP) $(CFLAGS_DEBUG) -D__BSP_$(BSP)__ -D__ASM__ $$mydefs $< | sed /^#/d > $@
+
+.temp/memfwprog/%.lds: $(TOP)/src/bld/memfwprog.lds.cpp
+	@mkdir -p .temp/memfwprog
+	@mydefs=""; \
+	if [ "$(findstring bst,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_BST__"; \
+	fi; \
+	if [ "$(findstring bld,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_BLD__"; \
+	fi; \
+	if [ "$(findstring splash,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_SPL__"; \
+	fi; \
+	if [ "$(findstring pba,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_PBA__"; \
+	fi; \
+	if [ "$(findstring kernel,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_KERNEL__"; \
+	fi; \
+	if [ "$(findstring secondary,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_SECONDARY__"; \
+	fi; \
+	if [ "$(findstring backup,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_BACKUP__"; \
+	fi; \
+	if [ "$(findstring ramdisk,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_RAMDISK__"; \
+	fi; \
+	if [ "$(findstring romfs,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_ROMFS__"; \
+	fi; \
+	if [ "$(findstring dsp,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_DSP__"; \
+	fi; \
+	if [ "$(findstring lnx,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_LNX__"; \
+	fi; \
+	if [ "$(findstring swp,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_SWP__"; \
+	fi; \
+	if [ "$(findstring add,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_ADD__"; \
+	fi; \
+	if [ "$(findstring adc,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_ADC__"; \
+	fi; \
+	echo $(CROSS)$(CPP) $(CFLAGS_DEBUG) -D__BSP_$(BSP)__ -D__ASM__ $$mydefs $< | sed /^#/d > $@; \
+	$(CROSS)$(CPP) $(CFLAGS_DEBUG) -D__BSP_$(BSP)__ -D__ASM__ $$mydefs $< | sed /^#/d > $@
+
+# Temp. assembler file targets
+
+.temp/header_%.S: $(TOP)/src/bld/header.S
+	@mkdir -p .temp
+	@mydefs=""; \
+	if [ "$(findstring bst,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_BST__"; \
+	fi; \
+	if [ "$(findstring bld,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_BLD__"; \
+	fi; \
+	if [ "$(findstring splash,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_SPL__"; \
+	fi; \
+	if [ "$(findstring pba,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_PBA__"; \
+	fi; \
+	if [ "$(findstring kernel,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_KERNEL__"; \
+	fi; \
+	if [ "$(findstring secondary,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_SECONDARY__"; \
+	fi; \
+	if [ "$(findstring backup,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_BACKUP__"; \
+	fi; \
+	if [ "$(findstring ramdisk,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_RAMDISK__"; \
+	fi; \
+	if [ "$(findstring romfs,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_ROMFS__"; \
+	fi; \
+	if [ "$(findstring dsp,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_DSP__"; \
+	fi; \
+	if [ "$(findstring lnx,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_LNX__"; \
+	fi; \
+	if [ "$(findstring swp,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_SWP__"; \
+	fi; \
+	if [ "$(findstring add,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_ADD__"; \
+	fi; \
+	if [ "$(findstring adc,$@)" != "" ]; then \
+		mydefs="$$mydefs -D__LINK_ADC__"; \
+	fi; \
+	echo $(CROSS)$(CPP) $(CFLAGS_DEBUG) -D__BSP_$(BSP)__ -D__ASM__ $$mydefs $< | sed /^#/d > $@; \
+	$(CROSS)$(CPP) $(CFLAGS_DEBUG) -D__BSP_$(BSP)__ -D__ASM__ $$mydefs $< | sed /^#/d > $@
+
+#
+# Firmware object files
+#
+
+ifeq ($(MUL_BST_ENABLE),yes)
+.temp/bst_debug.fw: $(foreach i,$(BST_DEBUG_BINS),.temp/$(subst .bin,.fw,$(i)))
+	@cat $^ > $@
+	@$(ECHO_OCP) $(CROSS)$(OBJCOPY) -I binary -B arm -O elf32-littlearm \
+		--rename-section .data=.text $@ $@
+
+.temp/bst_%_debug.fw: bst_%_debug.bin $(TOP)/src/bld/piggy_bst.S \
+		$(TOP)/src/bst/version.info $(HOST_UTILS)
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-DCRC32=$(word 3,$(shell ./host_crc32 $<)) \
+		-DIMG_LEN=$(word 2,$(shell ./host_crc32 $<)) \
+		-D__YEAR__=$(YEAR) \
+		-D__MONTH__=$(MONTH) \
+		-D__DAY__=$(DAY) \
+		-DVERSION_INFO=$(TOP)/src/bst/version.info \
+		-DINCBIN=$< \
+		-c $(TOP)/src/bld/piggy_bst.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O binary $@ $@
+
+.temp/bst_release.fw: $(foreach i,$(BST_RELEASE_BINS),.temp/$(subst .bin,.fw,$(i)))
+	@cat $^ > $@
+	@$(ECHO_OCP) $(CROSS)$(OBJCOPY) -I binary -B arm -O elf32-littlearm \
+		--rename-section .data=.text $@ $@
+
+.temp/bst_%_release.fw: bst_%_release.bin $(TOP)/src/bld/piggy_bst.S \
+		$(TOP)/src/bst/version.info $(HOST_UTILS)
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-DCRC32=$(word 3,$(shell ./host_crc32 $<)) \
+		-DIMG_LEN=$(word 2,$(shell ./host_crc32 $<)) \
+		-D__YEAR__=$(YEAR) \
+		-D__MONTH__=$(MONTH) \
+		-D__DAY__=$(DAY) \
+		-DVERSION_INFO=$(TOP)/src/bst/version.info \
+		-DINCBIN=$< \
+		-c $(TOP)/src/bld/piggy_bst.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O binary $@ $@
+
+else
+.temp/bst_debug.fw: bst_debug.bin $(TOP)/src/bld/piggy_bst.S \
+		$(TOP)/src/bst/version.info $(HOST_UTILS)
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-DCRC32=$(word 3,$(shell ./host_crc32 $<)) \
+		-DIMG_LEN=$(word 2,$(shell ./host_crc32 $<)) \
+		-D__YEAR__=$(YEAR) \
+		-D__MONTH__=$(MONTH) \
+		-D__DAY__=$(DAY) \
+		-DVERSION_INFO=$(TOP)/src/bst/version.info \
+		-DINCBIN=$< \
+		-c $(TOP)/src/bld/piggy_bst.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+
+.temp/bst_release.fw: bst_release.bin $(TOP)/src/bld/piggy_bst.S \
+		$(TOP)/src/bst/version.info $(HOST_UTILS)
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-DCRC32=$(word 3,$(shell ./host_crc32 $<)) \
+		-DIMG_LEN=$(word 2,$(shell ./host_crc32 $<)) \
+		-D__YEAR__=$(YEAR) \
+		-D__MONTH__=$(MONTH) \
+		-D__DAY__=$(DAY) \
+		-DVERSION_INFO=$(TOP)/src/bst/version.info \
+		-DINCBIN=$< \
+		-c $(TOP)/src/bld/piggy_bst.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+endif
+
+.temp/bld_debug.fw: bld_debug.bin $(TOP)/src/bld/piggy_bld.S \
+		$(TOP)/src/bld/version.info $(HOST_UTILS)
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-DCRC32=$(word 3,$(shell ./host_crc32 $<)) \
+		-DIMG_LEN=$(word 2,$(shell ./host_crc32 $<)) \
+		-D__YEAR__=$(YEAR) \
+		-D__MONTH__=$(MONTH) \
+		-D__DAY__=$(DAY) \
+		-DVERSION_INFO=$(TOP)/src/bld/version.info \
+		-DINCBIN=$< \
+		-c $(TOP)/src/bld/piggy_bld.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+
+.temp/bld_release.fw: bld_release.bin $(TOP)/src/bld/piggy_bld.S \
+		$(TOP)/src/bld/version.info $(HOST_UTILS)
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-DCRC32=$(word 3,$(shell ./host_crc32 $<)) \
+		-DIMG_LEN=$(word 2,$(shell ./host_crc32 $<)) \
+		-D__YEAR__=$(YEAR) \
+		-D__MONTH__=$(MONTH) \
+		-D__DAY__=$(DAY) \
+		-DVERSION_INFO=$(TOP)/src/bld/version.info \
+		-DINCBIN=$< \
+		-c $(TOP)/src/bld/piggy_bld.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+
+ifdef __HAS_SPL__
+ifdef SPL_VIF
+SPL_VIF_DEF =		-DVERSION_INFO=$(SPL_VIF)
+else
+SPL_VIF_DEF =
+endif
+
+.temp/splash.fw: $(SPL) $(TOP)/src/bld/piggy_splash.S \
+		 $(SPL_VIF) $(HOST_UTILS)
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-DCRC32=$(word 3,$(shell ./host_crc32 $<)) \
+		-DIMG_LEN=$(word 2,$(shell ./host_crc32 $<)) \
+		-D__YEAR__=$(YEAR) \
+		-D__MONTH__=$(MONTH) \
+		-D__DAY__=$(DAY) \
+		$(SPL_VIF_DEF) \
+		-DINCBIN=$(SPL) \
+		-c $(TOP)/src/bld/piggy_splash.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+
+else
+
+.temp/splash.fw:
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-c $(TOP)/src/bld/piggy_splash.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+
+endif
+
+ifdef __HAS_PBA__
+ifdef PBA_VIF
+PBA_VIF_DEF =		-DVERSION_INFO=$(PBA_VIF)
+else
+PBA_VIF_DEF =
+endif
+
+.temp/pba.fw: $(PBA) $(TOP)/src/bld/piggy_pba.S \
+		 $(PBA_VIF) $(HOST_UTILS)
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-DCRC32=$(word 3,$(shell ./host_crc32 $<)) \
+		-DIMG_LEN=$(word 2,$(shell ./host_crc32 $<)) \
+		-D__YEAR__=$(YEAR) \
+		-D__MONTH__=$(MONTH) \
+		-D__DAY__=$(DAY) \
+		$(PBA_VIF_DEF) \
+		-DINCBIN=$(PBA) \
+		-c $(TOP)/src/bld/piggy_pba.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+
+else
+
+.temp/pba.fw:
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-c $(TOP)/src/bld/piggy_pba.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+
+endif
+
+ifdef __HAS_KERNEL__
+ifdef KERNEL_VIF
+KERNEL_VIF_DEF =	-DVERSION_INFO=$(KERNEL_VIF)
+else
+KERNEL_VIF_DEF =
+endif
+
+.temp/kernel.fw: $(KERNEL) $(TOP)/src/bld/piggy_kernel.S \
+		 $(KERNEL_VIF) $(HOST_UTILS)
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-DCRC32=$(word 3,$(shell ./host_crc32 $<)) \
+		-DIMG_LEN=$(word 2,$(shell ./host_crc32 $<)) \
+		-D__YEAR__=$(YEAR) \
+		-D__MONTH__=$(MONTH) \
+		-D__DAY__=$(DAY) \
+		$(KERNEL_VIF_DEF) \
+		-DINCBIN=$(KERNEL) \
+		-c $(TOP)/src/bld/piggy_kernel.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+
+else
+
+.temp/kernel.fw:
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-c $(TOP)/src/bld/piggy_kernel.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+
+endif
+
+ifdef __HAS_SECONDARY__
+ifdef SECONDARY_VIF
+SECONDARY_VIF_DEF =	-DVERSION_INFO=$(SECONDARY_VIF)
+else
+SECONDARY_VIF_DEF =
+endif
+
+.temp/secondary.fw: $(SECONDARY) $(TOP)/src/bld/piggy_secondary.S \
+		 $(SECONDARY_VIF) $(HOST_UTILS)
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-DCRC32=$(word 3,$(shell ./host_crc32 $<)) \
+		-DIMG_LEN=$(word 2,$(shell ./host_crc32 $<)) \
+		-D__YEAR__=$(YEAR) \
+		-D__MONTH__=$(MONTH) \
+		-D__DAY__=$(DAY) \
+		$(SECONDARY_VIF_DEF) \
+		-DINCBIN=$(SECONDARY) \
+		-c $(TOP)/src/bld/piggy_secondary.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+
+else
+
+.temp/secondary.fw:
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-c $(TOP)/src/bld/piggy_secondary.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+
+endif
+
+ifdef __HAS_BACKUP__
+ifdef BACKUP_VIF
+BACKUP_VIF_DEF =	-DVERSION_INFO=$(BACKUP_VIF)
+else
+BACKUP_VIF_DEF =
+endif
+
+.temp/backup.fw: $(BACKUP) $(TOP)/src/bld/piggy_backup.S \
+		 $(BACKUP_VIF) $(HOST_UTILS)
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-DCRC32=$(word 3,$(shell ./host_crc32 $<)) \
+		-DIMG_LEN=$(word 2,$(shell ./host_crc32 $<)) \
+		-D__YEAR__=$(YEAR) \
+		-D__MONTH__=$(MONTH) \
+		-D__DAY__=$(DAY) \
+		$(BACKUP_VIF_DEF) \
+		-DINCBIN=$(BACKUP) \
+		-c $(TOP)/src/bld/piggy_backup.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+
+else
+
+.temp/backup.fw:
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-c $(TOP)/src/bld/piggy_backup.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+
+endif
+
+ifdef __HAS_RAMDISK__
+ifdef RAMDISK_VIF
+RAMDISK_VIF_DEF =	-DVERSION_INFO=$(RAMDISK_VIF)
+else
+RAMDISK_VIF_DEF =
+endif
+
+.temp/ramdisk.fw: $(RAMDISK) $(TOP)/src/bld/piggy_ramdisk.S \
+		$(RAMDISK_VIF) $(HOST_UTILS)
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-DCRC32=$(word 3,$(shell ./host_crc32 $<)) \
+		-DIMG_LEN=$(word 2,$(shell ./host_crc32 $<)) \
+		-D__YEAR__=$(YEAR) \
+		-D__MONTH__=$(MONTH) \
+		-D__DAY__=$(DAY) \
+		$(RAMDISK_VIF_DEF) \
+		-DINCBIN=$(RAMDISK) \
+		-c $(TOP)/src/bld/piggy_ramdisk.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+
+else
+
+.temp/ramdisk.fw:
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-c $(TOP)/src/bld/piggy_ramdisk.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+
+endif
+
+ifdef __HAS_ROMFS__
+ifdef ROMFS_VIF
+ROMFS_VIF_DEF =	-DVERSION_INFO=$(ROMFS_VIF)
+else
+ROMFS_VIF_DEF =
+endif
+
+.temp/romfs.fw: $(ROMFS) $(TOP)/src/bld/piggy_romfs.S \
+		$(ROMFS_VIF) $(HOST_UTILS)
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-DCRC32=$(word 3,$(shell ./host_crc32 $<)) \
+		-DIMG_LEN=$(word 2,$(shell ./host_crc32 $<)) \
+		-D__YEAR__=$(YEAR) \
+		-D__MONTH__=$(MONTH) \
+		-D__DAY__=$(DAY) \
+		$(ROMFS_VIF_DEF) \
+		-DINCBIN=$(ROMFS) \
+		-c $(TOP)/src/bld/piggy_romfs.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+
+else
+
+.temp/romfs.fw:
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-c $(TOP)/src/bld/piggy_romfs.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+
+endif
+
+ifdef __HAS_DSP__
+ifdef DSP_VIF
+DSP_VIF_DEF =	-DVERSION_INFO=$(DSP_VIF)
+else
+DSP_VIF_DEF =
+endif
+
+.temp/dsp.fw: $(DSP) $(TOP)/src/bld/piggy_dsp.S \
+		$(DSP_VIF) $(HOST_UTILS)
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-DCRC32=$(word 3,$(shell ./host_crc32 $<)) \
+		-DIMG_LEN=$(word 2,$(shell ./host_crc32 $<)) \
+		-D__YEAR__=$(YEAR) \
+		-D__MONTH__=$(MONTH) \
+		-D__DAY__=$(DAY) \
+		$(DSP_VIF_DEF) \
+		-DINCBIN=$(DSP) \
+		-c $(TOP)/src/bld/piggy_dsp.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+
+else
+
+.temp/dsp.fw:
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-c $(TOP)/src/bld/piggy_dsp.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+
+endif
+
+ifdef __HAS_LNX__
+ifdef LNX_VIF
+LNX_VIF_DEF =		-DVERSION_INFO=$(LNX_VIF)
+else
+LNX_VIF_DEF =
+endif
+
+.temp/lnx.fw: $(LNX) $(TOP)/src/bld/piggy_lnx.S \
+		 $(LNX_VIF) $(HOST_UTILS)
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-DCRC32=$(word 3,$(shell ./host_crc32 $<)) \
+		-DIMG_LEN=$(word 2,$(shell ./host_crc32 $<)) \
+		-D__YEAR__=$(YEAR) \
+		-D__MONTH__=$(MONTH) \
+		-D__DAY__=$(DAY) \
+		$(LNX_VIF_DEF) \
+		-DINCBIN=$(LNX) \
+		-c $(TOP)/src/bld/piggy_lnx.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+
+else
+
+.temp/lnx.fw:
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-c $(TOP)/src/bld/piggy_lnx.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+
+endif
+
+ifdef __HAS_SWP__
+ifdef SWP_VIF
+SWP_VIF_DEF =		-DVERSION_INFO=$(SWP_VIF)
+else
+SWP_VIF_DEF =
+endif
+
+.temp/swp.fw: $(SWP) $(TOP)/src/bld/piggy_swp.S \
+		 $(SWP_VIF) $(HOST_UTILS)
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-DCRC32=$(word 3,$(shell ./host_crc32 $<)) \
+		-DIMG_LEN=$(word 2,$(shell ./host_crc32 $<)) \
+		-D__YEAR__=$(YEAR) \
+		-D__MONTH__=$(MONTH) \
+		-D__DAY__=$(DAY) \
+		$(SWP_VIF_DEF) \
+		-DINCBIN=$(SWP) \
+		-c $(TOP)/src/bld/piggy_swp.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+
+else
+
+.temp/swp.fw:
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-c $(TOP)/src/bld/piggy_swp.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+
+endif
+
+ifdef __HAS_ADD__
+ifdef ADD_VIF
+ADD_VIF_DEF =		-DVERSION_INFO=$(ADD_VIF)
+else
+ADD_VIF_DEF =
+endif
+
+.temp/add.fw: $(ADD) $(TOP)/src/bld/piggy_add.S \
+		 $(ADD_VIF) $(HOST_UTILS)
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-DCRC32=$(word 3,$(shell ./host_crc32 $<)) \
+		-DIMG_LEN=$(word 2,$(shell ./host_crc32 $<)) \
+		-D__YEAR__=$(YEAR) \
+		-D__MONTH__=$(MONTH) \
+		-D__DAY__=$(DAY) \
+		$(ADD_VIF_DEF) \
+		-DINCBIN=$(ADD) \
+		-c $(TOP)/src/bld/piggy_add.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+
+else
+
+.temp/add.fw:
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-c $(TOP)/src/bld/piggy_add.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+
+endif
+
+ifdef __HAS_ADC__
+ifdef ADC_VIF
+ADC_VIF_DEF =		-DVERSION_INFO=$(ADC_VIF)
+else
+ADC_VIF_DEF =
+endif
+
+.temp/adc.fw: $(ADC) $(TOP)/src/bld/piggy_adc.S \
+		 $(ADC_VIF) $(HOST_UTILS)
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-DCRC32=$(word 3,$(shell ./host_crc32 $<)) \
+		-DIMG_LEN=$(word 2,$(shell ./host_crc32 $<)) \
+		-D__YEAR__=$(YEAR) \
+		-D__MONTH__=$(MONTH) \
+		-D__DAY__=$(DAY) \
+		$(ADC_VIF_DEF) \
+		-DINCBIN=$(ADC) \
+		-c $(TOP)/src/bld/piggy_adc.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+
+else
+
+.temp/adc.fw:
+	@mkdir -p .temp
+	$(ECHO_GCC) $(CROSS)$(CC) $(AFLAGS) \
+		-c $(TOP)/src/bld/piggy_adc.S -o $@
+	$(ECHO_OCP) $(CROSS)$(OBJCOPY) -j .text -O elf32-littlearm $@ $@
+
+endif
+
+endif
+

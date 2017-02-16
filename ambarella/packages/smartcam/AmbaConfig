@@ -1,0 +1,54 @@
+##
+## packages/smartcam/AmbaConfig
+##
+## History:
+##    2008/05/04 - [Anthony Ginger] Create
+##
+## Copyright (C) 2004-2008, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+menuconfig BUILD_AMBARELLA_SMARTCAM_PACKAGE
+	bool "Build Ambarella Smartcam Package"
+	default n
+	help
+		Build Build Smartcam Package.
+
+if BUILD_AMBARELLA_SMARTCAM_PACKAGE
+
+config BUILD_AMBARELLA_SMARTCAM_PACKAGE_MDET
+	bool "Build Motion Detection Library"
+	default n
+	help
+		Build Motion Detection Library.
+
+config BUILD_AMBARELLA_SMARTCAM_PACKAGE_FDET
+	bool "Build Face Detection Library"
+	default n
+	help
+		Build Face Detection Library.
+
+config BUILD_AMBARELLA_SMARTCAM_PACKAGE_DEFOG
+	bool "Build Defog Library"
+	default n
+	help
+		Build Defog Library.
+
+config BUILD_AMBARELLA_SMARTCAM_PACKAGE_PDET
+	bool "Build Plate Detection Library"
+	default n
+	help
+		Build Plate Detection Library.
+
+config BUILD_AMBARELLA_SMARTCAM_PACKAGE_STEREO
+	bool "Build Stereo Vision Library"
+	default n
+	help
+		Build Stereo Vision Library.
+
+endif
+

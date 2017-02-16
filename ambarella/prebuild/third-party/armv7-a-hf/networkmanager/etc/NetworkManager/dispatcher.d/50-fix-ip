@@ -1,0 +1,90 @@
+#!/bin/sh
+
+# a work-around of NetworkManager bug#667709
+
+interface=$1
+action=$2
+interfaces_file='/etc/network/interfaces'
+ifcfg_tmpfile='/tmp/ifcfg-TMP'
+currcfg_tmpfile='/tmp/ifcurrcfg-TMP'
+SED=`which sed`
+
+read_if_cfgs() {
+  ${SED} -n "
+    /iface[ \t]*$1[ \t]*inet[ \t]*static/ {
+      n
+      h
+      n
+      H
+      n
+      H
+      x
+      s/address[ \t]*\([0-9\.]*\)[ \t]*\n[ \t]*netmask[ \t]*\([0-9\.]*\)[ \t]*\n[ \t]*gateway[ \t]*\([0-9\.]*\).*/$if \1 \2 \3/p
+  }" $interfaces_file > $ifcfg_tmpfile
+}
+
+get_current_if_cfgs() {
+  ifconfig | \
+    ${SED} -n "
+      /^eth/ {
+        h
+        n
+        H
+        x
+        s/^\(eth[0-9]\+\)[^\n]*\n[ \t]*inet addr:\([0-9\.]*\).*/\1 \2/p
+      }
+      /^usb/ {
+        h
+        n
+        H
+        x
+        s/^\(usb[0-9]\+\)[^\n]*\n[ \t]*inet addr:\([0-9\.]*\).*/\1 \2/p
+      }
+      /^wlan/ {
+        h
+        n
+        H
+        x
+        s/^\(wlan[0-9]\+\)[^\n]*\n[ \t]*inet addr:\([0-9\.]*\).*/\1 \2/p
+      }
+      " > $currcfg_tmpfile
+}
+
+fix_ip()
+{
+  get_current_if_cfgs
+
+  while read if currip
+  do
+    read_if_cfgs $if
+    ip=$(${SED}   -n "/$if/p" $ifcfg_tmpfile | cut -d " " -f 2)
+    mask=$(${SED} -n "/$if/p" $ifcfg_tmpfile | cut -d " " -f 3)
+    gw=$(${SED}   -n "/$if/p" $ifcfg_tmpfile | cut -d " " -f 4)
+
+    if [ "$currip" != "$ip" ]
+    then
+      if [ "$ip" != "" ] && [ "$mask" != "" ]
+      then
+        ifconfig $if $ip netmask $mask
+        if [ $? -eq 0 ] && [ "$gw" != "" ]
+        then
+          route del default gw $gw
+          route add default gw $gw eth0
+        fi
+      fi
+    fi
+  done < $currcfg_tmpfile
+
+  rm $ifcfg_tmpfile
+  rm $currcfg_tmpfile
+}
+
+interface=`echo $interface | ${SED} -n "s/\(\(eth[0-9]\+\)\|\(wlan[0-9]\+\)\|\(usb[0-9]\+\)\)/\1/p"`
+if [ "$interface" != "" ]
+then
+  if [ "$action" = "up" ]
+  then
+    fix_ip
+  fi
+fi
+

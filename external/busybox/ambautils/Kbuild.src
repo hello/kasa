@@ -1,0 +1,13 @@
+# Makefile for busybox
+#
+# Copyright (C) 2007-2009 by Mike Xue <zwxue@ambarella.com>
+#
+# Licensed under the GPL v2, see the file LICENSE in this tarball.
+
+lib-y:=
+
+lib-$(CONFIG_AMBA_DEBUG) += amba_debug.o
+lib-$(CONFIG_LOAD_UCODE) += load_ucode.o
+lib-$(CONFIG_DSPLOG) += dsplog.o
+lib-$(CONFIG_DSPLOG2) += dsplog2.o
+

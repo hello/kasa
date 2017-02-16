@@ -1,0 +1,205 @@
+#!/bin/sh
+#
+# Init S2LM IRONMAN...
+#
+
+if [ -f /etc/ambarella.conf ]; then
+	. /etc/ambarella.conf
+fi
+
+create_node()
+{
+	[ -r /dev/iav ] || mknod -m 666 /dev/iav c 248 0
+	[ -r /dev/ucode ] || mknod -m 666 /dev/ucode c 248 1
+	[ -r /dev/overlay ] || mknod -m 666 /dev/overlay c 248 2
+	[ -r /dev/ambad ] || mknod -m 666 /dev/ambad c 248 248
+	[ -r /dev/dsplog ] || mknod -m 666 /dev/dsplog c 248 249
+}
+
+install_drivers()
+{
+	kernel_ver=$(uname -r)
+
+	#Install I2C module
+	modprobe i2c-dev
+
+	#Install SPI module
+	modprobe spi_ambarella
+	modprobe spidev
+
+	#Ethernet
+	modprobe libphy
+	modprobe ksz80x1r
+	modprobe ambarella_eth
+
+	#Audio
+	modprobe snd-soc-core pmdown_time=300
+	modprobe snd-soc-ambarella
+	modprobe snd-soc-ambarella-i2s
+	modprobe snd-soc-ak4642-amb
+	modprobe snd-soc-ambevk
+	# modprobe snd-soc-ambdummy
+	# modprobe snd-soc-dummy
+
+	#SD/MMC
+	modprobe ambarella_sd
+	modprobe mmc_block
+
+	#Install input module
+	modprobe ambarella_input_adc
+	modprobe ambarella_input_ir
+	modprobe gpio_keys
+
+	#Install USB module
+	modprobe ehci-hcd
+	modprobe ohci-hcd
+	modprobe ambarella_udc
+	if [ -r /lib/modules/$kernel_ver/kernel/drivers/usb/gadget/g_$SYS_USB_G_TYPE.ko ]; then
+		modprobe g_$SYS_USB_G_TYPE $SYS_USB_G_PARAMETER
+	fi
+
+	#Install PWM module
+	modprobe pwm-ambarella
+	modprobe pwm_bl
+}
+
+start_wifi()
+{
+	#Install wifi module
+	/sbin/modprobe bcmdhd
+	/sbin/ifconfig wlan0 up
+}
+
+start_eth0_svc()
+{
+	#Config eth0
+	/sbin/modprobe ambarella_eth
+	/sbin/ifconfig eth0 10.0.0.2 netmask 255.255.255.0 up
+	/usr/sbin/telnetd
+}
+
+start_iav()
+{
+	#Install IAV
+	/sbin/modprobe dsp
+	/sbin/modprobe iav
+	#/sbin/modprobe ambtve
+	/sbin/modprobe ov4689_mipi
+	/sbin/modprobe ambad
+
+	#/usr/local/bin/test_fastosd -a &
+}
+
+mount_ubifs()
+{
+	#Mount ubifs
+	/bin/mkdir -p /tmp/config
+	/usr/sbin/ubiattach /dev/ubi_ctrl -m 7
+	/bin/mount -t ubifs /dev/ubi0_0 /tmp/config
+}
+
+start_demo()
+{
+	# Dump the video clip which contain the first frame, select one of them.
+
+	#1. Dump BSB buffer with amba_debug
+	/usr/local/bin/amba_debug -r $IDSP_RAM_START -s $DSP_BSB_SIZE -f /tmp/fast_video_$SYS_BOARD_BSP.h264
+
+	#2. Dump BSB buffer with test_stream (Example)
+	#/usr/local/bin/test_stream -f /tmp/fast_video_$SYS_BOARD_BSP.h264
+	#/usr/local/bin/test_encode -A -s
+
+	#Read out 3A config from ADC
+	/usr/local/bin/smart3a_adc -r
+
+	#Start 3A process
+	/usr/local/bin/test_image -i 0 &
+
+	mount_ubifs
+
+#	/usr/bin/fastboot_app > /tmp/test_log &
+}
+
+start_ces_demo()
+{
+	#Install PWM module
+	modprobe pwm-ambarella
+	modprobe pwm_bl
+	echo 1 > /sys/class/backlight/0.pwm_bl/brightness
+
+	start_iav
+
+	mount_ubifs
+
+	#http_uploader
+	http_uploader --wlan --light 500 --shutdown 93 > /dev/null&
+}
+
+start_test_record()
+{
+	create_node
+
+	start_iav
+
+	mount_ubifs
+
+	#[ -r /dev/ambad ] || mknod -m 666 /dev/ambad c 248 248
+	/usr/bin/fastboot_test -R > /tmp/test_log &
+	#/bin/sleep 10
+	#/usr/bin/killall fastboot_test
+
+	#/usr/local/bin/test_stream -f /tmp/aaa &
+	#/bin/sleep 2
+	#/usr/bin/killall test_stream
+
+	start_eth0_svc
+}
+
+start()
+{
+	create_node
+
+	if [ $FASTBOOT_CES_DEMO == "y" ]; then
+		start_ces_demo
+	else
+		start_iav
+		start_demo
+		start_wifi
+		start_eth0_svc
+	fi
+}
+
+stop()
+{
+	kernel_ver=$(uname -r)
+}
+
+restart()
+{
+	stop
+	start
+}
+
+case "$1" in
+	start)
+		start
+		;;
+	stop)
+		stop
+		;;
+	restart|reload)
+		restart
+		;;
+	drivers)
+		install_drivers
+		;;
+	wifi_drivers)
+		install_wifi_drivers
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart|drivers|wifi_drivers}"
+		exit 1
+esac
+
+exit $?
+

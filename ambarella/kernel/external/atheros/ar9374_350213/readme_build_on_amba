@@ -1,0 +1,5 @@
+Please disable cfg80211 on public linux for have conflict with local module
+#make menuconfg_public_linux
+Networking support  --->
+  Wireless  --->
+    < >   cfg80211 - wireless configuration API

@@ -1,0 +1,58 @@
+#!/bin/sh
+#
+# IPCamControlServer start IP Camera Control Center Server
+#
+
+# Make sure the avahi-daemon is running
+/sbin/avahi-daemon --check
+if [ $? -ne 0 ]
+then
+    /etc/init.d/S98avahi-daemon restart
+fi
+
+start()
+{
+    echo -n "Starting IPCamControlServer: "
+    /sbin/IPCamControlServer --check > /dev/null
+    if [ $? -eq 0 ]
+    then
+        echo "IPCamControlServer is already running ..."
+    else
+        /sbin/IPCamControlServer > /dev/null
+        if [ $? -eq 1 ]
+        then
+            echo "Failed!"
+        else
+            echo "OK!"
+        fi
+    fi
+}
+
+stop()
+{
+    echo -n "Stopping IPCamControlServer: "
+    /sbin/IPCamControlServer --check > /dev/null
+    if [ $? -eq 0 ]
+    then
+        /sbin/IPCamControlServer -k > /dev/null
+    fi
+    echo "OK!"
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart)
+        stop && start
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+esac
+
+exit $?
+

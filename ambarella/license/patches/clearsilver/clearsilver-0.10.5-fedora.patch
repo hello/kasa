@@ -1,0 +1,80 @@
+diff --git a/cgi/cgi.c b/cgi/cgi.c
+index 5be9afe..5c8cf8d 100644
+--- a/cgi/cgi.c
++++ b/cgi/cgi.c
+@@ -503,7 +503,7 @@ static void _launch_debugger (CGI *cgi, char *display)
+ 
+   if ((debugger = hdf_get_value (cgi->hdf, "Config.Debugger", NULL)) == NULL)
+   {
+-    debugger = "/usr/local/bin/sudo /usr/local/bin/ddd -display %s %s %d";
++    debugger = "/usr/bin/sudo /usr/local/bin/ddd -display %s %s %d";
+   }
+ 
+   if (!pid)
+diff --git a/configure b/configure
+index 8fc6a50..e49342e 100755
+--- a/configure
++++ b/configure
+@@ -6513,7 +6513,7 @@ if test $cs_cv_python = yes; then
+ echo $ECHO_N "checking for python includes... $ECHO_C" >&6
+   python_inc=no
+   python_lib=no
+-  python_search_path="/neo/opt /usr/local /usr /c"
++  python_search_path="/usr"
+   python_versions="2.4 2.3 2.2 2.1 2.0 1.5 24 23 22 21 20 15"
+   if test $cs_cv_python_path != "no" -a -x $cs_cv_python_path; then
+     python_bin=$cs_cv_python_path
+@@ -6809,7 +6809,8 @@ echo "${ECHO_T}$_cur" >&6
+ done
+ _ACJNI_FOLLOWED="$_cur"
+ 
+-_JTOPDIR=`echo "$_ACJNI_FOLLOWED" | sed -e 's://*:/:g' -e 's:/[^/]*$::'`
++#_JTOPDIR=`echo "$_ACJNI_FOLLOWED" | sed -e 's://*:/:g' -e 's:/[^/]*$::'`
++_JTOPDIR="$java_path"
+ case "$host_os" in
+         darwin*)        _JTOPDIR=`echo "$_JTOPDIR" | sed -e 's:/[^/]*$::'`
+                         _JINC="$_JTOPDIR/Headers";;
+diff --git a/imd/imdm.py b/imd/imdm.py
+index 442c1ee..c23f590 100755
+--- a/imd/imdm.py
++++ b/imd/imdm.py
+@@ -1,4 +1,4 @@
+-#!/usr/local/bin/python
++#!/usr/bin/python
+ #
+ # imdm
+ # 
+diff --git a/java-jni/Makefile b/java-jni/Makefile
+index 390bdf5..f6edba5 100644
+--- a/java-jni/Makefile
++++ b/java-jni/Makefile
+@@ -40,14 +40,14 @@ org_clearsilver_HDF.h: $(NEO_UTIL_JAVA_JAR)
+ org_clearsilver_CS.h: $(NEO_UTIL_JAVA_JAR)
+ 	$(JAVAH) -classpath $(NEO_UTIL_JAVA_JAR) -jni org.clearsilver.CS
+ 
+-CSTest.class: CSTest.java
++CSTest.class: CSTest.java $(NEO_UTIL_JAVA_JAR)
+ 	$(JAVAC) -classpath $(NEO_UTIL_JAVA_JAR) CSTest.java
+ 
+ gold: CSTest.class
+ 	@/bin/sh -c "LD_LIBRARY_PATH=$(NEOTONIC_ROOT)/java-jni; export LD_LIBRARY_PATH; CLASSPATH=$(NEO_UTIL_JAVA_JAR):.; export CLASSPATH; $(JAVA_PATH)/bin/java CSTest" > javatest.gold
+ 	@echo "Generated gold files"
+ 
+-test: CSTest.class
++test: CSTest.class $(NEO_UTIL_SO)
+ 	@echo "Running java test"
+ 	@failed=0; \
+ 	rm -f javatest.out; \
+diff --git a/ruby/Makefile b/ruby/Makefile
+index a8a82bf..02cf557 100644
+--- a/ruby/Makefile
++++ b/ruby/Makefile
+@@ -41,7 +41,7 @@ testrb: ext/hdf/hdf.so
+ 
+ 
+ install: all
+-	$(RUBY) install.rb install
++	$(RUBY) install.rb install --prefix=$(DESTDIR)
+ 
+ clean:
+ 	$(RM) ext/hdf/*.o ext/hdf/*.so

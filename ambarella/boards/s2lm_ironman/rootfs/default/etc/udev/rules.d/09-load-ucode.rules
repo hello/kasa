@@ -1,0 +1,3 @@
+# Load ucode when IAV driver is loaded
+
+SUBSYSTEM=="ambpriv", KERNEL=="iav_s2l", RUN+="/usr/sbin/load_ucode /lib/firmware"

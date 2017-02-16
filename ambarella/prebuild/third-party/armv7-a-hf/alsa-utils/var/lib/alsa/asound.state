@@ -1,0 +1,184 @@
+#Sound Card State
+state.AMBEVK {
+  control.25 {
+    iface MIXER
+    name 'Input Mux'
+    value 'Both Mic'
+    comment {
+      access 'read write'
+      type ENUMERATED
+      count 1
+      item.0 Line-in
+      item.1 'Both Mic'
+      item.2 Unknown
+    }
+  }
+}
+
+state.AMBCLOUDCAM {
+  control.21 {
+    iface MIXER
+    name 'Capture PGA Volume'
+    value 58
+    comment {
+            access 'read write'
+            type INTEGER
+            values 1
+            min 0
+            max 63
+    }
+  }
+  control.25 {
+    iface MIXER
+    name 'Capture Boost Volue'
+    value off
+    comment {
+            access 'read write'
+            type BOOLEAN
+            values 1
+            dBscale-min 0.00dB,
+            step 20.00dB
+    }
+  }
+  control.27 {
+    iface MIXER
+    name 'Speaker Playback Switch'
+    value on
+    comment {
+            access 'read write'
+            type BOOLEAN
+    }
+  }
+  control.26 {
+    iface MIXER
+    name 'Speaker Playback Volume'
+    value 60
+    comment {
+            access 'read write'
+            type INTEGER
+            values 1
+            min 0
+            max 63
+    }
+  }
+  control.32 {
+  iface MIXER
+  name 'High Pass Filter Switch'
+  value on
+  comment {
+          access 'read write'
+          type BOOLEAN
+          values 1
+    }
+  }
+}
+
+state.PEAR {
+  control.7 {
+  iface MIXER
+  name 'High Pass Filter Switch'
+  value on
+  comment {
+          access 'read write'
+          type BOOLEAN
+          values 1
+    }
+  }
+  control.8 {
+  iface MIXER
+  name 'High Pass Cut Off'
+  value 5
+  comment {
+          access 'read write'
+          type INTEGER
+          values 1
+          min 0
+          max 7
+    }
+  }
+  control.32 {
+  iface MIXER
+  name 'ALC Capture Max Gain'
+  value 5
+  comment {
+          access 'read write'
+          type INTEGER
+          values 1
+    }
+  }
+  control.33 {
+  iface MIXER
+  name 'ALC Capture Min Gain'
+  value 0
+  comment {
+          access 'read write'
+          type INTEGER
+          values 1
+    }
+  }
+  control.58 {
+  iface MIXER
+  name 'Mono Mixer Line Bypass Switch'
+  value off
+  comment {
+          access 'read write'
+          type BOOLEAN
+          values 1
+    }
+  }
+  control.60 {
+  iface MIXER
+  name 'Mono Mixer PCM Playback Switch'
+  value on
+  comment {
+          access 'read write'
+          type BOOLEAN
+          values 1
+    }
+  }
+}
+
+state.AMBXMAN {
+  control.7 {
+  iface MIXER
+  name 'High Pass Filter Switch'
+  value on
+  comment {
+          access 'read write'
+          type BOOLEAN
+          values 1
+    }
+  }
+  control.8 {
+  iface MIXER
+  name 'High Pass Cut Off'
+  value 5
+  comment {
+          access 'read write'
+          type INTEGER
+          values 1
+          min 0
+          max 7
+    }
+  }
+  control.32 {
+  iface MIXER
+  name 'ALC Capture Max Gain'
+  value 5
+  comment {
+          access 'read write'
+          type INTEGER
+          values 1
+    }
+  }
+  control.33 {
+  iface MIXER
+  name 'ALC Capture Min Gain'
+  value 0
+  comment {
+          access 'read write'
+          type INTEGER
+          values 1
+    }
+  }
+}

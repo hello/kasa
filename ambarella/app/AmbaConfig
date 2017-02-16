@@ -1,0 +1,194 @@
+##
+## app/AmbaConfig
+##
+## History:
+##    2008/01/16 - [Anthony Ginger] Create
+##
+## Copyright (C) 2008-2016, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+menuconfig BUILD_AMBARELLA_APPLICATION
+	bool "Ambarella Application Configuration"
+	default n
+	help
+		Build Ambarella Application.
+
+if BUILD_AMBARELLA_APPLICATION
+
+config CONFIG_APP_INSTALL_DIR
+	string "Install Application"
+	default "$(FAKEROOT_DIR)/usr/local/bin"
+	help
+		Install Application to the defined DIR.
+
+config CONFIG_APP_IPCAM_CONFIG_DIR
+	string "Install IPCam Configuration"
+	default "$(FAKEROOT_DIR)/etc/ambaipcam"
+	help
+		Install IPCam Configuration files to the defined DIR.
+
+config BUILD_AMBARELLA_APP_DEBUG
+	bool "Build Ambarella Application with debug info"
+	default n
+	help
+		Build Ambarella Application with debug info
+
+config BUIDL_AMBARELLA_APP_DEBUG_SANITIZE_ADDRESS
+	depends on BUILD_AMBARELLA_APP_DEBUG
+	bool "Build Ambarella Application with debug and sanitize address"
+	default n
+	help
+		Build Ambarella application with debug info and sanitize address
+
+config BUILD_AMBAREALLA_CLOUD_LIB
+	bool "Build Ambarella Cloud Library"
+	default y
+	---help---
+		Build Ambarella Cloud Library
+
+config BUILD_AMBAREALLA_CLOUD_AGENT
+	depends on BUILD_AMBAREALLA_CLOUD_LIB
+	bool "Build Ambarella Cloud Agent"
+	default n
+	---help---
+		Build Ambarella Cloud Agent
+##
+## app/AmbaConfig
+##
+## Following content are generated automatically by
+##  create_mkcfg: DO NOT EDIT!!
+##
+
+##### ipcam
+
+menuconfig BUILD_AMBARELLA_APP_IPCAM
+	bool "IPCAM Application Configurations"
+	default n
+	help
+		Build IPCAM Applications.
+
+if BUILD_AMBARELLA_APP_IPCAM
+
+config BUILD_AMBARELLA_APP_IPCAM_CTRLSERVER
+	depends on CONFIG_AMBARELLA_AVAHI_SUPPORT
+	bool "Build IP Camera Control Center Server"
+	default n
+	depends on BUILD_AMBARELLA_APP_IPCAM
+	help
+		Build IP Camera Control Center Server.
+
+choice
+	prompt "Build web cgi"
+	depends on CONFIG_AMBARELLA_WEB_SERVICE_SUPPORT
+	default BUILD_AMBARELLA_APP_IPCAM_WEB_CGI_PYTHON
+
+config BUILD_AMBARELLA_APP_IPCAM_WEB_CGI_PYTHON
+	bool "CGI in Python"
+	help
+		Build Web CGI with Python
+
+config BUILD_AMBARELLA_APP_IPCAM_WEB_CGI_C
+	bool "CGI in C"
+	help
+		Build Web CGI with C
+
+endchoice
+
+source app/ipcam/rtsp/AmbaConfig
+source app/ipcam/autorun_services/AmbaConfig
+source app/ipcam/smart_ldc/AmbaConfig
+source app/ipcam/http_uploader/AmbaConfig
+source app/ipcam/fastboot_audio/AmbaConfig
+source app/ipcam/fastboot_smart3a/AmbaConfig
+source app/ipcam/fastboot_app/AmbaConfig
+source app/ipcam/fastboot_app/elektra_boot/AmbaConfig
+source app/ipcam/fastboot_app/darwin_injector/AmbaConfig
+
+endif
+
+
+
+
+##### smartcam
+
+menuconfig BUILD_AMBARELLA_APP_SMARTCAM
+	bool "Build SMARTCAM"
+	default n
+	help
+		Build SMARTCAM Applications.
+
+if BUILD_AMBARELLA_APP_SMARTCAM
+
+config BUILD_AMBARELLA_SMARTCAM_APP_MDET
+	bool "Build Motion Detection Application"
+	default n
+	select BUILD_AMBARELLA_SMARTCAM_PACKAGE
+	select BUILD_AMBARELLA_SMARTCAM_PACKAGE_MDET
+	help
+		Build Motion Detection Application.
+
+config BUILD_AMBARELLA_SMARTCAM_APP_FDET
+	bool "Build Face Detection Application"
+	default n
+	select BUILD_AMBARELLA_SMARTCAM_PACKAGE
+	select BUILD_AMBARELLA_SMARTCAM_PACKAGE_FDET
+	select CONFIG_AMBARELLA_OPENCV_SUPPORT
+	help
+		Build Face Detection Application.
+
+config BUILD_AMBARELLA_SMARTCAM_APP_DEFOG
+	bool "Build Defog Application"
+	default n
+	select BUILD_AMBARELLA_SMARTCAM_PACKAGE
+	help
+		Build Defog Application.
+
+config BUILD_AMBARELLA_SMARTCAM_APP_PDET
+	bool "Build Plate Detection Application"
+	default n
+	select BUILD_AMBARELLA_SMARTCAM_PACKAGE
+	select BUILD_AMBARELLA_SMARTCAM_PACKAGE_PDET
+	help
+		Build Plate Detection Application.
+
+config BUILD_AMBARELLA_SMARTCAM_APP_STEREO
+	bool "Build Stereo Vision Application"
+	default n
+	select BUILD_AMBARELLA_SMARTCAM_PACKAGE
+	select BUILD_AMBARELLA_SMARTCAM_PACKAGE_STEREO
+	select CONFIG_AMBARELLA_OPENCV_SUPPORT
+	help
+		Build Plate Detection Application.
+
+endif
+
+
+
+##### utility
+
+menuconfig BUILD_AMBAREALLA_APP_UTILITY
+	bool "Build Utilities"
+	default n
+	---help---
+		Build Utilities APP
+
+if BUILD_AMBAREALLA_APP_UTILITY
+
+source app/utility/af_value_server/AmbaConfig
+source app/utility/amb_scripts/AmbaConfig
+source app/utility/dng_tool/AmbaConfig
+source app/utility/dsp_tool/AmbaConfig
+source app/utility/jpg_enc/AmbaConfig
+source app/utility/mptool/AmbaConfig
+source app/utility/upgrade_partition/AmbaConfig
+
+endif
+
+## The end of AmbaConfig file
+endif
+

@@ -1,0 +1,892 @@
+diff --git a/src/Makefile.am b/src/Makefile.am
+index 367f5d9..3ef5444 100644
+--- a/src/Makefile.am
++++ b/src/Makefile.am
+@@ -101,6 +101,11 @@ mod_flv_streaming_la_SOURCES = mod_flv_streaming.c
+ mod_flv_streaming_la_LDFLAGS = -module -export-dynamic -avoid-version -no-undefined
+ mod_flv_streaming_la_LIBADD = $(common_libadd)
+ 
++lib_LTLIBRARIES += mod_ambarella.la
++mod_ambarella_la_SOURCES = mod_ambarella.c
++mod_ambarella_la_LDFLAGS = -module -export-dynamic -avoid-version -no-undefined
++mod_ambarella_la_LIBADD = $(common_libadd) -lm -lpthread
++
+ lib_LTLIBRARIES += mod_evasive.la
+ mod_evasive_la_SOURCES = mod_evasive.c
+ mod_evasive_la_LDFLAGS = -module -export-dynamic -avoid-version -no-undefined
+@@ -108,7 +113,7 @@ mod_evasive_la_LIBADD = $(common_libadd)
+ 
+ lib_LTLIBRARIES += mod_webdav.la
+ mod_webdav_la_SOURCES = mod_webdav.c
+-mod_webdav_la_CFLAGS = $(AM_CFLAGS) $(XML_CFLAGS) $(SQLITE_CFLAGS) 
++mod_webdav_la_CFLAGS = $(AM_CFLAGS) $(XML_CFLAGS) $(SQLITE_CFLAGS)
+ mod_webdav_la_LDFLAGS = -module -export-dynamic -avoid-version -no-undefined
+ mod_webdav_la_LIBADD = $(common_libadd) $(XML_LIBS) $(SQLITE_LIBS) $(UUID_LIBS)
+ 
+diff --git a/src/connections.c b/src/connections.c
+index 48ca60f..855a393 100644
+--- a/src/connections.c
++++ b/src/connections.c
+@@ -557,7 +557,7 @@ static int connection_handle_write_prepare(server *srv, connection *con) {
+ 			 * - HEAD doesn't have a content-body (but have a content-length)
+ 			 * - 1xx, 204 and 304 don't have a content-body (RFC 2616 Section 4.3)
+ 			 *
+-			 * Otherwise generate a Content-Length header as chunked encoding is not 
++			 * Otherwise generate a Content-Length header as chunked encoding is not
+ 			 * available
+ 			 */
+ 			if ((con->http_status >= 100 && con->http_status < 200) ||
+@@ -595,10 +595,10 @@ static int connection_handle_write_prepare(server *srv, connection *con) {
+ 		 * if the backend sent a Connection: close, follow the wish
+ 		 *
+ 		 * NOTE: if the backend sent Connection: Keep-Alive, but no Content-Length, we
+-		 * will close the connection. That's fine. We can always decide the close 
++		 * will close the connection. That's fine. We can always decide the close
+ 		 * the connection
+ 		 *
+-		 * FIXME: to be nice we should remove the Connection: ... 
++		 * FIXME: to be nice we should remove the Connection: ...
+ 		 */
+ 		if (con->parsed_response & HTTP_CONNECTION) {
+ 			/* a subrequest disable keep-alive although the client wanted it */
+@@ -610,7 +610,7 @@ static int connection_handle_write_prepare(server *srv, connection *con) {
+ 
+ 	if (con->request.http_method == HTTP_METHOD_HEAD) {
+ 		/**
+-		 * a HEAD request has the same as a GET 
++		 * a HEAD request has the same as a GET
+ 		 * without the content
+ 		 */
+ 		con->file_finished = 1;
+@@ -1050,6 +1050,13 @@ found_header_end:
+ 		}
+ 		break;
+ 	case CON_STATE_READ_POST:
++    #define HOOK_URI "/stream"
++    if (!strncmp(con->request.uri->ptr, HOOK_URI, strlen(HOOK_URI))
++      && strstr(con->request.request->ptr,"x-sessioncookie")
++      && strstr(con->request.request->ptr,"\r\n\r\n")){
++      con->request.content_length = 0;
++    }
++    if (con->request.orig_uri)
+ 		for (c = cq->first; c && (dst_cq->bytes_in != (off_t)con->request.content_length); c = c->next) {
+ 			off_t weWant, weHave, toRead;
+ 
+@@ -1552,7 +1559,11 @@ int connection_state_machine(server *srv, connection *con) {
+ 
+ 			srv->con_written++;
+ 
+-			if (con->keep_alive) {
++			if (con->keep_alive ||
++        #define HOOK_URI "/stream"
++        (!strncmp(con->request.uri->ptr, HOOK_URI, strlen(HOOK_URI))
++        && strstr(con->request.request->ptr,"x-sessioncookie")
++        && strstr(con->request.request->ptr,"\r\n\r\n"))) {
+ 				connection_set_state(srv, con, CON_STATE_REQUEST_START);
+ 
+ #if 0
+diff --git a/src/mod_ambarella.c b/src/mod_ambarella.c
+new file mode 100644
+index 0000000..f8cb83b
+--- /dev/null
++++ b/src/mod_ambarella.c
+@@ -0,0 +1,624 @@
++#include "base.h"
++#include "log.h"
++#include "buffer.h"
++
++#include "plugin.h"
++
++#include <ctype.h>
++#include <stdlib.h>
++#include <string.h>
++#include <sys/types.h>
++#include <sys/stat.h>
++#include <fcntl.h>
++#include <errno.h>
++#include <sys/types.h>
++#include <sys/socket.h>
++#include "stdio.h"
++#include "string.h"
++#include "math.h"
++#include <ctype.h>
++#include <stdlib.h>
++
++/**
++ * this is a ambarella for a lighttpd plugin
++ *
++ * just replaces every occurance of 'ambarella' by your plugin name
++ *
++ * e.g. in vim:
++ *
++ *   :%s/ambarella/myhandler/
++ *
++ */
++
++typedef struct {
++	PLUGIN_DATA;
++
++  int trigger_data;
++  int con_fd;
++  pthread_t mod_ambarella_tid;
++
++} plugin_data;
++
++#define HOOK_URI "/stream"
++#define RTSP_PORT (554)
++#define RTSP_IP "127.0.0.1"
++#define BUFFE_LENTH (1024*8)
++
++static pthread_t keep_con_tid;
++static int fd_rtsp = 0, fd_client;
++static server *this_server = NULL;
++
++static const unsigned char pr2six[256] =
++{
++    /* ASCII table */
++    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
++    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
++    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 62, 64, 64, 64, 63,
++    52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 64, 64, 64, 64, 64, 64,
++    64,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,
++    15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 64, 64, 64, 64, 64,
++    64, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
++    41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 64, 64, 64, 64, 64,
++    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
++    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
++    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
++    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
++    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
++    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
++    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
++    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64
++};
++
++int Base64decode_len(const char *bufcoded)
++{
++    int nbytesdecoded;
++    register const unsigned char *bufin;
++    register int nprbytes;
++
++    bufin = (const unsigned char *) bufcoded;
++    while (pr2six[*(bufin++)] <= 63);
++
++    nprbytes = (bufin - (const unsigned char *) bufcoded) - 1;
++    nbytesdecoded = ((nprbytes + 3) / 4) * 3;
++
++    return nbytesdecoded + 1;
++}
++
++int Base64decode(char *bufplain, const char *bufcoded)
++{
++    int nbytesdecoded;
++    register const unsigned char *bufin;
++    register unsigned char *bufout;
++    register int nprbytes;
++
++    bufin = (const unsigned char *) bufcoded;
++    while (pr2six[*(bufin++)] <= 63);
++    nprbytes = (bufin - (const unsigned char *) bufcoded) - 1;
++    nbytesdecoded = ((nprbytes + 3) / 4) * 3;
++
++    bufout = (unsigned char *) bufplain;
++    bufin = (const unsigned char *) bufcoded;
++
++    while (nprbytes > 4) {
++    *(bufout++) =
++        (unsigned char) (pr2six[*bufin] << 2 | pr2six[bufin[1]] >> 4);
++    *(bufout++) =
++        (unsigned char) (pr2six[bufin[1]] << 4 | pr2six[bufin[2]] >> 2);
++    *(bufout++) =
++        (unsigned char) (pr2six[bufin[2]] << 6 | pr2six[bufin[3]]);
++    bufin += 4;
++    nprbytes -= 4;
++    }
++
++    /* Note: (nprbytes == 1) would be an error, so just ingore that case */
++    if (nprbytes > 1) {
++    *(bufout++) =
++        (unsigned char) (pr2six[*bufin] << 2 | pr2six[bufin[1]] >> 4);
++    }
++    if (nprbytes > 2) {
++    *(bufout++) =
++        (unsigned char) (pr2six[bufin[1]] << 4 | pr2six[bufin[2]] >> 2);
++    }
++    if (nprbytes > 3) {
++    *(bufout++) =
++        (unsigned char) (pr2six[bufin[2]] << 6 | pr2six[bufin[3]]);
++    }
++
++    *(bufout++) = '\0';
++    nbytesdecoded -= (4 - nprbytes) & 3;
++    return nbytesdecoded;
++}
++
++static const char basis_64[] =
++    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
++
++int Base64encode_len(int len)
++{
++    return ((len + 2) / 3 * 4) + 1;
++}
++
++int Base64encode(char *encoded, const char *string, int len)
++{
++    int i;
++    char *p;
++
++    p = encoded;
++    for (i = 0; i < len - 2; i += 3) {
++    *p++ = basis_64[(string[i] >> 2) & 0x3F];
++    *p++ = basis_64[((string[i] & 0x3) << 4) |
++                    ((int) (string[i + 1] & 0xF0) >> 4)];
++    *p++ = basis_64[((string[i + 1] & 0xF) << 2) |
++                    ((int) (string[i + 2] & 0xC0) >> 6)];
++    *p++ = basis_64[string[i + 2] & 0x3F];
++    }
++    if (i < len) {
++    *p++ = basis_64[(string[i] >> 2) & 0x3F];
++    if (i == (len - 1)) {
++        *p++ = basis_64[((string[i] & 0x3) << 4)];
++        *p++ = '=';
++    }
++    else {
++        *p++ = basis_64[((string[i] & 0x3) << 4) |
++                        ((int) (string[i + 1] & 0xF0) >> 4)];
++        *p++ = basis_64[((string[i + 1] & 0xF) << 2)];
++    }
++    *p++ = '=';
++    }
++
++    *p++ = '\0';
++    return p - encoded;
++}
++
++/* init the plugin data */
++INIT_FUNC(mod_ambarella_init) {
++	plugin_data *p;
++
++	p = calloc(1, sizeof(*p));
++
++	return p;
++}
++
++/* detroy the plugin data */
++FREE_FUNC(mod_ambarella_free) {
++	plugin_data *p = p_d;
++
++	UNUSED(srv);
++
++	if (!p) return HANDLER_GO_ON;
++
++	free(p);
++
++	return HANDLER_GO_ON;
++}
++
++void * keep_con_thread(void *arg)
++{
++  server *srv = arg;
++  connection *con = NULL;
++  size_t ndx;
++  while(1){
++    ndx = 0;
++    for (ndx = 0; ndx < srv->conns->used; ndx++) {
++      con = srv->conns->ptr[ndx];
++      if (!con->uri.path->ptr){
++        continue;
++      }
++      if (strncmp(con->uri.path->ptr, HOOK_URI, strlen(HOOK_URI))){
++        continue;
++      }
++      else {
++        con->read_idle_ts = time(NULL);
++        con->keep_alive = 1;
++      }
++    }
++    usleep(10000);
++  }
++
++  return NULL;
++}
++
++SETDEFAULTS_FUNC(mod_ambarella_set_defaults) {
++	plugin_data *p = p_d;
++
++	if (!p) return HANDLER_ERROR;
++
++  //create a thread to maintain connection
++  //pthread_create(&keep_con_tid, NULL, keep_con_thread, srv);
++  //pthread_detach(keep_con_tid);
++
++	return HANDLER_GO_ON;
++}
++typedef enum {
++  AWAITING_DOLLAR,
++  AWAITING_STREAM_CHANNEL_ID,
++  AWAITING_SIZE1,
++  AWAITING_SIZE2,
++  AWAITING_PACKET_DATA,
++} STATE;
++
++typedef struct {
++    STATE state;
++    int rtsp_socketfd;
++    int client_socketfd;
++    unsigned char *buffer;
++    int cur_posion;
++    unsigned char chanel_id;
++    unsigned char SizeByte1;
++    unsigned int NextTCPReadSize;
++
++}RTSP_RESPONSE;
++
++static void write_n_byte(int socket, unsigned char *buffer, int length)
++{
++  size_t write_num = 0;
++  unsigned char *tmp = buffer;
++  int num = length;
++  while (write_num = write(socket, tmp, num) < num){
++    tmp += write_num;
++    num -= write_num;
++  }
++
++  return;
++}
++int tcpReadHandler(RTSP_RESPONSE *response) {
++  // We expect the following data over the TCP channel:
++  //   optional RTSP command or response bytes (before the first '$' character)
++  //   a '$' character
++  //   a 1-byte channel id
++  //   a 2-byte packet size (in network byte order)
++  //   the packet data.
++  // However, because the socket is being read asynchronously, this data might arrive in pieces.
++
++unsigned int count;
++int result = 1;
++for(count = 2000;count > 0 && result;--count){
++  u_int8_t c;
++  fd_set fds;
++  FD_ZERO(&fds);
++  FD_SET(response->rtsp_socketfd, &fds);
++  struct timeval timeout;
++  timeout.tv_sec = 0;
++  timeout.tv_usec = 20; //microseconds
++  if (response->state != AWAITING_PACKET_DATA) {
++    if (select(response->rtsp_socketfd + 1, &fds, NULL, 0, &timeout) > 0){
++      int result = read(response->rtsp_socketfd, &c, 1);
++      if (result == 0) { // There was no more data to read
++        result = 0;
++        break;
++      } else if (result != 1) { // error reading TCP socket, so we will no longer handle it
++        //fReadErrorOccurred = True;
++        //fDeleteMyselfNext = True;
++        result = 0;
++        break;
++      }
++    }else {
++      //timeout
++      result = 0;
++      break;
++    }
++  }
++
++  int callAgain = 1;
++  switch (response->state) {
++    case AWAITING_DOLLAR: {
++      if (c == '$') {
++      	response->state = AWAITING_STREAM_CHANNEL_ID;
++        if(response->cur_posion){
++          write_n_byte(response->client_socketfd, response->buffer, response->cur_posion+1);
++          response->cur_posion = 0;
++        }
++          //log_error_write(this_server, __FILE__, __LINE__, "s", response->buffer);
++      } else {
++      	// This character is part of a RTSP request or command, which is handled separately:
++        response->buffer[response->cur_posion] = c;
++        response->cur_posion++;
++      }
++      break;
++    }
++    case AWAITING_STREAM_CHANNEL_ID: {
++      // The byte that we read is the stream channel id.
++    	response->chanel_id = c;
++    	response->state = AWAITING_SIZE1;
++      break;
++    }
++    case AWAITING_SIZE1: {
++      // The byte that we read is the first (high) byte of the 16-bit RTP or RTCP packet 'size'.
++      response->SizeByte1 = c;
++      response->state = AWAITING_SIZE2;
++      break;
++    }
++    case AWAITING_SIZE2: {
++      // The byte that we read is the second (low) byte of the 16-bit RTP or RTCP packet 'size'.
++      unsigned short size = (response->SizeByte1<<8)|c;
++
++      // Record the information about the packet data that will be read next:
++	    response->NextTCPReadSize = size;
++      response->state = AWAITING_PACKET_DATA;
++      break;
++    }
++    case AWAITING_PACKET_DATA: {
++      callAgain = 0;
++      response->state = AWAITING_DOLLAR; // the next state, unless we end up having to read more data in the current state
++      // Call the appropriate read handler to get the packet data from the TCP stream:
++
++    	if (response->NextTCPReadSize == 0) {
++    	  // We've already read all the data for this packet.
++    	  break;
++    	}
++    	if (1) {
++    	  //fTCPReadingState = AWAITING_PACKET_DATA;
++    	  //rtpInterface->fReadHandlerProc(rtpInterface->fOwner, mask);
++    	  size_t read_num;
++        unsigned char *data = response->buffer + 4;
++        unsigned int num = response->NextTCPReadSize;
++    	  while (read_num = read(response->rtsp_socketfd, data, num) < num){
++          data+=read_num;
++          num-=read_num;
++        }
++
++        response->buffer[0] = '$';
++        response->buffer[1] = response->chanel_id;
++        response->buffer[2] = response->SizeByte1;
++        response->buffer[3] = response->NextTCPReadSize & 0xff;
++        write_n_byte(response->client_socketfd, response->buffer, response->NextTCPReadSize + 4);
++    	} else {
++          int result = read(response->rtsp_socketfd, &c, 1);
++          if (result < 0) { // error reading TCP socket, so we will no longer handle it
++            //fReadErrorOccurred = True;
++            //fDeleteMyselfNext = True;
++            result = 0;
++            break;
++          } else {
++            response->state = AWAITING_PACKET_DATA;
++            if (result == 1) {
++              --response->NextTCPReadSize;
++              callAgain = 1;
++            }
++          }
++      }
++    }
++  }
++
++  result = callAgain;
++  continue;
++}
++}
++
++
++
++void * post_handler(void *arg)
++{
++  #define UPLOAD_BUFFER_LEN (1024*4)
++  connection *client_con = arg;
++
++  //read from non-blocking fd
++  fd_set fds;
++  char *upload_content = (char *)calloc(UPLOAD_BUFFER_LEN, sizeof(char));
++  unsigned char *upload_content_decoded = NULL;
++
++  int nodelay = 1;
++  setsockopt(client_con->fd,IPPROTO_TCP,TCP_NODELAY,&nodelay,sizeof(nodelay));
++
++  int sendBuf = 1024*1024;
++  setsockopt(client_con->fd, IPPROTO_TCP, SO_RCVBUF, &sendBuf, sizeof(sendBuf));
++
++  FD_ZERO(&fds);
++  FD_SET(client_con->fd, &fds);
++
++  if (client_con->read_queue->first){
++    char *tmp = strstr(client_con->read_queue->first->mem->ptr, "\r\n\r\n");
++    if (tmp && *(tmp + 4) != '\0'){
++      strcpy(upload_content, tmp + 4);
++      goto DECODE;
++    }
++  }
++  while(1){
++    if(!fd_rtsp)
++      continue;
++
++    if (select(client_con->fd + 1, &fds, NULL, 0, 0) <= 0){
++      break;
++    }
++    else {
++      //Fetch the POST content
++      ssize_t byte_read = read(client_con->fd, upload_content, UPLOAD_BUFFER_LEN);
++      if (byte_read < 0)
++        break;
++      if(!strlen(upload_content))
++        break;
++
++DECODE:
++      upload_content_decoded = (unsigned char *)calloc(Base64decode_len(upload_content), sizeof(unsigned char));
++      Base64decode(upload_content_decoded, upload_content);
++      //log_error_write(this_server, __FILE__, __LINE__, "s", upload_content);
++      //log_error_write(this_server, __FILE__, __LINE__, "s", upload_content_decoded);
++      write(fd_rtsp, upload_content_decoded, strlen(upload_content_decoded));
++      memset(upload_content, 0, UPLOAD_BUFFER_LEN);
++      free(upload_content_decoded);
++      upload_content_decoded = NULL;
++      //return HANDLER_FINISHED;
++    }
++    //usleep(2000);
++  }
++
++exit:
++  if (upload_content)
++    free(upload_content);
++  if (upload_content_decoded)
++    free(upload_content_decoded);
++  shutdown(client_con->fd, SHUT_RDWR);
++  return NULL;
++}
++
++static inline int check_socket(int socketfd)
++{
++  char msg[1] = {0};
++  int err = 0;
++  err = recv(socketfd, msg, sizeof(msg), MSG_DONTWAIT|MSG_PEEK);
++  /* client already close connection. */
++  if(err == 0 || (err < 0 && errno != EAGAIN))
++    return -1;
++  return 0;
++}
++
++void * get_handler(void *arg)
++{
++  connection *client_con = arg;
++  int rtsp_socketfd;
++  if( (rtsp_socketfd = socket(AF_INET, SOCK_STREAM, 0)) < 0){
++    return NULL;
++  }
++
++  struct sockaddr_in rtsp_addr;
++  rtsp_addr.sin_family = AF_INET;
++  rtsp_addr.sin_port = htons(RTSP_PORT);
++  rtsp_addr.sin_addr.s_addr = inet_addr(RTSP_IP);
++  if (connect(rtsp_socketfd, (struct sockaddr *)&rtsp_addr, sizeof(struct sockaddr)) < 0){
++    return NULL;
++  }
++
++  ssize_t byte_num_client, byte_num_rtsp;
++  unsigned char *content = calloc(BUFFE_LENTH, sizeof(unsigned char));
++  //unsigned char *discard = calloc(BUFFE_LENTH, sizeof(unsigned char));
++  //unsigned char *dollar = NULL;
++
++  fd_rtsp = rtsp_socketfd;
++  fd_client = client_con->fd;
++  //log_error_write(this_server, __FILE__, __LINE__, "s", "connected to rtsp server");
++
++  //disable Nagle
++  int nodelay = 1;
++  int sendBuf = 1024*1024*8;
++  int readBuf = 1024*1024*16;
++  //setsockopt(rtsp_socketfd,IPPROTO_TCP,TCP_NODELAY,&nodelay,sizeof(nodelay));
++  setsockopt(client_con->fd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
++  setsockopt(client_con->fd, IPPROTO_TCP, SO_SNDBUF, &sendBuf, sizeof(sendBuf));
++  setsockopt(rtsp_socketfd, IPPROTO_TCP, SO_RCVBUF, &readBuf, sizeof(readBuf));
++
++  int KeepAlive=0;
++  //setsockopt(rtsp_socketfd, SOL_TCP, TCP_CORK, (char*)&KeepAlive, sizeof(int));
++  setsockopt(client_con->fd, SOL_TCP, TCP_CORK, (char*)&KeepAlive, sizeof(int));
++
++  unsigned int count = 2000;
++  RTSP_RESPONSE rtsp_response;
++  while(1){
++    if (check_socket(client_con->fd) < 0)
++      break;
++    //count = 2000;
++    rtsp_response.state = AWAITING_DOLLAR;
++    rtsp_response.buffer = content;
++    rtsp_response.rtsp_socketfd = rtsp_socketfd;
++    rtsp_response.client_socketfd = client_con->fd;
++    rtsp_response.cur_posion = 0;
++    rtsp_response.chanel_id = 0;
++    rtsp_response.SizeByte1 = 0;
++    rtsp_response.NextTCPReadSize = 0;
++
++    tcpReadHandler(&rtsp_response);
++    if (rtsp_response.cur_posion)
++      write_n_byte(client_con->fd, content, rtsp_response.cur_posion);
++    //memset(content, 0, 2000);
++    usleep(1000);
++  }
++
++  shutdown(client_con->fd, SHUT_RDWR);
++  shutdown(rtsp_socketfd, SHUT_RDWR);
++  if(content)
++    free(content);
++  return NULL;
++}
++
++
++URIHANDLER_FUNC(mod_ambarella_uri_handler) {
++	plugin_data *p = p_d;
++  UNUSED(srv);
++  this_server = srv;
++  if (strncmp(con->uri.path->ptr, HOOK_URI, strlen(HOOK_URI))){
++    return HANDLER_GO_ON;
++  }
++
++  data_string *ds = (data_string *)array_get_element(con->request.headers,"x-sessioncookie");
++
++  //if we can not find x-sessioncookie,we will return
++  if (!ds){
++    return HANDLER_GO_ON;
++  }
++
++  if (con->request.http_method == HTTP_METHOD_GET){
++    //prepare response content for RTSP over HTTP
++    con->http_status = 200;
++    response_header_overwrite(srv, con, CONST_STR_LEN("Content-type"), CONST_STR_LEN("application/x-rtsp-tunnelled"));
++    response_header_overwrite(srv, con, CONST_STR_LEN("Server"), CONST_STR_LEN("Ambarella Web Server"));
++    response_header_overwrite(srv, con, CONST_STR_LEN("Cache-Control"), CONST_STR_LEN("no-store"));
++    con->mode = p->id;
++    con->file_finished = 1;
++    pthread_t get_handler_tid;
++    pthread_create(&get_handler_tid, NULL, get_handler, con);
++    pthread_detach(get_handler_tid);
++  }
++  else if (con->request.http_method == HTTP_METHOD_POST){
++    //shutdown(con->fd, SHUT_WR);
++    pthread_t post_handler_tid;
++    pthread_create(&post_handler_tid, NULL, post_handler, con);
++    pthread_detach(post_handler_tid);
++    //getchar();
++  }
++
++  usleep(1000000);
++  return HANDLER_FINISHED;
++
++}
++
++#if 0
++JOBLIST_FUNC(mod_ambarella_joblist){
++  //log_error_write(srv, __FILE__, __LINE__, "s", "mod_ambarella_joblist");
++  char *upload_content = (char *)calloc(1024*4, sizeof(char));
++
++  fd_set fds;
++  FD_ZERO(&fds);
++  FD_SET(con->fd, &fds);
++  if (select(con->fd + 1, &fds, NULL, 0, 0) < 0){
++    free(upload_content);
++    return HANDLER_GO_ON;
++  }
++  else {
++  ssize_t byte_read = read(con->fd, upload_content, 1024);
++  log_error_write(srv, __FILE__, __LINE__, "s", upload_content);
++  if (byte_read < 10)
++    return HANDLER_GO_ON;
++  if(strstr(upload_content, "HTTP")){
++    if (strstr(upload_content, "POST")){
++      //deal with the first base64 package
++    }
++    else {
++      return HANDLER_GO_ON;
++    }
++  }
++  else {
++    //upcoming base64 package
++
++  }
++
++  free(upload_content);
++  }
++
++  return HANDLER_GO_ON;
++}
++#endif
++
++/* this function is called at dlopen() time and inits the callbacks */
++
++int mod_ambarella_plugin_init(plugin *p) {
++	p->version              = LIGHTTPD_VERSION_ID;
++	p->name                 = buffer_init_string("ambarella");
++
++	p->init                 = mod_ambarella_init;
++	p->handle_uri_clean     = mod_ambarella_uri_handler;
++	p->set_defaults         = mod_ambarella_set_defaults;
++	p->cleanup              = mod_ambarella_free;
++  //p->handle_joblist       = mod_ambarella_joblist;
++
++	p->data        = NULL;
++
++	return 0;
++}
+diff --git a/src/server.c b/src/server.c
+index 590a9d5..29cccbe 100644
+--- a/src/server.c
++++ b/src/server.c
+@@ -57,7 +57,7 @@
+ #endif
+ 
+ #ifdef USE_OPENSSL
+-# include <openssl/err.h> 
++# include <openssl/err.h>
+ #endif
+ 
+ #ifndef __sgi
+@@ -106,15 +106,15 @@ static void sigaction_handler(int sig, siginfo_t *si, void *context) {
+ 		last_sigterm_info = *si;
+ 
+ 		break;
+-	case SIGALRM: 
+-		handle_sig_alarm = 1; 
++	case SIGALRM:
++		handle_sig_alarm = 1;
+ 		break;
+ 	case SIGHUP:
+-		/** 
++		/**
+ 		 * we send the SIGHUP to all procs in the process-group
+ 		 * this includes ourself
+-		 * 
+-		 * make sure we only send it once and don't create a 
++		 *
++		 * make sure we only send it once and don't create a
+ 		 * infinite loop
+ 		 */
+ 		if (!forwarded_sig_hup) {
+@@ -812,7 +812,7 @@ int main (int argc, char **argv) {
+ 			return -1;
+ 		}
+ #ifdef HAVE_PWD_H
+-		/* 
++		/*
+ 		 * Change group before chroot, when we have access
+ 		 * to /etc/group
+ 		 * */
+@@ -1077,15 +1077,15 @@ int main (int argc, char **argv) {
+ 				int status;
+ 
+ 				if (-1 != wait(&status)) {
+-					/** 
+-					 * one of our workers went away 
++					/**
++					 * one of our workers went away
+ 					 */
+ 					num_childs++;
+ 				} else {
+ 					switch (errno) {
+ 					case EINTR:
+ 						/**
+-						 * if we receive a SIGHUP we have to close our logs ourself as we don't 
++						 * if we receive a SIGHUP we have to close our logs ourself as we don't
+ 						 * have the mainloop who can help us here
+ 						 */
+ 						if (handle_sig_hup) {
+@@ -1095,7 +1095,7 @@ int main (int argc, char **argv) {
+ 
+ 							/**
+ 							 * forward to all procs in the process-group
+-							 * 
++							 *
+ 							 * we also send it ourself
+ 							 */
+ 							if (!forwarded_sig_hup) {
+@@ -1112,11 +1112,11 @@ int main (int argc, char **argv) {
+ 		}
+ 
+ 		/**
+-		 * for the parent this is the exit-point 
++		 * for the parent this is the exit-point
+ 		 */
+ 		if (!child) {
+-			/** 
+-			 * kill all children too 
++			/**
++			 * kill all children too
+ 			 */
+ 			if (graceful_shutdown) {
+ 				kill(0, SIGINT);
+@@ -1227,13 +1227,13 @@ int main (int argc, char **argv) {
+ 				return -1;
+ 			} else {
+ #ifdef HAVE_SIGACTION
+-				log_error_write(srv, __FILE__, __LINE__, "sdsd", 
++				log_error_write(srv, __FILE__, __LINE__, "sdsd",
+ 					"logfiles cycled UID =",
+ 					last_sighup_info.si_uid,
+ 					"PID =",
+ 					last_sighup_info.si_pid);
+ #else
+-				log_error_write(srv, __FILE__, __LINE__, "s", 
++				log_error_write(srv, __FILE__, __LINE__, "s",
+ 					"logfiles cycled");
+ #endif
+ 			}
+@@ -1284,6 +1284,7 @@ int main (int argc, char **argv) {
+ 
+ 					if (con->state == CON_STATE_READ ||
+ 					    con->state == CON_STATE_READ_POST) {
++					  #define HOOK_URI "/stream"
+ 						if (con->request_count == 1) {
+ 							if (srv->cur_ts - con->read_idle_ts > con->conf.max_read_idle) {
+ 								/* time - out */
+@@ -1291,8 +1292,13 @@ int main (int argc, char **argv) {
+ 								log_error_write(srv, __FILE__, __LINE__, "sd",
+ 										"connection closed - read-timeout:", con->fd);
+ #endif
+-								connection_set_state(srv, con, CON_STATE_ERROR);
+-								changed = 1;
++                if (!strncmp(con->request.orig_uri->ptr, HOOK_URI, strlen(HOOK_URI))
++                  ){
++                }
++                else{
++    							connection_set_state(srv, con, CON_STATE_ERROR);
++    							changed = 1;
++                }
+ 							}
+ 						} else {
+ 							if (srv->cur_ts - con->read_idle_ts > con->keep_alive_idle) {
+@@ -1301,8 +1307,13 @@ int main (int argc, char **argv) {
+ 								log_error_write(srv, __FILE__, __LINE__, "sd",
+ 										"connection closed - read-timeout:", con->fd);
+ #endif
+-								connection_set_state(srv, con, CON_STATE_ERROR);
+-								changed = 1;
++                if (!strncmp(con->request.orig_uri->ptr, HOOK_URI, strlen(HOOK_URI))
++){
++                }
++                else{
++  								connection_set_state(srv, con, CON_STATE_ERROR);
++  								changed = 1;
++                }
+ 							}
+ 						}
+ 					}
+@@ -1328,8 +1339,14 @@ int main (int argc, char **argv) {
+ 									(int)con->conf.max_write_idle,
+ 									"seconds. If this a problem increase server.max-write-idle");
+ 							}
+-							connection_set_state(srv, con, CON_STATE_ERROR);
+-							changed = 1;
++              if (!strncmp(con->request.uri->ptr, HOOK_URI, strlen(HOOK_URI))
++                  && strstr(con->request.request->ptr,"x-sessioncookie")
++                  && strstr(con->request.request->ptr,"\r\n\r\n")){
++              }
++              else {
++  							connection_set_state(srv, con, CON_STATE_ERROR);
++  							changed = 1;
++              }
+ 						}
+ 					}
+ 
+@@ -1543,13 +1560,13 @@ int main (int argc, char **argv) {
+ 	}
+ 
+ #ifdef HAVE_SIGACTION
+-	log_error_write(srv, __FILE__, __LINE__, "sdsd", 
++	log_error_write(srv, __FILE__, __LINE__, "sdsd",
+ 			"server stopped by UID =",
+ 			last_sigterm_info.si_uid,
+ 			"PID =",
+ 			last_sigterm_info.si_pid);
+ #else
+-	log_error_write(srv, __FILE__, __LINE__, "s", 
++	log_error_write(srv, __FILE__, __LINE__, "s",
+ 			"server stopped");
+ #endif
+ 

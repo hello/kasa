@@ -1,0 +1,164 @@
+##
+## kernel/private/drivers/realtek/AmbaConfig
+##
+## History:
+##    2012/10/26 - [Johnson Diao] Create
+##
+## Copyright (C) 2012-2012, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+config BUILD_REALTEK_WIFI_8812AU
+	bool "Realtek WiFi RTL8812AU (802.11ac USB)"
+	default n
+	help
+		Build Realtek WiFi RTL8812AU
+		Verified on Kernel 3.10
+choice
+	prompt "RTL8812AU driver Version"
+	depends on BUILD_REALTEK_WIFI_8812AU
+	help
+		Select the RTL8812AU driver version.
+
+config BUILD_REALTEK_WIFI_8812AU_438_12175
+	bool "RTL8812AU v4.3.8_12175.20140902"
+	help
+		Select RTL8812AU v4.3.8_12175.20140902
+		Verified on Kernel 3.10
+
+endchoice ##prompt "RTL8812AU driver Version"
+
+#############################
+
+config BUILD_REALTEK_WIFI_8821AU
+	bool "Realtek WiFi RTL8811AU/RTL8821AU (802.11ac USB)"
+	default n
+	help
+		Build Realtek WiFi RTL8811AU/RTL8821AU
+		Verified on Kernel 3.10
+choice
+	prompt "RTL8821AU driver Version"
+	depends on BUILD_REALTEK_WIFI_8821AU
+	help
+		Select the RTL8811AU/RTL8821AU driver version.
+
+config BUILD_REALTEK_WIFI_8821AU_430_10674
+	bool "RTL8811AU/RTL8821AU v4.3.0_10674.20140509"
+	help
+		Select RTL8811AU/RTL8821AU v4.3.0_10674.20140509
+		Verified on Kernel 3.10
+
+endchoice ##prompt "RTL8811AU/RTL8821AU driver Version"
+
+#############################
+
+config BUILD_REALTEK_WIFI_8192EU
+	bool "Realtek WiFi RTL8192EU (802.11abgn USB)"
+	default n
+	help
+		Build Realtek WiFi RTL8192EU
+		Verified on Kernel 3.8, 3.10
+choice
+	prompt "RTL8192EU driver Version"
+	depends on BUILD_REALTEK_WIFI_8192EU
+	help
+		Select the RTL8192EU driver version.
+
+config BUILD_REALTEK_WIFI_8192EU_431_10675
+	bool "RTL8192EU v4.3.1_10675.20140303"
+	help
+		Select RTL8192EU v4.3.1_10675.20140303
+		Verified on Kernel 3.10
+
+endchoice ##prompt "RTL8192EU driver Version"
+
+#############################
+
+config BUILD_REALTEK_WIFI_8192CU
+	bool "Realtek WiFi RTL8192CU (802.11bgn USB)"
+	default n
+	help
+		Build Realtek WiFi rtl8192cu
+		Verified on Kernel 3.8, 3.10
+choice
+	prompt "RTL8192CU driver Version"
+	depends on BUILD_REALTEK_WIFI_8192CU
+	help
+		Select the RTL8192CU driver version.
+
+config BUILD_REALTEK_WIFI_8192CU_402_9000
+	bool "RTL8192CU v4.0.2_9000.20130911"
+	help
+		Select RTL8192CU v4.0.2_9000.20130911
+		Verified on Kernel 3.8
+
+endchoice ##prompt "RTL8192CU driver Version"
+
+#############################
+
+config BUILD_REALTEK_WIFI_8188E
+	bool "Realtek WiFi RTL8188E (802.11bgn USB/SDIO)"
+	default n
+	help
+		Build Realtek WiFi RTL8188E
+
+config BUILD_REALTEK_WIFI_8188E_SDIO
+	bool "RTL8189ES SDIO"
+	depends on BUILD_REALTEK_WIFI_8188E
+	help
+		Select RTL8189ES module
+
+config BUILD_REALTEK_WIFI_8188E_USB
+	bool "RTL8188EU USB"
+	depends on BUILD_REALTEK_WIFI_8188E
+	help
+		Select RTL8188ETV module
+
+config BUILD_REALTEK_WIFI_8188E_ENABLE_LOG
+	bool "Enable Verbose Log"
+	depends on BUILD_REALTEK_WIFI_8188E
+	help
+		Select Enable Verbose Log
+
+config BUILD_REALTEK_WIFI_8188E_CONCURRENT
+	bool "RTL8188EU Concurrent mode"
+	depends on BUILD_REALTEK_WIFI_8188E
+	help
+		Select RTL8188ETV Concurrent mode
+
+choice
+	prompt "RTL8188E driver Version"
+	depends on BUILD_REALTEK_WIFI_8188E
+	help
+		Select the RTL8188E driver version.
+
+config BUILD_REALTEK_WIFI_8188E_434_11294
+	bool "RTL8188E v4.3.4_11294.20140428"
+	help
+		Select RTL8188E v4.3.4_11294.20140428
+		Verified on Kernel 3.8
+
+config BUILD_REALTEK_WIFI_8188E_430_10600
+	bool "RTL8188E v4.3.0_10600.20140220"
+	help
+		Select RTL8188E v4.3.0_10600.20140220
+		Verified on Kernel 3.8
+
+config BUILD_REALTEK_WIFI_8188E_417_9024
+	bool "RTL8188E v4.1.7_9024.20130916"
+	help
+		Select RTL8188E v4.1.7_9024.20130916
+		Verified on Kernel 3.8, 3.10
+
+config BUILD_REALTEK_WIFI_8188E_4308_13968
+	bool "RTL8188E v4.3.0.8_13968.20150417"
+	help
+		Select RTL8188E v4.3.0.8_13968.20150417
+		Verified on Kernel 3.10
+endchoice ##prompt "rtl8188e driver Version"
+
+##################

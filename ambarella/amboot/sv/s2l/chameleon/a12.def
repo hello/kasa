@@ -1,0 +1,652 @@
+// system/env/a12.def
+//
+// A12 definition file for the Signum Chameleon Debugger.
+//
+// History:
+//    2008/02/29 - [Dragon Chiang] created file
+//
+// Copyright (C) 2004-2008, Ambarella, Inc.
+//
+// All rights reserved. No Part of this file may be reproduced, stored
+// in a retrieval system, or transmitted, in any form, or by any means,
+// electronic, mechanical, photocopying, recording, or otherwise,
+// without the prior consent of Ambarella, Inc.
+
+Ident = "DefCpu";
+
+//
+// DDR2/DDR3 SDRAM controller definitions
+//
+
+Register {
+	Group = "DRAM";
+	Name = "DRAM_CTL_REG";
+	Addr = 0xdffe0800;
+	Memory = "";
+	Size = 32;
+	Access = read write;
+	Help = "DRAM_CTL_REG";
+	Field { Name = "RSVD";	Bit0 = 21; Size = 11; Help = "Reserved"; }
+	Field { Name = "MDDR3_ODT_OFF"; Bit0 = 18; Size = 3; Help = "ODT off time in cycles"; }
+	Field { Name = "MDDR3_ODT_ON"; Bit0 = 15; Size = 3; Help = "ODT on time in cycles (< CWL)"; } 
+	Field { Name = "DDR3_ODT";			Bit0 = 14; Size = 1; Help = "Fix ODT for DDR3"; }
+	Field { Name = "SR_CNT";		Bit0 = 10; Size = 4 ; Help = "Self refresh counter for delay insertion"; }
+	Field { Name = "HIGHSKEW_CNT";	Bit0 = 8; Size = 2; Help = "RTT optimization counter"; }
+	Field { Name = "HIGHSKEW_EN"; Bit0 = 7; Size = 1; Help = "Enable high skew tolerance for LPDDR2/3"; }
+	Field { Name = "CS_REG"; 	Bit0 = 6; Size = 1; Help = "Dual die software chip select"; }
+	Field { Name = "DEEP_PD_ENABLE";	Bit0 = 5; Size = 1 ; Help = "Deep power down enable, for MDDR2, set this and reset DRAM_ENABLE to activate"; }
+	Field { Name = "IDDQ_TST_EN";	Bit0 = 4; Size = 1; Help = "Enable Iddq test"; }
+	Field { Name = "DRAM_RESET";		Bit0 = 3; Size =  1; Help = "DRAM RESET# output"; }
+	Field { Name = "DRAM_CKE";		Bit0 = 2; Size =  1; Help = "DRAM CKE output"; }
+	Field { Name = "DRAM_AUTO_REF_EN";	Bit0 = 1; Size =  1; Help = "DRAM Auto Refresh Enable"; }
+	Field { Name = "DRAM_ENABLE";		Bit0 = 0; Size =  1; Help = "DRAM Access Enable"; }
+}
+
+Register {
+	Group = "DRAM";
+	Name = "DRAM_CFG_REG";
+	Addr = 0xdffe0804;
+	Memory = "";
+	Size = 32;
+	Access = read write;
+	Help = "DRAM_CFG_REG";
+	Field { Name = "RSVD";			Bit0 = 31; Size = 1; Help = "Reserved"; }
+	Field { Name = "CFG_SR_CKEN";	Bit0 = 30; Size = 1; Help = "Control clock shut off during self-refresh"; }
+	Field { Name = "DRAM_TYPE";		Bit0 = 27; Size = 3; Help = "0 - DDR2 / 1 - DDR3 / 2 - LPDDR / 3 - LPDDR2 / 4 - LPDDR3"; }
+	Field { Name = "RSVD";		Bit0 = 26; Size = 1; Help = "Reserved"; }
+	Field { Name = "SW_PAD_ZQ_CTL";	Bit0 = 25; Size = 1 ; Help = "Enable software control of pad zq calibration" ; }
+	Field { Name = "DDR3_PLUS_EN";	Bit0 = 24; Size = 1; Help = "Enable DDR3+ with bank grouping as defined in DRAM_DDR3PLUS_BNKGRP"; }
+	Field { Name = "AR_CREDIT_MIN";	Bit0 = 20; Size = 4; Help = "Minimum number of posted auto-refreshes"; }
+	Field { Name = "AR_CREDIT_MAX";	Bit0 = 16; Size = 4; Help = "Maxmimum number of posted auto-refreshes"; }
+	Field { Name = "SERIAL_MODE";		Bit0 = 15; Size =  1; Help = "SERIAL_MODE"; }
+	Field { Name = "RSVD";		Bit0 = 14; Size = 1; Help = "Reserved"; }
+	Field { Name = "DQS_IEN_EN";		Bit0 =  13; Size =  1; Help = "DQS_IEN_EN"; }
+	Field { Name = "CTLR_ODT_CFG";		Bit0 =  10; Size =  3; Help = "CTLR_ODT_CFG"; }
+	Field { Name = "BURST_MODE";	Bit0 = 9; Size = 1; Help = "0 - BL8, 1 - BL4"; }
+	Field { Name = "CFG_BUS_MODE";	Bit0 = 8; Size = 1; Help = "0 - x32, 1 - x16"; }
+	Field { Name = "DRAM_SIZE";		Bit0 = 5; Size =  3; Help = "Combined DRAM size connected to DDRHOST (DDP - Single die); 0 - 6 covering 256 Mb to 16 Gb"; }
+	Field { Name = "BANK_SIZE"; 	Bit0 = 4; Size = 1; Help = "0 - 4 banks, 1 - 8 banks"; }
+	Field { Name = "PAGE_SIZE";	Bit0 = 2; Size = 2; Help = "0 - 1 KB, 1 - 2 KB, 2 - 4 KB; Combined page size across all DDRs connected to a DDRHOST" ; }
+	Field { Name = "RSVD";		Bit0 = 0; Size = 2; Help = "Reserved"; }
+}
+
+Register {
+	Group = "DRAM";
+	Name = "DRAM_TIMING1_REG";
+	Addr = 0xdffe0808;
+	Memory = "";
+	Size = 32;
+	Access = read write;
+	Help = "DRAM_TIMING1_REG";
+	Field { Name = "RSVD";	Bit0 = 30; Size = 2; Help = "Reserved"; }
+	Field { Name = "T_WR";	Bit0 = 26; Size = 4; Help = "T_WR"; }
+	Field { Name = "T_RAS";	Bit0 = 20; Size = 6; Help = "T_RAS"; }
+	Field { Name = "T_RC";	Bit0 = 14; Size = 6; Help = "T_RC"; }
+	Field { Name = "T_RP";	Bit0 = 10; Size = 4; Help = "T_RP"; }
+	Field { Name = "T_RCD";	Bit0 =  6; Size = 4; Help = "T_RCD"; }
+	Field { Name = "T_RRD";	Bit0 =  3; Size = 3; Help = "T_RRD"; }
+	Field { Name = "T_WL"; 	Bit0 = 0 ; Size = 3 ; Help = "CAS Write Latency"; }
+}
+
+Register {
+	Group = "DRAM";
+	Name = "DRAM_TIMING2_REG";
+	Addr = 0xdffe080c;
+	Memory = "";
+	Size = 32;
+	Access = read write;
+	Help = "DRAM_TIMING2_REG";
+	Field { Name = "T_CL";	Bit0 =  28; Size = 4; Help = "CAS Read Latency"; }
+	Field { Name = "RSVD";	Bit0 = 27; Size =  1; Help = "Reserved"; }
+	Field { Name = "T_XSR"; Bit0 = 17; Size = 10; Help = "tXSR"; }
+	Field { Name = "T_RFC";	Bit0 = 9; Size =  8; Help = "T_RFC"; }
+	Field { Name = "T_FAW";	Bit0 =  3; Size =  6; Help = "T_FAW"; }
+	Field { Name = "T_RTP";	Bit0 =  0; Size =  3; Help = "T_RTP"; }
+
+}
+
+Register {
+	Group = "DRAM";
+	Name = "DRAM_TIMING3_REG";
+	Addr = 0xdffe0810;
+	Memory = "";
+	Size = 32;
+	Access = read write;
+	Help = "DRAM_TIMING3_REG";
+	Field { Name = "T_WTR";	Bit0 = 29; Size = 3; Help = "T_WTR"; }
+	Field { Name = "T_DPD";	Bit0 = 12; Size = 17; Help = "Minimum deep powerdown time"; }
+	Field { Name = "T_REFI";Bit0 = 0; Size = 12; Help = "T_REFI"; }
+}
+
+Register {
+	Group = "DRAM";
+	Name = "DRAM_INIT_CTL_REG";
+	Addr = 0xdffe0814;
+	Memory = "";
+	Size = 32;
+	Access = read write;
+	Help = "DRAM_INIT_CTL_REG";
+	Field { Name = "RSVD";	     Bit0 = 6; Size = 25; Help = "Reserved"; }
+	Field { Name = "PAD_CLB_SHORT_EN";	Bit0 = 6; Size = 1; Help = "Short pad calibration"; }
+	Field { Name = "PAD_CLB_LONG_EN"; Bit0 = 5; Size = 1; Help = "Pad ZQ calibration"; }
+	Field { Name = "ZQ_CLB_EN" ; Bit0 = 4; Size = 1; Help = "DRAM ZQ calibration"; }
+	Field { Name = "DLL_RST_EN"; Bit0 = 3; Size =  1; Help = "DLL_RST_EN"; }
+	Field { Name = "GET_RTT_EN"; Bit0 = 2; Size =  1; Help = "GET_RTT_EN"; }
+	Field { Name = "IMM_REF_EN"; Bit0 = 1; Size =  1; Help = "IMM_REF_EN"; }
+	Field { Name = "PRE_ALL_EN"; Bit0 = 0; Size =  1; Help = "PRE_ALL_EN"; }
+}
+
+Register {
+	Group = "DRAM";
+	Name = "DRAM_MODE_REG";
+	Addr = 0xdffe0818;
+	Memory = "";
+	Size = 32;
+	Access = read write;
+	Help = "DRAM_MODE_REG";
+	Field { Name = "MR_BUSY";	Bit0 = 31; Size =  1; Help = "MR_BUSY"; }
+	Field { Name = "RSVD";		Bit0 = 14; Size = 17; Help = "Reserved"; }
+	Field { Name = "MODE_REG_MR";	Bit0 =  0; Size = 14; Help = "MODE_REG_MR"; }
+}
+
+Register {
+	Group = "DRAM";
+	Name = "DRAM_SELF_REF_REG";
+	Addr = 0xdffe081c;
+	Memory = "";
+	Size = 32;
+	Access = read write;
+	Help = "DRAM_SELF_REF_REG";
+}
+Register {
+	Group = "DRAM";
+	Name = "DRAM_DQS_SYNC_REG";
+	Group = "DRAM";
+	Addr = 0xdffe0820;
+	Memory = "";
+	Size = 32;
+	Access = read write;
+	Help = "DRAM_DQS_SYNC_REG";
+	Field { Name = "SW_DQS_SYNC_EN";	Bit0 = 31; Size =  1; Help = "SW_DQS_SYNC_EN"; }
+	Field { Name = "SW_DQS_SYNC_CTL";	Bit0 = 29; Size =  2; Help = "SW_DQS_SYNC_CTL"; }
+	Field { Name = "RSVD";			Bit0 = 12; Size = 17; Help = "Reserved"; }
+	Field { Name = "DQS1_SYNC_CTL";		Bit0 = 11; Size =  1; Help = "DQS1_SYNC_CTL"; }
+	Field { Name = "DQS0_SYNC_CTL";		Bit0 = 10; Size =  1; Help = "DQS0_SYNC_CTL"; }
+	Field { Name = "DQS1_CLK0";		Bit0 =  9; Size =  1; Help = "DQS1_CLK0"; }
+	Field { Name = "DQS1_CLK90";		Bit0 =  8; Size =  1; Help = "DQS1_CLK90"; }
+	Field { Name = "DQS0_CLK0";		Bit0 =  7; Size =  1; Help = "DQS0_CLK0"; }
+	Field { Name = "DQS0_CLK90";		Bit0 =  6; Size =  1; Help = "DQS0_CLK90"; }
+	Field { Name = "ROUND_TRIP";		Bit0 =  0; Size =  6; Help = "ROUND_TRIP"; }
+}
+
+Register {
+	Group = "DRAM";
+	Name = "DRAM_PAD_TERM";
+	Addr = 0xdffe0824;
+	Memory = "";
+	Size = 32;
+	Access = read write;
+	Help = "DRAM_PAD_TERM";
+}
+
+Register {
+	Group = "DRAM";
+	Name = "DRAM_ZQ_CALIB";
+	Addr = 0xdffe0828;
+	Memory = "";
+	Size = 32;
+	Access = read write;
+	Help = "DRAM_ZQ_CALIB";
+}
+
+Register {
+	Group = "DRAM";
+	Name = "DRAM_RSVD_SPACE";
+	Addr = 0xdffe082c;
+	Memory = "";
+	Size = 32;
+	Access = read write;
+	Help = "Base address of reserved dram space. 128 bytes at this address are used for RTT calibration. Address needs to be 128 byte aligned";
+}
+
+Register {
+	Group = "DRAM";
+	Name = "DRAM_BYTE_MAP";
+	Addr = 0xdffe0830;
+	Memory = "";
+	Size = 32;
+	Access = read write;
+	Help = "DRAM_BYTE_MAP";
+}
+
+Register {
+	Group = "DRAM";
+	Name = "DRAM_DDR3PLUS_BNKGRP";
+	Addr = 0xdffe0834;
+	Memory = "";
+	Size = 32;
+	Access = read write;
+	Help = "DRAM_DDR3PLUS_BNKGRP";
+}
+
+Register {
+	Group = "DRAM";
+	Name = "DRAM_POWER_DOWN_REG";
+	Addr = 0xdffe0838;
+	Memory = "";
+	Size = 32;
+	Access = read write;
+	Help = "DRAM_POWER_DOWN";
+}
+
+Register {
+	Group = "DRAM";
+	Name = "DRAM_DLL_CALIB_REG";
+	Addr = 0xdffe083c;
+	Memory = "";
+	Size = 32;
+	Access = read write;
+	Help = "DRAM_DLL_CALIB";
+}
+
+//
+// ahb bus
+//
+
+Register {
+	Name = "DMAEnable" ;
+	Addr = 0xe000B054 ;
+	Memory = "";
+	Size = 32;
+	Access = read write;
+	Help = "DMA Enable" ;
+}
+
+Register {
+        Name = "DMADescriptorChannel0Address" ;
+        Addr = 0xe0012380 ;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "DMA Descriptor Channel 0 Address" ;
+}
+
+Register {
+        Name = "DMAChannel0Enable" ;
+        Addr = 0xe0012300 ;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "DMA Descriptor Channel 0 Address" ;
+}
+
+//
+// flash controller
+//
+
+Register {
+        Name = "NAND_FLASH_INTERRUPT" ;
+        Addr = 0xe0001150 ;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "NAND Flash Interrupt" ;
+}
+
+Register {
+        Name = "NAND_FLASH_COMMAND" ;
+        Addr = 0xe0001124 ;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "NAND Flash Command" ;
+}
+
+Register {
+        Name = "NAND_FLASH_CONTROL" ;
+        Addr = 0xe0001120 ;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "NAND Flash Control" ;
+}
+
+Register {
+        Name = "NAND_FLASH_STATUS" ;
+        Addr = 0xe0001140 ;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "NAND Flash Control" ;
+}
+
+Register {
+        Name = "FLASH_IO_CONTROL" ;
+        Addr = 0xe0001000 ;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "Flash IO Control" ;
+}
+
+Register {
+        Name = "FLASH_IO_STATUS" ;
+        Addr = 0xe0001004 ;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "Flash IO Status" ;
+}
+
+Register {
+        Name = "FLASH_IO_DMA_CONTROL" ;
+        Addr = 0xe0001080 ;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "Flash IO DMA Control" ;
+}
+
+Register {
+        Name = "FLASH_IO_DMA_ADDRESS" ;
+        Addr = 0xe0001084 ;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "Flash IO DMA Address" ;
+}
+
+Register {
+        Name = "FLASH_IO_DMA_STATUS" ;
+        Addr = 0xe000108c ;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "Flash IO DMA Status" ;
+}
+
+Register {
+	Name = "NAND_FLASH_TIMING_INTERVAL_0" ;
+	Addr = 0xe0001128;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "NAND_FLASH_TIMING_INTERVAL_0" ;
+}
+
+Register {
+	Name = "NAND_FLASH_TIMING_INTERVAL_1" ;
+	Addr = 0xe000112c;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "NAND_FLASH_TIMING_INTERVAL_1" ;
+}
+
+Register {
+	Name = "NAND_FLASH_TIMING_INTERVAL_2" ;
+	Addr = 0xe0001130;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "NAND_FLASH_TIMING_INTERVAL_2" ;
+}
+
+Register {
+	Name = "NAND_FLASH_TIMING_INTERVAL_3" ;
+	Addr = 0xe0001134;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "NAND_FLASH_TIMING_INTERVAL_3" ;
+}
+
+Register {
+	Name = "NAND_FLASH_TIMING_INTERVAL_4" ;
+	Addr = 0xe0001138;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "NAND_FLASH_TIMING_INTERVAL_4" ;
+}
+
+Register {
+	Name = "NAND_FLASH_TIMING_INTERVAL_5" ;
+	Addr = 0xe000113c;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "NAND_FLASH_TIMING_INTERVAL_5" ;
+}
+
+Register {
+	Name = "GPIO1_DATA" ;
+	Addr = 0xe800a000;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "GPIO1_DATA" ;
+}
+
+Register {
+	Name = "GPIO1_DIR" ;
+	Addr = 0xe800a004;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "GPIO1_DIR" ;
+}
+
+Register {
+	Name = "GPIO1_AFSEL" ;
+	Addr = 0xe800a018;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "GPIO1_AFSEL" ;
+}
+
+Register {
+	Name = "GPIO1_MASK" ;
+	Addr = 0xe800a028;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "GPIO1_MASK" ;
+}
+
+Register {
+	Name = "GPIO1_ENABLE" ;
+	Addr = 0xe800a02c;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "GPIO1_ENABLE" ;
+}
+
+
+Register {
+	Name = "PLL_DDR_CTRL_REG";
+	Addr = 0xec1700dc;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "PLL_DDR_CTRL_REG" ;
+}
+
+Register {
+	Name = "PLL_DDR_FRAC_REG";
+	Addr = 0xec1700e0;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "PLL_DDR_FRAC_REG" ;
+}
+
+Register {
+	Name = "PLL_DDR_CTRL2_REG";
+	Addr = 0xec170110;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "PLL_DDR_CTRL2_REG" ;
+}
+
+Register {
+	Name = "PLL_DDR_CTRL3_REG";
+	Addr = 0xec170114;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "PLL_DDR_CTRL3_REG" ;
+}
+
+Register {
+	Name = "DDRIO0_DLL0_REG";
+	Addr = 0xec170090;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "DDRIO0_DLL0_REG" ;
+}
+
+Register {
+	Name = "DDRIO0_DLL1_REG";
+	Addr = 0xec170094;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "DDRIO0_DLL1_REG" ;
+}
+
+Register {
+	Name = "DDRIO0_DLL2_REG";
+	Addr = 0xec1700f0;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "DDRIO0_DLL2_REG" ;
+}
+
+Register {
+	Name = "DDRIO0_DLL3_REG";
+	Addr = 0xec1700f4;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "DDRIO0_DLL3_REG" ;
+}
+
+
+Register {
+	Name = "DDRIO0_DLL_CTRL_SEL_MISC_REG";
+	Addr = 0xec170158;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "DDRIO0_DLL_CTRL_SEL_MISC has values that are sent to ddrio pads" ;
+}
+
+
+Register {
+	Name = "PLL_LOCK_REG";
+	Addr = 0xec17002c;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "PLL_LOCK_REG" ;
+}
+
+
+Register {
+	Name = "CG_DDR_INIT_REG";
+	Addr = 0xec170220;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "CG_DDR_INIT_REG" ;
+}
+
+
+Register {
+	Name = "DDRIO0_DLL_CTRL_SEL_0_REG";
+	Addr = 0xec17023c;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "dll_selm and dll_sbc";
+}
+
+
+Register {
+	Name = "DDRIO0_DLL_CTRL_SEL_1_REG";
+	Addr = 0xec170240;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "dll_selm and dll_sbc";
+}
+
+Register {
+	Name = "DDRIO0_DLL_CTRL_SEL_2_REG";
+	Addr = 0xec170244;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "dll_selm and dll_sbc";
+}
+
+Register {
+	Name = "DDRIO0_DLL_CTRL_SEL_3_REG";
+	Addr = 0xec170248;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "dll_selm and dll_sbc";
+}
+
+Register {
+	Name = "PLL_CORE_CTRL_REG";
+	Addr = 0xec170000;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "PLL_CORE_CTRL_REG" ;
+}
+
+Register {
+	Name = "PLL_IDSP_CTRL_REG";
+	Addr = 0xec1700e4;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "PLL_IDSP_CTRL_REG" ;
+}
+
+Register {
+	Name = "PLL_IDSP_CTRL_REG";
+	Addr = 0xec1700e4;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "PLL_IDSP_CTRL_REG" ;
+}
+
+Register {
+	Name = "PLL_CORTEX_CTRL_REG";
+	Addr = 0xec170264;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "PLL_CORTEX_CTRL_REG" ;
+}
+
+Register {
+	Name = "PLL_CORTEX_FRAC_REG";
+	Addr = 0xec170268;
+        Memory = "";
+        Size = 32;
+        Access = read write;
+        Help = "PLL_CORTEX_FRAC_REG" ;
+}
+

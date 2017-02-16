@@ -1,0 +1,69 @@
+##
+## Kbuild
+##
+## History:
+##    2009/07/09 - [Anthony Ginger] Create
+##    2012/12/24 - [Tao Wu] Create
+##    2012/12/26 - [Yupeng Chang] Updated
+##
+## Copyright (C) 2004-2012, Ambarella, Inc.
+##
+## All rights reserved. No Part of this file may be reproduced, stored
+## in a retrieval system, or transmitted, in any form, or by any means,
+## electronic, mechanical, photocopying, recording, or otherwise,
+## without the prior consent of Ambarella, Inc.
+##
+
+EXTRA_CFLAGS  += $(AMBARELLA_DRV_CFLAGS) \
+                -I$(AMB_TOPDIR)/kernel/external/marvell/sd8787/mlan \
+                -DLINUX -DFPNUM='"66"' \
+                -DDEBUG_LEVEL1 -DPROC_DEBUG \
+                -DSTA_SUPPORT -DREASSOCIATION -DSTA_WEXT \
+                -DUAP_SUPPORT -DUAP_WEXT \
+                -DMFG_CMD_SUPPORT -DSDIO_MULTI_PORT_TX_AGGR -DSDIO_MULTI_PORT_RX_AGGR \
+                -DSDIO_SUSPEND_RESUME
+
+EXTRA_AFLAGS  += $(AMBARELLA_DRV_AFLAGS)
+EXTRA_LDFLAGS += $(AMBARELLA_DRV_LDFLAGS)
+
+obj-m := mlan.o
+mlan-y := mlan/mlan_shim.o          \
+          mlan/mlan_init.o          \
+          mlan/mlan_txrx.o          \
+          mlan/mlan_cmdevt.o        \
+          mlan/mlan_misc.o          \
+          mlan/mlan_cfp.o           \
+          mlan/mlan_module.o        \
+          mlan/mlan_wmm.o           \
+          mlan/mlan_sdio.o          \
+          mlan/mlan_11n_aggr.o      \
+          mlan/mlan_11n_rxreorder.o \
+          mlan/mlan_11n.o           \
+          mlan/mlan_11d.o           \
+          mlan/mlan_11h.o           \
+          mlan/mlan_meas.o          \
+          mlan/mlan_scan.o          \
+          mlan/mlan_sta_ioctl.o     \
+          mlan/mlan_sta_rx.o        \
+          mlan/mlan_sta_tx.o        \
+          mlan/mlan_sta_event.o     \
+          mlan/mlan_sta_cmd.o       \
+          mlan/mlan_sta_cmdresp.o   \
+          mlan/mlan_join.o          \
+          mlan/mlan_uap_ioctl.o     \
+          mlan/mlan_uap_cmdevent.o  \
+          mlan/mlan_uap_txrx.o
+
+obj-m += sd8787.o
+sd8787-y :=  mlinux/moal_main.o      \
+             mlinux/moal_ioctl.o     \
+             mlinux/moal_shim.o      \
+             mlinux/moal_eth_ioctl.o \
+             mlinux/moal_priv.o      \
+             mlinux/moal_wext.o      \
+             mlinux/moal_uap.o       \
+             mlinux/moal_uap_priv.o  \
+             mlinux/moal_uap_wext.o  \
+             mlinux/moal_proc.o      \
+             mlinux/moal_debug.o     \
+             mlinux/moal_sdio_mmc.o

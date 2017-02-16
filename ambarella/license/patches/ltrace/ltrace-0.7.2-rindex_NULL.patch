@@ -1,0 +1,29 @@
+From aafb00b7d7751049b99cac3953b5021e4f474ac4 Mon Sep 17 00:00:00 2001
+From: Petr Machata <pmachata@redhat.com>
+Date: Tue, 8 Jan 2013 18:12:07 +0100
+Subject: [PATCH] Don't add 1 to potentially NULL pointer comming from rindex
+
+---
+ ltrace-elf.c |    8 +++++---
+ 1 files changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/ltrace-elf.c b/ltrace-elf.c
+index 1d0f769..29c204f 100644
+--- a/ltrace-elf.c
++++ b/ltrace-elf.c
+@@ -889,8 +889,10 @@ read_module(struct library *lib, struct process *proc,
+ 			goto fail;
+ 		library_set_soname(lib, soname, 1);
+ 	} else {
+-		const char *soname = rindex(lib->pathname, '/') + 1;
+-		if (soname == NULL)
++		const char *soname = rindex(lib->pathname, '/');
++		if (soname != NULL)
++			soname += 1;
++		else
+ 			soname = lib->pathname;
+ 		library_set_soname(lib, soname, 0);
+ 	}
+-- 
+1.7.6.5
+

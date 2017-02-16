@@ -1,0 +1,8 @@
+[Unit]
+Description= amba cloud agent service
+After=systemd-modules-load.service
+[Service]
+ExecStart=/usr/local/bin/autorun_ambacloud_agent.sh
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,88 @@
+diff -Naur cfg80211/wext-compat.c cfg80211.patch/wext-compat.c
+--- cfg80211/wext-compat.c	2012-11-16 19:46:13.000000000 +0800
++++ cfg80211.patch/wext-compat.c	2012-11-22 17:32:55.632236300 +0800
+@@ -219,7 +219,7 @@
+ 		}
+ 	}
+ 
+-	for (band = 0; band < IEEE80211_NUM_BANDS; band ++) {
++	for (band = 0; band < IEEE80211_NUM_BANDS; band++) {
+ 		struct ieee80211_supported_band *sband;
+ 
+ 		sband = wdev->wiphy->bands[band];
+@@ -825,6 +825,8 @@
+ 	switch (wdev->iftype) {
+ 	case NL80211_IFTYPE_STATION:
+ 		return cfg80211_mgd_wext_giwfreq(dev, info, freq, extra);
++	case NL80211_IFTYPE_P2P_CLIENT:
++		return cfg80211_mgd_wext_giwfreq(dev, info, freq, extra);
+ 	case NL80211_IFTYPE_ADHOC:
+ 		return cfg80211_ibss_wext_giwfreq(dev, info, freq, extra);
+ 	case NL80211_IFTYPE_MONITOR:
+@@ -964,13 +966,13 @@
+ static int cfg80211_set_wpa_version(struct wireless_dev *wdev, u32 wpa_versions)
+ {
+ 	if (wpa_versions & ~(IW_AUTH_WPA_VERSION_WPA |
+-			     IW_AUTH_WPA_VERSION_WPA2|
+-		             IW_AUTH_WPA_VERSION_DISABLED))
++						IW_AUTH_WPA_VERSION_WPA2|
++						IW_AUTH_WPA_VERSION_DISABLED))
+ 		return -EINVAL;
+ 
+ 	if ((wpa_versions & IW_AUTH_WPA_VERSION_DISABLED) &&
+ 	    (wpa_versions & (IW_AUTH_WPA_VERSION_WPA|
+-			     IW_AUTH_WPA_VERSION_WPA2)))
++						IW_AUTH_WPA_VERSION_WPA2)))
+ 		return -EINVAL;
+ 
+ 	if (wpa_versions & IW_AUTH_WPA_VERSION_DISABLED)
+@@ -1282,7 +1284,8 @@
+ 	u8 addr[ETH_ALEN];
+ 	int err;
+ 
+-	if (wdev->iftype != NL80211_IFTYPE_STATION)
++	if ((wdev->iftype != NL80211_IFTYPE_STATION) &&
++		(wdev->iftype != NL80211_IFTYPE_P2P_CLIENT))
+ 		return -EOPNOTSUPP;
+ 
+ 	if (!rdev->ops->get_station)
+@@ -1306,6 +1309,7 @@
+ 		return -EOPNOTSUPP;
+ 
+ 	rate->value = 100000 * cfg80211_calculate_bitrate(&sinfo.txrate);
++	rate->flags = sinfo.txrate.flags;
+ 
+ 	return 0;
+ }
+@@ -1320,7 +1323,8 @@
+ 	static struct station_info sinfo;
+ 	u8 bssid[ETH_ALEN];
+ 
+-	if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_STATION)
++	if ((dev->ieee80211_ptr->iftype != NL80211_IFTYPE_STATION) &&
++		(wdev->iftype != NL80211_IFTYPE_P2P_CLIENT))
+ 		return NULL;
+ 
+ 	if (!rdev->ops->get_station)
+@@ -1520,7 +1524,7 @@
+ 	[IW_IOCTL_IDX(SIOCSIWGENIE)]	= (iw_handler) cfg80211_wext_siwgenie,
+ 	[IW_IOCTL_IDX(SIOCSIWAUTH)]	= (iw_handler) cfg80211_wext_siwauth,
+ 	[IW_IOCTL_IDX(SIOCGIWAUTH)]	= (iw_handler) cfg80211_wext_giwauth,
+-	[IW_IOCTL_IDX(SIOCSIWENCODEEXT)]= (iw_handler) cfg80211_wext_siwencodeext,
++	[IW_IOCTL_IDX(SIOCSIWENCODEEXT)] = (iw_handler) cfg80211_wext_siwencodeext,
+ 	[IW_IOCTL_IDX(SIOCSIWPMKSA)]	= (iw_handler) cfg80211_wext_siwpmksa,
+ };
+ 
+diff -Naur cfg80211/wext-sme.c cfg80211.patch/wext-sme.c
+--- cfg80211/wext-sme.c	2012-11-16 19:46:13.000000000 +0800
++++ cfg80211.patch/wext-sme.c	2012-11-22 17:16:51.466095000 +0800
+@@ -130,7 +130,8 @@
+ 	struct ieee80211_channel *chan = NULL;
+ 
+ 	/* call only for station! */
+-	if (WARN_ON(wdev->iftype != NL80211_IFTYPE_STATION))
++	if (WARN_ON((wdev->iftype != NL80211_IFTYPE_STATION) &&
++		 (wdev->iftype != NL80211_IFTYPE_P2P_CLIENT)))
+ 		return -EINVAL;
+ 
+ 	wdev_lock(wdev);

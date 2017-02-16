@@ -1,0 +1,256 @@
+#!/bin/sh
+#test HAL ,cddiao@ambarella.com
+
+linver=$(uname -r)
+if [ $# = 0 ]
+then
+   auto="yes"
+fi
+
+ARGS='getopt  m:p:ah  "$@"'
+eval set -- "${ARGS}"
+
+while [ -n "$1" ]
+do
+   case "$1" in
+   -m)
+       setmode="$2"
+       auto="no"
+       help="no"
+       shift
+       ;;
+   -p)
+       setpll="$2"
+       auto="no"
+       help="no"
+       shift
+       ;;
+    -a)
+       auto="yes"
+       help="no"
+       shift
+       ;;
+    -h)
+       help="yes"
+       auto="no"
+       shift
+       ;;
+    --)
+       shift
+       break
+       ;;
+    esac
+shift
+done
+
+if [ "${setmode}" != "" ]
+then
+   echo  ${setmode} >/proc/ambarella/mode
+   cat /proc/ambarella/mode
+fi
+
+if [ "${setpll}" != "" ]
+then
+   echo ${setpll} > /proc/ambarella/performance
+   cat /proc/ambarella/mode
+fi
+
+if [ "${help}" = "yes" ]
+then
+echo 'Usage: haltest [-m setmode] [-p setperformance] [-a] [-h]'
+echo 'Test the a5s or iONE or a7 HAL.'
+echo '-m setmode'
+echo '   echo ${setmode}>/proc/ambarella/mode'
+echo '-p setperformance'
+echo '   echo ${setperformance}>/proc/ambarella/mode'
+echo '-h'
+echo '   show the help'
+echo '-a'
+echo '   auto test HAL.if do not have parameters followed haltest,it will run auto mode.the auto mode test process: '
+echo ' '
+echo '   step 1:The script will set the mode "preview","capture","playback","lowpower","lowpower_cortex" mode used the command "echo mode > /proc/ambarella/mode" '
+echo '          and for A7,do not test lowpower and lowpower_cortex'
+echo '   step 2: test preview and decode in "preview","capture","playback" mode '
+echo '       For a5s'
+echo '          test the preview use "test_encode -i0 -vD480x800 --lcd 1p3828 -V720p --hdmi -K --btype prev -J --btype prev" '
+echo '          test decode use "test_qtamf_play /mnt/5min.ts"'
+echo '          make sure you have the 5min.ts in /mnt ,or you can change it to your video file ,you can find the script in /usr/local/bin/haltest.sh'
+echo '       For iONE'
+echo '          the iONE board will reboot after decode in each mode test due to the preview command can not run when mode changed,so you should run the script after reboot'
+echo '          test the preview use "test2 -i1080p -vD480x800 --lcd 1p3831 --disable-csc --rotate -V480p --hdmi --disable-csc --idle  && enc_test -k"'
+echo '          test decode use " pbtest /mnt/X264_576P.avi"'
+echo '          make sure you have the X264_576P.avi in /mnt or in the SD card ,it will mount the SD card to /mnt ,or you can change it to your video file ,you can find the script in /usr/sbin/haltest.sh'
+echo '       For A7'
+echo '          only test preview use "test_encode -i1080p -v480p --lcd digital -V480p --hdmi" '
+echo '   step 3:test performance used command "echo performance>/proc/ambarella/performance"'
+echo '       it will test all of the performances which list by command "cat /proc/ambarella/mode"'
+echo 'LOGS:'
+echo 'HALprelog.txt: the preview and decode test log'
+echo 'HALtestmodelog.txt:the set mode test log'
+echo 'HALtestpreformance.txt: set preformance test log'
+echo 'NOTICE : the Vin is ov14810,if you want to use another sensor,please change the script'
+fi
+
+if [ "${auto}" != "yes" ]
+then
+exit 1
+fi
+
+echo -n 'please input the board type ione or a5 or a7 ? '
+read boardtype
+
+if [ "${boardtype}" == "a5" ] ;then
+    echo "your boardtype is ${boardtype}"
+    test -e /lib/modules/${linver}/extra/ov14810.ko
+    init.sh --ov14810
+    skiplowpower='if [ "${line}" = "lowpower" ] || [ "${line}" = "lowpower_cortex" ] ; then  echo "skip lowpower preview " && continue ; fi'
+    testpreview='test_encode -i0 -vD480x800 --lcd 1p3828 -V720p --hdmi -K --btype prev -J --btype prev && echo "${line} mode pre test success">>HALprelog.txt || echo "${line} mode pre test field">>HALprelog.txt '
+    testdecode='sleep 30 && test_qtamf_play /mnt/5min.ts && echo "${line} mode decode test success" >>HALprelog.txt || echo "${line} mode decode test field ">>HALprelog.txt '
+elif [ "${boardtype}" == "a7" ] ;then
+    echo "your boardtype is ${boardtype}"
+    a7skitlowpower='if [ "${line}" = "lowpower" ] || [ "${line}" = "lowpower_cortex" ] ; then  echo "skip lowpower mode " && continue ; fi'
+    init.sh --ov14810
+    testpreview='test_encode -i1080p -v480p --lcd digital -V480p --hdmi && echo "${line} mode pre test success">>HALprelog.txt || echo "${line} mode pre test field">>HALprelog.txt '
+    testdecode='sleep 20 && echo "Do not have decode command" && reboot && sleep 30'
+elif [ "${boardtype}" == "ione" ] ;then
+    skiplowpower='if [ "${line}" = "lowpower" ] || [ "${line}" = "lowpower_cortex" ] ; then  echo "skip lowpower preview " && continue ; fi'
+    echo "your boardtype is ${boardtype}"
+    mount /dev/mmcblk1 /mnt
+    init.sh --ov14810
+    testpreview='test2 -i1080p -vD480x800 --lcd 1p3831 --disable-csc --rotate -V480p --hdmi --disable-csc --idle  && enc_test -k  && echo "${line} mode pre test success">>HALprelog.txt || echo "${line} mode pre test field">>HALprelog.txt '
+    testdecode='sleep 20 && test2 --idle && pbtest /mnt/X264_576P.avi  &&  echo "${line} mode decode test success">>HALprelog.txt || echo "${line} mode decode test field">>HALprelog.txt && reboot && sleep 40'
+fi
+
+sleep 2
+if ls HALtestmodelog.txt ;then
+  step=2
+  while IFS=: read a b c
+  do
+    lastmode=$c
+  done < HALtestmodelog.txt
+else
+  step=1
+  echo "creat HALtestmodelog.txt"
+fi
+if ls HALtestperformancelog.txt ;then
+  pstep=2
+  while IFS=: read a b c
+  do
+    lastperfor=$c
+  done < HALtestperformancelog.txt
+else
+  pstep=1
+  echo "creat HALtestperformancelog.txt"
+fi
+
+grep Mode: /proc/ambarella/mode | grep -v Possible > tmp
+while IFS=: read a b
+do
+   defaultmode=$b
+done<tmp
+rm tmp
+echo "the defaultmode=${defaultmode}"
+
+#list all of the modes
+readmode=0
+readperform=0
+go=0
+pgo=0
+cat /proc/ambarella/mode | while read line
+do
+    echo "debug line is ${line}"
+    if [ "${line}" = "" ]; then
+        continue
+    fi
+    if [ ${readperform} -eq 1 ]; then
+      if [ "${line}" != "PLL Information:" ]; then
+         if [ ${pstep} -eq 2 ]; then
+            if [ ${pgo} -eq 1 ]; then
+               echo "set ${line}"
+               echo ${line}>/proc/ambarella/performance
+               echo "succeed:performance:${line}"
+               echo "succeed:performance:${line}">>HALtestperformancelog.txt
+            elif [ ${pgo} -eq 2 ]; then
+               echo "field:performance:${line}">>HALtestperformancelog.txt
+               let pgo-=1
+            fi
+            if [ "${lastperfor}" = "${line}" ]; then
+               pgo=2
+            fi
+         else
+            echo "set ${line}"
+            echo ${line}>/proc/ambarella/performance
+            echo "succeed:performance:${line}"
+            echo "succeed:performance:${line}">>HALtestperformancelog.txt
+         fi
+      else
+          readperform=0
+      fi
+    fi
+    if [ ${readmode} -eq 1 ]; then
+       if [ "${line}" !=  "Possible Performance:" ]; then
+          eval $a7skitlowpower
+          if [ "${line}" != "preview" ] && [ "${line}" != "capture" ] && [ "${line}" != "playback" ] && [ "${line}" != "lowpower" ] && [ "${line}" != "lowpower_cortex" ]; then
+                 continue
+          fi
+          if [ ${step} -eq 2 ]; then
+             if [ ${go} -eq 1 ]; then
+                echo "set ${line}"
+                echo ${line}>/proc/ambarella/mode
+                echo "succeed:set mode:${line}"
+                echo "succeed:set mode:${line}">>HALtestmodelog.txt
+                eval $skiplowpower
+                echo "test pre"
+                eval $testpreview
+                echo "after 30s test decode"
+                eval $testdecode
+             elif [ ${go} -eq 2 ]; then
+                echo "field:mode:${line}">>HALtestmodelog.txt
+                let go-=1
+             fi
+             if [ "${lastmode}" = "${line}" ]; then
+                go=2
+                if [ "${boardtype}" == "ione" ] || [ "${boardtype}" == "a7" ]; then
+                    echo "lastmode is ${lastmode}"
+                    go=1
+                fi
+             fi
+          else
+              echo "set ${line}"
+              echo ${line}>/proc/ambarella/mode
+              echo "succeed:set mode:${line}"
+              echo "succeed:set mode:${line}">> HALtestmodelog.txt
+              eval $skiplowpower
+              echo "test pre"
+              eval $testpreview
+              echo "after 30s test decode"
+              eval $testdecode
+          fi
+       else
+          readperform=1
+          readmode=0
+          echo ${defaultmode} > /proc/ambarella/mode
+          echo "set the default mode ${defaultmode}"
+          echo "set the default mode ${defaultmode}" >> HALtestperformancelog.txt
+       fi
+    fi
+    if [ "$line" = "Possible Mode:" ]; then
+       readmode=1
+       echo "readmode start "
+       echo "step ${step} go ${go} pgo ${pgo}"
+    fi
+done
+
+
+if [ "${boardtype}" != "ione" ] && [ "${boardtype}" != "a7"  ] ; then
+merr=$(grep -o "field" HALtestmodelog.txt|wc -l)
+perr=$(grep -o "field" HALtestperformancelog.txt|wc -l)
+
+echo "mode test finished ,${merr} errors,see HALtestmodelog.txt"
+echo "mode test finished ,${merr} errors" >> HALtestmodelog.txt
+
+echo "performance test finished ,${perr} errors,see HALtestperformancelog.txt"
+echo "performance test finished ,${perr} errors" >> HALtestperformancelog.txt
+fi
+
+

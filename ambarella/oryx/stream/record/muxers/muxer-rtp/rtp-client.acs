@@ -1,0 +1,31 @@
+--[[
+/S2l/oryx/stream/record/muxers/muxer-rtp/rtp-client.acs
+
+History:
+  2015-1-6 - [ypchang] created file
+
+Copyright (C) 2008-2015, Ambarella Co, Ltd.
+
+All rights reserved. No Part of this file may be reproduced, stored
+in a retrieval system, or transmitted, in any form, or by any means,
+electronic, mechanical, photocopying, recording, or otherwise,
+without the prior consent of Ambarella.
+--]]
+
+_rtp_client_ = {
+  client_timeout       = 60,    -- Seconds [10, 100]
+  client_timeout_count = 10,    -- Timeout count (0, 20]
+  wait_interval        = 100,   -- Milliseconds
+  rtcp_sr_interval     = 5,     -- Seconds
+  resend_count         = 30,    -- Re-send count
+  resend_interval      = 5,     -- Milliseconds
+  statistics_count     = 20000, -- Send count
+  send_buffer_size     = 8,     -- MB
+  blocked              = false, -- true/false
+  block_timeout        = 10,    -- Seconds
+  report_block_cnt     = 4,     -- Report block count in SR/RR packet, Max is 31
+  print_rtcp_stat      = true,  -- true/false
+  rtcp_incremental_ts  = true,  -- Calculate RTCP time stamp incrementally
+}
+
+return _rtp_client_

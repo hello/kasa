@@ -1,0 +1,9 @@
+
+
+ Web CGI calls 
+   |
+API_PROXY            -------- part of apps_launcher process
+   |
+SERVICE_MANAGER      -------- part of apps_launcher process
+   |
+all other services

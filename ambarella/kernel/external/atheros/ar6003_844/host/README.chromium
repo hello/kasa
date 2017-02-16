@@ -1,0 +1,30 @@
+Installing and Building the ATH6KL driver, tools and firmware for Chromium
+==========================================================================
+1) Sync to the latest in the Chromium repository.
+
+2) Unpack the host SDK (AR6K_GPL_SDK.build_sw.xxx.tgz) and the target firmware package (AR6K_FW.build_sw.xxx.tgz).
+
+3) Replace the ath6kl host driver in the directory src/third_party/kernel/files/chromeos/drivers/ath6kl with the one in release package under AR6kSDK.build_sw.xxxx/kernel/files/chromeos/drivers/ath6kl
+
+4) Copy the contents of AR6K_FW.build_sw.xxxx/ to the directory AR6kSDK.build_sw.xxxx/atheros-ath6k/files/firmware/ and then replace the directory src/third_party/atheros-ath6k/files with AR6kSDK.build_sw.xxxx/atheros-ath6k/files
+
+5) Modify the kernel configuration file 'config.common.chromeos'' under the directory src/third_party/kernel/files/chromeos/config/ to reflect the desired behavior. Some sample configurations are given below. Refer to the Kconfig file in the ath6kl driver to explore further options.
+i)  Standalone WiFi using SD31
+CONFIG_ATH6K_LEGACY=m
+CONFIG_AR600x_SD31_XXX=y
+CONFIG_ATH6KL_CFG80211=y
+CONFIG_ATH6KL_DEBUG=y
+CONFIG_ATH6KL_ENABLE_TARGET_DEBUG_PRINTS=y
+
+ii) Collocated WiFi and BT using WB31
+CONFIG_ATH6K_LEGACY=m
+CONFIG_AR600x_WB31_XXX=y
+CONFIG_ATH6KL_ENABLE_COEXISTENCE=y
+CONFIG_AR600x_DUAL_ANTENNA=y
+CONFIG_AR600x_BT_AR3001=y
+CONFIG_ATH6KL_HCI_BRIDGE=y
+CONFIG_ATH6KL_CFG80211=y
+CONFIG_ATH6KL_DEBUG=y
+CONFIG_ATH6KL_ENABLE_TARGET_DEBUG_PRINTS=y
+
+6) Build the Chromium packages and generate the image.

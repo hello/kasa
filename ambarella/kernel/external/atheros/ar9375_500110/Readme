@@ -1,0 +1,33 @@
+ATH6KL-LSDK-WLAN-AIO-OSR-5.0.0.x Release
+
+[Build Procedure]
+
+Step 1:
+Extract ATH6KL-LSDK-WLAN-AIO-OSR-5.0.0.xx.tgz.
+Go to WLAN-AIO-OSR/ as working folder
+> cd WLAN-AIO-OSR/
+
+Step 2:
+Build patch codes. Please add kernel option to indicate Linux kernel version.
+> cd WLAN-AIO-OSR/build/
+> make drivers_patch BOARD_TYPE=x86-osr
+
+Step 3:
+Build codes. Please add kernel option to indicate Linux kernel version.
+> cd WLAN-AIO-OSR/build/
+> make BOARD_TYPE=x86-osr
+
+Step 4:
+Linux environment setup.
+
+(1) Disable network manager.
+> sudo service network-manager stop
+
+(2) If ath6kl_usb module is occupied by Linux system, add following text in /etc/modprobe.d/blacklist.conf
+
+blacklist ath6kl_usb
+
+Step 5:
+Run start scripts to start system.
+> cd cd WLAN-AIO-OSR/rootfs-x86.build/
+> ./WFA-start.sh

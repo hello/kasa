@@ -1,0 +1,32 @@
+From 19597fd95e0c8bcb54e4f87a43e20d36016c48cd Mon Sep 17 00:00:00 2001
+From: Jim Warner <james.warner@comcast.net>
+Date: Tue, 17 Sep 2013 00:00:00 -0500
+Subject: [PATCH 2/2] top: restore the lost final newline when in Batch mode
+
+This patch adds the final newline when exiting 'Batch'
+mode. Interestingly, it has been missing since release
+3.3.5 but undetected until the Redhat bugzilla report.
+
+Reference(s):
+https://bugzilla.redhat.com/show_bug.cgi?id=1008674
+
+Signed-off-by: Jim Warner <james.warner@comcast.net>
+---
+ top/top.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/top/top.c b/top/top.c
+index 6f4f728..44bc380 100644
+--- a/top/top.c
++++ b/top/top.c
+@@ -527,6 +527,7 @@ static void bye_bye (const char *str) {
+       fputs(str, stderr);
+       exit(EXIT_FAILURE);
+    }
++   if (Batch) putp("\n");
+    exit(EXIT_SUCCESS);
+ } // end: bye_bye
+ 
+-- 
+1.8.1.2
+

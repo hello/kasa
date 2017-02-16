@@ -1,0 +1,110 @@
+--- cs/Makefile.orig	2013-09-03 16:54:33.630912224 +0800
++++ cs/Makefile	2013-09-03 16:57:45.932252790 +0800
+@@ -6,7 +6,7 @@ endif
+ 
+ include $(NEOTONIC_ROOT)/rules.mk
+ 
+-CS_LIB = $(LIB_DIR)libneo_cs.a
++CS_LIB = $(LIB_DIR)libneo_cs.so
+ CS_SRC = csparse.c
+ CS_OBJ = $(CS_SRC:%.c=%.o)
+ 
+@@ -24,7 +24,7 @@ CSDUMP_OBJ = $(CSDUMP_SRC:%.c=%.o)
+ 
+ LIBS += -lneo_cs -lneo_utl #  -lefence
+ 
+-TARGETS = $(CS_LIB) $(CSTEST_EXE) $(CSR_EXE) test
++TARGETS = $(CS_LIB)
+ 
+ CS_TESTS = test.cs test2.cs test3.cs test4.cs test5.cs test6.cs test7.cs \
+            test8.cs test9.cs test10.cs test11.cs test12.cs test13.cs \
+@@ -39,8 +39,7 @@ CS_TESTS = test.cs test2.cs test3.cs tes
+ all: $(TARGETS)
+ 
+ $(CS_LIB): $(CS_OBJ)
+-	$(AR) $@ $(CS_OBJ)
+-	$(RANLIB) $@
++	$(CC) -shared -o $@ $(CS_OBJ) $(CFLAGS)
+ 
+ $(CSTEST_EXE): $(CSTEST_OBJ) $(CS_LIB)
+ 	$(LD) $@ $(CSTEST_OBJ) $(LDFLAGS) $(LIBS) # -lefence
+@@ -60,7 +59,7 @@ gold: $(CSTEST_EXE)
+ 	./cstest test_tag.hdf test_tag.cs > test_tag.cs.gold
+ 	@echo "Generated Gold Files"
+ 
+-test: $(CSTEST_EXE) $(CS_TESTS) 
++test: $(CSTEST_EXE) $(CS_TESTS)
+ 	@echo "Running cs regression tests"
+ 	@failed=0; \
+ 	for test in $(CS_TESTS); do \
+@@ -88,13 +87,11 @@ test: $(CSTEST_EXE) $(CS_TESTS)
+ 	fi;
+ 	@touch test
+ 	@echo "Passed"
+-	
++
+ install: all
+ 	$(NEOTONIC_ROOT)/mkinstalldirs $(DESTDIR)$(cs_includedir)/cs
+ 	$(INSTALL) -m 644 cs.h $(DESTDIR)$(cs_includedir)/cs
+ 	$(INSTALL) -m 644 $(CS_LIB) $(DESTDIR)$(libdir)
+-	$(INSTALL) $(CSTEST_EXE) $(DESTDIR)$(bindir)
+-	$(INSTALL) $(CSR_EXE) $(DESTDIR)$(bindir)
+ 
+ clean:
+ 	$(RM) core *.o
+--- cgi/Makefile.orig	2013-09-03 16:58:11.628164304 +0800
++++ cgi/Makefile	2013-09-03 16:59:55.957756303 +0800
+@@ -6,7 +6,7 @@ endif
+ 
+ include $(NEOTONIC_ROOT)/rules.mk
+ 
+-CGI_LIB = $(LIB_DIR)libneo_cgi.a
++CGI_LIB = $(LIB_DIR)libneo_cgi.so
+ CGI_SRC = cgiwrap.c cgi.c html.c date.c rfc2388.c
+ CGI_OBJ = $(CGI_SRC:%.c=%.o)
+ 
+@@ -21,13 +21,12 @@ CGICSTEST_OBJ = $(CGICSTEST_SRC:%.c=%.o)
+ 
+ DLIBS += -lneo_cgi -lneo_cs -lneo_utl # -lefence
+ 
+-TARGETS = $(CGI_LIB) $(STATIC_EXE) $(STATIC_CSO) $(CGICSTEST_EXE)
++TARGETS = $(CGI_LIB)
+ 
+ all: $(TARGETS)
+ 
+ $(CGI_LIB): $(CGI_OBJ)
+-	$(AR) $@ $(CGI_OBJ)
+-	$(RANLIB) $@
++	$(CC) -shared -o $@ $(CGI_OBJ) $(CFLAGS)
+ 
+ $(STATIC_EXE): $(STATIC_OBJ) $(DEP_LIBS)
+ 	$(LD) $@ $(STATIC_OBJ) $(LDFLAGS) $(DLIBS) $(LIBS)
+@@ -45,7 +44,6 @@ install: all
+ 	$(INSTALL) -m 644 date.h $(DESTDIR)$(cs_includedir)/cgi
+ 	$(INSTALL) -m 644 html.h $(DESTDIR)$(cs_includedir)/cgi
+ 	$(INSTALL) -m 644 $(CGI_LIB) $(DESTDIR)$(libdir)
+-	$(INSTALL) $(STATIC_EXE) $(DESTDIR)$(bindir)
+ 
+ clean:
+ 	$(RM) *.o
+--- util/Makefile.orig	2013-09-03 17:00:44.841391630 +0800
++++ util/Makefile	2013-09-03 17:01:15.630409411 +0800
+@@ -6,7 +6,7 @@ endif
+ 
+ include $(NEOTONIC_ROOT)/rules.mk
+ 
+-UTL_LIB = $(LIB_DIR)libneo_utl.a
++UTL_LIB = $(LIB_DIR)libneo_utl.so
+ UTL_SRC = neo_err.c neo_files.c neo_misc.c neo_rand.c ulist.c neo_hdf.c \
+ 	  neo_str.c neo_date.c wildmat.c neo_hash.c $(EXTRA_UTL_SRC)
+ 
+@@ -18,8 +18,7 @@ TARGETS = $(UTL_LIB)
+ all: $(TARGETS)
+ 
+ $(UTL_LIB): $(UTL_OBJ)
+-	$(AR) $@ $(UTL_OBJ)
+-	$(RANLIB) $@
++	$(CC) -shared -o $@ $(UTL_OBJ) $(CFLAGS)
+ 
+ install: all
+ 	$(NEOTONIC_ROOT)/mkinstalldirs $(DESTDIR)$(cs_includedir)/util

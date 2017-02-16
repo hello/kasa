@@ -1,0 +1,51 @@
+--iq_config.acs
+model = {
+  name = "iq_config",
+  log_level = 0,
+  aeb_bin_file_name = "",
+  adj_bin_file_name = "",
+
+  ae = {
+    anti_flicker_mode   = 1,    -- use enum value "EC_ANTI_FLICKER_60HZ"
+    sensor_shutter_min     = 8000, -- 1/8000 seconds
+    sensor_shutter_max     = 15,   -- 1/15 seconds
+    sensor_gain_max        = 36,   -- 36dB
+    slow_shutter_mode    = 1,    -- enable slow shutter
+    ir_led_mode     = 2,    -- 0:off, 1:on, 2:auto
+    ae_metering_mode   = 1, -- 0: spot, 1: center, 2: average, 3: customer, load ae_metering_table
+    ae_metering_table = {             -- it will be loaded when ae_metering_mode = 3 "AM_AE_CUSTOM_METERING"
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 2, 2, 2, 2, 1, 1, 1, 1, 1,
+    1, 2, 2, 2, 3, 3, 3, 3, 2, 2, 2, 1,
+    1, 2, 2, 3, 4, 4, 4, 4, 3, 2, 2, 1,
+    1, 1, 2, 2, 2, 3, 3, 2, 2, 2, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    },
+    day_night_mode         = 0,           -- day night mode enable flag
+    ae_target_ratio = 100,         -- valid range 25 ~ 400, unit is 100, 25 is EV -2, and 400 is EV +2
+    backlight_comp_enable  = 0,           -- disable back light compensation
+    local_exposure              = 0,           -- local exposure enable flag
+    dc_iris_enable            = 0,
+    ae_enable                 = 1,
+  },
+
+  awb = {
+    wb_mode = 0 -- use enum value "WB_AUTOMATIC"
+  },
+
+  nf = {
+    mctf_strength   = 6           -- valid range 0 ~ 11, 0 is disable
+  },
+
+  style = {
+    saturation = 64,  -- valid range 0 ~ 255
+    brightness = 0,   -- valid range -255 ~ 255
+    hue        = 0,   -- valid range -15 ~ 15
+    contrast   = 64,  -- valid range 0 ~ 255
+    sharpness  = 6   -- valid range 0 ~ 11
+  }
+}
+
+return model

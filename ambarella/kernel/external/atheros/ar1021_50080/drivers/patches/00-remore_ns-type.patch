@@ -1,0 +1,29 @@
+diff -Naur cfg80211/sysfs.c cfg80211.patch/sysfs.c
+--- cfg80211/sysfs.c	2011-11-07 13:18:25.665047011 +0800
++++ cfg80211.patch/sysfs.c	2011-11-07 13:12:14.037045143 +0800
+@@ -119,12 +119,14 @@
+ 	return ret;
+ }
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
+ static const void *wiphy_namespace(struct device *d)
+ {
+ 	struct wiphy *wiphy = container_of(d, struct wiphy, dev);
+ 
+ 	return wiphy_net(wiphy);
+ }
++#endif
+ 
+ struct class ieee80211_class = {
+ 	.name = "ieee80211",
+@@ -136,8 +138,10 @@
+ #endif
+ 	.suspend = wiphy_suspend,
+ 	.resume = wiphy_resume,
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
+ 	.ns_type = &net_ns_type_operations,
+ 	.namespace = wiphy_namespace,
++#endif
+ };
+ 
+ int wiphy_sysfs_init(void)

@@ -1,0 +1,380 @@
+
+This patch backports the struct net_device_ops changes added
+on 2.6.29. It also backports the namespace changes added
+through net/wireless/wext.c. Note that there is another
+patch file which also addresses netns changes, we leave
+them separate as there is no easy way to split the stuff
+without creating a headache on maintenance of the pathes.
+
+--- a/drivers/net/usb/rndis_host.c
++++ b/drivers/net/usb/rndis_host.c
+@@ -355,7 +355,11 @@ generic_rndis_bind(struct usbnet *dev, s
+ 	dev->rx_urb_size &= ~(dev->maxpacket - 1);
+ 	u.init->max_transfer_size = cpu_to_le32(dev->rx_urb_size);
+ 
+-	net->netdev_ops = &rndis_netdev_ops;
++	netdev_attach_ops(net, &rndis_netdev_ops);
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,29))
++	/* can't we remove this? */
++	net->change_mtu = NULL;
++#endif
+ 
+ 	retval = rndis_command(dev, u.header, CONTROL_BUFFER_SIZE);
+ 	if (unlikely(retval < 0)) {
+--- a/drivers/net/usb/usbnet.c
++++ b/drivers/net/usb/usbnet.c
+@@ -1377,7 +1377,7 @@ usbnet_probe (struct usb_interface *udev
+ 		net->features |= NETIF_F_HIGHDMA;
+ #endif
+ 
+-	net->netdev_ops = &usbnet_netdev_ops;
++	netdev_attach_ops(net, &usbnet_netdev_ops);
+ 	net->watchdog_timeo = TX_TIMEOUT_JIFFIES;
+ 	net->ethtool_ops = &usbnet_ethtool_ops;
+ 
+--- a/drivers/net/wireless/ath/ath6kl/main.c
++++ b/drivers/net/wireless/ath/ath6kl/main.c
+@@ -1029,7 +1029,7 @@ static struct net_device_ops ath6kl_netd
+ 
+ void init_netdev(struct net_device *dev)
+ {
+-	dev->netdev_ops = &ath6kl_netdev_ops;
++	netdev_attach_ops(dev, &ath6kl_netdev_ops);
+ 	dev->destructor = free_netdev;
+ 	dev->watchdog_timeo = ATH6KL_TX_TIMEOUT;
+ 
+--- a/drivers/net/wireless/rndis_wlan.c
++++ b/drivers/net/wireless/rndis_wlan.c
+@@ -3452,7 +3452,7 @@ static int rndis_wlan_bind(struct usbnet
+ 	 * rndis_host wants to avoid all OID as much as possible
+ 	 * so do promisc/multicast handling in rndis_wlan.
+ 	 */
+-	usbdev->net->netdev_ops = &rndis_wlan_netdev_ops;
++	netdev_attach_ops(usbdev->net, &rndis_wlan_netdev_ops);
+ 
+ 	tmp = RNDIS_PACKET_TYPE_DIRECTED | RNDIS_PACKET_TYPE_BROADCAST;
+ 	retval = rndis_set_oid(usbdev, OID_GEN_CURRENT_PACKET_FILTER, &tmp,
+--- a/net/mac80211/iface.c
++++ b/net/mac80211/iface.c
+@@ -713,7 +713,12 @@ static void ieee80211_if_setup(struct ne
+ {
+ 	ether_setup(dev);
+ 	dev->priv_flags &= ~IFF_TX_SKB_SHARING;
+-	dev->netdev_ops = &ieee80211_dataif_ops;
++	netdev_attach_ops(dev, &ieee80211_dataif_ops);
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,29))
++	/* Do we need this ? */
++	/* we will validate the address ourselves in ->open */
++	dev->validate_addr = NULL;
++#endif
+ 	dev->destructor = free_netdev;
+ }
+ 
+@@ -860,7 +865,7 @@ static void ieee80211_setup_sdata(struct
+ 	/* and set some type-dependent values */
+ 	sdata->vif.type = type;
+ 	sdata->vif.p2p = false;
+-	sdata->dev->netdev_ops = &ieee80211_dataif_ops;
++	netdev_attach_ops(sdata->dev, &ieee80211_dataif_ops);
+ 	sdata->wdev.iftype = type;
+ 
+ 	sdata->control_port_protocol = cpu_to_be16(ETH_P_PAE);
+@@ -899,7 +904,7 @@ static void ieee80211_setup_sdata(struct
+ 		break;
+ 	case NL80211_IFTYPE_MONITOR:
+ 		sdata->dev->type = ARPHRD_IEEE80211_RADIOTAP;
+-		sdata->dev->netdev_ops = &ieee80211_monitorif_ops;
++		netdev_attach_ops(sdata->dev, &ieee80211_monitorif_ops);
+ 		sdata->u.mntr_flags = MONITOR_FLAG_CONTROL |
+ 				      MONITOR_FLAG_OTHER_BSS;
+ 		break;
+@@ -1150,6 +1155,8 @@ int ieee80211_if_add(struct ieee80211_lo
+ 		return -ENOMEM;
+ 	dev_net_set(ndev, wiphy_net(local->hw.wiphy));
+ 
++/* This is an optimization, just ignore for older kernels */
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26))
+ 	ndev->needed_headroom = local->tx_headroom +
+ 				4*6 /* four MAC addresses */
+ 				+ 2 + 2 + 2 + 2 /* ctl, dur, seq, qos */
+@@ -1158,6 +1165,7 @@ int ieee80211_if_add(struct ieee80211_lo
+ 				- ETH_HLEN /* ethernet hard_header_len */
+ 				+ IEEE80211_ENCRYPT_HEADROOM;
+ 	ndev->needed_tailroom = IEEE80211_ENCRYPT_TAILROOM;
++#endif
+ 
+ 	ret = dev_alloc_name(ndev, ndev->name);
+ 	if (ret < 0)
+--- a/drivers/net/ethernet/broadcom/b44.c
++++ b/drivers/net/ethernet/broadcom/b44.c
+@@ -2160,7 +2160,7 @@ static int __devinit b44_init_one(struct
+ 	bp->rx_pending = B44_DEF_RX_RING_PENDING;
+ 	bp->tx_pending = B44_DEF_TX_RING_PENDING;
+ 
+-	dev->netdev_ops = &b44_netdev_ops;
++	netdev_attach_ops(dev, &b44_netdev_ops);
+ 	netif_napi_add(dev, &bp->napi, b44_poll, 64);
+ 	dev->watchdog_timeo = B44_TX_TIMEOUT;
+ 	dev->irq = sdev->irq;
+--- a/net/wireless/wext-core.c
++++ b/net/wireless/wext-core.c
+@@ -342,6 +342,7 @@ static const int compat_event_type_size[
+ 
+ /* IW event code */
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,32))
+ static int __net_init wext_pernet_init(struct net *net)
+ {
+ 	skb_queue_head_init(&net->wext_nlevents);
+@@ -384,6 +385,29 @@ static void wireless_nlevent_process(str
+ 
+ static DECLARE_WORK(wireless_nlevent_work, wireless_nlevent_process);
+ 
++#else
++/* Older kernels get the old way of doing stuff*/
++static struct sk_buff_head wireless_nlevent_queue;
++
++static int __init wireless_nlevent_init(void)
++{
++	skb_queue_head_init(&wireless_nlevent_queue);
++	return 0;
++}
++
++subsys_initcall(wireless_nlevent_init);
++
++static void wireless_nlevent_process(unsigned long data)
++{
++	struct sk_buff *skb;
++	while ((skb = skb_dequeue(&wireless_nlevent_queue)))
++		rtnl_notify(skb, &init_net, 0, RTNLGRP_LINK, NULL, GFP_ATOMIC);
++}
++
++static DECLARE_TASKLET(wireless_nlevent_tasklet, wireless_nlevent_process, 0);
++
++#endif
++
+ static struct nlmsghdr *rtnetlink_ifinfo_prep(struct net_device *dev,
+ 					      struct sk_buff *skb)
+ {
+@@ -596,8 +620,13 @@ void wireless_send_event(struct net_devi
+ 
+ 	skb_shinfo(skb)->frag_list = compskb;
+ #endif
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,32))
+ 	skb_queue_tail(&dev_net(dev)->wext_nlevents, skb);
+ 	schedule_work(&wireless_nlevent_work);
++#else
++	skb_queue_tail(&wireless_nlevent_queue, skb);
++	tasklet_schedule(&wireless_nlevent_tasklet);
++#endif
+ }
+ EXPORT_SYMBOL(wireless_send_event);
+ 
+@@ -922,8 +951,13 @@ static int wireless_process_ioctl(struct
+ 			return private(dev, iwr, cmd, info, handler);
+ 	}
+ 	/* Old driver API : call driver ioctl handler */
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,29))
+ 	if (dev->netdev_ops->ndo_do_ioctl)
+ 		return dev->netdev_ops->ndo_do_ioctl(dev, ifr, cmd);
++#else
++	if (dev->do_ioctl)
++		return dev->do_ioctl(dev, ifr, cmd);
++#endif
+ 	return -EOPNOTSUPP;
+ }
+ 
+--- a/drivers/net/wireless/ipw2x00/ipw2100.c
++++ b/drivers/net/wireless/ipw2x00/ipw2100.c
+@@ -6115,7 +6115,7 @@ static struct net_device *ipw2100_alloc_
+ 	priv->ieee->perfect_rssi = -20;
+ 	priv->ieee->worst_rssi = -85;
+ 
+-	dev->netdev_ops = &ipw2100_netdev_ops;
++	netdev_attach_ops(dev, &ipw2100_netdev_ops);
+ 	dev->ethtool_ops = &ipw2100_ethtool_ops;
+ 	dev->wireless_handlers = &ipw2100_wx_handler_def;
+ 	priv->wireless_data.libipw = priv->ieee;
+--- a/drivers/net/wireless/ipw2x00/ipw2200.c
++++ b/drivers/net/wireless/ipw2x00/ipw2200.c
+@@ -11682,7 +11682,7 @@ static int ipw_prom_alloc(struct ipw_pri
+ 	memcpy(priv->prom_net_dev->dev_addr, priv->mac_addr, ETH_ALEN);
+ 
+ 	priv->prom_net_dev->type = ARPHRD_IEEE80211_RADIOTAP;
+-	priv->prom_net_dev->netdev_ops = &ipw_prom_netdev_ops;
++	netdev_attach_ops(priv->prom_net_dev, &ipw_prom_netdev_ops);
+ 
+ 	priv->prom_priv->ieee->iw_mode = IW_MODE_MONITOR;
+ 	SET_NETDEV_DEV(priv->prom_net_dev, &priv->pci_dev->dev);
+@@ -11821,7 +11821,7 @@ static int __devinit ipw_pci_probe(struc
+ 	priv->ieee->perfect_rssi = -20;
+ 	priv->ieee->worst_rssi = -85;
+ 
+-	net_dev->netdev_ops = &ipw_netdev_ops;
++	netdev_attach_ops(net_dev, &ipw_netdev_ops);
+ 	priv->wireless_data.spy_data = &priv->ieee->spy_data;
+ 	net_dev->wireless_data = &priv->wireless_data;
+ 	net_dev->wireless_handlers = &ipw_wx_handler_def;
+--- a/drivers/net/wireless/iwmc3200wifi/netdev.c
++++ b/drivers/net/wireless/iwmc3200wifi/netdev.c
+@@ -130,7 +130,7 @@ void *iwm_if_alloc(int sizeof_bus, struc
+ 		goto out_priv;
+ 	}
+ 
+-	ndev->netdev_ops = &iwm_netdev_ops;
++	netdev_attach_ops(ndev, &iwm_netdev_ops);
+ 	ndev->ieee80211_ptr = wdev;
+ 	SET_NETDEV_DEV(ndev, wiphy_dev(wdev->wiphy));
+ 	wdev->netdev = ndev;
+--- a/drivers/net/wireless/libertas/main.c
++++ b/drivers/net/wireless/libertas/main.c
+@@ -981,7 +981,7 @@ struct lbs_private *lbs_add_card(void *c
+ 	wdev->netdev = dev;
+ 	priv->dev = dev;
+ 
+- 	dev->netdev_ops = &lbs_netdev_ops;
++	netdev_attach_ops(dev, &lbs_netdev_ops);
+ 	dev->watchdog_timeo = 5 * HZ;
+ 	dev->ethtool_ops = &lbs_ethtool_ops;
+ 	dev->flags |= IFF_BROADCAST | IFF_MULTICAST;
+--- a/drivers/net/wireless/libertas/mesh.c
++++ b/drivers/net/wireless/libertas/mesh.c
+@@ -1018,7 +1018,7 @@ static int lbs_add_mesh(struct lbs_priva
+ 	mesh_dev->ieee80211_ptr = mesh_wdev;
+ 	priv->mesh_dev = mesh_dev;
+ 
+-	mesh_dev->netdev_ops = &mesh_netdev_ops;
++	netdev_attach_ops(mesh_dev, &mesh_netdev_ops);
+ 	mesh_dev->ethtool_ops = &lbs_ethtool_ops;
+ 	memcpy(mesh_dev->dev_addr, priv->dev->dev_addr, ETH_ALEN);
+ 
+--- a/drivers/net/wireless/libertas/defs.h
++++ b/drivers/net/wireless/libertas/defs.h
+@@ -16,6 +16,14 @@
+ #define DRV_NAME "libertas"
+ #endif
+ 
++/*
++ * Really nasty hack to avoid stuffing compat.diff with tons of ifdefs,
++ * we could add this to a compat header file but too lazy to check ml_priv
++ * is not used anywhere else
++ */
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,26))
++#define ml_priv priv
++#endif
+ 
+ #define LBS_DEB_ENTER	0x00000001
+ #define LBS_DEB_LEAVE	0x00000002
+--- a/drivers/net/wireless/mac80211_hwsim.c
++++ b/drivers/net/wireless/mac80211_hwsim.c
+@@ -1238,7 +1238,7 @@ static const struct net_device_ops hwsim
+ 
+ static void hwsim_mon_setup(struct net_device *dev)
+ {
+-	dev->netdev_ops = &hwsim_netdev_ops;
++	netdev_attach_ops(dev, &hwsim_netdev_ops);
+ 	dev->destructor = free_netdev;
+ 	ether_setup(dev);
+ 	dev->tx_queue_len = 0;
+--- a/drivers/net/wireless/mwifiex/main.c
++++ b/drivers/net/wireless/mwifiex/main.c
+@@ -580,7 +580,7 @@ static const struct net_device_ops mwifi
+ void mwifiex_init_priv_params(struct mwifiex_private *priv,
+ 						struct net_device *dev)
+ {
+-	dev->netdev_ops = &mwifiex_netdev_ops;
++	netdev_attach_ops(dev, &mwifiex_netdev_ops);
+ 	/* Initialize private structure */
+ 	priv->current_key_index = 0;
+ 	priv->media_connected = false;
+--- a/drivers/net/wireless/orinoco/main.c
++++ b/drivers/net/wireless/orinoco/main.c
+@@ -2272,14 +2272,18 @@ int orinoco_if_add(struct orinoco_privat
+ #endif
+ 	/* Default to standard ops if not set */
+ 	if (ops)
+-		dev->netdev_ops = ops;
++		netdev_attach_ops(dev, ops);
+ 	else
+-		dev->netdev_ops = &orinoco_netdev_ops;
++		netdev_attach_ops(dev, &orinoco_netdev_ops);
+ 
+ 	/* we use the default eth_mac_addr for setting the MAC addr */
+ 
+ 	/* Reserve space in skb for the SNAP header */
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26))
+ 	dev->needed_headroom = ENCAPS_OVERHEAD;
++#else
++	dev->hard_header_len += ENCAPS_OVERHEAD;
++#endif
+ 
+ 	netif_carrier_off(dev);
+ 
+--- a/net/bluetooth/bnep/netdev.c
++++ b/net/bluetooth/bnep/netdev.c
+@@ -170,8 +170,12 @@ static inline int bnep_net_proto_filter(
+ }
+ #endif
+ 
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,31))
+ static netdev_tx_t bnep_net_xmit(struct sk_buff *skb,
+ 				 struct net_device *dev)
++#else
++static int bnep_net_xmit(struct sk_buff *skb, struct net_device *dev)
++#endif
+ {
+ 	struct bnep_session *s = netdev_priv(dev);
+ 	struct sock *sk = s->sock->sk;
+@@ -232,7 +236,7 @@ void bnep_net_setup(struct net_device *d
+ 
+ 	ether_setup(dev);
+ 	dev->priv_flags &= ~IFF_TX_SKB_SHARING;
+-	dev->netdev_ops = &bnep_netdev_ops;
++	netdev_attach_ops(dev, &bnep_netdev_ops);
+ 
+ 	dev->watchdog_timeo  = HZ * 2;
+ }
+--- a/drivers/net/ethernet/atheros/atl1e/atl1e_main.c
++++ b/drivers/net/ethernet/atheros/atl1e/atl1e_main.c
+@@ -2231,7 +2231,7 @@ static int atl1e_init_netdev(struct net_
+ 	pci_set_drvdata(pdev, netdev);
+ 
+ 	netdev->irq  = pdev->irq;
+-	netdev->netdev_ops = &atl1e_netdev_ops;
++	netdev_attach_ops(netdev, &atl1e_netdev_ops);
+ 
+ 	netdev->watchdog_timeo = AT_TX_WATCHDOG;
+ 	atl1e_set_ethtool_ops(netdev);
+--- a/drivers/net/ethernet/atheros/atl1c/atl1c_main.c
++++ b/drivers/net/ethernet/atheros/atl1c/atl1c_main.c
+@@ -2617,7 +2617,7 @@ static int atl1c_init_netdev(struct net_
+ 	pci_set_drvdata(pdev, netdev);
+ 
+ 	netdev->irq  = pdev->irq;
+-	netdev->netdev_ops = &atl1c_netdev_ops;
++	netdev_attach_ops(netdev, &atl1c_netdev_ops);
+ 	netdev->watchdog_timeo = AT_TX_WATCHDOG;
+ 	atl1c_set_ethtool_ops(netdev);
+ 
+--- a/drivers/net/ethernet/atheros/atlx/atl1.c
++++ b/drivers/net/ethernet/atheros/atlx/atl1.c
+@@ -2966,7 +2966,7 @@ static int __devinit atl1_probe(struct p
+ 	adapter->mii.phy_id_mask = 0x1f;
+ 	adapter->mii.reg_num_mask = 0x1f;
+ 
+-	netdev->netdev_ops = &atl1_netdev_ops;
++	netdev_attach_ops(netdev, &atl1_netdev_ops);
+ 	netdev->watchdog_timeo = 5 * HZ;
+ 
+ 	netdev->ethtool_ops = &atl1_ethtool_ops;
+--- a/drivers/net/ethernet/atheros/atlx/atl2.c
++++ b/drivers/net/ethernet/atheros/atlx/atl2.c
+@@ -1411,7 +1411,7 @@ static int __devinit atl2_probe(struct p
+ 
+ 	atl2_setup_pcicmd(pdev);
+ 
+-	netdev->netdev_ops = &atl2_netdev_ops;
++	netdev_attach_ops(netdev, &atl2_netdev_ops);
+ 	atl2_set_ethtool_ops(netdev);
+ 	netdev->watchdog_timeo = 5 * HZ;
+ 	strncpy(netdev->name, pci_name(pdev), sizeof(netdev->name) - 1);

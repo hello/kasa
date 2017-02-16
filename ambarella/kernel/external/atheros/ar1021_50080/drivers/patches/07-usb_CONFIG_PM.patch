@@ -1,0 +1,43 @@
+diff -Naur ath6kl.orig/usb.c ath6kl/usb.c
+--- ath6kl.orig/usb.c	2013-06-20 10:08:35.730227047 +0800
++++ ath6kl/usb.c	2013-06-20 10:09:57.610230976 +0800
+@@ -2163,8 +2163,10 @@
+ 
+ int ath6kl_usb_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
+ {
++#ifdef CONFIG_PM
+ 	struct ath6kl_usb *device = ath6kl_usb_priv(ar);
+ 	struct usb_interface *interface = device->interface;
++#endif
+ 	pm_message_t message;
+ 	int ret;
+ 
+@@ -2180,7 +2182,11 @@
+ 			return ret;
+ 	} else {
+ 		memset(&message, 0, sizeof(message));
++#ifdef CONFIG_PM
+ 		ret = ath6kl_usb_pm_suspend(interface, message);
++#else
++		ret = 0;
++#endif
+ 	}
+ 
+ 	return ret;
+@@ -2188,12 +2194,16 @@
+ 
+ int ath6kl_usb_resume(struct ath6kl *ar)
+ {
++#ifdef CONFIG_PM
+ 	struct ath6kl_usb *device = ath6kl_usb_priv(ar);
+ 	struct usb_interface *interface = device->interface;
+ 
+ 	ath6kl_dbg(ATH6KL_DBG_EXT_INFO1, "usb resume: state %d\n", ar->state);
+ 
+ 	return ath6kl_usb_pm_resume(interface);
++#else
++	return 0;
++#endif
+ }
+ 
+ static void ath6kl_usb_cleanup_scatter(struct ath6kl *ar)

@@ -1,0 +1,59 @@
+*** mx_sdhci.c	2009-02-12 04:33:50.000000000 -0500
+--- /home/user/logitech/linux-2.6.24/drivers/mmc/host/mx_sdhci.c	2009-02-18 13:32:40.000000000 -0500
+***************
+*** 95,100 ****
+--- 95,102 ----
+  /*
+   * defines the mxc flags refer to the special hw pre-conditons and behavior
+   */
++ //???????????????????????
++ #define CONFIG_MMC_IMX_ESDHCI_PIO_MODE 1
+  static unsigned int mxc_quirks;
+  #ifdef CONFIG_MMC_IMX_ESDHCI_PIO_MODE
+  static unsigned int debug_quirks = SDHCI_QUIRK_ONLY_PIO;
+***************
+*** 912,918 ****
+  		}
+  	}
+  
+! 	spin_unlock_irqrestore(&host->lock, flags);
+  	host->mrq = mrq;
+  	if (!(host->flags & SDHCI_CD_PRESENT)) {
+  		host->mrq->cmd->error = -ENOMEDIUM;
+--- 915,921 ----
+  		}
+  	}
+  
+! //??	spin_unlock_irqrestore(&host->lock, flags);
+  	host->mrq = mrq;
+  	if (!(host->flags & SDHCI_CD_PRESENT)) {
+  		host->mrq->cmd->error = -ENOMEDIUM;
+***************
+*** 921,926 ****
+--- 924,930 ----
+  		sdhci_send_command(host, mrq->cmd);
+  
+  	mmiowb();
++ 	spin_unlock_irqrestore(&host->lock, flags);//???
+  }
+  
+  static void sdhci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
+***************
+*** 1474,1480 ****
+  			     SDHCI_TRNS_READ))
+  				intmask &= ~SDHCI_INT_DATA_END_BIT;
+  		}
+! 		sdhci_data_irq(host, intmask & SDHCI_INT_DATA_MASK);
+  	}
+  
+  	intmask &= ~(SDHCI_INT_CMD_MASK | SDHCI_INT_DATA_MASK);
+--- 1479,1487 ----
+  			     SDHCI_TRNS_READ))
+  				intmask &= ~SDHCI_INT_DATA_END_BIT;
+  		}
+! 		if (intmask & SDHCI_INT_DATA_MASK) { //??????
+! 			sdhci_data_irq(host, intmask & SDHCI_INT_DATA_MASK);
+! 		}
+  	}
+  
+  	intmask &= ~(SDHCI_INT_CMD_MASK | SDHCI_INT_DATA_MASK);

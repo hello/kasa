@@ -1,0 +1,29 @@
+--[[
+/S2l/oryx/stream/record/muxers/muxer-ts/muxer_ts.acs
+
+History:
+  2014-12-23 - [ccJing] created file
+
+Copyright (C) 2008-2014, Ambarella Co, Ltd.
+
+All rights reserved. No Part of this file may be reproduced, stored
+in a retrieval system, or transmitted, in any form, or by any means,
+electronic, mechanical, photocopying, recording, or otherwise,
+without the prior consent of Ambarella.
+--]]
+
+_muxer_ts_ = {
+  file_duration             = 300,    --0 means do not split file
+  file_name_prefix          = "S2L",
+  max_file_number           = 512,   --This is the max file number in a directory
+  file_location             = "/storage/sda1/video",
+  file_location_auto_parse  = true, --if true,  will parse the proper sdax directory. if false,  will use the directory specified by file_location.
+  video_id                  = 0,
+  audio_type                = "aac",
+  muxer_attr                = "normal",
+  smallest_free_space       = 20,  --Unit:MB. when free space smaller than this value, the file muxer will stop work.
+  hls_enable                = false,  -- true means enable http live streaming, false means disable.
+  auto_file_writing         = ture, --ture means auto file writing when media service starts to run.if false, do not file writing when media service begins to run
+}
+
+return _muxer_ts_

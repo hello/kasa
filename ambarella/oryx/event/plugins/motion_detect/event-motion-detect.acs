@@ -1,0 +1,115 @@
+--event-motion-detect.acs
+
+--md_enable (bool): true|false, false means disable motion detect
+
+--md_source_buffer: 0|1|2|3, 0:main source buffer,  1:second source buffer
+--                           2:third source buffer, 3:fourth source buffer
+--                  We use ME1 buffer's data to do motion detection.
+--                  ME1 buffer size is 1/4 of the corresponding source buffer, 
+--                  and ME1 buffer only has Y component.
+
+--md_roi    valid(bool): true|false. false valid means this ROI will be ignored.
+--          Make sure all of left, right, top and bottom to 0 if valid is false.
+--          left, right, top, bottom use offset to specify the location of the ROI.
+--          If default main source buffer(0) size is 1920x1080, then
+--          ME1 buffer of main source buffer(0) size is 480x270. 
+--          {left=0, right=479, top=0, bottom=269} means this ROI includes the whole
+--          region of the buffer.
+
+--md_th    motion value < th1, output motion level is level0(no motion, static)
+--         th1 =< motion value < th2, output motion level is level1(small motion)
+--         th2 =< motion value, output motion level is level2(big motion)
+
+--md_lc_delay  motion level changed delay of ROI.
+--             Current motion level is L1(small motion). If motion value is consecutive 'ml0_delay' times less than th1,
+--             motion level will be set to level0(no motion)
+--             Current motion level is L2(big motion). If motion value is consecutive 'ml1_delay' times less than th2,
+--             motion level will be set to level1(small motion)
+
+model = {
+  name = "motion_detect",
+  md_enable = true,
+  md_source_buffer = 1,
+  md_roi = {
+    {
+      --ROI#0
+      valid = true,
+      left = 0,
+      right = 179,
+      top = 0,
+      bottom = 119,
+    },
+    {
+      --ROI#1
+      valid = false,
+      left = 0,
+      right = 0,
+      top = 0,
+      bottom = 0,
+    },
+    {
+      --ROI#2
+      valid = false,
+      left = 0,
+      right = 0,
+      top = 0,
+      bottom = 0,
+    },
+    {
+      --ROI#3
+      valid = false,
+      left = 0,
+      right = 0,
+      top = 0,
+      bottom = 0,
+    },
+  },
+
+  md_th = {
+    {
+      --ROI#0
+      th1 = 1000,
+      th2 = 10000,
+    },
+    {
+      --ROI#1
+      th1 = 1000,
+      th2 = 10000,
+    },
+    {
+      --ROI#2
+      th1 = 1000,
+      th2 = 10000,
+    },
+    {
+      --ROI#3
+      th1 = 1000,
+      th2 = 10000,
+    },
+  },
+
+  md_lc_delay = {
+    --ROI#0
+    {
+      ml0_delay = 30,
+      ml1_delay = 10,
+    },
+    --ROI#1
+    {
+      ml0_delay = 30,
+      ml1_delay = 10,
+    },
+    --ROI#2
+    {
+      ml0_delay = 30,
+      ml1_delay = 10,
+    },
+    --ROI#3
+    {
+      ml0_delay = 30,
+      ml1_delay = 10,
+    },
+  },
+}
+
+return model

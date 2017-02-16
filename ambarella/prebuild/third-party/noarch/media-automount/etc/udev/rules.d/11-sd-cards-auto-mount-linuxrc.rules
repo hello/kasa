@@ -1,0 +1,10 @@
+KERNEL=="mmcblk[0-9]p[0-9]", GOTO="sd_cards_start_mount"
+KERNEL!="mmcblk[0-9]", GOTO="sd_cards_auto_mount_end"
+
+LABEL="sd_cards_start_mount"
+ACTION=="add", IMPORT{program}="/sbin/blkid -o udev -p %N"
+ACTION=="add", ENV{ID_FS_TYPE}=="", GOTO="sd_cards_auto_mount_end"
+ACTION=="add", RUN+="/usr/sbin/media-automount %k"
+ACTION=="remove", RUN+="/usr/sbin/media-automount %k"
+KERNEL=="mmcblk[0-9]", ACTION=="change", RUN+="/usr/sbin/media-automount %k"
+LABEL="sd_cards_auto_mount_end"

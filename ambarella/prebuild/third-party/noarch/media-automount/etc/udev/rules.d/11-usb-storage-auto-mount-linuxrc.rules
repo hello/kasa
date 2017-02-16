@@ -1,0 +1,10 @@
+KERNEL=="sd[a-z][0-9]", GOTO="usb_start_mount"
+KERNEL!="sd[a-z]", GOTO="usb_auto_mount_end"
+
+LABEL="usb_start_mount"
+ACTION=="add", IMPORT{program}="/sbin/blkid -o udev -p %N"
+ACTION=="add", ENV{ID_FS_TYPE}=="", GOTO="usb_auto_mount_end"
+ACTION=="add", RUN+="/usr/sbin/media-automount %k"
+ACTION=="remove", RUN+="/usr/sbin/media-automount %k"
+KERNEL=="sd[a-z]", ACTION=="change", RUN+="/usr/sbin/media-automount %k"
+LABEL="usb_auto_mount_end"
