@@ -1,0 +1,39 @@
+#!/bin/sh
+
+
+### $1: the root directory path
+
+if [ -d $1 ]
+then
+	DIRS=`find $1 -maxdepth 1 -mindepth 1 -type d | sort`
+	file=$1/AmbaConfig
+	rm -rf $file
+	touch $file
+
+### Create rootfs AmbaConfig
+	echo "##" >> $file
+	echo "## ambarella/AmbaConfig" >> $file
+	echo "##" >> $file
+	echo "## Following content is generated automatically by" >> $file
+	echo "##  create_root_mkcfg: DO NOT EDIT!!" >> $file
+	echo "##" >> $file
+	echo "" >> $file
+	echo "mainmenu \"Ambarella Build Configuration\"" >> $file
+
+	for dir in $DIRS; do
+		if [ `basename $dir` != "boards" ]; then
+			if [ -f $dir/AmbaConfig ]; then
+				echo "" >> $file
+				echo "##### `basename $dir`" >> $file
+				echo "source `basename $dir`/AmbaConfig" >> $file
+				echo ""  >> $file
+			fi
+		fi
+	done
+
+	echo "" >> $file
+
+else
+	echo "The board directory ($1) isn't exist!"
+fi
+
