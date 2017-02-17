@@ -34,3 +34,7 @@
 
 # Mac files
 .DS_Store
+
+#patch artifacts
+*.rej
+*.orig
