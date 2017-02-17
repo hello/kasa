@@ -4,13 +4,33 @@
  * History:
  *    2005/03/08 - [Charles Chiou] created file
  *
- * Copyright (C) 2004-2014, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 
 #include <bldfunc.h>
 #include <ambhw/nand.h>
@@ -102,7 +122,7 @@ static int bld_loader_load_partition_sm(int part_id,
 
 #if defined(CONFIG_AMBOOT_ENABLE_SPINOR)
 static int bld_loader_load_partition_spinor(int part_id,
-	u32 mem_addr, u32 img_len, u32 flag)
+	uintptr_t mem_addr, u32 img_len, u32 flag)
 {
 	u32 address;
 	int ret_val;
@@ -110,6 +130,23 @@ static int bld_loader_load_partition_spinor(int part_id,
 	address = flspinor.ssec[part_id] * flspinor.sector_size;
 
 	ret_val = spinor_read_data(address, (void *)mem_addr, img_len);
+	if (ret_val < 0)
+		return ret_val;
+
+	return 0;
+}
+
+#endif
+
+#if defined(CONFIG_AMBOOT_ENABLE_SPINAND)
+static int bld_loader_load_partition_spinand(int part_id,
+	uintptr_t mem_addr, u32 img_len, u32 flag)
+{
+	int ret_val;
+
+	ret_val = spinand_read_data((u8 *)mem_addr,
+		(u8 *)(flspinand.sblk[part_id] * flspinand.block_size), img_len);
+
 	if (ret_val < 0)
 		return ret_val;
 
@@ -193,6 +230,13 @@ int bld_loader_load_partition(int part_id,
 #if defined(CONFIG_AMBOOT_ENABLE_SPINOR)
 	if ((ret_val < 0) && (boot_from & PART_DEV_SPINOR)) {
 		ret_val = bld_loader_load_partition_spinor(part_id,
+			mem_addr, img_len, pptb_part->flag);
+	}
+#endif
+
+#if defined(CONFIG_AMBOOT_ENABLE_SPINAND)
+	if ((ret_val < 0) && (boot_from & PART_DEV_SPINAND)) {
+		ret_val = bld_loader_load_partition_spinand(part_id,
 			mem_addr, img_len, pptb_part->flag);
 	}
 #endif

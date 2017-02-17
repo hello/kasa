@@ -7,13 +7,33 @@
  *    2005/02/15 - [Charles Chiou] created file
  *    2006/07/26 - [Charles Chiou] converted to DMA descriptor-mode
  *
- * Copyright (C) 2004-2014, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 
 #include <bldfunc.h>
 
@@ -88,6 +108,7 @@ static struct fio_dmadesc_s G_fio_dma_spr_desc __attribute__((aligned(32)));
 	return (status & 0x1) ? -1 : 0;				\
 }
 
+#define ECC_STEPS			4
 static u8 buffer[PAGE_SIZE_2K] __attribute__ ((aligned(32)));
 static u8 dummy_buffer_bch[MAX_SPARE_SIZE_BLK] __attribute__ ((aligned(32)));
 
@@ -173,31 +194,71 @@ done:
 	return banks;
 }
 
-/* This func maybe not have effect when read (>1)pages data */
-static int nand_bch_spare_cmp(u32 pages, u8 *spare)
-{
-	u32 i, j, k;
-	u8 *bsp;
-	int ret = 0;
+#define hweight8(w)		\
+      (	(!!((w) & (0x01 << 0))) +	\
+	(!!((w) & (0x01 << 1))) +	\
+	(!!((w) & (0x01 << 2))) +	\
+	(!!((w) & (0x01 << 3))) +	\
+	(!!((w) & (0x01 << 4))) +	\
+	(!!((w) & (0x01 << 5))) +	\
+	(!!((w) & (0x01 << 6))) +	\
+	(!!((w) & (0x01 << 7)))	)
 
-	k = 0;
+static int count_zero_bits(u8 *buf, int size, int max_bits)
+{
+	int i, zero_bits = 0;
+
+	for (i = 0; i < size; i++) {
+		zero_bits += hweight8(~buf[i]);
+		if (zero_bits > max_bits)
+			break;
+	}
+	return zero_bits;
+}
+
+/*
+	This func maybe not have effect when read (>1)pages data
+	and we do not memset the erased page to 0xFF, if error bit < ecc_bits
+*/
+static int nand_bch_check_blank_pages(u32 pages, u8 *main, u8 *spare)
+{
+	u32 i, j;
+	int zeroflip = 0;
+	int oob_subset, main_subset;
+	int zero_bits = 0;
+	u8 *bsp;
+	u8 *bufpos;
+
+	bsp = spare;
+	bufpos = main;
+	main_subset = flnand.main_size / ECC_STEPS;
+	oob_subset  = flnand.spare_size / ECC_STEPS;
 	if (flnand.ecc_bits > 0x1) {
 		for (i = 0; i < pages; i++) {
-			bsp = spare;
-			for (j = 0; j < flnand.spare_size; j++) {
-				if (bsp[j] != 0xff) {
-					k++;
-					break;
-				}
+			zeroflip = 0;
+			for (j = 0; j < ECC_STEPS; j++) {
+				zero_bits = count_zero_bits(bufpos, main_subset,
+								flnand.ecc_bits);
+				if (zero_bits > flnand.ecc_bits)
+					return -1;
+
+				if (zero_bits)
+					zeroflip = 1;
+
+				zero_bits += count_zero_bits(bsp, oob_subset,
+								flnand.ecc_bits);
+				if (zero_bits > flnand.ecc_bits)
+					return -1;
+
+				bufpos += main_subset;
+				bsp += oob_subset;
 			}
-			spare += flnand.spare_size;
+			/* use zeroflip for declaring blank page status */
+			if (zeroflip)
+				putstr("Erased blank page has bitflip!\n");
 		}
-		if (k == 0)
-			ret = 0;
-		else
-			ret = -1;
 	}
-	return ret;
+	return 0;
 }
 
 static void nand_corrected_recovery(void)
@@ -669,7 +730,7 @@ matched:
 	treh	= FLASH_TIMING_MIN(db.timing.treh);
 	trb	= FLASH_TIMING_MAX(db.timing.trb);
 	tceh	= FLASH_TIMING_MAX(db.timing.tceh);
-	trdelay = FLASH_TIMING_MAX(db.timing.trdelay);
+	trdelay = trp + treh;
 	tclr	= FLASH_TIMING_MIN(db.timing.tclr);
 	twhr	= FLASH_TIMING_MIN(db.timing.twhr);
 	tir	= FLASH_TIMING_MIN(db.timing.tir);
@@ -1009,7 +1070,8 @@ int nand_read_pages(u32 block, u32 page, u32 pages,
 		status = readl(FIO_ECC_RPT_STA_REG);
 		if (status & FIO_ECC_RPT_FAIL) {
 			/* Workaround for page never used, BCH will failed */
-			i = nand_bch_spare_cmp(pages, (u8 *)spare_buf_addr);
+			i = nand_bch_check_blank_pages(pages, (u8 *)main_buf,
+				(u8 *)(uintptr_t)spare_buf_addr);
 
 			if (i < 0) {
 				putstr("BCH corrected failed (0x");

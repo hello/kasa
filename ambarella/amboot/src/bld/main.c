@@ -4,13 +4,33 @@
  * History:
  *    2005/01/27 - [Charles Chiou] created file
  *
- * Copyright (C) 2004-2007, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 
 #include <bldfunc.h>
 #include <ambhw/vic.h>
@@ -20,14 +40,8 @@
 #include <ambhw/usbdc.h>
 #include <ambhw/gpio.h>
 #include <sdmmc.h>
-#include <bapi.h>
 #include <eth/network.h>
 #include <dsp/dsp.h>
-
-#if defined(SECURE_BOOT)
-#include "secure/cryptography_if.h"
-#include "secure/secure_boot.h"
-#endif
 
 /* ==========================================================================*/
 const char *AMBOOT_LOGO =						\
@@ -56,11 +70,8 @@ int main(void)
 	int l;
 	char cmd[MAX_CMDLINE_LEN];
 #endif
-#if defined(SECURE_BOOT)
-	int secure_boot_ret = 0;
-	int ask_for_debug = 1;
-	int force_reinitialize_for_debug = 0;
-#endif
+
+	malloc_init();
 
 	rct_pll_init();
 	enable_fio_dma();
@@ -68,6 +79,11 @@ int main(void)
 	fio_exit_random_mode();
 	dma_channel_select();
 
+#if defined(CONFIG_AMBOOT_ENABLE_GPIO)
+	gpio_init();
+#else
+	gpio_mini_init();
+#endif
 	/* Initialize various peripherals used in AMBoot */
 	if (amboot_bsp_early_init != NULL) {
 		amboot_bsp_early_init();
@@ -76,8 +92,6 @@ int main(void)
 	uart_init();
 	putstr("\x1b[4l");	/* Set terminal to replacement mode */
 	putstr("\r\n");		/* First, output a blank line to UART */
-
-	mem_malloc_init();
 
 	/* Initial boot device */
 	boot_from = ambausb_boot_from[0] ? ambausb_boot_from[0] : rct_boot_from();
@@ -101,6 +115,14 @@ int main(void)
 		spinor_init();
 	}
 #endif
+#if defined(CONFIG_AMBOOT_ENABLE_SPINAND)
+	if (part_dev & PART_DEV_SPINAND) {
+		spinand_init();
+#if defined(CONFIG_SPINAND_USE_FLASH_BBT)
+		spinand_scan_bbt(0);
+#endif
+	}
+#endif
 #if defined(AMBOOT_DEV_USBDL_MODE)
 	if (usb_check_connected()) {
 		usb_boot(USB_MODE_DEFAULT);
@@ -117,10 +139,6 @@ int main(void)
 	if (amboot_bsp_hw_init != NULL) {
 		amboot_bsp_hw_init();
 	}
-
-#if defined(CONFIG_AMBOOT_BAPI_SUPPORT)
-	bld_bapi_init(0);
-#endif
 
 #if defined(AMBOOT_BOOT_DSP)
 	dsp_init();
@@ -164,137 +182,7 @@ int main(void)
 #endif
 
 #if defined(SECURE_BOOT)
-		secure_boot_ret = secure_boot_init();
-		if (0 > secure_boot_ret) {
-			putstr("[secure boot check fail]: no cryptochip found, exit..\r\n");
-			goto __amboot_console;
-		} else if (1 == secure_boot_ret) {
-			goto __force_reinitialize_secure_boot;
-		} else {
-			if (!ptb.dev.secure_boot_init) {
-				putstr("[secure boot check fail]: cryptochip is initialized, but firmware is not initialized\r\n");
-				if (ask_for_debug) {
-					int c = 0x0;
-					putstr("[debug]: do you want force re-initialize?\r\n");
-					c = uart_get_onechar_blocked();
-					if (('y' == c) || ('Y' == c)) {
-						goto __force_reinitialize_secure_boot;
-					}
-				}
-				putstr("fail 1, exit...\r\n");
-				goto __amboot_console;
-			} else {
-				rsa_context_t rsa_content;
-
-				//putstr("rsakey-n:\r\n");
-				//putstr((const char*) ptb.dev.rsa_key_n);
-				//putstr("\r\nrsakey-e:\r\n");
-				//putstr((const char*) ptb.dev.rsa_key_e);
-				//putstr("\r\n");
-
-				secure_boot_ret = verify_and_fill_pubkey(&ptb.dev, &rsa_content);
-				if (secure_boot_ret) {
-					putstr("[secure boot check fail]: invalid rsa pubkey\r\n");
-					if (ask_for_debug) {
-						int c = 0x0;
-						putstr("[debug]: do you want force re-initialize?\r\n");
-						c = uart_get_onechar_blocked();
-						if (('y' == c) || ('Y' == c)) {
-							goto __force_reinitialize_secure_boot;
-						}
-					}
-					putstr("fail 2, exit...\r\n");
-					goto __amboot_console;
-				} else {
-					putstr("[secure boot check]: key is a valid rsa pubkey\r\n");
-				}
-
-				secure_boot_ret = verify_rsapubkey_hw_signature((unsigned char *) ptb.dev.rsa_key_n, 256 + 4 + 16);
-				if (secure_boot_ret) {
-					putstr("[secure boot check fail]: rsa pubkey is modified?\r\n");
-					if (ask_for_debug) {
-						int c = 0x0;
-						putstr("[debug]: do you want force re-initialize?\r\n");
-						c = uart_get_onechar_blocked();
-						if (('y' == c) || ('Y' == c)) {
-							goto __force_reinitialize_secure_boot;
-						}
-					}
-					putstr("fail 3, exit...\r\n");
-					goto __amboot_console;
-				} else {
-					putstr("[secure boot check]: verify rsa pubkey OK\r\n");
-				}
-
-				secure_boot_ret = verify_sn_signature(ptb.dev.sn_signature, &rsa_content);
-				if (secure_boot_ret) {
-					putstr("[secure boot check fail]: serial number signature check fail, hardware clone?\r\n");
-					if (ask_for_debug) {
-						int c = 0x0;
-						putstr("[debug]: do you want force re-initialize?\r\n");
-						c = uart_get_onechar_blocked();
-						if (('y' == c) || ('Y' == c)) {
-							goto __force_reinitialize_secure_boot;
-						}
-					}
-					putstr("fail 4, exit...\r\n");
-					goto __amboot_console;
-				} else {
-					putstr("[secure boot check]: verify serial number signature OK\r\n");
-				}
-
-			}
-		}
-
-		if (force_reinitialize_for_debug) {
-			rsa_key_t rsa_key;
-
-__force_reinitialize_secure_boot:
-
-			putstr("[secure boot for initialization]: please enter rsa key\r\n");
-			memset(&rsa_key, 0x0, sizeof(rsa_key));
-
-			secure_boot_ret = uart_get_rsakey_1024(&rsa_key);
-			if (secure_boot_ret) {
-				putstr("[secure boot for initialization error]: read rsa key fail...\r\n");
-				uart_print_rsakey_1024(&rsa_key);
-				goto __amboot_console;
-			} else {
-				rsa_context_t rsa_content;
-
-				uart_print_rsakey_1024(&rsa_key);
-
-				secure_boot_ret = verify_and_fill_key(&rsa_key, &rsa_content);
-				if (secure_boot_ret) {
-					putstr("[secure boot for initialization error]: invalid rsa key\r\n");
-					goto __amboot_console;
-				}
-
-				memcpy(ptb.dev.rsa_key_n, rsa_key.n, 256 + 4);
-				memcpy(ptb.dev.rsa_key_e, rsa_key.e, 16);
-
-				secure_boot_ret = generate_rsapubkey_hw_signature((unsigned char *) ptb.dev.rsa_key_n, 256 + 4 + 16);
-				if (0 == secure_boot_ret) {
-					putstr("[secure boot for initialization]: generate rsa public key hw signature done\r\n");
-				} else {
-					putstr("[secure boot for initialization error]: generate rsa public key hw signature fail\r\n");
-					goto __amboot_console;
-				}
-
-				secure_boot_ret = generate_sn_signature(ptb.dev.sn_signature, &rsa_content);
-				if (secure_boot_ret) {
-					putstr("[secure boot for initialization error]: sign serial number fail?\r\n");
-					goto __amboot_console;
-				} else {
-					putstr("[secure boot for initialization]: sign serial number done\r\n");
-				}
-
-				ptb.dev.secure_boot_init = 1;
-				ptb.dev.need_generate_firmware_hw_signature = 1;
-				flprog_set_part_table(&ptb);
-			}
-		}
-
+		secure_boot_main(ret_val, &ptb);
 #endif
 
 		if (ret_val == 1) {
@@ -305,28 +193,6 @@ __force_reinitialize_secure_boot:
 			ret_val = boot(NULL, 0);  /* Auto boot */
 		}
 
-#if defined(SECURE_BOOT)
-		switch (ret_val) {
-
-			case FLPROG_ERR_FIRM_HW_SIGN_FAIL:
-			case FLPROG_ERR_FIRM_HW_SIGN_VERIFY_FAIL:
-				putstr("[secure boot check fail]: firmware changed?\r\n");
-				if (ask_for_debug) {
-					int c = 0x0;
-					putstr("[debug]: do you want force re-initialize?\r\n");
-					c = uart_get_onechar_blocked();
-					if (('y' == c) || ('Y' == c)) {
-						goto __force_reinitialize_secure_boot;
-					}
-				}
-				putstr("fail 6, exit...\r\n");
-				goto __amboot_console;
-				break;
-
-			default:
-				break;
-		}
-#endif
 
 	}
 
@@ -341,9 +207,6 @@ __force_reinitialize_secure_boot:
 
 #endif
 
-#if defined(SECURE_BOOT)
-__amboot_console:
-#endif
 
 	putstr(AMBOOT_LOGO);
 	rct_show_boot_from(rct_boot_from());

@@ -160,6 +160,8 @@
 #ifndef __ASM__
 /* ==========================================================================*/
 
+#define MINIPIN_UART_ALTFUNC		1
+#define MINIPIN_UART_PIN		{39, 40}
 extern void uart_init(void);
 extern void uart_putchar(char c);
 extern void uart_getchar(char *c);

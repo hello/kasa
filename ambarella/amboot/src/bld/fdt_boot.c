@@ -4,13 +4,33 @@
  * History:
  *    2013/08/15 - [Cao Rongrong] created file
  *
- * Copyright (C) 2012-2016, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 #include <bldfunc.h>
 #include <libfdt.h>
 #include <ambhw/cortex.h>
@@ -153,7 +173,8 @@ fdt_update_chosen_exit:
 	return ret_val;
 }
 
-#if defined(CONFIG_AMBOOT_ENABLE_NAND) || defined(CONFIG_AMBOOT_ENABLE_SPINOR)
+#if defined(CONFIG_AMBOOT_ENABLE_NAND) || \
+	 defined(CONFIG_AMBOOT_ENABLE_SPINOR) || defined(CONFIG_AMBOOT_ENABLE_SPINAND)
 static void __hex_to_str(const u32 hex, char *dest)
 {
 	char i, c;
@@ -262,7 +283,7 @@ static int fdt_update_spinor(void *fdt)
 
 	offset = fdt_path_offset (fdt, pathp);
 	if (offset < 0) {
-		fdt_print_error("fdt_path_offset(nand) error:", offset);
+		fdt_print_error("fdt_path_offset(spi) error:", offset);
 		return ret_val;
 	}
 
@@ -314,6 +335,113 @@ static int fdt_update_spinor(void *fdt)
 
 	return ret_val;
 }
+#endif
+
+#if defined(CONFIG_AMBOOT_ENABLE_SPINAND)
+static int fdt_update_spinand(void *fdt)
+{
+	int i, ret_val = -1;
+	const char *pathp;
+	int offset, suboffset;
+	u32 val[6];
+
+	pathp = fdt_get_alias(fdt, "spinand");
+	if (pathp == NULL) {
+		putstr("libfdt fdt_get_alias() failed\r\n");
+		return ret_val;
+	}
+
+	offset = fdt_path_offset (fdt, pathp);
+	if (offset < 0) {
+		fdt_print_error("fdt_path_offset(spinand) error:", offset);
+		return ret_val;
+	}
+
+	for (i = HAS_IMG_PARTS - 1; i >= 0; i--) {
+		char name[32], addr_str[16];
+		u32 addr, size;
+
+		if (flspinand.nblk[i] == 0)
+			continue;
+
+		addr = flspinand.sblk[i] * flspinand.block_size;
+		size = flspinand.nblk[i] * flspinand.block_size;
+
+		putstr("flspinand addr = 0x");
+		puthex(addr);
+		putstr(", size = 0x");
+		puthex(size);
+		putstr("\r\n");
+
+		strcpy(name, "partition@");
+		__hex_to_str(addr, addr_str);
+		strcat(name, addr_str);
+
+		suboffset = fdt_add_subnode(fdt, offset, name);
+		if (suboffset < 0) {
+			fdt_print_error("fdt_add_subnode(partition) error:",
+						ret_val);
+			return ret_val;
+		}
+
+		ret_val = fdt_setprop_string(fdt, suboffset,
+					"label", get_part_str(i));
+		if (ret_val < 0) {
+			fdt_print_error("fdt_setprop_string(label) error:",
+						ret_val);
+			return ret_val;
+		}
+
+		val[0] = cpu_to_fdt32(addr);
+		val[1] = cpu_to_fdt32(size);
+		ret_val = fdt_setprop(fdt, suboffset, "reg",
+						&val, (sizeof(u32) * 2));
+		if (ret_val < 0){
+			fdt_print_error("fdt_setprop(reg) error:",
+						ret_val);
+			return ret_val;
+		}
+	}
+
+	return ret_val;
+}
+#endif
+
+#if defined(CONFIG_BOOT_MEDIA_EMMC)
+static int fdt_update_emmc(void *fdt)
+{
+	int ret_val = -1, offset, suboffset;
+	const char *pathp;
+	u32 val, ptb_address;
+
+	pathp = fdt_get_alias(fdt, CONFIG_EMMC_BOOT_INTERFACE);
+	if (pathp == NULL) {
+		putstr("libfdt fdt_get_alias() failed\r\n");
+		return ret_val;
+	}
+
+	offset = fdt_path_offset (fdt, pathp);
+	if (offset < 0) {
+		fdt_print_error("fdt_path_offset(emmc) error:", offset);
+		return ret_val;
+	}
+
+	ptb_address = sdmmc.ssec[PART_PTB];
+	val = cpu_to_fdt32(ptb_address);
+	ret_val = fdt_setprop(fdt, offset, "amb,ptb_address",
+				&val, sizeof(u32));
+	if (ret_val < 0){
+		fdt_print_error("fdt_setprop(ptb_address) error:",
+					ret_val);
+		return ret_val;
+	}
+
+	suboffset = fdt_subnode_offset(fdt, offset, "slot@0");
+	fdt_delprop(fdt, suboffset, "amb,caps-ddr");
+
+	return ret_val;
+}
+
 #endif
 
 static int fdt_update_memory(void *fdt,
@@ -396,6 +524,22 @@ static int fdt_update_misc(void *fdt)
 	ret_val = fdt_update_spinor((void *)fdt);
 	if (ret_val < 0) {
 		fdt_print_error("fdt_update_spinor:", ret_val);
+		return ret_val;
+	}
+#endif
+
+#if defined(CONFIG_AMBOOT_ENABLE_SPINAND)
+	ret_val = fdt_update_spinand((void *)fdt);
+	if (ret_val < 0) {
+		fdt_print_error("fdt_update_spinand:", ret_val);
+		return ret_val;
+	}
+#endif
+
+#if defined(CONFIG_BOOT_MEDIA_EMMC)
+	ret_val = fdt_update_emmc((void *)fdt);
+	if (ret_val < 0) {
+		fdt_print_error("fdt_update_emmc:", ret_val);
 		return ret_val;
 	}
 #endif

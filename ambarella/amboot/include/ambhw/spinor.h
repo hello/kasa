@@ -4,16 +4,40 @@
  * History:
  *    2014/05/05 - [Cao Rongrong] created file
  *
- * Copyright (C) 2012-2016, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 
 #ifndef __SPINOR_H__
 #define __SPINOR_H__
+
+#include <ambhw/chip.h>
+
+/* ==========================================================================*/
 
 #if (CHIP_REV == S2E)
 #define SPINOR_OFFSET			0xD000
@@ -136,6 +160,13 @@
 #define SPINOR_MAX_DATA_LENGTH		0x3ffff0
 #define SPINOR_OPERATION_TIMEOUT	5000
 
+#ifndef __ASM__
+/* ==========================================================================*/
+
+#define MINIPIN_SPINOR_ALTFUNC		3
+#define MINIPIN_SPINOR_PIN		{55, 56, 61, 62, 63, 64, 65, 66, \
+					 67, 68, 69, 70, 71, 72}
+#if defined(CONFIG_AMBOOT_ENABLE_SPINOR)
 extern int spinor_init(void);
 extern int spinor_send_alone_cmd(u8 cmd_id);
 extern int spinor_read_reg(u8 cmd_id, void *buf, u8 len);
@@ -150,6 +181,39 @@ extern int spinor_write_boot_header(void);
 extern int spinor_flash_reset(void);
 extern int spinor_flash_4b_mode(void);
 extern int spinor_erase_chip(void);
+#elif defined(CONFIG_AMBOOT_ENABLE_SPINAND)
+extern int spinand_wait_till_ready();
+extern int spinand_init(void);
+extern int spinor_send_alone_cmd(u8 cmd_id);
+extern int spinor_read_reg(u8 cmd_id, void *buf, u8 len);
+extern int spinor_write_reg(u8 cmd_id, void *buf, u8 len);
+extern int spinand_erase_block(u32 block_id);
+/* customised function implemented by each spi nor flash */
+extern int spinand_flash_reset(void);
+extern int spinand_read_data(u8 *dst, u8 *src, int len);
+extern int spinand_read_page(u32 page, u32 offset, void *buf, int len, u32 enable_ecc);
+extern int spinand_program_page(u32 page, u16 offset, void *buf, int len);
+extern int spinand_is_bad_block(u32 block);
+extern void spinand_output_bad_block(u32 block, int bb_type);
+extern int spinand_mark_bad_block(u32 block);
+extern int spinand_prog_pages(u32 block, u32 page, u32 pages,
+		void *wbuf);
+extern int spinand_read_pages(u32 block, u32 page, u32 pages,
+		void *rbuf, u32 enable_ecc);
+
+#if defined(CONFIG_SPINAND_USE_FLASH_BBT)
+extern int spinand_scan_bbt(int verbose);
+extern int spinand_update_bbt(u32 bblock, u32 gblock);
+extern int spinand_erase_bbt(void);
+extern int spinand_isbad_bbt(u32 block);
+extern int spinand_show_bbt(void);
+extern int spinand_has_bbt(void);
+#endif
+
+/* ==========================================================================*/
+#endif
+/* ==========================================================================*/
 
 #endif
 
+#endif

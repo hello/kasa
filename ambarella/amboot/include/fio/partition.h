@@ -7,18 +7,37 @@
  *    2009/10/06 - [Chien-Yang Chen] created file
  *    2014/02/13 - [Anthony Ginger] Amboot V2
  *
- * Copyright (C) 2004-2014, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 
 #ifndef __FIRMWARE_PARTITION_H__
 #define __FIRMWARE_PARTITION_H__
 
-#include <basedef.h>
 #include <config.h>
 
 /*===========================================================================*/
@@ -47,6 +66,7 @@
 #define PART_DEV_NAND		(0x01)
 #define PART_DEV_EMMC		(0x02)
 #define PART_DEV_SPINOR		(0x04)
+#define PART_DEV_SPINAND	(0x08)
 
 #define PART_MAX		20
 #define PART_MAX_WITH_RSV	32
@@ -172,8 +192,8 @@
 
 extern void get_part_size(int * part_size);
 extern const char *get_part_str(int part_id);
-extern u32 set_part_dev(u32 boot_from);
-extern u32 get_part_dev(u32 part_id);
+extern unsigned int set_part_dev(unsigned int boot_from);
+extern unsigned int get_part_dev(unsigned int part_id);
 
 /* ==========================================================================*/
 #endif

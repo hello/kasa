@@ -4,13 +4,33 @@
  * History:
  *    2007/10/03 - [Charles Chiou] created file
  *
- * Copyright (C) 2004-2007, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 
 #include <flash/nanddb.h>
 
@@ -36,6 +56,7 @@ DECLARE_NAND_DB_DEV(hy27us08561m);
 DECLARE_NAND_DB_DEV(hy27ua081g1m);
 DECLARE_NAND_DB_DEV(hy27u1g8f2b);
 DECLARE_NAND_DB_DEV(h27u518s2c);
+DECLARE_NAND_DB_DEV(h27u2g8f2c);
 DECLARE_NAND_DB_DEV(h27u2g8f2d);
 DECLARE_NAND_DB_DEV(k9f1208);
 DECLARE_NAND_DB_DEV(k9f1208x0c);
@@ -74,7 +95,10 @@ DECLARE_NAND_DB_DEV(mt29f2g08aac);
 DECLARE_NAND_DB_DEV(mt29f1g08abaea);
 DECLARE_NAND_DB_DEV(mt29f2g08aba);
 DECLARE_NAND_DB_DEV(mt29f8g08daa);
+DECLARE_NAND_DB_DEV(mt29f4g08abada);
+DECLARE_NAND_DB_DEV(mt29f4g08abbda);
 DECLARE_NAND_DB_DEV(mt29f2g08abafa);
+DECLARE_NAND_DB_DEV(mt29f2g08abbea);
 DECLARE_NAND_DB_DEV(numonyx02gw3b2d);
 DECLARE_NAND_DB_DEV(ct48248ns486g1);
 DECLARE_NAND_DB_DEV(asu1ga30ht);
@@ -110,6 +134,7 @@ const struct nand_db_s *G_nand_db[] = {
 	&hy27ua081g1m,
 	&hy27u1g8f2b,
 	&h27u518s2c,
+	&h27u2g8f2c,
 	&h27u2g8f2d,
 	&k9f1208,
 	&k9f1208x0c,
@@ -148,7 +173,10 @@ const struct nand_db_s *G_nand_db[] = {
 	&mt29f1g08abaea,
 	&mt29f2g08aba,
 	&mt29f8g08daa,
+	&mt29f4g08abada,
+	&mt29f4g08abbda,
 	&mt29f2g08abafa,
+	&mt29f2g08abbea,
 	&numonyx02gw3b2d,
 	&ct48248ns486g1,
 	&asu1ga30ht,

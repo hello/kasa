@@ -4,13 +4,33 @@
  * History:
  *    2010/05/18 - [Evan Chen] created file
  *
- * Copyright (C) 2010-2014, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 
 #ifndef __TC58NVG1S3E_H__
 #define __TC58NVG1S3E_H__
@@ -28,10 +48,15 @@
 	 NAND_CTR_SZ_2G		|				  \
 	 NAND_CTR_WD_8BIT)
 
+/**
+ * TC58NVG1S3E has same id as TC58NVG1S3H
+ */
+
 #define NAND_MANID		0x98
-#define NAND_DEVID		0xda
-#define NAND_ID3		0x95
+#define NAND_DEVID		0xDA
+#define NAND_ID3		0x90
 #define NAND_ID4		0x15
+#define NAND_ID5		0x76
 
 /**
  * define for device info
@@ -61,7 +86,7 @@
 #define NAND_PLANE_MAP		NAND_PLANE_MAP_0
 #define NAND_COLUMN_CYCLES	2
 #define NAND_PAGE_CYCLES	3
-#define NAND_ID_CYCLES		4
+#define NAND_ID_CYCLES		5
 #define NAND_CHIP_WIDTH		8
 #define NAND_CHIP_SIZE_MB	256
 #define NAND_BUS_WIDTH		8
@@ -117,8 +142,8 @@
 #define NAND_TRP		12
 #define NAND_TREH		10
 #define NAND_TRB		100 /* not define in spec, use the same twb */
-#define NAND_TCEH		60  /* tRHZ: Read Enable High to Output Hi-z */
-#define NAND_TRDELAY		22  /* tREA */
+#define NAND_TCEH		40  /* tRHZ: Read Enable High to Output Hi-z */
+#define NAND_TRDELAY		20  /* tREA */
 #define NAND_TCLR		10
 #define NAND_TWHR		60
 #define NAND_TIR		0

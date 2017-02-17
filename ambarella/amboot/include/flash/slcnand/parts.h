@@ -4,13 +4,33 @@
  * History:
  *    2009/08/17 - [Chien-Yang Chen] created file
  *
- * Copyright (C) 2004-2009, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 
 #ifndef __SLCNAND_PARTS_H__
 #define __SLCNAND_PARTS_H__
@@ -55,6 +75,8 @@
 #include <flash/slcnand/hy27us4g86f2d.h>
 #elif defined(CONFIG_NAND_H27U2G8F2D)
 #include <flash/slcnand/h27u2g8f2d.h>
+#elif defined(CONFIG_NAND_H27U2G8F2C)
+#include <flash/slcnand/h27u2g8f2c.h>
 #elif defined(CONFIG_NAND_K9K8G08)
 #include <flash/slcnand/k9k8g08.h>
 #elif defined(CONFIG_NAND_K9WAG08)
@@ -117,8 +139,12 @@
 #include <flash/slcnand/mt29f8g08daa.h>
 #elif defined(CONFIG_NAND_MT29F4G08ABADA)
 #include <flash/slcnand/mt29f4g08abada.h>
+#elif defined(CONFIG_NAND_MT29F4G08ABBDA)
+#include <flash/slcnand/mt29f4g08abbda.h>
 #elif defined(CONFIG_NAND_MT29F2G08ABAFA)
 #include <flash/slcnand/mt29f2g08abafa.h>
+#elif defined(CONFIG_NAND_MT29F2G08ABBEA)
+#include <flash/slcnand/mt29f2g08abbea.h>
 #elif defined(CONFIG_NAND_NUMONYX02GW3B2D)
 #include <flash/slcnand/numonyx02gw3b2d.h>
 #elif defined(CONFIG_NAND_CT48248NS486G1)

@@ -6,12 +6,29 @@
 ##    2007/10/24 - [Charles Chiou] imported to Linux tree
 ##    2008/02/19 - [Anthony Ginger] imported to AMBuild
 ##
-## Copyright (C) 2004-2007, Ambarella, Inc.
+## Copyright (c) 2015 Ambarella, Inc.
 ##
-## All rights reserved. No Part of this file may be reproduced, stored
-## in a retrieval system, or transmitted, in any form, or by any means,
-## electronic, mechanical, photocopying, recording, or otherwise,
-## without the prior consent of Ambarella, Inc.
+## This file and its contents ("Software") are protected by intellectual
+## property rights including, without limitation, U.S. and/or foreign
+## copyrights. This Software is also the confidential and proprietary
+## information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+## disclose, distribute, modify, or otherwise prepare derivative works of this
+## Software or any portion thereof except pursuant to a signed license agreement
+## or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+## In the absence of such an agreement, you agree to promptly notify and return
+## this Software to Ambarella, Inc.
+##
+## THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+## INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+## MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+## IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+## INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+## (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+## LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+## INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+## CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+## ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+## POSSIBILITY OF SUCH DAMAGE.
 ##
 
 menu "Hardware Options"
@@ -340,6 +357,14 @@ config CONFIG_NAND_HY27US4G86F2D
 	help
 		Hynix H27US4G86F2D 4Gbit NAND
 
+config CONFIG_NAND_H27U2G8F2C
+	bool "Hynix H27U2G8F2C"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		Hynix H27U2G8F2C 2Gbitx8 NAND flash
+
 config CONFIG_NAND_H27U2G8F2D
 	bool "Hynix H27U2G8F2D"
 	select CONFIG_NAND_P2K_E128K
@@ -571,6 +596,15 @@ config CONFIG_NAND_MT29F4G08ABADA
 	help
 		Micron MT29F4G08ABADA 4Gbitx8 NAND flash
 
+config CONFIG_NAND_MT29F4G08ABBDA
+	bool "Micron MT29F4G08ABBDA"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	depends on ARCH_SUPPORT_BCH_ID5
+	help
+		Micron MT29F4G08ABBDA 4Gbitx8 NAND flash
+
 config CONFIG_NAND_MT29F2G08ABAFA
 	bool "Micron MT29F2G08ABAFA"
 	select CONFIG_NAND_P2K_E128K
@@ -579,6 +613,15 @@ config CONFIG_NAND_MT29F2G08ABAFA
 	depends on ARCH_SUPPORT_BCH_ID5
 	help
 		Micron MT29F2G08ABAFA 2Gbitx8 NAND flash
+
+config CONFIG_NAND_MT29F2G08ABBEA
+	bool "Micron MT29F2G08ABBEA"
+	select CONFIG_NAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	depends on ARCH_SUPPORT_BCH_ID5
+	help
+		Micron MT29F2G08ABBEA 2Gbitx8 NAND flash
 
 config CONFIG_NAND_CT48248NS486G1
 	bool "Chipsip CT48248NS486G1"
@@ -745,11 +788,6 @@ config CONFIG_AMBOOT_ENABLE_ATSHA204
 	depends on CONFIG_AMBOOT_ENABLE_CRYPTO_CHIP
 	default y
 
-config CONFIG_AMBOOT_BUILD_ATSHA204_FROM_SOURCE
-	bool "build Atmel ATSHA204 from source code"
-	depends on CONFIG_AMBOOT_ENABLE_ATSHA204
-	default n
-
 config CONFIG_AMBOOT_ENABLE_SD
 	bool "Support SD Driver"
 	default n
@@ -835,6 +873,57 @@ endchoice
 
 endmenu
 
+config CONFIG_AMBOOT_ENABLE_SPINAND
+	bool "Support SPI NAND Driver"
+	depends on ARCH_SUPPORT_SPINOR
+	default n
+	help
+		Enable the SPI NAND driver if it is present on the target board
+
+menu "SPI NAND Subsystem Options"
+depends on CONFIG_AMBOOT_ENABLE_SPINAND
+
+config CONFIG_SPINAND
+	bool
+	default n
+
+config CONFIG_SPINAND_USE_FLASH_BBT
+	bool "SPINAND Flash use BBT on Flash"
+	default y
+
+config CONFIG_SPINAND_P2K_E128K
+	bool
+	default n
+
+choice
+	prompt "SPI NAND Flash Type"
+	default CONFIG_SPI_NAND_GD5F2GQ4UC
+	depends on CONFIG_AMBOOT_ENABLE_SPINAND
+	help
+		Select the onboard SPI NAND flash type
+
+config CONFIG_SPI_NAND_GD5F1GQ4UC
+	bool "GigaDevice GD5F1GQ4UC"
+	select CONFIG_SPINAND
+	select CONFIG_SPINAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		 GigaDevice GD5F1GQ4UC 1Gbit Nand
+
+config CONFIG_SPI_NAND_GD5F2GQ4UC
+	bool "GigaDevice GD5F2GQ4UC"
+	select CONFIG_SPINAND
+	select CONFIG_SPINAND_P2K_E128K
+	select CONFIG_FLASH_PAGE_2K
+	select CONFIG_FLASH_ERASE_128k
+	help
+		 GigaDevice GD5F2GQ4UC 2Gbit Nand
+
+endchoice
+
+endmenu
+
 config CONFIG_AMBOOT_ENABLE_SPI
 	bool "Support SPI Driver"
 	default n
@@ -896,11 +985,6 @@ endmenu
 config CONFIG_AMBOOT_ENABLE_GPIO
 	bool "Support GPIO Driver"
 	default y
-
-menu "GPIO Subsystem Options"
-depends on CONFIG_AMBOOT_ENABLE_GPIO
-
-endmenu
 
 choice
 	prompt "UART Port"

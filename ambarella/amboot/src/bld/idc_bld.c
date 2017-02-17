@@ -3,13 +3,33 @@
  *
  * Author: Anthony Ginger <hfjiang@ambarella.com>
  *
- * Copyright (C) 2004-2014, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 
 #include <bldfunc.h>
 #include <ambhw/idc.h>
@@ -20,7 +40,6 @@ static u32 idc_bld_get_addr(u8 idc_id, u32 reg_offset)
 {
 	u32 reg_adds = 0xFFFFFFFF;
 
-	K_ASSERT(idc_id < IDC_INSTANCES);
 	switch (idc_id) {
 	case IDC_MASTER1:
 		reg_adds = IDC_REG(reg_offset);
@@ -35,6 +54,8 @@ static u32 idc_bld_get_addr(u8 idc_id, u32 reg_offset)
 		reg_adds = IDC3_REG(reg_offset);
 		break;
 #endif
+	default:
+		BUG_ON(idc_id >= IDC_INSTANCES);
 	}
 
 	return reg_adds;
@@ -94,9 +115,7 @@ static inline void idc_bld_writel(u8 idc_id, u32 reg_offset, u32 reg_val)
 	u32 reg_add;
 
 	reg_add = idc_bld_get_addr(idc_id, reg_offset);
-	if (reg_add != 0xFFFFFFFF) {
-		reg_val = writel(reg_add, reg_val);
-	}
+	writel(reg_add, reg_val);
 }
 
 /*===========================================================================*/
@@ -163,7 +182,6 @@ static void idc_bld_writeb(u8 idc_id, u8 data)
 	idc_bld_writel(idc_id, IDC_DATA_OFFSET, data);
 	idc_bld_wait_interrupt(idc_id, 0x00);
 }
-
 /*===========================================================================*/
 #if defined(CONFIG_AMBOOT_ENABLE_ISL12022M)
 #define ISL12022M_I2C_ADDR			(0xDE)
@@ -194,29 +212,6 @@ void idc_bld_isl12022m_write(u8 idc_id, u8 sub_adds, u8 reg_val)
 #endif
 
 /*===========================================================================*/
-#if defined(CONFIG_AMBOOT_ENABLE_PCA953X)
-u8 idc_bld_pca953x_read(u8 idc_id, u8 adds, u8 sub_adds)
-{
-	u8 reg_val = 0;
-
-	idc_bld_set_8bit_addr(idc_id, adds, 0);
-	idc_bld_writeb(idc_id, sub_adds);
-	idc_bld_set_8bit_addr(idc_id, adds, 1);
-	reg_val = idc_bld_readb(idc_id, 0x0);
-	idc_bld_stop(idc_id);
-
-	return reg_val;
-}
-
-void idc_bld_pca953x_write(u8 idc_id, u8 adds, u8 sub_adds, u8 reg_val)
-{
-	idc_bld_set_8bit_addr(idc_id, adds, 0);
-	idc_bld_writeb(idc_id, sub_adds);
-	idc_bld_writeb(idc_id, reg_val);
-	idc_bld_stop(idc_id);
-}
-#endif
-
 int idc_bld_send_buf_without_ack(unsigned char idc_id, unsigned char adds, unsigned char* buf, int count)
 {
 	int i = 0;
@@ -346,5 +341,4 @@ void idc_bld_write_8_8(u8 idc_id, u8 adds, u8 sub_adds, u8 reg_val)
 	idc_bld_writeb(idc_id, reg_val);
 	idc_bld_stop(idc_id);
 }
-
 

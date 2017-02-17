@@ -4,13 +4,33 @@
  * History:
  *  2015/06/25 - [Zhi He] create file
  *
- * Copyright (C) 2014 - 2024, the Ambarella Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of the Ambarella Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 
 #include "cryptography_if.h"
 
@@ -20,6 +40,7 @@
 #include <stdlib.h>
 #else
 #include <bldfunc.h>
+typedef unsigned int size_t;
 #endif
 
 #include "big_number.h"
@@ -29,14 +50,18 @@
 #define D_LN_2_DIV_LN_10_SCALE100                 332
 #define D_BIG_NUMBER_RW_BUFFER_SIZE             (((D_BIG_NUMBER_MAX_BITS_SCALE100 + D_LN_2_DIV_LN_10_SCALE100 - 1) / D_LN_2_DIV_LN_10_SCALE100) + 10 + 6)
 
-#define DCHARS_IN_LIMB    (sizeof(unsigned int))
+#define DCHARS_IN_LIMB    (sizeof(TUINT))
 #define DBITS_IN_LIMB    (DCHARS_IN_LIMB << 3)
 #define DHALF_BITS_IN_LIMB    (DCHARS_IN_LIMB << 2)
 
-#define DBITS_TO_LIMBS(i)  (((i) + DBITS_IN_LIMB - 1) / DBITS_IN_LIMB)
-#define DCHARS_TO_LIMBS(i) (((i) + DCHARS_IN_LIMB - 1) / DCHARS_IN_LIMB)
+#define MPI_SIZE_T_MAX  ( (size_t) -1 ) /* SIZE_T_MAX is not standard */
 
-static void __zeroize(void *v, unsigned int n)
+//#define DBITS_TO_LIMBS(i)  (((i) + DBITS_IN_LIMB - 1) / DBITS_IN_LIMB)
+//#define DCHARS_TO_LIMBS(i) (((i) + DCHARS_IN_LIMB - 1) / DCHARS_IN_LIMB)
+#define DBITS_TO_LIMBS(i)  ((i) / DBITS_IN_LIMB + ( (i) % DBITS_IN_LIMB != 0 ))
+#define DCHARS_TO_LIMBS(i) ((i) / DCHARS_IN_LIMB + ( (i) % DCHARS_IN_LIMB != 0 ))
+
+static void __zerosize(void *v, unsigned int n)
 {
     volatile unsigned char *p = v;
 
@@ -73,7 +98,7 @@ void big_number_free(big_number_t* X)
     }
 
     if ( X->p != NULL ) {
-        __zeroize(X->p, X->n * DCHARS_IN_LIMB);
+        __zerosize(X->p, X->n * DCHARS_IN_LIMB);
         free(X->p);
     }
 
@@ -84,7 +109,7 @@ void big_number_free(big_number_t* X)
 
 int big_number_grow(big_number_t* X, unsigned int nblimbs)
 {
-    unsigned int *p;
+    TUINT *p;
 
     if (nblimbs > D_BIG_NUMBER_MAX_LIMBS) {
         return CRYPTO_ECODE_ERROR_NO_MEMORY;
@@ -99,7 +124,7 @@ int big_number_grow(big_number_t* X, unsigned int nblimbs)
 
         if (X->p != NULL) {
             memcpy(p, X->p, X->n * DCHARS_IN_LIMB);
-            __zeroize(X->p, X->n * DCHARS_IN_LIMB);
+            __zerosize(X->p, X->n * DCHARS_IN_LIMB);
             free(X->p);
         }
 
@@ -112,7 +137,7 @@ int big_number_grow(big_number_t* X, unsigned int nblimbs)
 
 int big_number_shrink(big_number_t* X, unsigned int nblimbs)
 {
-    unsigned int *p;
+    TUINT *p;
     unsigned int i;
 
     if (X->n <= nblimbs) {
@@ -138,7 +163,7 @@ int big_number_shrink(big_number_t* X, unsigned int nblimbs)
 
     if (X->p != NULL) {
         memcpy(p, X->p, i * DCHARS_IN_LIMB);
-        __zeroize(X->p, X->n * DCHARS_IN_LIMB);
+        __zerosize(X->p, X->n * DCHARS_IN_LIMB);
         free (X->p);
     }
 
@@ -217,7 +242,7 @@ int big_number_safe_cond_swap(big_number_t *X, big_number_t *Y, unsigned char sw
 {
     int ret, s;
     unsigned int i;
-    unsigned int tmp;
+    TUINT tmp;
 
     if (X == Y) {
         return CRYPTO_ECODE_OK;
@@ -243,7 +268,7 @@ cleanup:
     return ret;
 }
 
-int big_number_lset(big_number_t *X, int z)
+int big_number_lset(big_number_t *X, TSINT z)
 {
     int ret;
 
@@ -285,8 +310,8 @@ int big_number_set_bit( big_number_t *X, unsigned int pos, unsigned char val )
         D_CLEAN_IF_FAILED( big_number_grow(X, off + 1));
     }
 
-    X->p[off] &= ~((unsigned int) 0x01 << idx);
-    X->p[off] |= (unsigned int) val << idx;
+    X->p[off] &= ~((TUINT) 0x01 << idx);
+    X->p[off] |= (TUINT) val << idx;
 
 cleanup:
 
@@ -336,7 +361,7 @@ unsigned int big_number_size(const big_number_t *X)
     return ((big_number_msb(X) + 7) >> 3);
 }
 
-static int big_number_get_digit(unsigned int *d, int radix, char c)
+static int big_number_get_digit(TUINT *d, int radix, char c)
 {
     *d = 255;
 
@@ -352,7 +377,7 @@ static int big_number_get_digit(unsigned int *d, int radix, char c)
         *d = c - 0x57;
     }
 
-    if ( *d >= (unsigned int) radix ) {
+    if ( *d >= (TUINT) radix ) {
         return CRYPTO_ECODE_INVALID_CHARACTER;
     }
 
@@ -363,7 +388,7 @@ int big_number_read_string(big_number_t *X, int radix, const char *s)
 {
     int ret;
     unsigned int i, j, slen, n;
-    unsigned int d;
+    TUINT d;
     big_number_t T;
 
     if (radix < 2 || radix > 16) {
@@ -375,6 +400,9 @@ int big_number_read_string(big_number_t *X, int radix, const char *s)
     slen = strlen(s);
 
     if (radix == 16) {
+        if ( slen > MPI_SIZE_T_MAX >> 2 ) {
+             return( CRYPTO_ECODE_BAD_INPUT_DATA );
+        }
         n = DBITS_TO_LIMBS(slen << 2);
 
         D_CLEAN_IF_FAILED(big_number_grow( X, n));
@@ -419,7 +447,7 @@ cleanup:
 static int big_number_write_hlp(big_number_t *X, int radix, char **p)
 {
     int ret;
-    unsigned int r;
+    TUINT r;
 
     if (radix < 2 || radix > 16) {
         return CRYPTO_ECODE_BAD_INPUT_DATA;
@@ -518,7 +546,7 @@ cleanup:
 #ifndef DNOT_INCLUDE_C_HEADER
 int big_number_read_file(big_number_t* X, int radix, void* f)
 {
-    unsigned int d;
+    TUINT d;
     unsigned int slen;
     char *p;
     FILE* fin = (FILE*) f;
@@ -608,7 +636,7 @@ int big_number_read_binary(big_number_t* X, const unsigned char* buf, unsigned i
     D_CLEAN_IF_FAILED(big_number_lset(X, 0));
 
     for (i = buflen, j = 0; i > n; i--, j++) {
-        X->p[j / DCHARS_IN_LIMB] |= ((unsigned int) buf[i - 1]) << ((j % DCHARS_IN_LIMB) << 3);
+        X->p[j / DCHARS_IN_LIMB] |= ((TUINT) buf[i - 1]) << ((j % DCHARS_IN_LIMB) << 3);
     }
 
 cleanup:
@@ -639,7 +667,7 @@ int big_number_shift_l(big_number_t* X, unsigned int count)
 {
     int ret;
     unsigned int i, v0, t1;
-    unsigned int r0 = 0, r1;
+    TUINT r0 = 0, r1;
 
     v0 = count / (DBITS_IN_LIMB);
     t1 = count & (DBITS_IN_LIMB - 1);
@@ -679,7 +707,7 @@ cleanup:
 int big_number_shift_r(big_number_t* X, unsigned int count)
 {
     unsigned int i, v0, v1;
-    unsigned int r0 = 0, r1;
+    TUINT r0 = 0, r1;
 
     v0 = count /  DBITS_IN_LIMB;
     v1 = count & (DBITS_IN_LIMB - 1);
@@ -800,10 +828,10 @@ int big_number_cmp_big_number(const big_number_t* X, const big_number_t* Y)
     return 0;
 }
 
-int big_number_cmp_int(const big_number_t *X, int z)
+int big_number_cmp_int(const big_number_t *X, TSINT z)
 {
     big_number_t Y;
-    unsigned int p[1];
+    TUINT p[1];
 
     *p  = (z < 0) ? -z : z;
     Y.s = (z < 0) ? -1 : 1;
@@ -817,7 +845,7 @@ int big_number_add_abs(big_number_t *X, const big_number_t *A, const big_number_
 {
     int ret;
     unsigned int i, j;
-    unsigned int *o, *p, c;
+    TUINT *o, *p, c;
 
     if (X == B) {
         const big_number_t *T = A; A = X; B = T;
@@ -858,10 +886,10 @@ cleanup:
     return ret;
 }
 
-static void big_number_sub_hlp(unsigned int n, unsigned int* s, unsigned int* d)
+static void big_number_sub_hlp(unsigned int n, TUINT *s, TUINT *d)
 {
     unsigned int i;
-    unsigned int c, z;
+    TUINT c, z;
 
     for (i = c = 0; i < n; i++, s++, d++) {
         z = (*d <  c);     *d -=  c;
@@ -958,10 +986,10 @@ cleanup:
     return ret;
 }
 
-int big_number_add_int(big_number_t* X, const big_number_t* A, int b)
+int big_number_add_int(big_number_t* X, const big_number_t* A, TSINT b)
 {
     big_number_t _B;
-    unsigned int p[1];
+    TUINT p[1];
 
     p[0] = ( b < 0 ) ? -b : b;
     _B.s = ( b < 0 ) ? -1 : 1;
@@ -971,10 +999,10 @@ int big_number_add_int(big_number_t* X, const big_number_t* A, int b)
     return (big_number_add_big_number(X, A, &_B));
 }
 
-int big_number_sub_int(big_number_t* X, const big_number_t* A, int b)
+int big_number_sub_int(big_number_t* X, const big_number_t* A, TSINT b)
 {
     big_number_t _B;
-    unsigned int p[1];
+    TUINT p[1];
 
     p[0] = ( b < 0 ) ? -b : b;
     _B.s = ( b < 0 ) ? -1 : 1;
@@ -984,9 +1012,9 @@ int big_number_sub_int(big_number_t* X, const big_number_t* A, int b)
     return (big_number_sub_big_number(X, A, &_B));
 }
 
-static void big_number_mul_hlp(unsigned int i, unsigned int* s, unsigned int* d, unsigned int b)
+static void big_number_mul_hlp(unsigned int i, TUINT *s, TUINT *d, TUINT b)
 {
-    unsigned int c = 0, t = 0;
+    TUINT c = 0, t = 0;
 
 #if defined(MULADDC_HUIT)
 
@@ -1090,10 +1118,10 @@ cleanup:
     return( ret );
 }
 
-int big_number_mul_int(big_number_t* X, const big_number_t* A, int b)
+int big_number_mul_int(big_number_t* X, const big_number_t* A, TSINT b)
 {
     big_number_t _B;
-    unsigned int p[1];
+    TUINT p[1];
 
     _B.s = 1;
     _B.n = 1;
@@ -1165,17 +1193,55 @@ int big_number_div_big_number(big_number_t* Q, big_number_t* R, const big_number
         if (X.p[i] >= Y.p[t]) {
             Z.p[i - t - 1] = ~0;
         } else {
-            unsigned long long r;
+#ifdef DHAVE_DOUBLE_LONG_INT
+            TUDBL r;
 
-            r  = (unsigned long long) X.p[i] << DBITS_IN_LIMB;
-            r |= (unsigned long long) X.p[i - 1];
+            r  = (TUDBL) X.p[i] << DBITS_IN_LIMB;
+            r |= (TUDBL) X.p[i - 1];
             r /= Y.p[t];
-
-            if (r > ((unsigned long long) 1 << DBITS_IN_LIMB) - 1) {
-                r = ((unsigned long long) 1 << DBITS_IN_LIMB) - 1;
+            if (r > ((TUDBL) 1 << DBITS_IN_LIMB) - 1) {
+                r = ((TUDBL) 1 << DBITS_IN_LIMB) - 1;
             }
 
-            Z.p[i - t - 1] = (unsigned int) r;
+            Z.p[i - t - 1] = (TUINT) r;
+#else
+            TUINT q0, q1, r0, r1;
+            TUINT d0, d1, d, m;
+
+            d  = Y.p[t];
+            d0 = ( d << DHALF_BITS_IN_LIMB ) >> DHALF_BITS_IN_LIMB;
+            d1 = ( d >> DHALF_BITS_IN_LIMB );
+
+            q1 = X.p[i] / d1;
+            r1 = X.p[i] - d1 * q1;
+            r1 <<= DHALF_BITS_IN_LIMB;
+            r1 |= ( X.p[i - 1] >> DHALF_BITS_IN_LIMB );
+
+            m = q1 * d0;
+            if( r1 < m )
+            {
+                q1--, r1 += d;
+                while( r1 >= d && r1 < m )
+                    q1--, r1 += d;
+            }
+            r1 -= m;
+
+            q0 = r1 / d1;
+            r0 = r1 - d1 * q0;
+            r0 <<= DHALF_BITS_IN_LIMB;
+            r0 |= ( X.p[i - 1] << DHALF_BITS_IN_LIMB ) >> DHALF_BITS_IN_LIMB;
+
+            m = q0 * d0;
+            if( r0 < m )
+            {
+                q0--, r0 += d;
+                while( r0 >= d && r0 < m )
+                    q0--, r0 += d;
+            }
+            r0 -= m;
+
+            Z.p[i - t - 1] = ( q1 << DHALF_BITS_IN_LIMB ) | q0;
+#endif
         }
 
         Z.p[i - t - 1]++;
@@ -1232,10 +1298,10 @@ cleanup:
     return ret;
 }
 
-int big_number_div_int(big_number_t *Q, big_number_t *R, const big_number_t *A, int b)
+int big_number_div_int(big_number_t *Q, big_number_t *R, const big_number_t *A, TSINT b)
 {
     big_number_t _B;
-    unsigned int p[1];
+    TUINT p[1];
 
     p[0] = ( b < 0 ) ? -b : b;
     _B.s = ( b < 0 ) ? -1 : 1;
@@ -1245,7 +1311,7 @@ int big_number_div_int(big_number_t *Q, big_number_t *R, const big_number_t *A, 
     return (big_number_div_big_number(Q, R, A, &_B));
 }
 
-int big_number_mod_big_number(big_number_t* R, const big_number_t* A, const big_number_t* B)
+int big_number_mod_big_number(big_number_t *R, const big_number_t *A, const big_number_t *B)
 {
     int ret;
 
@@ -1268,10 +1334,10 @@ cleanup:
     return ret;
 }
 
-int big_number_mod_int(unsigned int* r, const big_number_t* A, int b)
+int big_number_mod_int(TUINT *r, const big_number_t *A, TSINT b)
 {
     unsigned int i;
-    unsigned int x, y, z;
+    TUINT x, y, z;
 
     if (b == 0) {
         return CRYPTO_ECODE_DIVISION_BY_ZERO;
@@ -1312,9 +1378,9 @@ int big_number_mod_int(unsigned int* r, const big_number_t* A, int b)
     return CRYPTO_ECODE_OK;
 }
 
-static void big_number_montg_init(unsigned int* mm, const big_number_t* N)
+static void big_number_montg_init(TUINT *mm, const big_number_t* N)
 {
-    unsigned int x, m0 = N->p[0];
+    TUINT x, m0 = N->p[0];
     unsigned int i;
 
     x  = m0;
@@ -1327,10 +1393,10 @@ static void big_number_montg_init(unsigned int* mm, const big_number_t* N)
     *mm = ~x + 1;
 }
 
-static void big_number_montmul(big_number_t* A, const big_number_t* B, const big_number_t* N, unsigned int mm, const big_number_t* T)
+static void big_number_montmul(big_number_t* A, const big_number_t* B, const big_number_t* N, TUINT mm, const big_number_t* T)
 {
     unsigned int i, n, m;
-    unsigned int u0, u1, *d;
+    TUINT u0, u1, *d;
 
     memset(T->p, 0, T->n * DCHARS_IN_LIMB);
 
@@ -1357,9 +1423,9 @@ static void big_number_montmul(big_number_t* A, const big_number_t* B, const big
     }
 }
 
-static void big_number_montred(big_number_t* A, const big_number_t* N, unsigned int mm, const big_number_t* T)
+static void big_number_montred(big_number_t* A, const big_number_t* N, TUINT mm, const big_number_t* T)
 {
-    unsigned int z = 1;
+    TUINT z = 1;
     big_number_t U;
 
     U.n = U.s = (int) z;
@@ -1374,7 +1440,7 @@ int big_number_exp_mod(big_number_t* X, const big_number_t* A, const big_number_
     unsigned int wbits, wsize, one = 1;
     unsigned int i, j, nblimbs;
     unsigned int bufsize, nbits;
-    unsigned int ei, mm, state;
+    TUINT ei, mm, state;
     big_number_t RR, T, W[2 << D_BIG_NUMBER_WINDOW_SIZE], Apos;
     int neg;
 
@@ -1469,7 +1535,7 @@ int big_number_exp_mod(big_number_t* X, const big_number_t* A, const big_number_
 
             nblimbs--;
 
-            bufsize = sizeof( unsigned int ) << 3;
+            bufsize = sizeof(TUINT) << 3;
         }
 
         bufsize--;
@@ -1728,7 +1794,7 @@ static int big_number_check_small_factors(const big_number_t* X)
 {
     int ret = 0;
     unsigned int i;
-    unsigned int r;
+    TUINT r;
 
     if ((X->p[0] & 1) == 0) {
         return CRYPTO_ECODE_NOT_ACCEPTABLE;
@@ -1861,7 +1927,7 @@ int big_number_gen_prime(big_number_t* X, unsigned int nbits, int dh_flag, int (
 {
     int ret;
     unsigned int k, n;
-    unsigned int r;
+    TUINT r;
     big_number_t Y;
 
     if (nbits < 3 || nbits > D_BIG_NUMBER_MAX_BITS) {

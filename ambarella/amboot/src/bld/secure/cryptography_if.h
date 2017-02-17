@@ -4,13 +4,33 @@
  * History:
  *  2015/06/25 - [Zhi He] create file
  *
- * Copyright (C) 2014 - 2024, the Ambarella Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of the Ambarella Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 
 #ifndef __CRYPTOGRAPHY_IF_H__
 #define __CRYPTOGRAPHY_IF_H__
@@ -92,10 +112,29 @@ enum {
 #define RSA_PKCS_V15    0
 #define RSA_PKCS_V21    1
 
+#if (defined(_MSC_VER) && defined(_M_AMD64))
+    typedef  long long TSINT;
+    typedef unsigned long long TUINT;
+    #define DHAVE_INT_64
+#else
+    #define DHAVE_DOUBLE_LONG_INT
+#if (defined(__GNUC__) && (defined(__amd64__) || defined(__x86_64__)  || defined(__ppc64__) || defined(__powerpc64__) || \
+      defined(__ia64__)  || defined(__alpha__) || (defined(__sparc__) && defined(__arch64__))  ||defined(__s390x__) || defined(__mips64) ) )
+    typedef  long long TSINT;
+    typedef unsigned long long TUINT;
+    typedef unsigned int TUDBL __attribute__((mode(TI)));
+    #define DHAVE_INT_64
+#else
+    typedef int TSINT;
+    typedef unsigned int TUINT;
+    typedef unsigned long long TUDBL;
+#endif
+#endif
+
 typedef struct {
     int s;
     unsigned int n;
-    unsigned int *p;
+    TUINT *p;
 } big_number_t;
 
 typedef struct {
@@ -143,7 +182,7 @@ void digest_md5_final(void* ctx, unsigned char* digest);
 #endif
 
 void rsa_init(rsa_context_t* ctx, int padding, int hash_id);
-void rsa_free(rsa_context_t* ctx );
+void rsa_free(rsa_context_t* ctx);
 int rsa_check_pubkey(const rsa_context_t* ctx);
 int rsa_check_privkey(const rsa_context_t* ctx);
 int rsa_check_key_pair(const rsa_context_t* pub, const rsa_context_t* prv);

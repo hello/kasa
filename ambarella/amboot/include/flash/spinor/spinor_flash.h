@@ -4,13 +4,33 @@
  * History:
  *    2013/10/15 - [Johnson Diao] created file
  *
- * Copyright (C) 2013-2017, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 
 #ifndef __FLASH_SPI_NOR_PARTS_H__
 #define __FLASH_SPI_NOR_PARTS_H__
@@ -34,10 +54,54 @@
 #define SPINOR_CMD_SE_4K		0x20
 #define SPINOR_CMD_CE			0xc7
 
+/* ---COMMON SPI NAND FLASH COMMAND--- */
+#define SPINAND_CMD_WRDI		0x04
+#define SPINAND_CMD_WREN		0x06
+
+/* Read to cache */
+#define SPINAND_CMD_READ		0x13
+/* Read from cache to memory */
+#define SPINAND_CMD_RFC			0x03
+/* Fast read from cache to memory */
+#define SPINAND_CMD_FRFC		0x0B
+#define SPINAND_CMD_ERASE_BLK	0xD8
+/* Program to cache */
+#define SPINAND_CMD_PRG_LOAD	0x02
+
+/* Program to SPI NAND */
+#define SPINAND_CMD_PRG_EXC		0x10
+/* SPI NAND get features */
+#define SPINAND_CMD_GET_REG		0x0F
+/* SPI NAND set features */
+#define SPINAND_CMD_SET_REG		0x1F
+#define SPINAND_CMD_READID		0x9F
+#define SPINAND_CMD_RESET		0xFF
+/* ---END of SPI NAND CMD--- */
+
+/* SPI NAND REG */
+#define REG_PROTECTION			0xA0
+#define REG_FEATURE				0xB0
+#define REG_STATUS				0xC0
+#define REG_FEATURE_2			0xD0
+
+/* STATUS */
+#define STATUS_OIP_MASK			0x01
+#define STATUS_READY			(0 << 0)
+#define STATUS_BUSY				(1 << 0)
+#define STATUS_WEL_MASK			0x02
+#define STATUS_WEL				(1 << 1)
+#define STATUS_E_FAIL_MASK		0x04
+#define STATUS_E_FAIL			(1 << 2)
+#define STATUS_P_FAIL_MASK		0x08
+#define STATUS_P_FAIL			(1 << 3)
+#define STATUS_ECC				0x70
+
+#define SPI_NAND_ECC_EN		0x10
 
 #define CFI_MFR_MACRONIX	0x000000C2
 #define CFI_MFR_MICRON		0x00000020
 #define CFI_MFR_WINBOND		0x000000EF
+#define CFI_MFR_GD			0x000000C8
 
 /* The boot image header is a128-byte block and only first 24 bytes are used.
  * Each 4 bytes is corresponding to the layout (register definition) of
@@ -98,6 +162,10 @@ struct spinor_boot_header {
 #include <flash/spinor/w25q128fv.h>
 #elif defined(CONFIG_SPI_NOR_GD25Q512)
 #include <flash/spinor/gd25q512.h>
+#elif defined(CONFIG_SPI_NAND_GD5F2GQ4UC)
+#include <flash/spinand/gd5f2gq4uc.h>
+#elif defined(CONFIG_SPI_NAND_GD5F1GQ4UC)
+#include <flash/spinand/gd5f1gq4uc.h>
 #endif
 
 #endif

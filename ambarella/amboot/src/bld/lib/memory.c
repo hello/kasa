@@ -4,13 +4,33 @@
  * Author: Jorney Tu <qtu@ambarella.com>
  * History: 2015/04/29 - created
  *
- * Copyright (C) 2004-2015, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 
 #include <bldfunc.h>
 #include <vsprintf.h>
@@ -127,7 +147,7 @@ void *malloc(int size)
 
 	pr_debug("start_blk: %d, blks: %d\n", start_blk, blks);
 
-	return (void *)((u32)malloc_bitmap + start_blk * MALLOC_BLOCK_SIZE);
+	return (void *)((uintptr_t)malloc_bitmap + start_blk * MALLOC_BLOCK_SIZE);
 }
 
 void free(void *ptr)
@@ -139,7 +159,7 @@ void free(void *ptr)
 	if (ptr == NULL)
 		return;
 
-	start_blk = ((u32)ptr - (u32)malloc_bitmap) / MALLOC_BLOCK_SIZE;
+	start_blk = ((uintptr_t)ptr - (uintptr_t)malloc_bitmap) / MALLOC_BLOCK_SIZE;
 	nr_blk = 0;
 
 	for (i = 0; i < malloc_table_num; i++) {
@@ -161,20 +181,21 @@ void free(void *ptr)
 	}
 }
 
-int mem_malloc_init(void)
+/*
+ * Initialize memory pool for malloc heap.
+ * NOTE:
+ *   1. the memory pool start address must be 1024 aligned.
+ *   2. It's forbidden to output any message by UART in malloc_init.
+ */
+int malloc_init(void)
 {
 	int i, total_blks;
 
-	/* the memory pool address must be 1024 aligned */
-	BUG_ON(((u32)bld_buf_addr) % 1024);
-
-	malloc_bitmap = (u32 *)bld_buf_addr;
-	malloc_table = (struct malloc_info *)((u32)bld_buf_addr + MALLOC_BLOCK_SIZE);
+	malloc_bitmap = (u32 *)(uintptr_t)bld_buf_addr;
+	malloc_table = (struct malloc_info *)((uintptr_t)bld_buf_addr + MALLOC_BLOCK_SIZE);
 	malloc_table_num = MALLOC_BLOCK_SIZE / sizeof(struct malloc_info);
 
 	total_blks = (bld_buf_end  - bld_buf_addr) / MALLOC_BLOCK_SIZE;
-
-	pr_debug("mem_malloc_init: total blocks = 0x%x\n", total_blks);
 
 	memset(malloc_table ,0 , MALLOC_BLOCK_SIZE);
 

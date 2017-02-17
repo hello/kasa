@@ -3,13 +3,33 @@
  *
  * Author: Anthony Ginger <hfjiang@ambarella.com>
  *
- * Copyright (C) 2004-2014, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 
 #include <ambhw/cache.h>
 #include <dsp/dsp.h>
@@ -66,9 +86,9 @@ static int dsp_init_data(void)
 {
 	dsp_init_data_t *init_data = NULL;
 	vdsp_info_t *vdsp_info = NULL;
-	default_enc_binary_data_t *enc_binary_data;
-	DSP_HEADER_CMD *cmd_hdr;
-	u32 *default_cmd;
+	default_enc_binary_data_t *enc_binary_data = NULL;
+	DSP_HEADER_CMD *cmd_hdr = NULL;
+	u32 *ucode_init_data_ptr = NULL;
 
 	/* initialize struct dsp_init_data */
 	init_data = (dsp_init_data_t *)DSP_INIT_DATA_START;
@@ -81,16 +101,12 @@ static int dsp_init_data(void)
 	init_data->cmd_data_size = DSP_CMD_BUF_SIZE;
 	init_data->result_queue_ptr = (u32 *)DSP_MSG_BUF_START;
 	init_data->result_queue_size = DSP_MSG_BUF_SIZE;
-	/* although no default cmd is used, we must assign a non-zero value
-	 * to default_config_ptr, and init the memory to 0, otherwise ucode
-	 * may crash. Stupid ucode.*/
-	default_cmd = (u32 *)(DSP_IAVRSVD_START + DSP_IAVRSVD_SIZE - 128);
-	memset(default_cmd, 0, 128);
-	init_data->default_config_ptr = default_cmd;
-	init_data->default_config_size = 128;
+	init_data->default_config_ptr = (u32 *)DSP_DEF_CMD_BUF_START;
+	init_data->default_config_size = DSP_DEF_CMD_BUF_SIZE;
 	/* setup buffer for dsp running */
 	init_data->DSP_buf_ptr = (u32 *)DSP_BUFFER_START;
 	init_data->DSP_buf_size = DSP_BUFFER_SIZE;
+	init_data->dsp_log_size = DSP_LOG_SIZE;
 	/* misc info */
 	init_data->chip_id_ptr = (u32 *)UCODE_CHIP_ID_START;
 	vdsp_info = (vdsp_info_t *)(UCODE_CHIP_ID_START + sizeof(u32));
@@ -124,6 +140,15 @@ static int dsp_init_data(void)
 	cmd_hdr->cmd_seq_num = 1;
 	cmd_hdr->num_cmds = 0;
 
+	cmd_hdr = (DSP_HEADER_CMD *)DSP_DEF_CMD_BUF_START;
+	cmd_hdr->cmd_seq_num = 1;
+	cmd_hdr->num_cmds = 0;
+
+	ucode_init_data_ptr = (u32 *)UCODE_DSP_INIT_DATA_PTR;
+	*ucode_init_data_ptr = DSP_INIT_DATA_START;
+#ifdef AMBOOT_DSP_LOG_CAPTURE
+	memset((void *)DSP_LOG_START, 0, DSP_LOG_SIZE);
+#endif
 	bopt_sync(init_data, enc_binary_data, NULL, NULL);
 
 	return 0;

@@ -6,12 +6,29 @@
 ##    2007/11/27 - [Charles Chiou] added echo supression
 ##    2008/02/19 - [Anthony Ginger] imported to AMBuild
 ##
-## Copyright (C) 2004-2007, Ambarella, Inc.
+## Copyright (c) 2015 Ambarella, Inc.
 ##
-## All rights reserved. No Part of this file may be reproduced, stored
-## in a retrieval system, or transmitted, in any form, or by any means,
-## electronic, mechanical, photocopying, recording, or otherwise,
-## without the prior consent of Ambarella, Inc.
+## This file and its contents ("Software") are protected by intellectual
+## property rights including, without limitation, U.S. and/or foreign
+## copyrights. This Software is also the confidential and proprietary
+## information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+## disclose, distribute, modify, or otherwise prepare derivative works of this
+## Software or any portion thereof except pursuant to a signed license agreement
+## or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+## In the absence of such an agreement, you agree to promptly notify and return
+## this Software to Ambarella, Inc.
+##
+## THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+## INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+## MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+## IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+## INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+## (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+## LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+## INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+## CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+## ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+## POSSIBILITY OF SUCH DAMAGE.
 ##
 
 # Requirements:
@@ -21,9 +38,11 @@
 #	$(BSP)
 #	$(CROSS) and all the compilation tool variables.
 
-DEFINES =	-D__BUILD_AMBOOT__ -D__ARCH_$(ARCH)__ -D__BSP_$(BSP)__ \
-		$(EXTRA_DEFINES)
-INCLUDES =	-I$(TOP)/include -I$(TOP)/src/bld -I. \
+BUILD_TIME	= $(shell date +"%x %T")
+
+DEFINES		= -D__BUILD_AMBOOT__ -D__ARCH_$(ARCH)__ -D__BSP_$(BSP)__ \
+		$(EXTRA_DEFINES) -D__BUILD_TIME__="\"$(BUILD_TIME)\""
+INCLUDES	= -I$(TOP)/include -I$(TOP)/src/bld -I. \
 		-I$(BUILD_DIR) -I$(BSP_DIR) -I$(TOP)/src/bst
 
 ARCH_LO :=	$(shell gawk 'BEGIN { print tolower("$(ARCH)") }')
@@ -119,6 +138,14 @@ ifeq ($(DRAM_TYPE_DDR3),y)
 DRAM_TYPE = ddr3
 endif
 
+# choose image
+IMAGE_DIR = image
+ifeq ($(CONFIG_4K_BOOT_IMAGE),y)
+ifeq ($(SV_DIR)/image_4k, $(wildcard $(SV_DIR)/image_4k))
+IMAGE_DIR = image_4k
+endif
+endif
+
 ## Link board lib if have
 ifeq ($(BSP_DIR)/libbst_external.a,$(wildcard $(BSP_DIR)/libbst_external.a))
 LD_BST_EXTERNAL := -L$(BSP_DIR) -lbst_external
@@ -164,12 +191,16 @@ BSTCONFIG := $(SV_DIR)/bin/lnx/bstconfig
 endif
 
 ifeq ($(CONFIG_BOOT_MEDIA_EMMC),y)
-BST_BIN := $(SV_DIR)/image/amboot_emmc_$(DRAM_TYPE).bin
+BST_BIN := $(SV_DIR)/$(IMAGE_DIR)/amboot_emmc_$(DRAM_TYPE).bin
 else
 ifeq ($(CONFIG_BOOT_MEDIA_SPINOR),y)
-BST_BIN := $(SV_DIR)/image/amboot_spinor_$(DRAM_TYPE).bin
+BST_BIN := $(SV_DIR)/$(IMAGE_DIR)/amboot_spinor_$(DRAM_TYPE).bin
 else
-BST_BIN := $(SV_DIR)/image/amboot_bst_$(DRAM_TYPE).bin
+ifeq ($(CONFIG_BOOT_MEDIA_SPINAND),y)
+BST_BIN := $(SV_DIR)/$(IMAGE_DIR)/amboot_spinand_$(DRAM_TYPE).bin
+else
+BST_BIN := $(SV_DIR)/$(IMAGE_DIR)/amboot_bst_$(DRAM_TYPE).bin
+endif
 endif
 endif
 
@@ -188,6 +219,7 @@ SRCS +=		$(TOP)/src/bld/trampoline.S \
 		$(TOP)/src/bld/memset.c \
 		$(TOP)/src/bld/memcmp.c \
 		$(TOP)/src/bld/crc32.c \
+		$(TOP)/src/bld/gpio.c \
 		$(TOP)/src/bld/uart.c \
 		$(TOP)/src/bld/firmfl.c \
 		$(TOP)/src/bld/partition.c \
@@ -209,6 +241,7 @@ AMBOOT_BLD_OBJS = \
 		memset.o \
 		memcmp.o \
 		crc32.o \
+		gpio.o \
 		uart.o \
 		firmfl.o \
 		partition.o \
@@ -282,7 +315,9 @@ SRCS +=	\
 		$(TOP)/src/bld/secure/pk_rsa.c \
 		$(TOP)/src/bld/secure/tiny_asn1.c \
 		$(TOP)/src/bld/secure/tiny_oid.c \
+		$(TOP)/src/bld/secure/platform_misc.c \
 		$(TOP)/src/bld/secure/secure_boot.c \
+		$(TOP)/src/bld/secure/secure_boot_main.c
 
 AMBOOT_BLD_OBJS += \
 		crypt_utils.o \
@@ -291,20 +326,16 @@ AMBOOT_BLD_OBJS += \
 		pk_rsa.o \
 		tiny_asn1.o \
 		tiny_oid.o \
-		secure_boot.o
+		platform_misc.o \
+		secure_boot.o \
+		secure_boot_main.o
 endif
 
+# For peripheral devices
 ifeq ($(CONFIG_AMBOOT_ENABLE_ATSHA204), y)
-ifeq ($(CONFIG_AMBOOT_BUILD_ATSHA204_FROM_SOURCE),y)
-SRCS +=	\
-		$(TOP)/src/bld/peripheral/driver_atsha204.c \
-		$(TOP)/src/bld/peripheral/library_atsha204.c
-endif
-
 AMBOOT_BLD_OBJS += \
 		driver_atsha204.o \
 		library_atsha204.o
-
 endif
 
 # flattern device tree
@@ -342,14 +373,6 @@ SRCS +=	\
 		$(TOP)/src/bld/atag.c
 AMBOOT_BLD_OBJS	+= \
 		atag.o
-endif
-
-ifeq ($(CONFIG_AMBOOT_BAPI_SUPPORT),y)
-SRCS +=	\
-		$(TOP)/src/bld/bapi.c
-
-AMBOOT_BLD_OBJS	+= \
-		bapi.o
 endif
 
 ifeq ($(CONFIG_AMBOOT_ENABLE_NAND),y)
@@ -398,25 +421,12 @@ endif
 endif
 
 ifeq ($(CONFIG_AMBOOT_ENABLE_GPIO),y)
-SRCS += \
-		$(TOP)/src/bld/gpio.S
-
-AMBOOT_BLD_OBJS += \
-		gpio.o
-
 ifeq ($(CONFIG_AMBOOT_COMMAND_SUPPORT),y)
 SRCS +=	\
 		$(TOP)/src/bld/cmd_gpio.c
 AMBOOT_BLD_OBJS += \
 		cmd_gpio.o
 endif
-
-else
-SRCS += \
-		$(TOP)/src/bld/minipin.S
-
-AMBOOT_BLD_OBJS += \
-		minipin.o
 endif
 
 ifeq ($(CONFIG_AMBOOT_ENABLE_SPINOR),y)
@@ -434,6 +444,24 @@ SRCS +=	\
 		$(TOP)/src/bld/cmd_spinor.c
 AMBOOT_BLD_OBJS += \
 		cmd_spinor.o
+endif
+endif
+
+ifeq ($(CONFIG_AMBOOT_ENABLE_SPINAND),y)
+SRCS += $(TOP)/src/bld/spinand.c
+AMBOOT_BLD_OBJS += \
+		spinand.o
+
+include $(TOP)/src/flashdb/spinand/make.inc
+SRCS +=		$(SPINANDDB_SRCS)
+AMBOOT_BLD_OBJS += \
+		$(SPINANDDB_OBJS)
+
+ifeq ($(CONFIG_AMBOOT_COMMAND_SUPPORT),y)
+SRCS +=	\
+		$(TOP)/src/bld/cmd_spinand.c
+AMBOOT_BLD_OBJS += \
+		cmd_spinand.o
 endif
 endif
 
@@ -641,6 +669,9 @@ cortex_bst_debug.o: $(TOP)/src/bld/cortex_bst.S
 %_debug.o: $(TOP)/src/flashdb/spinor/%.c
 	$(MAKE_DEBUG_OBJ)
 
+%_debug.o: $(TOP)/src/flashdb/spinand/%.c
+	$(MAKE_DEBUG_OBJ)
+
 %_debug.o: $(TOP)/src/bld/libfdt/%.c
 	$(MAKE_DEBUG_OBJ)
 
@@ -665,13 +696,11 @@ cortex_bst_debug.o: $(TOP)/src/bld/cortex_bst.S
 %_debug.o: $(TOP)/src/bld/secure/%.c
 	$(MAKE_DEBUG_OBJ)
 
-ifeq ($(CONFIG_AMBOOT_BUILD_ATSHA204_FROM_SOURCE),y)
 %_debug.o: $(TOP)/src/bld/peripheral/%.c
 	$(MAKE_DEBUG_OBJ)
-else
+
 %_debug.o: $(TOP)/src/bld/peripheral/%.o_shipped
 	cp $< $@
-endif
 
 %_release.o: $(TOP)/src/bld/%.S
 	$(ASM_NDEBUG_OBJ)
@@ -686,6 +715,9 @@ cortex_bst_release.o: $(TOP)/src/bld/cortex_bst.S
 	$(MAKE_NDEBUG_OBJ)
 
 %_release.o: $(TOP)/src/flashdb/spinor/%.c
+	$(MAKE_NDEBUG_OBJ)
+
+%_release.o: $(TOP)/src/flashdb/spinand/%.c
 	$(MAKE_NDEBUG_OBJ)
 
 %_release.o: $(TOP)/src/bld/libfdt/%.c
@@ -712,13 +744,12 @@ cortex_bst_release.o: $(TOP)/src/bld/cortex_bst.S
 %_release.o: $(TOP)/src/bld/secure/%.c
 	$(MAKE_NDEBUG_OBJ)
 
-ifeq ($(CONFIG_AMBOOT_BUILD_ATSHA204_FROM_SOURCE),y)
 %_release.o: $(TOP)/src/bld/peripheral/%.c
 	$(MAKE_DEBUG_OBJ)
-else
+
 %_release.o: $(TOP)/src/bld/peripheral/%.o_shipped
 	cp $< $@
-endif
+
 
 __MAKEDEP = \
 	$(CROSS)$(GCCDEP) $(DEFINES) $(INCLUDES) $(SRCS) > .deppre ; \

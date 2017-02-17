@@ -3,13 +3,33 @@
  *
  * Author: Anthony Ginger <hfjiang@ambarella.com>
  *
- * Copyright (C) 2004-2014, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 
 #ifndef __AMBHW__GPIO_H__
 #define __AMBHW__GPIO_H__
@@ -182,26 +202,30 @@
 #define GPIO_FUNC_HW			2
 
 /* ==========================================================================*/
-#ifndef __ASM__
+
+#define PINID_TO_BANK(p)		((p) >> 5)
+#define PINID_TO_OFFSET(p)		((p) & 0x1f)
+
 /* ==========================================================================*/
 
-extern void minipin_init(void);
+#ifndef __ASM__
+
+extern void gpio_init(void);
+extern void gpio_mini_init(void);
 
 #ifdef CONFIG_AMBOOT_ENABLE_GPIO
-extern void gpio_init(void);
-extern void gpio_config_hw(int gpio, int alt_func);
-extern void gpio_config_sw_in(int gpio);
-extern void gpio_config_sw_out(int gpio);
-extern void gpio_set(int gpio);
-extern void gpio_clr(int gpio);
+extern int gpio_config_hw(int gpio, int alt_func);
+extern int gpio_config_sw_in(int gpio);
+extern int gpio_config_sw_out(int gpio);
+extern int gpio_set(int gpio);
+extern int gpio_clr(int gpio);
 extern int gpio_get(int gpio);
 #else
-static inline void gpio_init(void) { }
-static inline void gpio_config_hw(int gpio, int alt_func) { }
-static inline void gpio_config_sw_in(int gpio) { }
-static inline void gpio_config_sw_out(int gpio) { }
-static inline void gpio_set(int gpio) { }
-static inline void gpio_clr(int gpio) { }
+static inline int gpio_config_hw(int gpio, int alt_func) {return -1; }
+static inline int gpio_config_sw_in(int gpio) {return -1; }
+static inline int gpio_config_sw_out(int gpio) {return -1; }
+static inline int gpio_set(int gpio) {return -1; }
+static inline int gpio_clr(int gpio) {return -1; }
 static inline int gpio_get(int gpio) {return -1; }
 
 #endif

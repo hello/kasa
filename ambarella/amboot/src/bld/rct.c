@@ -3,13 +3,33 @@
  *
  * Author: Anthony Ginger <hfjiang@ambarella.com>
  *
- * Copyright (C) 2004-2014, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 
 #include <bldfunc.h>
 #include <ambhw/dma.h>
@@ -119,15 +139,7 @@ u32 rct_get_frac_pll_freq(u32 c, u32 f, u32 pres, u32 posts)
 /* ==========================================================================*/
 u32 get_core_bus_freq_hz(void)
 {
-#if (CHIP_REV == S2L) || (CHIP_REV == S3) || (CHIP_REV == S3L)
 	return (rct_get_integer_pll_freq(readl(PLL_CORE_CTRL_REG), 1, 1) >> 1);
-#elif (CHIP_REV == A7L)
-	return (rct_get_integer_pll_freq(readl(PLL_CORE_CTRL_REG), 1,
-		readl(SCALER_CORE_POST_REG)) >> 1);
-#else
-	return (rct_get_integer_pll_freq(readl(PLL_CORE_CTRL_REG),
-		1, readl(SCALER_CORE_POST_REG)));
-#endif
 }
 
 u32 get_ahb_bus_freq_hz(void)
@@ -149,13 +161,8 @@ u32 get_apb_bus_freq_hz(void)
 /* ==========================================================================*/
 u32 get_idsp_freq_hz(void)
 {
-#if (CHIP_REV == S2L) || (CHIP_REV == S3) || (CHIP_REV == S3L)
 	return rct_get_integer_pll_freq(readl(PLL_IDSP_CTRL_REG),
 		1, PLL_SCALER_JDIV(readl(SCALER_IDSP_POST_REG)));
-#else
-	return rct_get_integer_pll_freq(readl(PLL_IDSP_CTRL_REG),
-		1, readl(SCALER_IDSP_POST_REG));
-#endif
 }
 
 /* ==========================================================================*/
@@ -221,58 +228,49 @@ u32 get_uart_freq_hz(void)
 /* ==========================================================================*/
 u32 rct_timer_tick2ms(u32 s_tck, u32 e_tck)
 {
-#if ((CHIP_REV == A5S) || defined(CONFIG_AMBOOT_RCTTM_USE_SYS_TIMER))
-	return (s_tck - e_tck) / (get_apb_bus_freq_hz() / 1000);
-#else
+#if (RCT_TIMER_INSTANCES >= 1)
 	return (e_tck - s_tck) / (REF_CLK_FREQ / 1000);
-#endif
-}
-
-void rct_timer_enable()
-{
-#if ((CHIP_REV == A5S) || defined(CONFIG_AMBOOT_RCTTM_USE_SYS_TIMER))
-	writel(TIMER_CTR_REG, (readl(TIMER_CTR_REG) | 0x10));
 #else
-	writel(RCT_TIMER_CTRL_REG, 0x0);
-#endif
-}
-
-void rct_timer_disable()
-{
-#if ((CHIP_REV == A5S) || defined(CONFIG_AMBOOT_RCTTM_USE_SYS_TIMER))
-	writel(TIMER_CTR_REG, (readl(TIMER_CTR_REG) & (~0xF0)));
-#else
-	writel(RCT_TIMER_CTRL_REG, 0x1);
+	return (s_tck - e_tck) / (get_apb_bus_freq_hz() / 1000);
 #endif
 }
 
 void rct_timer_reset_count()
 {
-	rct_timer_disable();
-#if ((CHIP_REV == A5S) || defined(CONFIG_AMBOOT_RCTTM_USE_SYS_TIMER))
+	/* reset timer */
+#if (RCT_TIMER_INSTANCES >= 1)
+	writel(RCT_TIMER_CTRL_REG, 0x1);
+#else
+	writel(TIMER_CTR_REG, (readl(TIMER_CTR_REG) & (~0xF0)));
 	writel(TIMER2_STATUS_REG, 0xFFFFFFFF);
 	writel(TIMER2_RELOAD_REG, 0x00000000);
 	writel(TIMER2_MATCH1_REG, 0x00000000);
 	writel(TIMER2_MATCH2_REG, 0x00000000);
 #endif
-	rct_timer_enable();
+
+	/* enable timer */
+#if (RCT_TIMER_INSTANCES >= 1)
+	writel(RCT_TIMER_CTRL_REG, 0x0);
+#else
+	writel(TIMER_CTR_REG, (readl(TIMER_CTR_REG) | 0x10));
+#endif
 }
 
 u32 rct_timer_get_count()
 {
-#if ((CHIP_REV == A5S) || defined(CONFIG_AMBOOT_RCTTM_USE_SYS_TIMER))
-	return rct_timer_tick2ms(0xFFFFFFFF, readl(TIMER2_STATUS_REG));
-#else
+#if (RCT_TIMER_INSTANCES >= 1)
 	return rct_timer_tick2ms(0x00000000, readl(RCT_TIMER_REG));
+#else
+	return rct_timer_tick2ms(0xFFFFFFFF, readl(TIMER2_STATUS_REG));
 #endif
 }
 
 u32 rct_timer_get_tick()
 {
-#if ((CHIP_REV == A5S) || defined(CONFIG_AMBOOT_RCTTM_USE_SYS_TIMER))
-	return readl(TIMER2_STATUS_REG);
-#else
+#if (RCT_TIMER_INSTANCES >= 1)
 	return readl(RCT_TIMER_REG);
+#else
+	return readl(TIMER2_STATUS_REG);
 #endif
 }
 
@@ -288,42 +286,63 @@ void rct_timer_dly_ms(u32 dly_tim)
 	}
 }
 
-u32 rct_timer_get_frequency_div_1000()
+u32 rct_timer2_tick2ms(u32 s_tck, u32 e_tck)
 {
-#if ((CHIP_REV == A5S) || defined(CONFIG_AMBOOT_RCTTM_USE_SYS_TIMER))
-	return (get_apb_bus_freq_hz() / 1000);
+#if (RCT_TIMER_INSTANCES >= 2)
+	return (e_tck - s_tck) / (REF_CLK_FREQ / 1000);
 #else
-	return (REF_CLK_FREQ / 1000);
+	return (s_tck - e_tck) / (get_apb_bus_freq_hz() / 1000);
 #endif
 }
 
-static u32 rct_timer_get_ticks()
+void rct_timer2_reset_count()
 {
-#if ((CHIP_REV == A5S) || defined(CONFIG_AMBOOT_RCTTM_USE_SYS_TIMER))
-	return readl(TIMER2_STATUS_REG);
+	/* reset timer */
+#if (RCT_TIMER_INSTANCES >= 2)
+	writel(RCT_TIMER2_CTRL_REG, 0x1);
 #else
-	return readl(RCT_TIMER_REG);
+	writel(TIMER_CTR_REG, (readl(TIMER_CTR_REG) & (~0xF00)));
+	writel(TIMER3_STATUS_REG, 0xFFFFFFFF);
+	writel(TIMER3_RELOAD_REG, 0x00000000);
+	writel(TIMER3_MATCH1_REG, 0x00000000);
+	writel(TIMER3_MATCH2_REG, 0x00000000);
+#endif
+
+	/* enable timer */
+#if (RCT_TIMER_INSTANCES >= 2)
+	writel(RCT_TIMER2_CTRL_REG, 0x0);
+#else
+	writel(TIMER_CTR_REG, (readl(TIMER_CTR_REG) | 0x100));
 #endif
 }
 
-void rct_timer_delay_ticks(u32 ticks)
+u32 rct_timer2_get_count()
 {
-	u32 begin_time = rct_timer_get_ticks();
-	u32 end_time = begin_time + ticks;
-	u32 cur_time = 0;
+#if (RCT_TIMER_INSTANCES >= 2)
+	return rct_timer2_tick2ms(0x00000000, readl(RCT_TIMER2_REG));
+#else
+	return rct_timer2_tick2ms(0xFFFFFFFF, readl(TIMER3_STATUS_REG));
+#endif
+}
 
-	if (end_time > begin_time) {
-		while (1) {
-			cur_time = rct_timer_get_ticks();
-			if (cur_time > end_time)
-				break;
-		}
-	} else {
-		while (1) {
-			cur_time = rct_timer_get_ticks();
-			if ((cur_time > end_time) && (cur_time < begin_time))
-				break;
-		}
+u32 rct_timer2_get_tick()
+{
+#if (RCT_TIMER_INSTANCES >= 2)
+	return readl(RCT_TIMER2_REG);
+#else
+	return readl(TIMER3_STATUS_REG);
+#endif
+}
+
+void rct_timer2_dly_ms(u32 dly_tim)
+{
+	u32 cur_tim;
+
+	rct_timer2_reset_count();
+	while (1) {
+		cur_tim = rct_timer2_get_count();
+		if (cur_tim >= dly_tim)
+			break;
 	}
 }
 
@@ -901,7 +920,11 @@ void rct_show_boot_from(u32 boot_from)
 		putstr("USB");
 		break;
 	case RCT_BOOT_FROM_SPINOR:
+		#if defined(CONFIG_BOOT_MEDIA_SPINAND)
+		putstr("SPI NAND");
+		#else
 		putstr("SPI NOR");
+		#endif
 		break;
 	default:
 		putstr("Unknown");

@@ -7,13 +7,33 @@
  *    2005/01/31 - [Charles Chiou] created file
  *    2014/02/13 - [Anthony Ginger] Amboot V2
  *
- * Copyright (C) 2004-2014, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 
 #include <amboot.h>
 #include <ambhw/nand.h>
@@ -26,7 +46,7 @@
 #include <sdmmc.h>
 
 /*===========================================================================*/
-#define FWPROG_BUF_SIZE		(4096) /* should be multiple of 2048 */
+#define FWPROG_BUF_SIZE		0x10000 /* should be multiple of 2048 */
 
 /*===========================================================================*/
 static const char *FLPROG_ERR_STR[] = {
@@ -51,8 +71,8 @@ static void *fdt_root = PTB_DTB(bld_ptb_buf);
 #endif
 
 /*===========================================================================*/
-#if defined(CONFIG_AMBOOT_ENABLE_NAND) || \
-	defined(CONFIG_AMBOOT_ENABLE_SD) || defined(CONFIG_AMBOOT_ENABLE_SPINOR)
+#if defined(CONFIG_AMBOOT_ENABLE_NAND) || defined(CONFIG_AMBOOT_ENABLE_SD) || \
+	defined(CONFIG_AMBOOT_ENABLE_SPINOR) || defined(CONFIG_AMBOOT_ENABLE_SPINAND)
 static u8 check_buf[FWPROG_BUF_SIZE]
 	__attribute__ ((aligned(32), section(".bss.noinit")));
 #endif
@@ -71,6 +91,10 @@ flnand_t flnand;
 
 #if defined(CONFIG_AMBOOT_ENABLE_SPINOR)
 flspinor_t flspinor;
+#endif
+
+#if defined(CONFIG_AMBOOT_ENABLE_SPINAND)
+flspinand_t flspinand;
 #endif
 
 /*===========================================================================*/
@@ -336,7 +360,7 @@ static int flprog_ptb_nand_write(u8 *pptb_buf)
 #endif
 
 #if defined(CONFIG_AMBOOT_ENABLE_SD)
-int flprog_sm_prog_sector_loop(u8 *raw_image, unsigned int raw_size,
+static int flprog_sm_prog_sector_loop(u8 *raw_image, unsigned int raw_size,
 	u32 ssec, u32 nsec, int (*output_progress)(int, void *), void *arg)
 {
 	int ret_val = 0;
@@ -607,6 +631,270 @@ static int flprog_ptb_spinor_read(u8 *pptb_buf)
 }
 #endif
 
+#if defined(CONFIG_AMBOOT_ENABLE_SPINAND)
+static int flprog_spinand_prog_block_loop(u8 *raw_image, u32 raw_size,
+	u32 sblk, u32 nblk, int (*output_progress)(int, void *), void *arg)
+{
+	int ret_val = 0;
+	int firm_ok = 0;
+	u32 block;
+	u32 page;
+	u32 percentage;
+	unsigned int offset;
+	unsigned int pre_offset;
+	offset = 0;
+	for (block = sblk; block < (sblk + nblk); block++) {
+		ret_val = spinand_is_bad_block(block);
+		if (ret_val & NAND_ALL_BAD_BLOCK_FLAGS) {
+			spinand_output_bad_block(block, ret_val);
+			ret_val = 0;
+			continue;
+		}
+
+		ret_val = spinand_erase_block(block);
+		if (ret_val < 0) {
+			putstr("erase failed. <block ");
+			putdec(block);
+			putstr(">\r\n");
+			putstr("Try next block...\r\n");
+
+			/* Marked and skipped bad block */
+			ret_val = spinand_mark_bad_block(block);
+			if (ret_val < 0) {
+				return FLPROG_ERR_PROG_IMG;
+			} else {
+				continue;
+			}
+		}
+
+		/* erase the unused block after program ok */
+		if (firm_ok == 1)
+			continue;
+
+		pre_offset = offset;
+		/* Program each page */
+		for (page = 0; page < flspinand.pages_per_block; page++) {
+			/* Program a page */
+			ret_val = spinand_prog_pages(block, page, 1,
+				(raw_image + offset));
+			if (ret_val < 0) {
+				putstr("program failed. <block ");
+				putdec(block);
+				putstr(", page ");
+				putdec(page);
+				putstr(">\r\n");
+				break;
+			}
+			/* Read it back for verification */
+			ret_val = spinand_read_pages(block, page, 1,
+				check_buf, 1);
+			if (ret_val < 0) {
+				putstr("read failed. <block ");
+				putdec(block);
+				putstr(", page ");
+				putdec(page);
+				putstr(">\r\n");
+				break;
+			}
+
+			/* Compare memory content after read back */
+			ret_val = memcmp(raw_image + offset,
+				check_buf, flspinand.main_size);
+			if (ret_val != 0) {
+				putstr("check failed. <block ");
+				putdec(block);
+				putstr(", page ");
+				putdec(page);
+				putstr(">\r\n");
+				ret_val = -1;
+				break;
+			}
+			offset += flspinand.main_size;
+			if (offset >= raw_size) {
+				firm_ok = 1;
+				break;
+			}
+		}
+		if (ret_val < 0) {
+			offset = pre_offset;
+			ret_val = spinand_mark_bad_block(block);
+			if (ret_val < 0) {
+				break;
+			} else {
+				ret_val = spinand_is_bad_block(block);
+				spinand_output_bad_block(block, ret_val);
+				ret_val = 0;
+				continue;
+			}
+		} else {
+			if (output_progress) {
+				if (offset >= raw_size)
+					percentage = 100;
+				else
+					percentage = offset / (raw_size / 100);
+
+				output_progress(percentage, NULL);
+			}
+		}
+	}
+
+	if ((ret_val < 0) || (firm_ok == 0)) {
+		ret_val = FLPROG_ERR_PROG_IMG;
+	}
+
+	return ret_val;
+}
+static u32 spinand_bst_crc = 0;
+static int flprog_spinand_prog_bst(u8 *raw_image, u32 raw_size,
+	u32 sblk, u32 nblk, int (*output_progress)(int, void *), void *arg)
+{
+	int address;
+	u32 bst_size;
+
+	struct spinor_boot_header header;
+	int rval;
+
+	memzero(&header, sizeof(struct spinor_boot_header));
+
+	/* SPINOR_LENGTH_REG */
+	header.data_len = AMBOOT_BST_FIXED_SIZE;
+	header.clk_divider = 20;
+	header.dummy_len = 0;
+	header.addr_len = 3;
+	header.cmd_len = 1;
+	/* SPINOR_CTRL_REG */
+	header.read_en = 1;
+	header.write_en = 0;
+	header.rsvd0 = 0;
+	header.rxlane = 1;
+	header.data_lane = 0x1;
+	header.addr_lane = 0x0;
+	header.cmd_lane = 0x0;
+	header.rsvd1 = 0;
+	header.data_dtr = 0;
+	header.dummy_dtr = 0;
+	header.addr_dtr = 0;
+	header.cmd_dtr = 0;
+	/* SPINOR_CFG_REG */
+	header.rxsampdly = 1;
+	header.rsvd2 = 0;
+	header.chip_sel = (~(1 << (SPINOR_FLASH_CHIP_SEL))) & 0xff;
+	header.hold_timing = 0;
+	header.rsvd3 = 0;
+	header.hold_pin = 3;
+	header.flow_ctrl = 1;
+	/* SPINOR_CMD_REG */
+	header.cmd = SPINOR_CMD_READ;
+	/* SPINOR_ADDRHI_REG */
+	header.addr_hi = 0x0;
+	/* SPINOR_ADDRLO_REG */
+	header.addr_lo = 0x0 + sizeof(struct spinor_boot_header);
+
+	/* bst is always programmed in the first block/page */
+	if (sblk != 0)
+		return -1;
+
+	if (AMBOOT_BST_FIXED_SIZE > flspinand.main_size) {
+		putstr("BST size is too big for spinand page size\r\n");
+		return -1;
+	}
+
+	rval = spinand_erase_block(sblk);
+	if (rval < 0) {
+		putstr("erase failed. <sector 0>\r\n");
+		return rval;
+	}
+
+#if 0
+	spinand_bst_crc = crc32(raw_image, AMBOOT_PTB_BUF_SIZE);
+	putstr("spi nand bst image crc32 value is 0x");
+	puthex(spinand_bst_crc);
+	putstr("\r\n");
+#endif
+	memcpy(check_buf, &header, sizeof(struct spinor_boot_header));
+
+	address = 0 + sizeof(struct spinor_boot_header);
+	bst_size = max((AMBOOT_BST_FIXED_SIZE - sizeof(struct spinor_boot_header)),raw_size);
+	memcpy(check_buf + address, raw_image, bst_size);
+	rval = spinand_program_page(0, 0, check_buf, AMBOOT_BST_FIXED_SIZE);
+	if (rval < 0) {
+		putstr("program failed. <block 0>\r\n");
+		return rval;
+	}
+
+	if (output_progress)
+		output_progress(100, NULL);
+
+	return 0;
+}
+
+static void flprog_ptb_spinand_fix_meta(flpart_meta_t *pmeta)
+{
+	int i;
+
+	for (i = 0; i <= HAS_IMG_PARTS; i++) {
+		memzero(pmeta->part_info[i].name, PART_NAME_LEN);
+		memcpy(pmeta->part_info[i].name, get_part_str(i),
+			strlen(get_part_str(i)));
+		pmeta->part_info[i].dev = get_part_dev(i);
+		pmeta->part_info[i].sblk = flspinand.sblk[i];
+		pmeta->part_info[i].nblk = flspinand.nblk[i];
+	}
+	for (; i < PART_MAX; i++) {
+		memzero(pmeta->part_info[i].name, PART_NAME_LEN);
+		pmeta->part_info[i].dev = PART_DEV_AUTO;
+		pmeta->part_info[i].sblk = 0;
+		pmeta->part_info[i].nblk = 0;
+	}
+
+	pmeta->magic = PTB_META_MAGIC;
+}
+
+static int flprog_ptb_spinand_write(u8 *pptb_buf)
+{
+	int ret_val = -1;
+
+	flprog_ptb_spinand_fix_meta(PTB_META(pptb_buf));
+
+	flprog_ptb_fix_header(pptb_buf);
+
+	ret_val = flprog_spinand_prog_block_loop(pptb_buf, AMBOOT_PTB_BUF_SIZE,
+		flspinand.sblk[PART_PTB], flspinand.nblk[PART_PTB], NULL, NULL);
+
+	return ret_val;
+}
+
+static int flprog_ptb_spinand_read(u8 *pptb_buf)
+{
+	int ret_val;
+	u32 blk, pages, sblk, nblk;
+
+	sblk = flspinand.sblk[PART_PTB];
+	nblk = flspinand.nblk[PART_PTB];
+	/* skip bad block */
+	for (blk = sblk; blk < (sblk + nblk); blk++) {
+		if (!spinand_is_bad_block(blk))
+			break;
+	}
+	if (blk >= (sblk + nblk)) {
+		return -1;
+	}
+	pages = (AMBOOT_PTB_BUF_SIZE + flspinand.main_size - 1) / flspinand.main_size;
+
+	ret_val = spinand_read_pages(blk, 0, pages, pptb_buf, 1);
+	if (ret_val < 0)
+		return ret_val;
+
+	ret_val = flprog_ptb_check_header(pptb_buf);
+	if (ret_val < 0)
+		return ret_val;
+
+	flprog_ptb_spinand_fix_meta(PTB_META(pptb_buf));
+
+	return 0;
+}
+#endif
+
 static int flprog_ptb_read_data(void)
 {
 	int ret_val = -1;
@@ -632,7 +920,11 @@ static int flprog_ptb_read_data(void)
 		ret_val = flprog_ptb_spinor_read(bld_ptb_buf);
 	}
 #endif
-
+#if defined(CONFIG_AMBOOT_ENABLE_SPINAND)
+	if ((ret_val < 0) && (part_dev & PART_DEV_SPINAND)) {
+		ret_val = flprog_ptb_spinand_read(bld_ptb_buf);
+	}
+#endif
 	if (ret_val < 0)
 		memzero(bld_ptb_buf, AMBOOT_PTB_BUF_SIZE);
 	else {
@@ -664,6 +956,11 @@ static int flprog_ptb_write_data(void)
 #if defined(CONFIG_AMBOOT_ENABLE_SPINOR)
 	if (part_dev & PART_DEV_SPINOR) {
 		ret_val = flprog_ptb_spinor_write(bld_ptb_buf);
+	}
+#endif
+#if defined(CONFIG_AMBOOT_ENABLE_SPINAND)
+	if (part_dev & PART_DEV_SPINAND) {
+		ret_val = flprog_ptb_spinand_write(bld_ptb_buf);
 	}
 #endif
 	if (ret_val < 0) {
@@ -836,7 +1133,7 @@ static int flprog_validate_image(u8 *image, unsigned int len)
 }
 
 #if defined(CONFIG_AMBOOT_ENABLE_NAND)
-int flprog_write_partition_nand(int pid, u8 *image, unsigned int len)
+static int flprog_write_partition_nand(int pid, u8 *image, unsigned int len)
 {
 	int ret_val;
 	partimg_header_t *header;
@@ -860,7 +1157,7 @@ int flprog_write_partition_nand(int pid, u8 *image, unsigned int len)
 #endif
 
 #if defined(CONFIG_AMBOOT_ENABLE_SD)
-int flprog_write_partition_sd(int pid, u8 *image, unsigned int len)
+static int flprog_write_partition_sd(int pid, u8 *image, unsigned int len)
 {
 	int ret_val = 0;
 	partimg_header_t *header;
@@ -893,7 +1190,7 @@ flprog_write_partition_sd_exit:
 }
 #endif
 #if defined(CONFIG_AMBOOT_ENABLE_SPINOR)
-int flprog_write_partition_spinor(int pid, u8 *image, unsigned int len)
+static int flprog_write_partition_spinor(int pid, u8 *image, unsigned int len)
 {
 	partimg_header_t *header;
 	u8 *raw_image;
@@ -915,6 +1212,36 @@ int flprog_write_partition_spinor(int pid, u8 *image, unsigned int len)
 	} else {
 		ret_val = flprog_spinor_prog_sector_loop(raw_image, raw_size,
 				ssec, nsec, flprog_output_progress, NULL);
+	}
+
+	return ret_val;
+}
+#endif
+#if defined(CONFIG_AMBOOT_ENABLE_SPINAND)
+static int flprog_write_partition_spinand(int pid, u8 *image, unsigned int len)
+{
+	partimg_header_t *header;
+	u8 *raw_image;
+	u32 raw_size = 0;
+	u32 sblk = 0;
+	u32 nblk = 0;
+	int ret_val;
+
+	putstr(" into SPINAND\r\n");
+
+	header = (partimg_header_t *)image;
+	raw_image = (image + sizeof(partimg_header_t));
+	raw_size = header->img_len;
+
+	sblk = flspinand.sblk[pid];
+	nblk = flspinand.nblk[pid];
+
+	if (pid == PART_BST) {
+		ret_val = flprog_spinand_prog_bst(raw_image, raw_size,
+				sblk, nblk, flprog_output_progress, NULL);
+	} else {
+		ret_val = flprog_spinand_prog_block_loop(raw_image, raw_size,
+				sblk, nblk, flprog_output_progress, NULL);
 	}
 
 	return ret_val;
@@ -976,7 +1303,13 @@ int flprog_write_partition(int pid, u8 *image, unsigned int len)
 		ret_val = flprog_write_partition_spinor(pid, image, len);
 	}
 #endif
-
+#if defined(CONFIG_AMBOOT_ENABLE_SPINAND)
+	if (part_dev & PART_DEV_SPINAND) {
+		ret_val = flprog_write_partition_spinand(pid, image, len);
+		if (pid == PART_BST)
+			header->crc32 = spinand_bst_crc;
+	}
+#endif
 	/* Update the PTB's entry */
 	if (ret_val == 0) {
 		flpart_table_t ptb;
@@ -1132,6 +1465,42 @@ static int flprog_erase_partition_spinor(int pid)
 }
 #endif
 
+#if defined(CONFIG_AMBOOT_ENABLE_SPINAND)
+static int flprog_erase_partition_spinand(int pid)
+{
+	int ret_val = 0;
+	u32 sblk = 0;
+	u32 nblk = 0;
+	u32 block;
+
+	if (pid == HAS_IMG_PARTS) {
+		sblk = 0;
+		nblk = flspinand.chip_size / flspinand.block_size;
+	} else {
+		sblk = flspinand.sblk[pid];
+		nblk = flspinand.nblk[pid];
+	}
+
+	for (block = sblk; block < (sblk + nblk); block++) {
+		ret_val = spinand_is_bad_block(block);
+		if (ret_val & NAND_FW_BAD_BLOCK_FLAGS) {
+			spinand_output_bad_block(block, ret_val);
+			continue;
+		}
+
+		ret_val = spinand_erase_block(block);
+		if (ret_val < 0) {
+			spinand_mark_bad_block(block);
+			putstr(" failed! <block ");
+			putdec(block);
+			putstr(">\r\n");
+		}
+	}
+
+	return ret_val;
+}
+#endif
+
 int flprog_erase_partition(int pid)
 {
 	int ret_val = -1;
@@ -1163,6 +1532,11 @@ int flprog_erase_partition(int pid)
 #if defined(CONFIG_AMBOOT_ENABLE_SPINOR)
 	if (part_dev & PART_DEV_SPINOR) {
 		ret_val = flprog_erase_partition_spinor(pid);
+	}
+#endif
+#if defined(CONFIG_AMBOOT_ENABLE_SPINAND)
+	if (part_dev & PART_DEV_SPINAND) {
+		ret_val = flprog_erase_partition_spinand(pid);
 	}
 #endif
 	if ((ret_val == 0) && (pid != HAS_IMG_PARTS) && (pid != PART_PTB)) {
@@ -1285,6 +1659,9 @@ static void flprog_show_meta_detail(flpart_meta_t *pmeta)
 		if (pmeta->part_info[i].dev & PART_DEV_SPINOR) {
 			putstr(" SPI NOR");
 		}
+		if (pmeta->part_info[i].dev & PART_DEV_SPINAND) {
+			putstr(" SPI NAND");
+		}
 		putstr("\r\n");
 	}
 	putstr("\r\n");
@@ -1320,6 +1697,14 @@ void flprog_show_meta(void)
 	if (part_dev & PART_DEV_SPINOR) {
 		putstr("SPINOR meta:\r\n");
 		flprog_ptb_spinor_fix_meta(&meta);
+		flprog_show_meta_detail(&meta);
+		putstr("\r\n");
+	}
+#endif
+#if defined(CONFIG_AMBOOT_ENABLE_SPINAND)
+	if (part_dev & PART_DEV_SPINAND) {
+		putstr("SPINAND meta:\r\n");
+		flprog_ptb_spinand_fix_meta(&meta);
 		flprog_show_meta_detail(&meta);
 		putstr("\r\n");
 	}

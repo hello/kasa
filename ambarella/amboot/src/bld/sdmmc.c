@@ -5,13 +5,33 @@
  *    2008/05/23 - [Dragon Chiang] created file
  *    2015/04/20 - [Cao Rongrong] rewrite the codes
  *
- * Copyright (C) 2004-2008, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 
 #include <bldfunc.h>
 #include <ambhw/cache.h>
@@ -460,6 +480,11 @@ static int mmc_init_partition()
 		ssec += nsec;
 	}
 
+	/*calculate the spare capacity to fill RAW partition*/
+	sdmmc.ssec[PART_RAW] = ssec;
+	sdmmc.nsec[PART_RAW] = (sdmmc.capacity / sdmmc.sector_size) - ssec;
+	i++;
+
 	for (; i < PART_MAX; i++) {
 		sdmmc.ssec[i] = 0;
 		sdmmc.nsec[i] = 0;
@@ -783,7 +808,7 @@ int sdmmc_init_mmc(int slot, int mode, int clock, int verbose)
 	if (rval < 0)
 		goto emmc_done;
 
-	clock = (clock == -1) ? 48000000 : clock;
+	clock = (clock == -1) ? 50000000 : clock;
 
 	if (clock > 52000000) {
 		sdmmc_command(cmd_6, 0x03b90201);
@@ -821,7 +846,9 @@ int sdmmc_init_mmc(int slot, int mode, int clock, int verbose)
 	if (rval < 0)
 		goto emmc_done;
 
-	sdmmc.capacity = *(u32 *)(sdmmc_safe_buf + 212); /* sector count */
+	/* calculate the count of sector */
+	sdmmc.capacity = (u32 )sdmmc_safe_buf[212] | (((u32)sdmmc_safe_buf[213]) << 8) |
+		(((u32)sdmmc_safe_buf[214]) << 16) | (((u32)sdmmc_safe_buf[215]) << 24);
 	sdmmc.capacity <<= 9;
 
 	sdmmc.type = SDMMC_TYPE_MMC;
@@ -1225,7 +1252,7 @@ int sdmmc_read_sector(int sector, int sectors, u8 *target)
 
 		sector += SDMMC_SEC_CNT;
 		sectors -= SDMMC_SEC_CNT;
-		target += ((SDMMC_SEC_SIZE * SDMMC_SEC_CNT) >> 2);
+		target += (SDMMC_SEC_SIZE * SDMMC_SEC_CNT);
 	}
 
 	rval = sdmmc_read_sector_DMA(sector, sectors, target);
@@ -1451,7 +1478,7 @@ int sdmmc_write_sector(int sector, int sectors, u8 *image)
 
 		sector += SDMMC_SEC_CNT;
 		sectors -= SDMMC_SEC_CNT;
-		image += ((SDMMC_SEC_SIZE * SDMMC_SEC_CNT) >> 2);
+		image += (SDMMC_SEC_SIZE * SDMMC_SEC_CNT);
 	}
 
 	rval = sdmmc_write_sector_DMA(sector, sectors, image);
@@ -1459,7 +1486,7 @@ int sdmmc_write_sector(int sector, int sectors, u8 *image)
 	return rval;
 }
 
-int __sdmmc_erase_sector(int sector, int sectors)
+static int __sdmmc_erase_sector(int sector, int sectors)
 {
 	int cmd1, cmd2, rval;
 

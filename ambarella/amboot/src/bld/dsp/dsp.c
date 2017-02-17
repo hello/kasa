@@ -4,13 +4,33 @@
  * History:
  *    2014/08/04 - [Cao Rongrong] created file
  *
- * Copyright (C) 2012-2016, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 #include <basedef.h>
 #include <bldfunc.h>
 #include <ambhw/rct.h>
@@ -29,11 +49,12 @@ int add_dsp_cmd(void *cmd, u32 size)
 
 	dsp_print_cmd(cmd, size);
 
-	cmd_hdr = (DSP_HEADER_CMD *)DSP_CMD_BUF_START;
+	cmd_hdr = (DSP_HEADER_CMD *)DSP_DEF_CMD_BUF_START;
 
-	cmd_ptr = DSP_CMD_BUF_START + sizeof(DSP_HEADER_CMD) +
+	cmd_ptr = DSP_DEF_CMD_BUF_START + sizeof(DSP_HEADER_CMD) +
 			cmd_hdr->num_cmds * DSP_CMD_SIZE;
-	if ((cmd_ptr + DSP_CMD_SIZE) >= (DSP_CMD_BUF_START + DSP_CMD_BUF_SIZE)) {
+	if ((cmd_ptr + DSP_CMD_SIZE) >=
+		(DSP_DEF_CMD_BUF_START + DSP_DEF_CMD_BUF_SIZE)) {
 		putstr("cmd buffer is too small!!!\n");
 		BUG_ON(1);
 		return -1;
