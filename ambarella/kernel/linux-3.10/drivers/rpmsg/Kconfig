@@ -1,0 +1,16 @@
+menu "Rpmsg drivers"
+
+# RPMSG always gets selected by whoever wants it
+config RPMSG
+	tristate
+	select VIRTIO
+	select VIRTUALIZATION
+
+config RPMSG_TX_SPINLOCK
+	bool "Support non-blocking TX in interrupt context"
+	default y
+	depends on RPMSG
+
+source "drivers/rpmsg/ambarella/Kconfig"
+
+endmenu
