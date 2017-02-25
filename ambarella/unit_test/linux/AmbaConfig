@@ -86,5 +86,17 @@ config BUILD_AMBARELLA_UNIT_TESTS_I2C_TOOL
 	default n
 	help
 		Build unit tests for I2C test.
+
+config BUILD_AMBARELLA_UNIT_TESTS_IIO
+	bool "Build Linux IIO tool unit tests"
+	default n
+	help
+		Build unit tests for IIO test.
+
+config BUILD_AMBARELLA_UNIT_TESTS_EVTEST
+	bool "Build Linux evtest tool unit tests"
+	default n
+	help
+		Build unit tests for INPUT device test.
 endif
 

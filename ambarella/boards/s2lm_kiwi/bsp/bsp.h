@@ -3,13 +3,33 @@
  *
  * Author: Cao Rongrong <rrcao@ambarella.com>
  *
- * Copyright (C) 2012-2016, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 
 #ifndef __BSP_H__
 #define __BSP_H__
@@ -29,6 +49,22 @@
 #define AMBOOT_ROM_SIZE		0
 #define AMBOOT_DSP_SIZE		(4 * 1024 * 1024)
 #define AMBOOT_LNX_SIZE		(20 * 1024 * 1024)
+#define AMBOOT_SWP_SIZE		0
+#define AMBOOT_ADD_SIZE		0
+#define AMBOOT_ADC_SIZE		0
+#elif defined(CONFIG_BOOT_MEDIA_SPINAND)
+#define AMBOOT_BST_SIZE		AMBOOT_BST_FIXED_SIZE
+#define AMBOOT_PTB_SIZE		(AMBOOT_MIN_PART_SIZE * 10)
+#define AMBOOT_BLD_SIZE		(AMBOOT_MIN_PART_SIZE * 10)
+#define AMBOOT_SPL_SIZE		(0 * 1024 * 1024)
+#define AMBOOT_PBA_SIZE		0
+#define AMBOOT_PRI_SIZE		(20 * 1024 * 1024)
+#define AMBOOT_SEC_SIZE		(0 * 1024 * 1024)
+#define AMBOOT_BAK_SIZE		0
+#define AMBOOT_RMD_SIZE		(0 * 1024 * 1024)
+#define AMBOOT_ROM_SIZE		0
+#define AMBOOT_DSP_SIZE		(4 * 1024 * 1024)
+#define AMBOOT_LNX_SIZE		(64 * 1024 * 1024)
 #define AMBOOT_SWP_SIZE		0
 #define AMBOOT_ADD_SIZE		0
 #define AMBOOT_ADC_SIZE		0
@@ -107,7 +143,7 @@
 #define	DEFAULT_IOMUX_REG0_0	0x98000014
 #define	DEFAULT_IOMUX_REG0_1	0x00000000
 #define	DEFAULT_IOMUX_REG0_2	0x06000000
-#if defined(CONFIG_BOOT_MEDIA_SPINOR)
+#if defined(CONFIG_BOOT_MEDIA_SPINOR) || defined(CONFIG_BOOT_MEDIA_SPINAND)
 #define	DEFAULT_IOMUX_REG1_0	0x00BFFFFF
 #define	DEFAULT_IOMUX_REG1_1	0xFFC00000
 #define	DEFAULT_IOMUX_REG1_2	0x00000000

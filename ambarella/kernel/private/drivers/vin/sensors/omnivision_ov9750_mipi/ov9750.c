@@ -4,15 +4,33 @@
  * History:
  *    2014/12/04 - [Hao Zeng] Create
  *
- * Copyright (C) 2004-2014, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
  *
- * This file is produced by perl.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 #include <linux/module.h>
 #include <linux/ambpriv_device.h>
 #include <linux/interrupt.h>
@@ -26,6 +44,10 @@
 static int bus_addr = (0 << 16) | (0x6C >> 1);
 module_param(bus_addr, int, 0644);
 MODULE_PARM_DESC(bus_addr, " bus and addr: bit16~bit31: bus, bit0~bit15: addr");
+
+static bool ir_mode = 0;
+module_param(ir_mode, bool, 0644);
+MODULE_PARM_DESC(ir_mode, " Use IR mode, 0:RGB mode, 1:RGB/IR mode");
 
 struct ov9750_priv {
 	void *control_data;
@@ -361,26 +383,38 @@ static int ov9750_set_mirror_mode(struct vin_device *vdev,
 		return 0;
 
 	case VINDEV_MIRROR_NONE:
-		bayer_pattern = VINDEV_BAYER_PATTERN_BG;
+		if (ir_mode)
+			bayer_pattern = VINDEV_BAYER_PATTERN_BG_GI;
+		else
+			bayer_pattern = VINDEV_BAYER_PATTERN_BG;
 		r450b = 0x00;
 		break;
 
 	case VINDEV_MIRROR_VERTICALLY:
 		vflip = OV9750_V_FLIP;
-		bayer_pattern = VINDEV_BAYER_PATTERN_BG;
+		if (ir_mode)
+			bayer_pattern = VINDEV_BAYER_PATTERN_BG_GI;
+		else
+			bayer_pattern = VINDEV_BAYER_PATTERN_BG;
 		r450b = 0x20;
 		break;
 
 	case VINDEV_MIRROR_HORRIZONTALLY:
 		hflip = OV9750_H_MIRROR;
-		bayer_pattern = VINDEV_BAYER_PATTERN_BG;
+		if (ir_mode)
+			bayer_pattern = VINDEV_BAYER_PATTERN_BG_GI;
+		else
+			bayer_pattern = VINDEV_BAYER_PATTERN_BG;
 		r450b = 0x00;
 		break;
 
 	case VINDEV_MIRROR_HORRIZONTALLY_VERTICALLY:
 		vflip = OV9750_V_FLIP;
 		hflip = OV9750_H_MIRROR;
-		bayer_pattern = VINDEV_BAYER_PATTERN_BG;
+		if (ir_mode)
+			bayer_pattern = VINDEV_BAYER_PATTERN_BG_GI;
+		else
+			bayer_pattern = VINDEV_BAYER_PATTERN_BG;
 		r450b = 0x20;
 		break;
 
@@ -407,6 +441,31 @@ static int ov9750_set_mirror_mode(struct vin_device *vdev,
 	return errCode;
 }
 
+#ifdef CONFIG_PM
+static int ov9750_suspend(struct vin_device *vdev)
+{
+	u32 i, tmp;
+
+	for (i = 0; i < ARRAY_SIZE(pm_regs); i++) {
+		ov9750_read_reg(vdev, pm_regs[i].addr, &tmp);
+		pm_regs[i].data = (u8)tmp;
+	}
+
+	return 0;
+}
+
+static int ov9750_resume(struct vin_device *vdev)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(pm_regs); i++) {
+		ov9750_write_reg(vdev, pm_regs[i].addr, pm_regs[i].data);
+	}
+
+	return 0;
+}
+#endif
+
 static struct vin_ops ov9750_ops = {
 	.init_device		= ov9750_init_device,
 	.set_format		= ov9750_set_format,
@@ -419,6 +478,10 @@ static struct vin_ops ov9750_ops = {
 	.shutter2row		= ov9750_shutter2row,
 	.read_reg		= ov9750_read_reg,
 	.write_reg		= ov9750_write_reg,
+#ifdef CONFIG_PM
+	.suspend 			= ov9750_suspend,
+	.resume 			= ov9750_resume,
+#endif
 };
 
 /*	< include init.c here for aptina sensor, which is produce by perl >  */
@@ -426,7 +489,7 @@ static struct vin_ops ov9750_ops = {
 static int ov9750_probe(struct i2c_client *client,
 	const struct i2c_device_id *id)
 {
-	int rval = 0;
+	int i, rval = 0;
 	struct vin_device *vdev;
 	struct ov9750_priv *ov9750;
 
@@ -449,13 +512,21 @@ static int ov9750_probe(struct i2c_client *client,
 	ov9750 = (struct ov9750_priv *)vdev->priv;
 	ov9750->control_data = client;
 
+	if (ir_mode) {
+		for (i = 0; i < ARRAY_SIZE(ov9750_formats); i++)
+			ov9750_formats[i].default_bayer_pattern = VINDEV_BAYER_PATTERN_BG_GI;
+	}
+
 	rval = ambarella_vin_register_device(vdev, &ov9750_ops,
 			ov9750_formats, ARRAY_SIZE(ov9750_formats),
 			ov9750_plls, ARRAY_SIZE(ov9750_plls));
 	if (rval < 0)
 		goto ov9750_probe_err;
 
-	vin_info("OV9750 init(2-lane mipi)\n");
+	if (ir_mode)
+		vin_info("OV9756 init(2-lane mipi)\n");
+	else
+		vin_info("OV9750 init(2-lane mipi)\n");
 
 	return 0;
 

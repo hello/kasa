@@ -1,3 +1,35 @@
+/*
+ * mw_struct.h
+ *
+ * History:
+ *	2013/03/12 - [Cao Rongrong] Created file
+ *	2013/12/12 - [Jian Tang] Modified file
+ *
+ * Copyright (C) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
 
 #ifndef __MW_STRUCT_H__
 #define __MW_STRUCT_H__
@@ -299,6 +331,19 @@ typedef struct {
 } mw_sys_res;
 
 typedef struct {
+	u16 expo_ratio; 	// one param for all frames. 4 ~ 128
+	u16 boost_factor;	// one param for all frames. 0 ~ 256, 0 means no boost
+} mw_hdr_blend_info;
+
+typedef struct {
+	u8 radius;
+	u8 luma_weight_red;
+	u8 luma_weight_green;
+	u8 luma_weight_blue;
+	u8 luma_weight_shift;
+}mw_wdr_luma_info;
+
+typedef struct {
 	u32 step;
 	u32 line_time;
 } mw_sensor;
@@ -327,6 +372,7 @@ typedef struct {
 	mw_aperture_param	lens_aperture;
 	mw_ae_metering_mode	ae_metering_mode;
 	mw_ae_metering_table	ae_metering_table;
+	u32					tone_curve_duration;
 } mw_ae_param;
 
 #define	FILE_NAME_LENGTH		64
@@ -340,6 +386,16 @@ typedef enum {
 	FILE_TYPE_FIRST = FILE_TYPE_ADJ,
 	FILE_TYPE_LAST = FILE_TYPE_TOTAL_NUM,
 } MW_AAA_FILE_TYPE;
+
+typedef enum {
+	MW_AAA_SUCCESS = 0,
+	MW_AAA_INIT_FAIL = -1,
+	MW_AAA_DEINIT_FAIL = -2,
+	MW_AAA_NL_INIT_FAIL = -3,
+	MW_AAA_INTERRUPTED = -4,
+	MW_AAA_SET_FAIL = -5,
+	MW_AAA_GET_FAIL = -6,
+} MW_AAA_RESULT;
 
 
 /*******************************************************

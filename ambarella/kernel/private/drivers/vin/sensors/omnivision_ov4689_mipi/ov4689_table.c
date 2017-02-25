@@ -4,16 +4,35 @@
  * History:
  *    2012/03/23 - [Long Zhao] Create
  *
- * Copyright (C) 2004-2013, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 static struct vin_video_pll ov4689_plls[] = {
-	{0, 24167808, 120839040}, // for linear mode
+	{0, 23993520, 119967600}, // for linear mode
 	{0, 24007680, 60019200}, // for 2x wdr
 	{0, 24167808, 40279680}, // for 3x wdr
 	{0, 23992320, 119961600}, // for 2 lane 1080p
@@ -88,11 +107,11 @@ static struct vin_video_format ov4689_4lane_formats[] = {
 	{
 		.video_mode	= AMBA_VIDEO_MODE_1080P,
 		.def_start_x	= (2368 - 1920) / 2,
-		.def_start_y	= 0,
+		.def_start_y	= (1332 - 1080),
 		.def_width	= 1920,
-		.def_height	= (1332 + 0x16e) * 2,
+		.def_height	= (1080 + M_MAX_EXPO_3M) * 2,
 		.act_start_x	= 0,
-		.act_start_y	= (1332 - 1080) / 2,
+		.act_start_y	= 0,
 		.act_width	= 1920,
 		.act_height	= 1080,
 		.max_act_width = 1920,
@@ -102,7 +121,7 @@ static struct vin_video_format ov4689_4lane_formats[] = {
 		.device_mode	= 0,
 		.pll_idx	= 1,
 		.width		= 2368,
-		.height		= (1332 + 0x16e) * 2,
+		.height		= (1332 + M_MAX_EXPO_3M) * 2,
 		.format		= AMBA_VIDEO_FORMAT_PROGRESSIVE,
 		.type		= AMBA_VIDEO_TYPE_RGB_RAW,
 		.bits		= AMBA_VIDEO_BITS_10,
@@ -113,17 +132,17 @@ static struct vin_video_format ov4689_4lane_formats[] = {
 		.default_shutter_time	= AMBA_VIDEO_FPS_30,
 		.default_bayer_pattern	= VINDEV_BAYER_PATTERN_BG,
 		.hdr_long_offset = 0,
-		.hdr_short1_offset = 0x16e * 2 + 1, /* 2 x M_MAX_EXPO + 1 */
+		.hdr_short1_offset = M_MAX_EXPO_3M * 2 + 1, /* 2 x M_MAX_EXPO + 1 */
 	},
 	/* 2x hdr mode - QHD (2560x1440) */
 	{
 		.video_mode	= AMBA_VIDEO_MODE_2560_1440,
-		.def_start_x	= 0,
-		.def_start_y	= 0,
-		.def_width	= 2688,
-		.def_height	= (1520 + 0x80) * 2,
-		.act_start_x	= (2688 - 2560) / 2,
-		.act_start_y	= (1520 - 1440) / 2,
+		.def_start_x	= (2688 - 2560) / 2,
+		.def_start_y	= (1520 - 1440),
+		.def_width	= 2560,
+		.def_height	= (1440 + M_MAX_EXPO_4M) * 2,
+		.act_start_x	= 0,
+		.act_start_y	= 0,
 		.act_width	= 2560,
 		.act_height	= 1440,
 		.max_act_width = 2688,
@@ -133,7 +152,7 @@ static struct vin_video_format ov4689_4lane_formats[] = {
 		.device_mode	= 0,
 		.pll_idx	= 1,
 		.width		= 2688,
-		.height		= (1520 + 0x80) * 2,
+		.height		= (1520 + M_MAX_EXPO_4M) * 2,
 		.format		= AMBA_VIDEO_FORMAT_PROGRESSIVE,
 		.type		= AMBA_VIDEO_TYPE_RGB_RAW,
 		.bits		= AMBA_VIDEO_BITS_10,
@@ -144,7 +163,7 @@ static struct vin_video_format ov4689_4lane_formats[] = {
 		.default_shutter_time	= AMBA_VIDEO_FPS_30,
 		.default_bayer_pattern	= VINDEV_BAYER_PATTERN_BG,
 		.hdr_long_offset = 0,
-		.hdr_short1_offset = 0x80 * 2 + 1, /* 2 x M_MAX_EXPO + 1 */
+		.hdr_short1_offset = M_MAX_EXPO_4M * 2 + 1, /* 2 x M_MAX_EXPO + 1 */
 	},
 	/* 2x hdr mode - 4M (2688x1520) */
 	{
@@ -152,7 +171,7 @@ static struct vin_video_format ov4689_4lane_formats[] = {
 		.def_start_x	= 0,
 		.def_start_y	= 0,
 		.def_width	= 2688,
-		.def_height	= (1520 + 0x80) * 2,
+		.def_height	= (1520 + M_MAX_EXPO_4M) * 2,
 		.act_start_x	= 0,
 		.act_start_y	= 0,
 		.act_width	= 2688,
@@ -164,7 +183,7 @@ static struct vin_video_format ov4689_4lane_formats[] = {
 		.device_mode	= 0,
 		.pll_idx	= 1,
 		.width		= 2688,
-		.height		= (1520 + 0x80) * 2,
+		.height		= (1520 + M_MAX_EXPO_4M) * 2,
 		.format		= AMBA_VIDEO_FORMAT_PROGRESSIVE,
 		.type		= AMBA_VIDEO_TYPE_RGB_RAW,
 		.bits		= AMBA_VIDEO_BITS_10,
@@ -175,17 +194,17 @@ static struct vin_video_format ov4689_4lane_formats[] = {
 		.default_shutter_time	= AMBA_VIDEO_FPS_30,
 		.default_bayer_pattern	= VINDEV_BAYER_PATTERN_BG,
 		.hdr_long_offset = 0,
-		.hdr_short1_offset = 0x80 * 2 + 1, /* 2 x M_MAX_EXPO + 1 */
+		.hdr_short1_offset = M_MAX_EXPO_4M * 2 + 1, /* 2 x M_MAX_EXPO + 1 */
 	},
 	/* 3x hdr mode */
 	{
 		.video_mode	= AMBA_VIDEO_MODE_1080P,
-		.def_start_x	= 0,
-		.def_start_y	= 0,
-		.def_width	= 2368,
-		.def_height	= (1332 + 0x80 + 0x40) * 3,
-		.act_start_x	= (2368 - 1920) / 2,
-		.act_start_y	= (1332 - 1080) / 2,
+		.def_start_x	= (2368 - 1920) / 2,
+		.def_start_y	= (1332 - 1080) * 3 / 2,
+		.def_width	= 1920,
+		.def_height	= (1080 + 0x80 + 0x40) * 3,
+		.act_start_x	= 0,
+		.act_start_y	= 0,
 		.act_width	= 1920,
 		.act_height	= 1080,
 		.max_act_width = 2368,
@@ -212,12 +231,12 @@ static struct vin_video_format ov4689_4lane_formats[] = {
 	/* 3x hdr mode-4M */
 	{
 		.video_mode	= AMBA_VIDEO_MODE_2560_1440,
-		.def_start_x	= 0,
-		.def_start_y	= 0,
-		.def_width	= 2688,
-		.def_height	= (1520 + 0xCC + 0x33) * 3,
-		.act_start_x	= (2688 - 2560) / 2,
-		.act_start_y	= (1520 - 1440) / 2,
+		.def_start_x	= (2688 - 2560) / 2,
+		.def_start_y	= (1520 - 1440) * 3 / 2,
+		.def_width	= 2560,
+		.def_height	= (1440 + 0xCC + 0x33) * 3,
+		.act_start_x	= 0,
+		.act_start_y	= 0,
 		.act_width	= 2560,
 		.act_height	= 1440,
 		.max_act_width = 2688,
@@ -248,7 +267,7 @@ static struct vin_video_format ov4689_2lane_formats[] = {
 	{
 		.video_mode = AMBA_VIDEO_MODE_2688_1512,
 		.def_start_x = 0,
-		.def_start_y = (1520 - 1512)/2,
+		.def_start_y = (1520 - 1512) / 2,
 		.def_width = 2688,
 		.def_height = 1512,
 		/* sensor mode */
@@ -1487,8 +1506,13 @@ static struct vin_reg_16_8 ov4689_2x_hdr_regs[] = {
 	{0x3754, 0xbc},
 	{0x3756, 0x52},
 	{0x375c, 0x00},
+#if USE_2X_RATIO
+	{0x3760, 0x02},
+	{0x3761, 0x42},
+#else
 	{0x3760, 0x01},// 02
 	{0x3761, 0x6e},// ovt@20131001
+#endif
 	{0x3762, 0x00},
 	{0x3763, 0x00},
 	{0x3764, 0x01},// 00
@@ -1906,8 +1930,13 @@ static struct vin_reg_16_8 ov4689_2x_hdr_4m_regs[] = {
 	{0x350c, 0x80},
 
 	// NEW_STG_HDR2
+#if USE_2X_RATIO
+	{0x3760, 0x01},
+	{0x3761, 0x86},
+#else
 	{0x3760, 0x00}, // 02
 	{0x3761, 0x80}, // 00
+#endif
 	{0x3762, 0x00},
 	{0x3763, 0x00},
 	{0x3500, 0x00},
@@ -2512,8 +2541,6 @@ static struct vin_reg_16_8 ov4689_3x_hdr_4m_regs[] = {
 
 #ifdef CONFIG_PM
 static struct vin_reg_16_8 pm_regs[] = {
-	{OV4689_VTS_MSB, 0x00},
-	{OV4689_VTS_LSB, 0x00},
 	{OV4689_L_EXPO_HSB, 0x00},
 	{OV4689_L_EXPO_MSB, 0x00},
 	{OV4689_L_EXPO_LSB, 0x00},

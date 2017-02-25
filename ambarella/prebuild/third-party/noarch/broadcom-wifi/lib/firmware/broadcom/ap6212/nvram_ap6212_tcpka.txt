@@ -48,7 +48,7 @@ usbrdy=0x03
 usbrdydelay=100
 deadman_to=0xffffffff
 # muxenab: 0x1 for UART enable, 0x10 for Host awake
-muxenab=0x02
+muxenab=0x12
 wowl_gpio=1
 wowl_extgpio=2
 wowl_gpiopol=0

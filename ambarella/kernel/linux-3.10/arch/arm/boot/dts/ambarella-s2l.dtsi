@@ -17,7 +17,11 @@
 		serial0 = &uart0;
 		serial1 = &uart1;
 		nand = &nand0;
+		sd0 = &sdmmc0;
+		sd1 = &sdmmc1;
+		sd2 = &sdmmc2;
 		spinor = &spinor0;
+		spinand = &spinand0;
 		i2c0 = &i2c0;
 		i2c1 = &i2c1;
 		i2c2 = &i2c2;
@@ -46,7 +50,7 @@
 		clock-latency = <100000>;
 		/* the highest frequency is gotten in runtime */
 		cpufreq_tbl = < /*core_clk	cortex_clk*/
-				24000		24000
+				24000		96000
 				108000		504000>;
 
 		cpu@0 {
@@ -155,6 +159,7 @@
 		rtc@e8015000 {
 			compatible = "ambarella,rtc";
 			reg = <0xe8015000 0x1000>;
+			rtc,wakeup;
 		};
 
 		pwm: pwm@e8008000 {
@@ -257,54 +262,79 @@
 						  0x3047>;
 			};
 
+			sdmmc0_cd_pin: sdmmc0_cd@0 {
+				reg = <0>;
+				amb,pinmux-ids = <0x203b>;
+			};
+
+			sdmmc0_wp_pin: sdmmc0_wp@0 {
+				reg = <0>;
+				amb,pinmux-ids = <0x203c>;
+			};
+
 			sdmmc0_pins_1bit: sdmmc0@0 {
 				reg = <0>;
-				amb,pinmux-ids = <0x2039 0x203a 0x203b 0x203c
-						  0x2049>;
+				amb,pinmux-ids = <0x2039 0x203a 0x2049>;
 			};
 
 			sdmmc0_pins_4bit: sdmmc0@1 {
 				reg = <1>;
-				amb,pinmux-ids = <0x2039 0x203a 0x203b 0x203c
-						  0x2049 0x204a 0x204b 0x204c>;
+				amb,pinmux-ids = <0x2039 0x203a 0x2049
+						  0x204a 0x204b 0x204c>;
 			};
 
 			sdmmc0_pins_8bit: sdmmc0@2 {
 				reg = <2>;
-				amb,pinmux-ids = <0x2039 0x203a 0x203b 0x203c
-						  0x2049 0x204a 0x204b 0x204c
-						  0x204d 0x204e 0x204f 0x2050>;
+				amb,pinmux-ids = <0x2039 0x203a 0x2049 0x204a 0x204b
+						  0x204c 0x204d 0x204e 0x204f 0x2050>;
+			};
+
+			sdmmc1_cd_pin: sdmmc1_cd@0 {
+				reg = <0>;
+				amb,pinmux-ids = <0x2057>;
+			};
+
+			sdmmc1_wp_pin: sdmmc1_wp@0 {
+				reg = <0>;
+				amb,pinmux-ids = <0x2058>;
 			};
 
 			sdmmc1_pins_1bit: sdmmc1@0 {
 				reg = <0>;
-				amb,pinmux-ids = <0x2051 0x2052 0x2053 0x2057
-						  0x2058>;
+				amb,pinmux-ids = <0x2051 0x2052 0x2053>;
 			};
 
 			sdmmc1_pins_4bit: sdmmc1@1 {
 				reg = <1>;
-				amb,pinmux-ids = <0x2051 0x2052 0x2053 0x2054
-						  0x2055 0x2056 0x2057 0x2058>;
+				amb,pinmux-ids = <0x2051 0x2052 0x2053
+						  0x2054 0x2055 0x2056>;
+			};
+
+			sdmmc2_cd_pin: sdmmc2_cd@0 {
+				reg = <0>;
+				amb,pinmux-ids = <0x5008>;
+			};
+
+			sdmmc2_wp_pin: sdmmc2_wp@0 {
+				reg = <0>;
+				amb,pinmux-ids = <0x5009>;
 			};
 
 			sdmmc2_pins_1bit: sdmmc2@0 {
 				reg = <0>;
-				amb,pinmux-ids = <0x5007 0x5008 0x5009 0x500a
-						  0x5012>;
+				amb,pinmux-ids = <0x5007 0x500a 0x5012>;
 			};
 
 			sdmmc2_pins_4bit: sdmmc2@1 {
 				reg = <1>;
-				amb,pinmux-ids = <0x5007 0x5008 0x5009 0x500a
-						  0x500b 0x500c 0x500d 0x5012>;
+				amb,pinmux-ids = <0x5007 0x500a 0x500b
+						  0x500c 0x500d 0x5012>;
 			};
 
 			sdmmc2_pins_8bit: sdmmc2@2 {
 				reg = <2>;
-				amb,pinmux-ids = <0x5007 0x5008 0x5009 0x500a
-						  0x500b 0x500c 0x500d 0x500e
-						  0x500f 0x5010 0x5011 0x5012>;
+				amb,pinmux-ids = <0x5007 0x500a 0x500b 0x500c 0x500d
+						  0x500e 0x500f 0x5010 0x5011 0x5012>;
 			};
 
 			eth_pins: eth0@0 {
@@ -457,10 +487,14 @@
 			      <0xe001c000 0x1000>;
 		};
 
-		dma@e0005000 {
+		dma: dma@e0005000 {
 			compatible = "ambarella,dma";
 			reg = <0xe0005000 0x1000>;
 			interrupts = <15 0x4>;
+			#dma-cells = <2>;
+			dma-channels = <8>;
+			dma-requests = <12>;
+			dma-trans-type = <1 1 0 0 1 1 1 1>; /* 0-memcpy ,1-slave*/
 			amb,copy-align = <0>;
 		};
 
@@ -490,6 +524,15 @@
 			status = "disabled";
 		};
 
+		spinand0: spinand@e0031000 {
+			compatible = "ambarella,spinand";
+			reg = <0xe0031000 0x2ff>, /* spi nor controller */
+			      <0xe0005300 0x20>;  /* dma reg */
+			pinctrl-names = "default";
+			pinctrl-0 = <&spinor0_pins>;
+			status = "disabled";
+		};
+
 		uart1: uart@e0032000 {
 			compatible = "ambarella,uart";
 			reg = <0xe0032000 0x1000>;
@@ -509,9 +552,11 @@
 			reg = <0xe001a000 0x1000>;
 			pinctrl-names = "default";
 			pinctrl-0 = <&i2s0_pins>;
-			bclk_reverse = <0>;
 			amb,i2s-channels = <2>;
 			amb,default-mclk = <12288000>;
+			dmas = <&dma 5 1>,
+				   <&dma 4 1>;
+			dma-names = "tx", "rx";
 		};
 
 		udc@e0006000 {
@@ -535,7 +580,7 @@
 			amb,usbphy = <&usbphy>;
 		};
 
-		sdmmc0@e0002000 {
+		sdmmc0: sdmmc0@e0002000 {
 			compatible = "ambarella,sdmmc";
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -544,13 +589,16 @@
 			      <0xec1704c0 0x8>;
 			interrupts = <18 0x4>;
 			amb,clk-name = "gclk_sd";
-			amb,wait-tmo = <2500>; /* in millisecond */
+			amb,wait-tmo = <10000>; /* in millisecond */
+			amb,switch_vol_tmo = <20>;
 			amb,max-blk-size = <131072>; /* valid value: 4K<<n */
-			amb,soft-phy;
+			amb,auto-tuning;
+			amb,phy-type = <0>;/*0:rct phy, 1: sd controller phy, 2: for s2e*/
 			amb,phy-timing = <0x00000001 0x04070000 0x00000000>,
-					 <0x000000e0 0x00000001 0x00001111>;
+					<0x00000040 0x00000001 0x00001111>,/*for sdr104 200M*/
+					<0x000000A4 0x00000005 0x00001111>;
 			pinctrl-names = "default";
-			pinctrl-0 = <&sdmmc0_pins_8bit>;
+			pinctrl-0 = <&sdmmc0_pins_8bit &sdmmc0_cd_pin &sdmmc0_wp_pin>;
 
 			slot@0 {
 				reg = <0>;
@@ -558,11 +606,12 @@
 				max-frequency = <50000000>;
 				bus-width = <8>;
 				amb,caps-adma;
+				amb,caps-ddr;
 				cap-sdio-irq;
 			};
 		};
 
-		sdmmc1@e000c000 {
+		sdmmc1: sdmmc1@e000c000 {
 			compatible = "ambarella,sdmmc";
 			reg = <0xe000c000 0x1000>,
 			      <0xe0001000 0x80>; /* fio reg address */
@@ -570,10 +619,11 @@
 			#size-cells = <0>;
 			interrupts = <52 0x4>;
 			amb,clk-name = "gclk_sdio";
-			amb,wait-tmo = <2500>; /* in millisecond */
+			amb,wait-tmo = <10000>; /* in millisecond */
+			amb,switch_vol_tmo = <20>;
 			amb,max-blk-size = <131072>; /* valid value: 4K<<n */
 			pinctrl-names = "default";
-			pinctrl-0 = <&sdmmc1_pins_4bit>;
+			pinctrl-0 = <&sdmmc1_pins_4bit &sdmmc1_cd_pin &sdmmc1_wp_pin>;
 			status = "disabled";
 
 			slot@0 {
@@ -586,7 +636,7 @@
 			};
 		};
 
-		sdmmc2@e001f000 {
+		sdmmc2: sdmmc2@e001f000 {
 			compatible = "ambarella,sdmmc";
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -594,10 +644,11 @@
 			      <0xe0001000 0x80>; /* fio reg address */
 			interrupts = <20 0x4>;
 			amb,clk-name = "gclk_sdxc";
-			amb,wait-tmo = <2500>; /* in millisecond */
+			amb,wait-tmo = <10000>; /* in millisecond */
+			amb,switch_vol_tmo = <20>;
 			amb,max-blk-size = <131072>; /* valid value: 4K<<n */
 			pinctrl-names = "default";
-			pinctrl-0 = <&sdmmc2_pins_8bit>;
+			pinctrl-0 = <&sdmmc2_pins_8bit &sdmmc2_cd_pin &sdmmc2_wp_pin>;
 			status = "disabled";
 
 			slot@0 {
@@ -634,6 +685,9 @@
 			pinctrl-0 = <&spi0_pins>;
 			amb,clk-freq = <54000000>;
 			amb,dma-used;
+			dmas = <&dma 0 1>,
+				   <&dma 1 1>;
+			dma-names = "tx", "rx";
 		};
 
 		spi1: spi@e0021000 {
@@ -690,6 +744,10 @@
 			amb,owner-mask;
 			amb,owner-invert;
 		};
+	};
+
+	iav {
+		compatible = "ambarella,iav";
 	};
 
 	bogus_bus {

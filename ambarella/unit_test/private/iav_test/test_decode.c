@@ -4,12 +4,29 @@
  * History:
  *	2015/01/27 - [Zhi He] create file for s2l
  *
- * Copyright (C) 2015 -2020, Ambarella, Inc.
+ * Copyright (C) 2015 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -45,6 +62,9 @@
 #define u_printf_debug printf
 
 static int test_decode_running = 1;
+static int test_decode_feed_bitstream_done = 0;
+static int test_decode_1xfw_playback = 0;
+static unsigned long test_decode_last_timestamp = 0;
 
 #define M_MSG_KILL	0
 
@@ -187,7 +207,6 @@ void msg_queue_wait(msg_queue_t *q)
 }
 
 #define DAMBA_GOP_HEADER_LENGTH 22
-//for deliemiter, eos, etc
 #define DAMBA_RESERVED_SPACE 32
 
 void _fill_amba_gop_header(u8 *p_gop_header, u32 frame_tick, u32 time_scale, u32 pts, u8 gopsize, u8 m)
@@ -324,6 +343,10 @@ typedef struct {
 	u8 is_fastnavi_mode;
 	u8 dump_input_bitstream;
 	u8 debug_read_direct_to_bsb;
+	u8 debug_frames_per_interrupt;
+
+	u16 daemon_pause_time;
+	u8 daemon;
 	u8 enable_cvbs;
 
 	u8 enable_digital;
@@ -331,7 +354,19 @@ typedef struct {
 	u8 vout_num;
 	u8 enter_idle_flag; //timer mode
 
-	u32 bsb_base;
+	u8 debug_use_dproc;
+	u8 debug_return_idle;
+	u8 reserved1;
+	u8 reserved2;
+
+	u32 max_bitrate;
+	u32 gop_size;
+	u32 framerate_den; //fps = 90000/framerate_den
+
+	u16 max_width;
+	u16 max_height;
+
+	u8 *bsb_base;
 	u32 bsb_size;
 
 	vout_device_info vout_dev_info[DIAV_MAX_DECODE_VOUT_NUMBER];
@@ -369,71 +404,6 @@ static void __print_vout_info(int iav_fd)
 	return;
 }
 
-#if 0
-static int __vout_get_sink_id(int chan, int sink_type, int iav_fd)
-{
-	int					num;
-	int					i;
-	struct amba_vout_sink_info		sink_info;
-
-	num = 0;
-	if (ioctl(iav_fd, IAV_IOC_VOUT_GET_SINK_NUM, &num) < 0) {
-		perror("IAV_IOC_VOUT_GET_SINK_NUM");
-		return -1;
-	}
-	if (num < 1) {
-		u_printf("Please load vout driver!\n");
-		return -2;
-	}
-
-	for (i = num - 1; i >= 0; i--) {
-		sink_info.id = i;
-		if (ioctl(iav_fd, IAV_IOC_VOUT_GET_SINK_INFO, &sink_info) < 0) {
-			perror("IAV_IOC_VOUT_GET_SINK_INFO");
-			return -3;
-		}
-
-		if ((sink_info.sink_type == sink_type) && (sink_info.source_id == chan)) {
-			u_printf("find sink_type %x, source id %d\n", sink_info.sink_type, sink_info.source_id);
-			return sink_info.id;
-		}
-	}
-
-	return (-4);
-}
-
-static int get_single_vout_info(int index, int type, vout_device_info* voutinfo, int iav_fd)
-{
-	struct amba_vout_sink_info info;
-
-	memset(&info, 0, sizeof(info));
-	info.id = __vout_get_sink_id(index, type, iav_fd);
-	if (info.id < 0) {
-		return -1;
-	}
-
-	if (ioctl(iav_fd, IAV_IOC_VOUT_GET_SINK_INFO, &info) < 0) {
-		perror("IAV_IOC_VOUT_GET_SINK_INFO");
-		return -1;
-	}
-
-	if (voutinfo) {
-		voutinfo->sink_id = info.id;
-		voutinfo->source_id = info.source_id;
-		voutinfo->sink_type = info.sink_type;
-
-		voutinfo->width = info.sink_mode.video_size.vout_width;
-		voutinfo->height = info.sink_mode.video_size.vout_height;
-		voutinfo->offset_x = info.sink_mode.video_offset.offset_x;
-		voutinfo->offset_y = info.sink_mode.video_offset.offset_y;
-		voutinfo->rotate = info.sink_mode.video_rotate;
-		voutinfo->flip = info.sink_mode.video_flip;
-	}
-
-	return 0;
-}
-#else
-
 static int get_single_vout_info(int chan, int sink_type, vout_device_info* voutinfo, int iav_fd)
 {
 	int	num;
@@ -457,7 +427,7 @@ static int get_single_vout_info(int chan, int sink_type, vout_device_info* vouti
 			return -3;
 		}
 
-		if ((sink_info.sink_type == sink_type) && (sink_info.source_id == chan)) {
+		if ((sink_info.state == AMBA_VOUT_SINK_STATE_RUNNING) && (sink_info.sink_type == sink_type) && (sink_info.source_id == chan)) {
 			u_printf("find sink_type %x, source id %d\n", sink_info.sink_type, sink_info.source_id);
 			if (voutinfo) {
 				voutinfo->sink_id = sink_info.id;
@@ -479,8 +449,6 @@ static int get_single_vout_info(int chan, int sink_type, vout_device_info* vouti
 
 	return (-4);
 }
-
-#endif
 
 unsigned char* _find_h264_sps_header(unsigned char* p, unsigned int len)
 {
@@ -518,20 +486,79 @@ static void _print_memory(u8* p, u32 size)
 }
 #endif
 
-static int enter_decode_mode(test_decode_context* context)
+static void __print_first_and_last_8bytes(u8* p, u8* p_end, u8* buf_start, u8* buf_end, u32 size)
+{
+	u32 size1 = 0, size2 = 0;
+	u8* ptmp = NULL;
+
+	if ((p + 7) < buf_end) {
+		u_printf("begin(size %d): %02x %02x %02x %02x, %02x %02x %02x %02x\n", size, p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]);
+	} else {
+		size1 = buf_end - p;
+		size2 = 8 - size1;
+
+		ptmp = p;
+		u_printf("begin(size %d):", size);
+		while (size1) {
+			u_printf(" %02x", ptmp[0]);
+			ptmp ++;
+			size1 --;
+		}
+
+		ptmp = buf_start;
+		while (size2) {
+			u_printf(" %02x", ptmp[0]);
+			ptmp ++;
+			size2 --;
+		}
+		u_printf("\n");
+	}
+
+	if (p_end > (buf_start + 7)) {
+		u_printf("end: %02x %02x %02x %02x, %02x %02x %02x %02x\n", p_end[-8], p_end[-7], p_end[-6], p_end[-5], p_end[-4], p_end[-3], p_end[-2], p_end[-1]);
+	} else {
+		size1 = p_end - buf_start;
+		size2 = 8 - size1;
+
+		ptmp = buf_end - size2;
+		u_printf("end:");
+		while (size2) {
+			u_printf(" %02x", ptmp[0]);
+			ptmp ++;
+			size2 --;
+		}
+
+		ptmp = buf_start;
+		while (size1) {
+			u_printf(" %02x", ptmp[0]);
+			ptmp ++;
+			size1 --;
+		}
+		u_printf("\n");
+	}
+
+}
+
+static int enter_decode_mode(test_decode_context* context, u16 max_width, u16 max_height, u32 max_bitrate, u8 support_ff_fb_bw, u8 use_dproc)
 {
 	struct iav_decode_mode_config *decode_mode = &context->mode_config;
 
 	decode_mode->num_decoder = 1;
-	decode_mode->decoder_configs[0].max_frm_num = 6;
-	decode_mode->decoder_configs[0].max_frm_width = 1920;
-	decode_mode->decoder_configs[0].max_frm_height = 1080;
+	decode_mode->debug_max_frame_per_interrupt = context->debug_frames_per_interrupt;
+	decode_mode->debug_use_dproc = use_dproc;
+	decode_mode->b_support_ff_fb_bw = support_ff_fb_bw;
+	decode_mode->max_frm_width = max_width;
+	decode_mode->max_frm_height = max_height;
 
-	u_printf("[flow]: before IAV_IOC_ENTER_DECODE_MODE\n");
+	u_printf("[flow]: before IAV_IOC_ENTER_DECODE_MODE, max_width %d, max_height %d, max_bitrate %d Mbps, support fast fwbw %d\n", max_width, max_height, max_bitrate, support_ff_fb_bw);
 	if (ioctl(context->iav_fd, IAV_IOC_ENTER_DECODE_MODE, decode_mode) < 0) {
-		perror("IAV_IOC_ENTER_UDEC_MODE");
-		u_printf("[error]: enter udec mode fail\n");
+		perror("IAV_IOC_ENTER_DECODE_MODE");
+		u_printf("[error]: enter decode mode fail\n");
 		return (-1);
+	}
+
+	if (decode_mode->debug_max_frame_per_interrupt) {
+		u_printf("[debug config]: max frames per interrupt %d\n", decode_mode->debug_max_frame_per_interrupt);
 	}
 
 	return 0;
@@ -542,7 +569,7 @@ static int leave_decode_mode(test_decode_context* context)
 	u_printf("[flow]: before IAV_IOC_LEAVE_DECODE_MODE\n");
 	if (ioctl(context->iav_fd, IAV_IOC_LEAVE_DECODE_MODE) < 0) {
 		perror("IAV_IOC_LEAVE_DECODE_MODE");
-		u_printf("[error]: leave udec mode fail\n");
+		u_printf("[error]: leave decode mode fail\n");
 		return (-1);
 	}
 
@@ -669,8 +696,8 @@ static int create_decoder(test_decode_context* context, u8 decoder_id, u8 decode
 		return (-4);
 	}
 
-	decoder_context->p_bsb_start = (u8*) context->bsb_base + decode_info->bsb_start_offset;
-	decoder_context->p_bsb_end = (u8*) decoder_context->p_bsb_start + decode_info->bsb_size;
+	decoder_context->p_bsb_start = context->bsb_base + decode_info->bsb_start_offset;
+	decoder_context->p_bsb_end = decoder_context->p_bsb_start + decode_info->bsb_size;
 
 	u_printf("[debug], create_decoder done: p_bsb_start %p, p_bsb_end %p, bsb_size %d\n", decoder_context->p_bsb_start, decoder_context->p_bsb_end, decode_info->bsb_size);
 
@@ -716,6 +743,25 @@ static void _print_ut_options()
 
 	u_printf("\t'--help': print help\n\n");
 	u_printf("\t'--idle': will enter idle state\n");
+	//u_printf("\t'--daemon': will run as daemon, no user interact from stdin for this mode\n");
+	u_printf("\t'--pausetime %%d': will pause for debug, after %%d seconds, for daemon mode only\n");
+
+	u_printf("\t'--cvbs': will use cvbs output\n");
+	u_printf("\t'--hdmi': will use HDMI output\n");
+	u_printf("\t'--digital': will use digital (LCD) output\n");
+
+	u_printf("\t'--returnidle': return idle mode for DSP after playback\n");
+	u_printf("\t'--notreturnidle': not return idle mode for DSP after playback, keep playback mode\n");
+
+	u_printf("\t'--fastnavi': will enable fast fw/bw and backwarrd playabck, with this mode, DSP will need more dram space\n");
+
+	u_printf("\t'--maxwidth %%d': specify max video wdith\n");
+	u_printf("\t'--maxheight %%d': specify max video height\n");
+	u_printf("\t'--maxbitrate %%d': specify max bitrate\n");
+	u_printf("\t'--gopsize %%d': specify gopsize\n");
+	u_printf("\t'--frden %%d': specify framerate den, FPS = 90000/frden, for example, frden = 3003, FPS = 90000/3003 = 29.97\n");
+	u_printf("\t'--prefetch %%d': prefetch %%d frames before start decode\n");
+	u_printf("\t'--frameperinterrupt %%d': specify max frames per DSP interrupt\n");
 }
 
 static void _print_ut_cmds()
@@ -731,11 +777,15 @@ static void _print_ut_cmds()
 static int init_test_decode_params(int argc, char **argv, test_decode_context* context)
 {
 	int i = 0;
+	int ret = 0;
 
 	for (i = 1; i < argc; i++) {
 		if (!strcmp("--idle", argv[i])) {
 			context->enter_idle_flag = 1;
 			u_printf("[input argument] --idle, enter idle.\n");
+		} else if (!strcmp("--daemon", argv[i])) {
+			context->daemon = 1;
+			u_printf("[input argument] --daemon, run as daemon.\n");
 		} else if (!strcmp("--fastnavi", argv[i])) {
 			context->is_fastnavi_mode = 1;
 			u_printf("[input argument] --fastnavi, fast navi, build navigation tree first.\n");
@@ -754,9 +804,80 @@ static int init_test_decode_params(int argc, char **argv, test_decode_context* c
 		} else if (!strcmp("--hdmi", argv[i])) {
 			context->enable_hdmi = 1;
 			u_printf("[input argument] --hdmi, try hdmi output.\n");
+		} else if (!strcmp("--returnidle", argv[i])) {
+			context->debug_return_idle = 1;
+			u_printf("[input argument] --returnidle, return idle after playabck.\n");
+		} else if (!strcmp("--notreturnidle", argv[i])) {
+			context->debug_return_idle = 0;
+			u_printf("[input argument] --notreturnidle, keep playback mode after playabck.\n");
+		} else if (!strcmp("--prefetch", argv[i])) {
+			if (((i + 1) < argc) && (1 == sscanf(argv[i + 1], "%d", &ret))) {
+				u_printf("[input argument] --prefetch, %d.\n", ret);
+				context->prefetch_count = ret;
+				context->enable_prefetch = 1;
+				i ++;
+			} else {
+				u_printf("'error: [input argument] --prefetch should follow prefetch frame count (integer)'\n");
+			}
+		} else if (!strcmp("--pausetime", argv[i])) {
+			if (((i + 1) < argc) && (1 == sscanf(argv[i + 1], "%d", &ret))) {
+				u_printf("[input argument] --pausetime, %d.\n", ret);
+				context->daemon_pause_time = ret;
+				i ++;
+			} else {
+				u_printf("'error: [input argument] --pausetime should follow pause time (seconds), daemon mode only'\n");
+			}
+		} else if (!strcmp("--maxwidth", argv[i])) {
+			if (((i + 1) < argc) && (1 == sscanf(argv[i + 1], "%d", &ret))) {
+				u_printf("[input argument] --maxwidth, %d.\n", ret);
+				context->max_width = ret;
+				i ++;
+			} else {
+				u_printf("'error: [input argument] --maxwidth should follow width (integer)'\n");
+			}
+		} else if (!strcmp("--maxheight", argv[i])) {
+			if (((i + 1) < argc) && (1 == sscanf(argv[i + 1], "%d", &ret))) {
+				u_printf("[input argument] --maxheight, %d.\n", ret);
+				context->max_height = ret;
+				i ++;
+			} else {
+				u_printf("'error: [input argument] --maxheight should follow height (integer)'\n");
+			}
+		} else if (!strcmp("--maxbitrate", argv[i])) {
+			if (((i + 1) < argc) && (1 == sscanf(argv[i + 1], "%d", &ret))) {
+				u_printf("[input argument] --maxbirate, %d.\n", ret);
+				context->max_bitrate = ret;
+				i ++;
+			} else {
+				u_printf("'error: [input argument] --maxbitrate should follow bitrate (integer)'\n");
+			}
+		} else if (!strcmp("--gopsize", argv[i])) {
+			if (((i + 1) < argc) && (1 == sscanf(argv[i + 1], "%d", &ret))) {
+				u_printf("[input argument] --gopsize, %d.\n", ret);
+				context->gop_size = ret;
+				i ++;
+			} else {
+				u_printf("'error: [input argument] --maxgopsize should follow gopsize (integer)'\n");
+			}
+		} else if (!strcmp("--frden", argv[i])) {
+			if (((i + 1) < argc) && (1 == sscanf(argv[i + 1], "%d", &ret))) {
+				u_printf("[input argument] --frden, %d.\n", ret);
+				context->framerate_den = ret;
+				i ++;
+			} else {
+				u_printf("'error: [input argument] --frden should follow framerate den (integer)'\n");
+			}
 		} else if (!strcmp("--debuglog", argv[i])) {
 			context->enable_debug_log = 1;
 			u_printf("[input argument] --debuglog, enable debug log.\n");
+		} else if (!strcmp("--frameperinterrupt", argv[i])) {
+			if (((i + 1) < argc) && (1 == sscanf(argv[i + 1], "%d", &ret))) {
+				u_printf("[input argument] --frameperinterrupt, %d.\n", ret);
+				context->debug_frames_per_interrupt = ret;
+				i ++;
+			} else {
+				u_printf("'error: [input argument] --frameperinterrupt should follow frames number (integer)'\n");
+			}
 		} else if (!strcmp("--help", argv[i])) {
 			_print_ut_options();
 			_print_ut_cmds();
@@ -858,7 +979,7 @@ static int ioctl_decode_stop(int iav_fd, u8 decoder_id, u8 stop_flag)
 
 	ret = ioctl(iav_fd, IAV_IOC_DECODE_STOP, &stop);
 	if (ret < 0) {
-		perror("IAV_IOC_UDEC_STOP");
+		perror("IAV_IOC_DECODE_STOP");
 		return ret;
 	}
 
@@ -972,13 +1093,13 @@ static int map_bitstream_buffer(test_decode_context* context)
 	}
 
 	context->bsb_size = querybuf.length;
-	context->bsb_base = (u32) mmap(NULL, context->bsb_size, PROT_WRITE, MAP_SHARED, context->iav_fd, querybuf.offset);
-	if (context->bsb_base == (u32) MAP_FAILED) {
-		perror("mmap (%d) failed: %s\n");
+	context->bsb_base = (u8 *) mmap(NULL, (size_t) context->bsb_size, PROT_WRITE, MAP_SHARED, context->iav_fd, (size_t) querybuf.offset);
+	if (context->bsb_base == MAP_FAILED) {
+		perror("mmap failed\n");
 		return -1;
 	}
 
-	u_printf("bsb_mem = 0x%x, size = 0x%x\n", (u32)context->bsb_base, context->bsb_size);
+	u_printf("bsb_mem = %p, size = %d\n", context->bsb_base, context->bsb_size);
 	return 0;
 }
 
@@ -987,29 +1108,44 @@ static void test_decode_sig_stop(int a)
 	test_decode_running = 0;
 }
 
+static int __get_current_timestamp(int iav_fd, u8 id, unsigned long *timestamp)
+{
+	struct iav_decode_status status;
+	int ret = 0;
+
+	memset(&status, 0x0, sizeof(status));
+	status.decoder_id = id;
+
+	ret = ioctl(iav_fd, IAV_IOC_QUERY_DECODE_STATUS, &status);
+	if (ret < 0) {
+		u_printf_error("error: IAV_IOC_QUERY_DECODE_STATUS fail, ret %d\n", ret);
+		perror("IAV_IOC_QUERY_DECODE_STATUS");
+		return ret;
+	}
+
+	*timestamp = status.last_pts;
+	return 0;
+}
+
 static void* decoder_instance_h264_es_file(void* param)
 {
 	test_decoder_instance_context* instance_content = (test_decoder_instance_context*) param;
-
 	test_decode_context* context = (test_decode_context*) instance_content->parent;
-
 	int ret = 0;
 	u32 sendsize = 0;
-
 	u8 *p_frame_start = NULL;
 	u8 *p_bsb_cur = instance_content->p_bsb_start;
-
 	u8 nal_type, slice_type, need_more_data, wait_next_key_frame = 0;
 	u8 file_eos = 0;
-
 	u32 target_prefetch_count = context->prefetch_count;
-
 	u32 current_prefetch_count = 0;
 	u32 in_prefetching = context->enable_prefetch;
-
 	u8* p_prefetching = NULL;
-
 	msg_t msg;
+	u32 frame_index = 0;
+	u32 last_pts = 0;
+
+	u8 amba_gop_header[DAMBA_GOP_HEADER_LENGTH] = {0};
 
 	_t_file_reader file_reader;
 	memset(&file_reader, 0x0, sizeof(file_reader));
@@ -1025,6 +1161,11 @@ static void* decoder_instance_h264_es_file(void* param)
 	file_reader_read_trunk(&file_reader);
 	p_bsb_cur = instance_content->p_bsb_start;
 
+	u_printf("[flow]: decoder_instance_h264_es_file begin, gopsize = %d, framerate den %d\n", context->gop_size, context->framerate_den);
+
+	_fill_amba_gop_header(amba_gop_header, context->framerate_den, 90000, 0, context->gop_size, 1);
+	frame_index = 0;
+
 	while (1) {
 
 		if (msg_queue_peek(&instance_content->cmd_queue, &msg)) {
@@ -1039,9 +1180,14 @@ static void* decoder_instance_h264_es_file(void* param)
 
 		if (!sendsize && need_more_data) {
 			if (!file_reader.file_remainning_size) {
-				u_printf("[flow]: file end, feed last frame\n");
 				sendsize = file_reader.p_read_buffer_cur_end - file_reader.p_read_buffer_cur_start;
 				file_eos = 1;
+				if (sendsize <= 6) {
+					u_printf("warning, discard last incomplete frame, size %d\n", sendsize);
+					break;
+				} else {
+					u_printf("[flow]: file end, feed last frame\n");
+				}
 			} else {
 				file_reader_read_trunk(&file_reader);
 				continue;
@@ -1053,6 +1199,11 @@ static void* decoder_instance_h264_es_file(void* param)
 			continue;
 		}
 
+		if (context->enable_debug_log) {
+			u_printf("frame index %d, nal type %d, slice type %d\n", frame_index, nal_type, slice_type);
+			//u_printf("sendsize %d, need_more_data %d\n", sendsize, need_more_data);
+		}
+
 		wait_next_key_frame = 0;
 		p_frame_start = p_bsb_cur;
 		//wrap case
@@ -1060,16 +1211,33 @@ static void* decoder_instance_h264_es_file(void* param)
 			p_frame_start = instance_content->p_bsb_start;
 		}
 
-		//printf("[loop flow]: before request_bits_fifo, sendsize %d\n", sendsize);
-		ret = request_bits_fifo(context->iav_fd, instance_content->index, sendsize, p_frame_start - instance_content->p_bsb_start);
-		//printf("[loop flow]: after request_bits_fifo\n");
+		if (5 == nal_type) {
+			//printf("key frame + gop header size %d\n", sendsize + DAMBA_GOP_HEADER_LENGTH);
+			ret = request_bits_fifo(context->iav_fd, instance_content->index, sendsize + DAMBA_GOP_HEADER_LENGTH + DAMBA_RESERVED_SPACE, p_frame_start - instance_content->p_bsb_start);
+			//printf("[loop flow]: after request_bits_fifo\n");
 
-		if (ret < 0) {
-			u_printf("[error]: request_bits_fifo() fail, ret %d\n", ret);
-			break;
+			if (ret < 0) {
+				u_printf("[error]: request_bits_fifo() fail, ret %d\n", ret);
+				break;
+			}
+
+			//printf("[debug], before copy_to_bsb, sendsize %d\n", sendsize);
+			_update_amba_gop_header(amba_gop_header, (u32) (3003 * frame_index));
+			p_bsb_cur = copy_to_bsb(p_bsb_cur, amba_gop_header, DAMBA_GOP_HEADER_LENGTH, instance_content->p_bsb_start, instance_content->p_bsb_end);
+		} else {
+			//printf("non-key frame size %d\n", sendsize);
+			ret = request_bits_fifo(context->iav_fd, instance_content->index, sendsize + DAMBA_RESERVED_SPACE, p_frame_start - instance_content->p_bsb_start);
+			//printf("[loop flow]: after request_bits_fifo\n");
+
+			if (ret < 0) {
+				u_printf("[error]: request_bits_fifo() fail, ret %d\n", ret);
+				break;
+			}
 		}
 
-		//printf("[debug], before copy_to_bsb, sendsize %d\n", sendsize);
+		last_pts = 3003 * frame_index;
+		frame_index ++;
+
 		p_bsb_cur = copy_to_bsb(p_bsb_cur, file_reader.p_read_buffer_cur_start, sendsize, instance_content->p_bsb_start, instance_content->p_bsb_end);
 		//printf("[debug], after copy_to_bsb\n");
 		file_reader.p_read_buffer_cur_start += sendsize;
@@ -1096,9 +1264,12 @@ static void* decoder_instance_h264_es_file(void* param)
 				decode_video.end_ptr_offset = p_bsb_cur - instance_content->p_bsb_start;
 
 				if ((ret = ioctl(context->iav_fd, IAV_IOC_DECODE_VIDEO, &decode_video)) < 0) {
-					u_printf_error("[ioctl error]: (udec_id %d) IAV_IOC_DECODE_VIDEO ret %d, exit loop\n", instance_content->index, ret);
+					u_printf_error("[ioctl error]: (decoder %d) IAV_IOC_DECODE_VIDEO ret %d, exit loop\n", instance_content->index, ret);
 					ret = -11;
 					break;
+				}
+				if (instance_content->p_dump_input_file) {
+					write_bsb_data(instance_content->p_dump_input_file, p_prefetching, p_bsb_cur, instance_content->p_bsb_start, instance_content->p_bsb_end);
 				}
 			}
 		} else {
@@ -1110,14 +1281,26 @@ static void* decoder_instance_h264_es_file(void* param)
 			decode_video.start_ptr_offset = p_frame_start - instance_content->p_bsb_start;
 			decode_video.end_ptr_offset = p_bsb_cur - instance_content->p_bsb_start;
 
-			//printf("[loop flow]: before IAV_IOC_DECODE_VIDEO\n");
 			if ((ret = ioctl(context->iav_fd, IAV_IOC_DECODE_VIDEO, &decode_video)) < 0) {
-				u_printf_error("[ioctl error]: (udec_id %d) IAV_IOC_DECODE_VIDEO ret %d, exit loop\n", instance_content->index, ret);
+				u_printf_error("[ioctl error]: (decoder %d) IAV_IOC_DECODE_VIDEO ret %d, exit loop\n", instance_content->index, ret);
 				ret = -11;
 				break;
 			}
 			//printf("[loop flow]: after IAV_IOC_DECODE_VIDEO\n");
 
+			if (context->enable_debug_log) {
+				u32 data_size = 0;
+				if (p_bsb_cur > p_frame_start) {
+					data_size = (u32) (p_bsb_cur - p_frame_start);
+				} else {
+					data_size = (u32) (instance_content->p_bsb_end - p_frame_start) + (u32) (p_bsb_cur - instance_content->p_bsb_start);
+				}
+				__print_first_and_last_8bytes((u8*)p_frame_start, (u8*)p_bsb_cur, instance_content->p_bsb_start, instance_content->p_bsb_end, data_size);
+			}
+
+			if (instance_content->p_dump_input_file) {
+				write_bsb_data(instance_content->p_dump_input_file, p_frame_start, p_bsb_cur, instance_content->p_bsb_start, instance_content->p_bsb_end);
+			}
 		}
 
 		if (file_eos) {
@@ -1129,8 +1312,9 @@ static void* decoder_instance_h264_es_file(void* param)
 	}
 
 	file_reader_deinit(&file_reader);
-	u_printf("[feeding flow]: decoder_instance_h264_es_file end\n");
-	test_decode_running = 0;
+	test_decode_last_timestamp = last_pts;
+	test_decode_feed_bitstream_done = 1;
+	u_printf("[feeding flow]: decoder_instance_h264_es_file end, last timestamp %ld\n", test_decode_last_timestamp);
 
 	return NULL;
 }
@@ -1293,8 +1477,6 @@ static void* decoder_instance_h264_es_file_fast_navi(void* param)
 	msg_t msg;
 	int running = 1;
 	u8 h264_eos[] = {0x00, 0x00, 0x00, 0x01, 0x0A};
-	//u8 h264_delimiter_gop[] = {0x00, 0x00, 0x00, 0x01, 0x09, 0x10};
-	//u8 h264_delimiter_frame[] = {0x00, 0x00, 0x00, 0x01, 0x09, 0x30};
 
 	u32 gopsize = 15;
 	if (instance_content->fast_navi.gop_list_header.p_next) {
@@ -1302,9 +1484,9 @@ static void* decoder_instance_h264_es_file_fast_navi(void* param)
 			gopsize = instance_content->fast_navi.gop_list_header.p_next->frame_count;
 		}
 	}
-	u_printf("[flow]: decoder_instance_h264_es_file_fast_navi begin, gopsize = %d\n", gopsize);
+	u_printf("[flow]: decoder_instance_h264_es_file_fast_navi begin, gopsize = %d, framerate den %d\n", gopsize, context->framerate_den);
 
-	_fill_amba_gop_header(amba_gop_header, 3003, 90000, 0, gopsize, 1);// hard code to 29.97 fps
+	_fill_amba_gop_header(amba_gop_header, context->framerate_den, 90000, 0, gopsize, 1);// hard code to 29.97 fps
 
 	while (running) {
 
@@ -1360,7 +1542,6 @@ static void* decoder_instance_h264_es_file_fast_navi(void* param)
 							cur_file_offset = p_gop->gop_offset + sendsize;
 							p_bit_end = p_bsb_cur = copy_to_bsb(p_bsb_cur, p_file_read_buffer, sendsize, instance_content->p_bsb_start, instance_content->p_bsb_end);
 						}
-						//p_bsb_cur = copy_to_bsb(p_bsb_cur, h264_delimiter_gop, sizeof(h264_delimiter_gop), instance_content->p_bsb_start, instance_content->p_bsb_end);
 
 						decode_video.decoder_id = instance_content->index;
 						decode_video.num_frames = p_gop->frame_count;
@@ -1384,7 +1565,7 @@ static void* decoder_instance_h264_es_file_fast_navi(void* param)
 #endif
 
 						if ((ret = ioctl(context->iav_fd, IAV_IOC_DECODE_VIDEO, &decode_video)) < 0) {
-							u_printf_error("[ioctl error]: (udec_id %d) IAV_IOC_DECODE_VIDEO ret %d, exit loop\n", instance_content->index, ret);
+							u_printf_error("[ioctl error]: (decoder %d) IAV_IOC_DECODE_VIDEO ret %d, exit loop\n", instance_content->index, ret);
 							instance_content->navi_mode = PLAYBACK_ERROR;
 							running = 0;
 							break;
@@ -1444,7 +1625,6 @@ static void* decoder_instance_h264_es_file_fast_navi(void* param)
 							cur_file_offset = p_gop->gop_offset + sendsize;
 							p_bit_end = p_bsb_cur = copy_to_bsb(p_bsb_cur, p_file_read_buffer, sendsize, instance_content->p_bsb_start, instance_content->p_bsb_end);
 						}
-						//p_bsb_cur = copy_to_bsb(p_bsb_cur, h264_delimiter_frame, sizeof(h264_delimiter_frame), instance_content->p_bsb_start, instance_content->p_bsb_end);
 
 						if (instance_content->p_dump_input_file) {
 							write_bsb_data(instance_content->p_dump_input_file, p_bit_start, p_bit_end, instance_content->p_bsb_start, instance_content->p_bsb_end);
@@ -1468,7 +1648,7 @@ static void* decoder_instance_h264_es_file_fast_navi(void* param)
 #endif
 
 						if ((ret = ioctl(context->iav_fd, IAV_IOC_DECODE_VIDEO, &decode_video)) < 0) {
-							u_printf_error("[ioctl error]: (udec_id %d) IAV_IOC_DECODE_VIDEO ret %d, exit loop\n", instance_content->index, ret);
+							u_printf_error("[ioctl error]: (decoder %d) IAV_IOC_DECODE_VIDEO ret %d, exit loop\n", instance_content->index, ret);
 							instance_content->navi_mode = PLAYBACK_ERROR;
 							running = 0;
 							break;
@@ -1559,7 +1739,7 @@ static void* decoder_instance_h264_es_file_fast_navi(void* param)
 #endif
 
 						if ((ret = ioctl(context->iav_fd, IAV_IOC_DECODE_VIDEO, &decode_video)) < 0) {
-							u_printf_error("[ioctl error]: (udec_id %d) IAV_IOC_DECODE_VIDEO ret %d, exit loop\n", instance_content->index, ret);
+							u_printf_error("[ioctl error]: (decoder %d) IAV_IOC_DECODE_VIDEO ret %d, exit loop\n", instance_content->index, ret);
 							instance_content->navi_mode = PLAYBACK_ERROR;
 							running = 0;
 							break;
@@ -1643,7 +1823,7 @@ static void* decoder_instance_h264_es_file_fast_navi(void* param)
 #endif
 
 						if ((ret = ioctl(context->iav_fd, IAV_IOC_DECODE_VIDEO, &decode_video)) < 0) {
-							u_printf_error("[ioctl error]: (udec_id %d) IAV_IOC_DECODE_VIDEO ret %d, exit loop\n", instance_content->index, ret);
+							u_printf_error("[ioctl error]: (decoder %d) IAV_IOC_DECODE_VIDEO ret %d, exit loop\n", instance_content->index, ret);
 							instance_content->navi_mode = PLAYBACK_ERROR;
 							running = 0;
 							break;
@@ -1691,19 +1871,22 @@ static void* decoder_instance_h264_es_file_fast_navi(void* param)
 
 static int test_decode(test_decode_context* context)
 {
+	unsigned long cur_timestamp = 0;
+	unsigned long repeat_timestamp = 0;
+	unsigned int repeat_times = 0;
 	unsigned int i;
-
 	msg_t msg;
-	char buffer_old[128] = {0};
-	char buffer[128];
-	char* p_buffer = buffer;
 	void* pv;
 	int ret = 0;
 
-	ret = enter_decode_mode(context);
+	//disable fast fw, fast bw and backward playback
+	u_printf("[config]: max width %d, max height %d, max bitrate %d, disable fast fw/bw and backward playabck\n", context->max_width, context->max_height, context->max_bitrate);
+	ret = enter_decode_mode(context, context->max_width, context->max_height, context->max_bitrate, 0, 0);
 	if (0 > ret) {
 		return ret;
 	}
+
+	test_decode_1xfw_playback = 1;
 
 	for (i = 0; i < MAX_NUM_DECODER; i++) {
 		ret = create_decoder(context, i, IAV_DECODER_TYPE_H264);
@@ -1737,64 +1920,116 @@ static int test_decode(test_decode_context* context)
 		}
 	}
 
-	memset(buffer, 0x0, sizeof(buffer));
-	memset(buffer_old, 0x0, sizeof(buffer_old));
 
-	int flag_stdin = 0;
-	flag_stdin = fcntl(STDIN_FILENO, F_GETFL);
-	if (fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO,F_GETFL) | O_NONBLOCK) == -1) {
-		u_printf("[error]: stdin_fileno set error.\n");
-	}
+	if (context->daemon) {
+		daemon(1, 0);
+		u32 wait_times = 10 * context->daemon_pause_time;
+		while (test_decode_running) {
+			usleep(100000);
+			if (context->daemon_pause_time) {
+				if (0 == wait_times) {
+					printf("pause at daemon mode\n");
+					context->decoder[0].current_trickplay = IAV_TRICK_PLAY_PAUSE;
+					ioctl_decode_trick_play(context->iav_fd, 0, IAV_TRICK_PLAY_PAUSE);
+				} else {
+					wait_times --;
+				}
+			}
+		}
+	} else {
+		char buffer_old[128] = {0};
+		char buffer[128];
+		char* p_buffer = buffer;
 
-	while (test_decode_running) {
-		usleep(100000);
 		memset(buffer, 0x0, sizeof(buffer));
-		if (read(STDIN_FILENO, buffer, sizeof(buffer)) < 0) {
-			continue;
+		memset(buffer_old, 0x0, sizeof(buffer_old));
+
+		int flag_stdin = 0;
+		flag_stdin = fcntl(STDIN_FILENO, F_GETFL);
+		if (fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO,F_GETFL) | O_NONBLOCK) == -1) {
+			u_printf("[error]: stdin_fileno set error.\n");
 		}
 
-		if (buffer[0] == '\n') {
-			p_buffer = buffer_old;
-			u_printf("repeat last cmd:\n\t\t%s\n", buffer_old);
-		} else if (buffer[0] == 'l') {
-			u_printf("show last cmd:\n\t\t%s\n", buffer_old);
-			continue;
-		} else {
-			p_buffer = buffer;
-			//record last cmd
-			strncpy(buffer_old, buffer, sizeof(buffer_old) -1);
-			buffer_old[sizeof(buffer_old) -1] = 0x0;
-		}
+		while (test_decode_running) {
+			usleep(100000);
 
-		if ('q' == p_buffer[0]) {
-			u_printf("Quit, 'q'\n");
-			test_decode_running = 0;
-		} else if ('p' == p_buffer[0]) {
-			if (0) {
-				query_bsb_and_print(context->iav_fd, 0);
-			} else {
-				query_decode_status_and_print(context->iav_fd, 0);
+			memset(buffer, 0x0, sizeof(buffer));
+			if (read(STDIN_FILENO, buffer, sizeof(buffer)) < 0) {
+
+				//check if last frame is displayed
+				if (test_decode_feed_bitstream_done && test_decode_1xfw_playback) {
+					ret = __get_current_timestamp(context->iav_fd, 0, &cur_timestamp);
+					if (ret) {
+						test_decode_running = 0;
+						break;
+					}
+					if (((cur_timestamp + 6600) > test_decode_last_timestamp) && (cur_timestamp < (test_decode_last_timestamp + 6600))) {
+						u_printf("receive last time stamp %ld, target %ld\n", cur_timestamp, test_decode_last_timestamp);
+						test_decode_running = 0;
+						break;
+					}
+					if (repeat_timestamp == cur_timestamp) {
+						if (repeat_times > 1) {
+							u_printf("receive repeat timestamp, last %ld, target %ld, gap %ld\n", cur_timestamp, test_decode_last_timestamp, test_decode_last_timestamp - cur_timestamp);
+							test_decode_running = 0;
+							break;
+						}
+						repeat_times ++;
+					} else {
+						repeat_times = 0;
+					}
+					repeat_timestamp = cur_timestamp;
+				}
+
+				continue;
 			}
-		} else if (' ' == p_buffer[0]) {
-			if (IAV_TRICK_PLAY_RESUME == context->decoder[0].current_trickplay) {
-				context->decoder[0].current_trickplay = IAV_TRICK_PLAY_PAUSE;
-				ioctl_decode_trick_play(context->iav_fd, 0, IAV_TRICK_PLAY_PAUSE);
-			} else {
-				context->decoder[0].current_trickplay = IAV_TRICK_PLAY_RESUME;
-				ioctl_decode_trick_play(context->iav_fd, 0, IAV_TRICK_PLAY_RESUME);
-			}
-		} else if ('s' == p_buffer[0]) {
-			context->decoder[0].current_trickplay = IAV_TRICK_PLAY_STEP;
-			ioctl_decode_trick_play(context->iav_fd, 0, IAV_TRICK_PLAY_STEP);
-		} else if ('f' == p_buffer[0]) {
-			u_printf("not support fast navigation, you need add '--fastnavi'\n");
-		} else if ('b' == p_buffer[0]) {
-			u_printf("not support fast navigation, you need add '--fastnavi'\n");
-		}
-	}
 
-	if (fcntl(STDIN_FILENO, F_SETFL, flag_stdin) == -1) {
-		u_printf("[error]: stdin_fileno set error");
+			if (buffer[0] == '\n') {
+				p_buffer = buffer_old;
+				u_printf("repeat last cmd:\n\t\t%s\n", buffer_old);
+			} else if (buffer[0] == 'l') {
+				u_printf("show last cmd:\n\t\t%s\n", buffer_old);
+				continue;
+			} else {
+				p_buffer = buffer;
+				//record last cmd
+				strncpy(buffer_old, buffer, sizeof(buffer_old) -1);
+				buffer_old[sizeof(buffer_old) -1] = 0x0;
+			}
+
+			if ('q' == p_buffer[0]) {
+				u_printf("Quit, 'q'\n");
+				test_decode_running = 0;
+			} else if ('p' == p_buffer[0]) {
+				if (0) {
+					query_bsb_and_print(context->iav_fd, 0);
+				} else {
+					query_decode_status_and_print(context->iav_fd, 0);
+				}
+			} else if (' ' == p_buffer[0]) {
+				if (IAV_TRICK_PLAY_RESUME == context->decoder[0].current_trickplay) {
+					context->decoder[0].current_trickplay = IAV_TRICK_PLAY_PAUSE;
+					ioctl_decode_trick_play(context->iav_fd, 0, IAV_TRICK_PLAY_PAUSE);
+					test_decode_1xfw_playback = 0;
+				} else {
+					context->decoder[0].current_trickplay = IAV_TRICK_PLAY_RESUME;
+					ioctl_decode_trick_play(context->iav_fd, 0, IAV_TRICK_PLAY_RESUME);
+					test_decode_1xfw_playback = 1;
+				}
+			} else if ('s' == p_buffer[0]) {
+				context->decoder[0].current_trickplay = IAV_TRICK_PLAY_STEP;
+				ioctl_decode_trick_play(context->iav_fd, 0, IAV_TRICK_PLAY_STEP);
+				test_decode_1xfw_playback = 0;
+			} else if ('f' == p_buffer[0]) {
+				u_printf("not support fast navigation, you need add '--fastnavi'\n");
+			} else if ('b' == p_buffer[0]) {
+				u_printf("not support fast navigation, you need add '--fastnavi'\n");
+			}
+		}
+
+		if (fcntl(STDIN_FILENO, F_SETFL, flag_stdin) == -1) {
+			u_printf("[error]: stdin_fileno set error");
+		}
 	}
 
 	u_printf("[flow]: start exit\n");
@@ -1819,8 +2054,10 @@ _test_decode_fail_:
 		ret = destroy_decoder(context, (u8) i);
 	}
 
-	leave_decode_mode(context);
-	u_printf("[flow]: after leave decode mode\n");
+	if (context->debug_return_idle) {
+		leave_decode_mode(context);
+		u_printf("[flow]: after leave decode mode\n");
+	}
 
 	return ret;
 }
@@ -1828,15 +2065,12 @@ _test_decode_fail_:
 static int test_decode_fast_navi(test_decode_context* context)
 {
 	unsigned int i;
-
 	msg_t msg;
-	char buffer_old[128] = {0};
-	char buffer[128];
-	char* p_buffer = buffer;
 	void* pv;
 	int ret = 0;
 
-	ret = enter_decode_mode(context);
+	u_printf("[config]: max width %d, max height %d, max bitrate %d, enable fast fw/bw and backward playabck\n", context->max_width, context->max_height, context->max_bitrate);
+	ret = enter_decode_mode(context, context->max_width, context->max_height, context->max_bitrate, 1, 0);
 	if (0 > ret) {
 		return ret;
 	}
@@ -1865,112 +2099,133 @@ static int test_decode_fast_navi(test_decode_context* context)
 		pthread_create(&context->decoder[i].thread_id, NULL, decoder_instance_h264_es_file_fast_navi, (void*) &context->decoder[i]);
 	}
 
-	memset(buffer, 0x0, sizeof(buffer));
-	memset(buffer_old, 0x0, sizeof(buffer_old));
+	if (context->daemon) {
+		daemon(1, 0);
+		u32 wait_times = 10 * context->daemon_pause_time;
+		while (test_decode_running) {
+			usleep(100000);
+			if (context->daemon_pause_time) {
+				if (0 == wait_times) {
+					printf("pause at daemon mode\n");
+					context->decoder[0].current_trickplay = IAV_TRICK_PLAY_PAUSE;
+					ioctl_decode_trick_play(context->iav_fd, 0, IAV_TRICK_PLAY_PAUSE);
+				} else {
+					wait_times --;
+				}
+			}
+		}
+	} else {
+		char buffer_old[128] = {0};
+		char buffer[128];
+		char* p_buffer = buffer;
 
-	int flag_stdin = 0;
-	flag_stdin = fcntl(STDIN_FILENO, F_GETFL);
-	if (fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK) == -1) {
-		u_printf("[error]: stdin_fileno set error.\n");
-	}
-
-	while (test_decode_running) {
-		usleep(100000);
 		memset(buffer, 0x0, sizeof(buffer));
-		if (read(STDIN_FILENO, buffer, sizeof(buffer)) < 0) {
-			continue;
+		memset(buffer_old, 0x0, sizeof(buffer_old));
+
+		int flag_stdin = 0;
+		flag_stdin = fcntl(STDIN_FILENO, F_GETFL);
+		if (fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK) == -1) {
+			u_printf("[error]: stdin_fileno set error.\n");
 		}
 
-		if (buffer[0] == '\n') {
-			p_buffer = buffer_old;
-			u_printf("repeat last cmd:\n\t\t%s\n", buffer_old);
-		} else if (buffer[0] == 'l') {
-			u_printf("show last cmd:\n\t\t%s\n", buffer_old);
-			continue;
-		} else {
-			p_buffer = buffer;
-			//record last cmd
-			strncpy(buffer_old, buffer, sizeof(buffer_old) -1);
-			buffer_old[sizeof(buffer_old) -1] = 0x0;
-		}
+		while (test_decode_running) {
+			usleep(100000);
+			memset(buffer, 0x0, sizeof(buffer));
+			if (read(STDIN_FILENO, buffer, sizeof(buffer)) < 0) {
+				continue;
+			}
 
-		if ('q' == p_buffer[0]) {
-			u_printf("Quit, 'q'\n");
-			test_decode_running = 0;
-		} else if ('p' == p_buffer[0]) {
-			if (0) {
-				query_bsb_and_print(context->iav_fd, 0);
+			if (buffer[0] == '\n') {
+				p_buffer = buffer_old;
+				u_printf("repeat last cmd:\n\t\t%s\n", buffer_old);
+			} else if (buffer[0] == 'l') {
+				u_printf("show last cmd:\n\t\t%s\n", buffer_old);
+				continue;
 			} else {
-				query_decode_status_and_print(context->iav_fd, 0);
+				p_buffer = buffer;
+				//record last cmd
+				strncpy(buffer_old, buffer, sizeof(buffer_old) -1);
+				buffer_old[sizeof(buffer_old) -1] = 0x0;
 			}
-		} else if (' ' == p_buffer[0]) {
-			if (IAV_TRICK_PLAY_RESUME == context->decoder[0].current_trickplay) {
-				context->decoder[0].current_trickplay = IAV_TRICK_PLAY_PAUSE;
-				ioctl_decode_trick_play(context->iav_fd, 0, IAV_TRICK_PLAY_PAUSE);
-			} else {
-				context->decoder[0].current_trickplay = IAV_TRICK_PLAY_RESUME;
-				ioctl_decode_trick_play(context->iav_fd, 0, IAV_TRICK_PLAY_RESUME);
-			}
-		} else if ('s' == p_buffer[0]) {
-			context->decoder[0].current_trickplay = IAV_TRICK_PLAY_STEP;
-			ioctl_decode_trick_play(context->iav_fd, 0, IAV_TRICK_PLAY_STEP);
-		} else if ('f' == p_buffer[0]) {
-			if ('1' == p_buffer[1]) {
-				msg_t msg;
-				msg.cmd = M_MSG_FW_FROM_BEGIN;
-				msg.arg1 = 1;
-				msg.arg2 = 0;
-				msg_queue_put(&context->decoder[0].cmd_queue, &msg);
-			} else if ('2' == p_buffer[1]) {
-				msg_t msg;
-				msg.cmd = M_MSG_FW_FROM_BEGIN;
-				msg.arg1 = 2;
-				msg.arg2 = 0;
-				msg_queue_put(&context->decoder[0].cmd_queue, &msg);
-			} else if ('4' == p_buffer[1]) {
-				msg_t msg;
-				msg.cmd = M_MSG_FW_FROM_BEGIN;
-				msg.arg1 = 4;
-				msg.arg2 = 0;
-				msg_queue_put(&context->decoder[0].cmd_queue, &msg);
-			} else if ('8' == p_buffer[1]) {
-				msg_t msg;
-				msg.cmd = M_MSG_FW_FROM_BEGIN;
-				msg.arg1 = 8;
-				msg.arg2 = 0;
-				msg_queue_put(&context->decoder[0].cmd_queue, &msg);
-			}
-		} else if ('b' == p_buffer[0]) {
-			if ('1' == p_buffer[1]) {
-				msg_t msg;
-				msg.cmd = M_MSG_BW_FROM_END;
-				msg.arg1 = 1;
-				msg.arg2 = 0;
-				msg_queue_put(&context->decoder[0].cmd_queue, &msg);
-			} else if ('2' == p_buffer[1]) {
-				msg_t msg;
-				msg.cmd = M_MSG_BW_FROM_END;
-				msg.arg1 = 2;
-				msg.arg2 = 0;
-				msg_queue_put(&context->decoder[0].cmd_queue, &msg);
-			} else if ('4' == p_buffer[1]) {
-				msg_t msg;
-				msg.cmd = M_MSG_BW_FROM_END;
-				msg.arg1 = 4;
-				msg.arg2 = 0;
-				msg_queue_put(&context->decoder[0].cmd_queue, &msg);
-			} else if ('8' == p_buffer[1]) {
-				msg_t msg;
-				msg.cmd = M_MSG_BW_FROM_END;
-				msg.arg1 = 8;
-				msg.arg2 = 0;
-				msg_queue_put(&context->decoder[0].cmd_queue, &msg);
+
+			if ('q' == p_buffer[0]) {
+				u_printf("Quit, 'q'\n");
+				test_decode_running = 0;
+			} else if ('p' == p_buffer[0]) {
+				if (0) {
+					query_bsb_and_print(context->iav_fd, 0);
+				} else {
+					query_decode_status_and_print(context->iav_fd, 0);
+				}
+			} else if (' ' == p_buffer[0]) {
+				if (IAV_TRICK_PLAY_RESUME == context->decoder[0].current_trickplay) {
+					context->decoder[0].current_trickplay = IAV_TRICK_PLAY_PAUSE;
+					ioctl_decode_trick_play(context->iav_fd, 0, IAV_TRICK_PLAY_PAUSE);
+				} else {
+					context->decoder[0].current_trickplay = IAV_TRICK_PLAY_RESUME;
+					ioctl_decode_trick_play(context->iav_fd, 0, IAV_TRICK_PLAY_RESUME);
+				}
+			} else if ('s' == p_buffer[0]) {
+				context->decoder[0].current_trickplay = IAV_TRICK_PLAY_STEP;
+				ioctl_decode_trick_play(context->iav_fd, 0, IAV_TRICK_PLAY_STEP);
+			} else if ('f' == p_buffer[0]) {
+				if ('1' == p_buffer[1]) {
+					msg_t msg;
+					msg.cmd = M_MSG_FW_FROM_BEGIN;
+					msg.arg1 = 1;
+					msg.arg2 = 0;
+					msg_queue_put(&context->decoder[0].cmd_queue, &msg);
+				} else if ('2' == p_buffer[1]) {
+					msg_t msg;
+					msg.cmd = M_MSG_FW_FROM_BEGIN;
+					msg.arg1 = 2;
+					msg.arg2 = 0;
+					msg_queue_put(&context->decoder[0].cmd_queue, &msg);
+				} else if ('4' == p_buffer[1]) {
+					msg_t msg;
+					msg.cmd = M_MSG_FW_FROM_BEGIN;
+					msg.arg1 = 4;
+					msg.arg2 = 0;
+					msg_queue_put(&context->decoder[0].cmd_queue, &msg);
+				} else if ('8' == p_buffer[1]) {
+					msg_t msg;
+					msg.cmd = M_MSG_FW_FROM_BEGIN;
+					msg.arg1 = 8;
+					msg.arg2 = 0;
+					msg_queue_put(&context->decoder[0].cmd_queue, &msg);
+				}
+			} else if ('b' == p_buffer[0]) {
+				if ('1' == p_buffer[1]) {
+					msg_t msg;
+					msg.cmd = M_MSG_BW_FROM_END;
+					msg.arg1 = 1;
+					msg.arg2 = 0;
+					msg_queue_put(&context->decoder[0].cmd_queue, &msg);
+				} else if ('2' == p_buffer[1]) {
+					msg_t msg;
+					msg.cmd = M_MSG_BW_FROM_END;
+					msg.arg1 = 2;
+					msg.arg2 = 0;
+					msg_queue_put(&context->decoder[0].cmd_queue, &msg);
+				} else if ('4' == p_buffer[1]) {
+					msg_t msg;
+					msg.cmd = M_MSG_BW_FROM_END;
+					msg.arg1 = 4;
+					msg.arg2 = 0;
+					msg_queue_put(&context->decoder[0].cmd_queue, &msg);
+				} else if ('8' == p_buffer[1]) {
+					msg_t msg;
+					msg.cmd = M_MSG_BW_FROM_END;
+					msg.arg1 = 8;
+					msg.arg2 = 0;
+					msg_queue_put(&context->decoder[0].cmd_queue, &msg);
+				}
 			}
 		}
-	}
 
-	if (fcntl(STDIN_FILENO, F_SETFL, flag_stdin) == -1) {
-		u_printf("[error]: stdin_fileno set error");
+		if (fcntl(STDIN_FILENO, F_SETFL, flag_stdin) == -1) {
+			u_printf("[error]: stdin_fileno set error");
+		}
 	}
 
 	u_printf("[flow]: start exit\n");
@@ -1993,8 +2248,10 @@ static int test_decode_fast_navi(test_decode_context* context)
 		ret = destroy_decoder(context, (u8) i);
 	}
 
-	leave_decode_mode(context);
-	u_printf("[flow]: after leave decode mode\n");
+	if (context->debug_return_idle) {
+		leave_decode_mode(context);
+		u_printf("[flow]: after leave decode mode\n");
+	}
 
 	return ret;
 }
@@ -2019,11 +2276,21 @@ int main(int argc, char **argv)
 	memset(&context, 0x0, sizeof(context));
 	context.iav_fd = -1;
 
+	//default settings
 	context.debug_read_direct_to_bsb = 1;
+	context.max_width = 1920;
+	context.max_height = 1088;
+	context.gop_size = 30;
+	context.framerate_den = 3003;
 
 	if ((ret = init_test_decode_params(argc, argv, &context)) < 0) {
 		u_printf_error("[error]: init_test_decode_params() fail.\n");
 		return (-2);
+	}
+
+	if (!context.framerate_den) {
+		u_printf_error("zero frame den, use 3003 as default\n");
+		context.framerate_den = 3003;
 	}
 
 	context.iav_fd = open("/dev/iav", O_RDWR, 0);
@@ -2079,6 +2346,8 @@ int main(int argc, char **argv)
 		ret = get_single_vout_info(1, AMBA_VOUT_SINK_TYPE_HDMI, &context.vout_dev_info[0], context.iav_fd);
 		if (0 > ret) {
 			u_printf("[error]: HDMI is not enabled\n");
+			close(context.iav_fd);
+			return (-4);
 		} else {
 			if (context.vout_dev_info[0].width && context.vout_dev_info[0].height) {
 				u_printf("[vout info query]: HDMI width %d, height %d, offset_x %d, offset_y %d, rotate %d, flip %d\n", context.vout_dev_info[0].width, context.vout_dev_info[0].height, context.vout_dev_info[0].offset_x, context.vout_dev_info[0].offset_y, context.vout_dev_info[0].rotate, context.vout_dev_info[0].flip);

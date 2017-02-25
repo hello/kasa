@@ -41,6 +41,11 @@ extern int ambpriv_device_add(struct ambpriv_device *pdev);
 extern void ambpriv_device_del(struct ambpriv_device *pdev);
 extern void ambpriv_device_put(struct ambpriv_device *pdev);
 
+extern struct ambpriv_device *of_find_ambpriv_device_by_match(struct of_device_id *match);
+extern struct ambpriv_device *of_find_ambpriv_device_by_node(struct device_node *np);
+extern int ambpriv_get_irq(struct ambpriv_device *dev, unsigned int num);
+extern int ambpriv_get_irq_by_name(struct ambpriv_device *dev, const char *name);
+
 struct ambpriv_driver {
 	int (*probe)(struct ambpriv_device *);
 	int (*remove)(struct ambpriv_device *);

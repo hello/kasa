@@ -4,12 +4,29 @@
  * History:
  *   2014-9-15 - [lysun] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co,Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -27,7 +44,7 @@
 
 #ifndef AM_SERVICE_IMPL_H_
 #define AM_SERVICE_IMPL_H_
-
+#include <stddef.h>
 #include "am_ipc_sync_cmd.h"
 
 /*! @enum AM_SERVICE_CMD_START_NUM
@@ -80,6 +97,24 @@ enum AM_SERVICE_CMD_START_NUM
    */
 
   SERVICE_COMMON_CMD_START = (AM_IPC_CMD_FOR_MW_API_START + 800),
+
+  /*!
+   * enumeration value of the first PLAYBACK service CMD
+   */
+
+  PLAYBACK_SERVICE_CMD_START = (AM_IPC_CMD_FOR_MW_API_START + 900),
+
+  /*!
+   * enumeration value of the first VIDEO EDIT service CMD
+   */
+
+  VIDEO_EDIT_SERVICE_CMD_START = (AM_IPC_CMD_FOR_MW_API_START + 1000),
+
+  /*!
+   * enumeration value of the first EFM Source service CMD
+   */
+
+  EFM_SOURCE_SERVICE_CMD_START = (AM_IPC_CMD_FOR_MW_API_START + 1100),
 };
 
 /*! @enum AM_SERVICE_CMD_TYPE
@@ -91,7 +126,7 @@ enum AM_SERVICE_CMD_TYPE
   /*!
    * generic will set to 0, so it's same as type not set
    */
-  AM_SERVICE_TYPE_GENERIC             = 0,
+  AM_SERVICE_TYPE_GENERIC             = 0, //!< Using for notify from service to client
   AM_SERVICE_TYPE_API_PROXY_SERVER    = 1, //!< API proxy server Type
   AM_SERVICE_TYPE_AUDIO               = 2, //!< Audio Service Type
   AM_SERVICE_TYPE_EVENT               = 3, //!< Event Service Type
@@ -102,7 +137,10 @@ enum AM_SERVICE_CMD_TYPE
   AM_SERVICE_TYPE_VIDEO               = 8, //!< Video Service Type
   AM_SERVICE_TYPE_RTSP                = 9, //!< RTSP Service Type
   AM_SERVICE_TYPE_SIP                 = 10, //!< SIP Service Type
-  AM_SERVICE_TYPE_OTHERS              = 11, //!< Other Service Type
+  AM_SERVICE_TYPE_PLAYBACK        = 11, //!< Playback Service Type
+  AM_SERVICE_TYPE_VIDEO_EDIT        = 12, //!< Video Edit Service Type
+  AM_SERVICE_TYPE_EFM_SRC        = 13, //!< EFM Source Service Type
+  AM_SERVICE_TYPE_OTHERS              = 14, //!< Other Service Type
 };
 
 /*!
@@ -140,6 +178,18 @@ enum AM_SERVICE_CMD_TYPE
 /*! SIP Service Process Name */
 #define AM_SERVICE_SIP_NAME       "sip_svc"
 
+/*! Playback Service Process Name */
+#define AM_SERVICE_PLAYBACK_NAME     "playback_svc"
+
+/*! Video Edit Service Process Name */
+#define AM_SERVICE_VIDEO_EDIT_NAME     "video_edit_svc"
+
+/*! EFM Source Service Process Name */
+#define AM_SERVICE_EFM_SOURCE     "efm_src_svc"
+
+/*! API Proxy IPC Name */
+#define AM_IPC_API_PROXY_NAME      "/" AM_SERVICE_API_PROXY_NAME
+
 /*! Audio Service IPC Name */
 #define AM_IPC_AUDIO_NAME          "/" AM_SERVICE_AUDIO_NAME
 
@@ -167,23 +217,24 @@ enum AM_SERVICE_CMD_TYPE
 /*! SIP Service IPC Name */
 #define AM_IPC_SIP_NAME            "/" AM_SERVICE_SIP_NAME
 
+/*! Playback Service IPC Name */
+#define AM_IPC_PLAYBACK_NAME          "/" AM_SERVICE_PLAYBACK_NAME
+
+/*! Video Edit Service IPC Name */
+#define AM_IPC_VIDEO_EDIT_NAME          "/" AM_SERVICE_VIDEO_EDIT_NAME
+
+/*! EFM Source Service IPC Name */
+#define AM_IPC_EFM_SOURCE_NAME          "/" AM_SERVICE_EFM_SOURCE
+
 /*! @struct am_service_attribute
  *  @brief Defines service basic attributes
  */
 struct am_service_attribute
 {
-    char name[AM_SERVICE_NAME_MAX_LENGTH]; //!< Service Name
-    AM_SERVICE_CMD_TYPE type;              //!< Service Type
-    bool enable;                           //!< Is Enabled
-
-    /*! Indicates if this service handle button event */
-    bool handle_event_button;
-
-    /*! Indicates if this service handle motion event */
-    bool handle_event_motion;
-
-    /*! Indicates if this service handle audio event */
-    bool handle_event_audio;
+    char name[AM_SERVICE_NAME_MAX_LENGTH];     //!< Service Pretty Name
+    char filename[AM_SERVICE_NAME_MAX_LENGTH]; //!< Service File Name
+    AM_SERVICE_CMD_TYPE type;                  //!< Service Type
+    bool enable;                               //!< Is Enabled
 };
 
 /*! @enum AM_SERVICE_STATE
@@ -244,7 +295,7 @@ enum AM_SYS_IPC_USER_CMD
 struct am_service_result_t
 {
     /*!
-     * method_call ret value, success or failure
+     * method_call ret value, see AM_RESULT
      */
     int32_t ret;
     /*!
@@ -300,7 +351,7 @@ BUILD_IPC_MSG_ID(_AM_IPC_SERVICE_NOTIF,    \
                  AM_IPC_NO_NEED_RETURN)
 
 /*! @enum AM_SERVICE_NOTIFY_RESULT
- *  @brief This enumerate defines service notify type.
+ *  @brief This enumerate defines service notify result.
  */
 enum AM_SERVICE_NOTIFY_RESULT
 {
@@ -315,6 +366,27 @@ enum AM_SERVICE_NOTIFY_RESULT
   AM_SERVICE_NOTIFY_STATE_CHANGED = 1,
 };
 
+/*! @enum AM_SERVICE_NOTIFY_TYPE
+ *  @brief This enumerate defines service notify type.
+ */
+enum AM_SERVICE_NOTIFY_TYPE
+{
+  AM_SERVICE_NOTIFY_NULL       = -1, //!< Audio Service Type
+  AM_AUDIO_SERVICE_NOTIFY      = 0,  //!< Audio Service Type
+  AM_EVENT_SERVICE_NOTIFY      = 1,  //!< Event Service Type
+  AM_IMAGE_SERVICE_NOTIFY      = 2,  //!< Image Service Type
+  AM_MEDIA_SERVICE_NOTIFY      = 3,  //!< Media Service Type
+  AM_NETWORK_SERVICE_NOTIFY    = 4,  //!< Network Service Type
+  AM_SYSTEM_SERVICE_NOTIFY     = 5,  //!< System Service Type
+  AM_VIDEO_SERVICE_NOTIFY      = 6,  //!< Video Service Type
+  AM_RTSP_SERVICE_NOTIFY       = 7,  //!< RTSP Service Type
+  AM_SIP_SERVICE_NOTIFY        = 8,  //!< SIP Service Type
+  AM_PLAYBACK_SERVICE_NOTIFY   = 9,  //!< Playback Service Type
+  AM_VIDEO_EDIT_SERVICE_NOTIFY = 10, //!< Video Edit Service Type
+  AM_EFM_SRC_SERVICE_NOTIFY    = 11, //!<Efm src service type
+  AM_SERVICE_NOTIFY_NUM,
+};
+
 /*!
  * @struct am_service_notify_payload
  * @brief Service notify payload data structure.
@@ -322,6 +394,7 @@ enum AM_SERVICE_NOTIFY_RESULT
 struct am_service_notify_payload
 {
     AM_SERVICE_NOTIFY_RESULT result; //!< The service notify result
+    AM_SERVICE_NOTIFY_TYPE   type;  //!< The service notify type
     /*! Destination service bitmap
      *
      * The bit offset is defined by @ref AM_SERVICE_CMD_TYPE,

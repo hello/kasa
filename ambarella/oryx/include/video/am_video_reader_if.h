@@ -1,136 +1,72 @@
-/*******************************************************************************
+/**
  * am_video_reader_if.h
  *
- * History:
- *   2014-12-12 - [ypchang] created file
+ *  History:
+ *    Aug 10, 2015 - [Shupeng Ren] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
  *
- ******************************************************************************/
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
 #ifndef ORYX_INCLUDE_VIDEO_AM_VIDEO_READER_IF_H_
 #define ORYX_INCLUDE_VIDEO_AM_VIDEO_READER_IF_H_
 
 #include "am_video_types.h"
 #include "am_pointer.h"
 
-struct AMStreamInfo
-{
-    AM_STREAM_ID stream_id;
-    uint32_t m;
-    uint32_t n;
-    uint32_t mul;
-    uint32_t div;
-    uint32_t rate;
-    uint32_t scale;
-};
-
-struct AMVideoFrameDesc
-{
-    AM_VIDEO_FRAME_TYPE video_type;
-    uint32_t width;
-    uint32_t height;
-    uint32_t stream_id;         //0 ~ N
-    uint32_t frame_num;
-    uint32_t data_addr_offset;
-    uint32_t data_size;
-    uint32_t session_id;
-    uint8_t  jpeg_quality;      //1 ~ 99
-    uint8_t  stream_end_flag;   //0 or 1
-    uint8_t  reserved[2];
-};
-
-struct AMYUVFrameDesc
-{
-    AM_ENCODE_SOURCE_BUFFER_ID buffer_id;
-    uint32_t width;
-    uint32_t height;
-    uint32_t pitch;
-    uint32_t y_addr_offset;
-    uint32_t uv_addr_offset;    //NV12 format, (UV interleaved)
-    uint32_t seq_num;
-    AM_ENCODE_CHROMA_FORMAT format;
-    uint32_t non_block_flag;
-    uint32_t reserved;
-};
-
-struct AMLumaFrameDesc
-{
-    AM_ENCODE_SOURCE_BUFFER_ID buffer_id;
-    uint32_t width;
-    uint32_t height;
-    uint32_t pitch;
-    uint32_t data_addr_offset;
-    uint32_t seq_num;
-    uint32_t non_block_flag;
-    uint32_t reserved;
-};
-
-struct AMBayerPatternFrameDesc
-{
-    uint32_t width;
-    uint32_t height;
-    uint32_t pitch;
-    uint32_t data_addr_offset;
-    uint32_t non_block_flag;
-    uint32_t reserved;
-};
-
-struct AMGenericDataFrameDesc
-{
-    uint32_t generic_data[16];
-};
-
-struct AMQueryDataFrameDesc
-{
-    AM_DATA_FRAME_TYPE frame_type;  //know whether it's video or yuv or luma
-    //or bayer or other generic data
-    uint64_t mono_pts;
-    bool cancel;                   //cancel the current or the next query once
-    union
-    {
-        AMVideoFrameDesc video;
-        AMYUVFrameDesc yuv;
-        AMLumaFrameDesc luma;
-        AMBayerPatternFrameDesc bayer;
-        AMGenericDataFrameDesc data;
-    };
-};
-
 class AMIVideoReader;
-typedef AMPointer<AMIVideoReader> AMIVideoReaderPtr;
 
+typedef AMPointer<AMIVideoReader> AMIVideoReaderPtr;
 class AMIVideoReader
 {
-    friend class AMPointer<AMIVideoReader>;
+    friend AMIVideoReaderPtr;
 
   public:
     static AMIVideoReaderPtr get_instance();
-    virtual AM_RESULT init() = 0;
-    virtual AM_RESULT query_video_frame(AMQueryDataFrameDesc *frame_desc,
-                                        uint32_t timeout) = 0;
-    virtual AM_RESULT query_yuv_frame(AMQueryDataFrameDesc *frame_desc,
-                                      AM_ENCODE_SOURCE_BUFFER_ID buffer_id,
+
+  public:
+    virtual AM_RESULT query_video_frame(AMQueryFrameDesc &desc,
+                                        uint32_t timeout = -1) = 0;
+    virtual AM_RESULT query_yuv_frame(AMQueryFrameDesc &desc,
+                                      AM_SOURCE_BUFFER_ID id,
                                       bool latest_snapshot) = 0;
-    virtual AM_RESULT query_luma_frame(AMQueryDataFrameDesc      *frame_desc,
-                                       AM_ENCODE_SOURCE_BUFFER_ID buffer_id,
-                                       bool latest_snapshot) = 0;
-    virtual AM_RESULT query_bayer_raw_frame(
-        AMQueryDataFrameDesc *frame_desc) = 0;
-    virtual AM_RESULT query_stream_info(AMStreamInfo *stream_info) = 0;
+    virtual AM_RESULT query_me0_frame(AMQueryFrameDesc &desc,
+                                      AM_SOURCE_BUFFER_ID id,
+                                      bool latest_snapshot) = 0;
+    virtual AM_RESULT query_me1_frame(AMQueryFrameDesc &desc,
+                                      AM_SOURCE_BUFFER_ID id,
+                                      bool latest_snapshot) = 0;
+    virtual AM_RESULT query_raw_frame(AMQueryFrameDesc &desc) = 0;
 
-    virtual AM_RESULT get_dsp_mem(AMMemMapInfo *dsp_mem) = 0;
-    virtual AM_RESULT get_bsb_mem(AMMemMapInfo *bsb_mem) = 0;
-    virtual bool is_new_video_session(uint32_t video_stream_id) = 0;
+    virtual AM_RESULT query_stream_info(AMStreamInfo &info) = 0;
 
+    virtual bool is_gdmacpy_support() = 0;
+    virtual AM_RESULT gdmacpy(void *dst, const void *src,
+                              size_t width, size_t height, size_t pitch) = 0;
   protected:
-    virtual void release() = 0;
     virtual void inc_ref() = 0;
-    virtual ~AMIVideoReader(){}
+    virtual void release() = 0;
+    virtual ~AMIVideoReader(){};
 };
 
 #endif /* ORYX_INCLUDE_VIDEO_AM_VIDEO_READER_IF_H_ */

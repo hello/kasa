@@ -4,12 +4,29 @@
  * History:
  *   Jan 6, 2015 - [binwang] created file
  *
- * Copyright (C) 2015-2019, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 #include <getopt.h>
@@ -25,6 +42,7 @@
 
 #define NO_ARG 0
 #define HAS_ARG 1
+#define FILE_NAME_LENGTH 64
 
 #define VERIFY_PARA_1(x, min) \
     do { \
@@ -52,7 +70,8 @@ struct setting_option
     } value;bool is_set;
 };
 
-static AMAPIHelperPtr g_api_helper = NULL;
+static AMAPIHelperPtr g_api_helper = nullptr;
+static bool load_aeb_adj_flag = false;
 static bool show_ae_flag = false;
 static bool show_awb_flag = false;
 static bool show_af_flag = false;
@@ -113,6 +132,7 @@ struct image_style_setting
     setting_option sharpness;
     setting_option brightness;
     setting_option contrast;
+    setting_option auto_contrast_mode;
 };
 
 static ae_setting g_ae_setting;
@@ -120,6 +140,7 @@ static awb_setting g_awb_setting;
 static af_setting g_af_setting;
 static noise_filter_setting g_noise_filter_setting;
 static image_style_setting g_image_style_setting;
+static char aeb_adj_bin_file[64];
 
 enum numeric_short_options
 {
@@ -158,6 +179,7 @@ enum numeric_short_options
   SHARPNESS,
   BRIGHTNESS,
   CONTRAST,
+  AUTO_CONTRAST_MODE,
 
   SHOW_AE_SETTING,
   SHOW_AWB_SETTING,
@@ -171,6 +193,7 @@ static struct option long_options[] =
 {
 {"help", NO_ARG, 0, 'h'},
 
+{"load-adj-bin", HAS_ARG, 0, 'd'},
 {"ae-metering-mode", HAS_ARG, 0, AE_METERING_MODE},
 {"day-night-mode", HAS_ARG, 0, DAY_NIGHT_MODE},
 {"slow-shutter-mode", HAS_ARG, 0, SLOW_SHUTTER_MODE},
@@ -199,6 +222,7 @@ static struct option long_options[] =
 {"sharpness", HAS_ARG, 0, SHARPNESS},
 {"brightness", HAS_ARG, 0, BRIGHTNESS},
 {"contrast", HAS_ARG, 0, CONTRAST},
+{"auto_contrast_mode", HAS_ARG, 0, AUTO_CONTRAST_MODE},
 
 {"show-ae-setting", NO_ARG, 0, SHOW_AE_SETTING},
 {"show-awb-setting", NO_ARG, 0, SHOW_AWB_SETTING},
@@ -208,7 +232,7 @@ static struct option long_options[] =
 {"show-all-setting", NO_ARG, 0, SHOW_ALL_SETTING},
 {0, 0, 0, 0}};
 
-static const char *short_options = "h";
+static const char *short_options = "hd:";
 
 struct hint32_t_s
 {
@@ -219,6 +243,7 @@ struct hint32_t_s
 static const hint32_t_s hint32_t[] =
 {
 {"", "\t\t\t" "Show usage. \n"},
+{"file path", "\t" "Load adj bin file. \n"},
 {"0-3", "\t" "AE metering mode. 0: spot 1: center 2: average 3: custom. "},
 {"0|1",
   "\t" "Day/night mode. 0: day mode, colorful; 1: night mode, black&white. "},
@@ -251,6 +276,7 @@ static const hint32_t_s hint32_t[] =
 {"-2-2", "\t\t" "sharpness. "},
 {"-2-2", "\t\t" "brightness. "},
 {"-2-2", "\t\t" "contrast. "},
+{"0-128", "\t" "auto_contrast_mode. "},
 
 {"", "\t\t" "Show AE setting. "},
 {"", "\t\t" "Show AWB setting. "},
@@ -292,6 +318,14 @@ static int32_t init_param(int32_t argc, char **argv)
       case 'h':
         usage(argc, argv);
         return -1;
+      case 'd':
+        load_aeb_adj_flag = true;
+        if (strlen(optarg) > 0 && strlen(optarg) < FILE_NAME_LENGTH) {
+          memcpy(aeb_adj_bin_file, optarg, strlen(optarg));
+        } else {
+          ERROR("the length of file name must be [0~63]");
+        }
+        break;
       case AE_METERING_MODE:
         VERIFY_PARA_2(atoi(optarg), 0, 3);
         g_ae_setting.is_set = true;
@@ -439,6 +473,12 @@ static int32_t init_param(int32_t argc, char **argv)
         g_image_style_setting.contrast.is_set = true;
         g_image_style_setting.contrast.value.v_int = atoi(optarg);
         break;
+      case AUTO_CONTRAST_MODE:
+        VERIFY_PARA_2(atoi(optarg), 0, 128);
+        g_image_style_setting.is_set = true;
+        g_image_style_setting.auto_contrast_mode.is_set = true;
+        g_image_style_setting.auto_contrast_mode.value.v_int = atoi(optarg);
+        break;
 
       case SHOW_AE_SETTING:
         show_ae_flag = true;
@@ -465,6 +505,23 @@ static int32_t init_param(int32_t argc, char **argv)
   }
 
   return 0;
+}
+
+static int32_t load_aeb_adj_bin()
+{
+  int32_t ret = 0;
+  am_service_result_t service_result = {0};
+  if (load_aeb_adj_flag) {
+    g_api_helper->method_call(AM_IPC_MW_CMD_IMAGE_ADJ_LOAD,
+                              aeb_adj_bin_file,
+                              FILE_NAME_LENGTH,
+                              &service_result,
+                              sizeof(service_result));
+    if ((ret = service_result.ret) != 0) {
+      ERROR("failed to load bin file!\n");
+    }
+  }
+  return ret;
 }
 
 static int32_t ae_setting(void)
@@ -709,6 +766,12 @@ static int32_t image_style_setting()
         g_image_style_setting.contrast.value.v_int;
     has_setting = true;
   }
+  if (g_image_style_setting.auto_contrast_mode.is_set) {
+    SET_BIT(image_style_setting_set.enable_bits, AM_IMAGE_STYLE_CONFIG_AUTO_CONTRAST_MODE);
+    image_style_setting_set.auto_contrast_mode =
+        g_image_style_setting.auto_contrast_mode.value.v_int;
+    has_setting = true;
+  }
 
   if (has_setting) {
     g_api_helper->method_call(AM_IPC_MW_CMD_IMAGE_STYLE_SETTING_SET,
@@ -844,13 +907,14 @@ static int32_t show_image_style_setting()
     }
     am_image_style_config_s *image_style_setting_get =
         (am_image_style_config_s *) service_result.data;
-    PRINTF("quick style code=%d, hue=%d, saturation=%d, brightness=%d, sharpness=%d, contrast=%d\n\n",
+    PRINTF("quick style code=%d, hue=%d, saturation=%d, brightness=%d, sharpness=%d, contrast=%d, auto_contrast_mode=%d\n\n",
            image_style_setting_get->quick_style_code,
            image_style_setting_get->hue,
            image_style_setting_get->saturation,
            image_style_setting_get->brightness,
            image_style_setting_get->sharpness,
-           image_style_setting_get->contrast);
+           image_style_setting_get->contrast,
+           image_style_setting_get->auto_contrast_mode);
   } while (0);
 
   return ret;
@@ -901,6 +965,9 @@ int32_t main(int32_t argc, char **argv)
     return -1;
   }
   do {
+    if (load_aeb_adj_flag) {
+      load_aeb_adj_bin();
+    }
     if (show_all_flag) {
       show_all_setting();
       break;

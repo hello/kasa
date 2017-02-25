@@ -4,12 +4,29 @@
 ## History:
 ##    2008/01/16 - [Anthony Ginger] Create
 ##
-## Copyright (C) 2008-2016, Ambarella, Inc.
+## Copyright (C) 2015 Ambarella, Inc.
 ##
-## All rights reserved. No Part of this file may be reproduced, stored
-## in a retrieval system, or transmitted, in any form, or by any means,
-## electronic, mechanical, photocopying, recording, or otherwise,
-## without the prior consent of Ambarella, Inc.
+## This file and its contents ("Software") are protected by intellectual
+## property rights including, without limitation, U.S. and/or foreign
+## copyrights. This Software is also the confidential and proprietary
+## information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+## disclose, distribute, modify, or otherwise prepare derivative works of this
+## Software or any portion thereof except pursuant to a signed license agreement
+## or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+## In the absence of such an agreement, you agree to promptly notify and return
+## this Software to Ambarella, Inc.
+##
+## THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+## INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+## MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+## IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+## INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+## (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+## LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+## INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+## CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+## ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+## POSSIBILITY OF SUCH DAMAGE.
 ##
 
 menuconfig BUILD_AMBARELLA_APPLICATION
@@ -103,11 +120,10 @@ source app/ipcam/rtsp/AmbaConfig
 source app/ipcam/autorun_services/AmbaConfig
 source app/ipcam/smart_ldc/AmbaConfig
 source app/ipcam/http_uploader/AmbaConfig
+source app/ipcam/wowl/AmbaConfig
 source app/ipcam/fastboot_audio/AmbaConfig
 source app/ipcam/fastboot_smart3a/AmbaConfig
 source app/ipcam/fastboot_app/AmbaConfig
-source app/ipcam/fastboot_app/elektra_boot/AmbaConfig
-source app/ipcam/fastboot_app/darwin_injector/AmbaConfig
 
 endif
 
@@ -129,6 +145,8 @@ config BUILD_AMBARELLA_SMARTCAM_APP_MDET
 	default n
 	select BUILD_AMBARELLA_SMARTCAM_PACKAGE
 	select BUILD_AMBARELLA_SMARTCAM_PACKAGE_MDET
+	select CONFIG_AMBARELLA_OPENCV_SUPPORT
+	select CONFIG_AMBARELLA_MDET_LIBRARY
 	help
 		Build Motion Detection Application.
 
@@ -140,6 +158,52 @@ config BUILD_AMBARELLA_SMARTCAM_APP_FDET
 	select CONFIG_AMBARELLA_OPENCV_SUPPORT
 	help
 		Build Face Detection Application.
+
+config BUILD_AMBARELLA_SMARTCAM_APP_HDET
+	bool "Build Head Detection Application"
+	default n
+	select BUILD_AMBARELLA_SMARTCAM_PACKAGE
+	select BUILD_AMBARELLA_SMARTCAM_PACKAGE_HDET
+	select CONFIG_AMBARELLA_OPENCV_SUPPORT
+	help
+		Build Head Detection Application.
+
+config BUILD_AMBARELLA_SMARTCAM_APP_MHDET
+	bool "Build Motion Detection Based Head Detection Application"
+	default n
+	select BUILD_AMBARELLA_SMARTCAM_PACKAGE
+	select BUILD_AMBARELLA_SMARTCAM_PACKAGE_MHDET
+	select CONFIG_AMBARELLA_OPENCV_SUPPORT
+	help
+		Build Motion Detection Based Head Detection Application.
+
+config BUILD_AMBARELLA_SMARTCAM_APP_PEDESTRIAN
+	bool "Build Pedestrian Detection Application"
+	default n
+	select BUILD_AMBARELLA_SMARTCAM_PACKAGE
+	select BUILD_AMBARELLA_SMARTCAM_PACKAGE_PEDESTRIAN
+	select CONFIG_AMBARELLA_OPENCV_SUPPORT
+	help
+		Build Pedestrian Detection Application.
+
+config BUILD_AMBARELLA_SMARTCAM_APP_HUMAN
+	bool "Build Human Detection Application"
+	default n
+	select BUILD_AMBARELLA_SMARTCAM_PACKAGE
+	select BUILD_AMBARELLA_SMARTCAM_PACKAGE_HUMAN
+	select CONFIG_AMBARELLA_OPENCV_SUPPORT
+	help
+		Build Human Detection Application.
+
+config BUILD_AMBARELLA_SMARTCAM_APP_FREC
+	bool "Build Face Recognition Application"
+	default n
+	select BUILD_AMBARELLA_SMARTCAM_PACKAGE
+	select BUILD_AMBARELLA_SMARTCAM_PACKAGE_FDET
+	select BUILD_AMBARELLA_SMARTCAM_PACKAGE_FREC
+	select CONFIG_AMBARELLA_OPENCV_SUPPORT
+	help
+		Build Face Recognition Application.
 
 config BUILD_AMBARELLA_SMARTCAM_APP_DEFOG
 	bool "Build Defog Application"
@@ -164,6 +228,31 @@ config BUILD_AMBARELLA_SMARTCAM_APP_STEREO
 	select CONFIG_AMBARELLA_OPENCV_SUPPORT
 	help
 		Build Plate Detection Application.
+
+config BUILD_AMBARELLA_SMARTCAM_APP_VOC
+	bool "Build Visual Object Classes Application"
+	default n
+	select BUILD_AMBARELLA_SMARTCAM_PACKAGE
+	select BUILD_AMBARELLA_SMARTCAM_PACKAGE_VOC
+	select CONFIG_AMBARELLA_OPENCV_SUPPORT
+	help
+		Build Visual Object Classes Application.
+
+
+config BUILD_AMBARELLA_SMARTCAM_APP_LENS_MASK_DET
+	bool "Build Lens Mask Detection Application"
+	default n
+	select CONFIG_AMBARELLA_LENS_MASK_DET_LIBRARY
+	help
+		Build Lens Mask Detection Application.
+
+config BUILD_AMBARELLA_SMARTCAM_APP_MOTION_PROFILE_DET
+	bool "Build Motion Profile Detection Application"
+	default n
+	select CONFIG_AMBARELLA_MOTION_PROFILE_DET_LIBRARY
+	help
+		Build Motion Profile Detection Application.
+
 
 endif
 

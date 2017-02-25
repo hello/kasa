@@ -24,10 +24,20 @@
 
 #include "typedefs.h"
 
-#define DBUSTRACE(args)
+extern uint dbus_msglevel;
+#define DBUS_ERROR_VAL	0x0001
+#define DBUS_TRACE_VAL	0x0002
+#define DBUS_INFO_VAL	0x0004
+
+#if defined(DHD_DEBUG)
+#define DBUSERR(args)		do {if (dbus_msglevel & DBUS_ERROR_VAL) printf args;} while (0)
+#define DBUSTRACE(args)		do {if (dbus_msglevel & DBUS_TRACE_VAL) printf args;} while (0)
+#define DBUSINFO(args)		do {if (dbus_msglevel & DBUS_INFO_VAL) printf args;} while (0)
+#else /* defined(DHD_DEBUG) */
 #define DBUSERR(args)
+#define DBUSTRACE(args)
 #define DBUSINFO(args)
-#define DBUSDBGLOCK(args)
+#endif
 
 enum {
 	DBUS_OK = 0,
@@ -248,7 +258,7 @@ typedef struct dbus_pub {
 	int ntxq, nrxq, rxsize;
 	void *bus;
 	struct shared_info *sh;
-    void *dev_info;
+	void *dev_info;
 } dbus_pub_t;
 
 #define BUS_INFO(bus, type) (((type *) bus)->pub->bus)

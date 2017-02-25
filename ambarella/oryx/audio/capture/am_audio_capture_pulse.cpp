@@ -4,25 +4,36 @@
  * History:
  *   2014-11-28 - [ypchang] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
 #include "am_base_include.h"
 #include "am_define.h"
 #include "am_log.h"
-
-#include "am_audio_capture_if.h"
 #include "am_audio_capture_pulse.h"
-#include "am_mutex.h"
-
-#include <fcntl.h>
-#include <unistd.h>
 
 #define HW_TIMER ((const char*)"/proc/ambarella/ambarella_hwtimer")
 
@@ -35,8 +46,8 @@ struct PaData
       data(userdata)
     {}
     PaData() :
-      adev(NULL),
-      data(NULL)
+      adev(nullptr),
+      data(nullptr)
     {}
 };
 
@@ -47,7 +58,7 @@ AMIAudioCapture* AMAudioCapturePulse::create(void *owner,
   AMAudioCapturePulse *result = new AMAudioCapturePulse();
   if (AM_UNLIKELY(result && (!result->init(owner, name, callback)))) {
     delete result;
-    result = NULL;
+    result = nullptr;
   }
 
   return ((AMIAudioCapture*)result);
@@ -55,11 +66,11 @@ AMIAudioCapture* AMAudioCapturePulse::create(void *owner,
 
 bool AMAudioCapturePulse::set_capture_callback(AudioCaptureCallback callback)
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   INFO("Audio capture callback of %s is set to %p",
        m_context_name.c_str(), callback);
   m_capture_callback = callback;
-  return (NULL != m_capture_callback);
+  return (nullptr != m_capture_callback);
 }
 
 void AMAudioCapturePulse::destroy()
@@ -75,11 +86,11 @@ void AMAudioCapturePulse::set_echo_cancel_enabled(bool enabled)
 bool AMAudioCapturePulse::start(int32_t volume)
 {
   bool ret = true;
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   do {
-    pa_operation *paOp = NULL;
+    pa_operation *paOp = nullptr;
     pa_operation_state_t opState;
-    PaData info(this, NULL);
+    PaData info(this, nullptr);
     pa_buffer_attr bufAttr = { (uint32_t) -1 };
     std::string stream_record_name = m_context_name + ".record";
 
@@ -89,19 +100,25 @@ bool AMAudioCapturePulse::start(int32_t volume)
       break;
     }
 
-    info.data = m_main_loop;
+    /* Check Server Info */
     pa_threaded_mainloop_lock(m_main_loop);
+    info.data = m_main_loop;
     paOp = pa_context_get_server_info(m_context,
                                       static_pa_server_info,
                                       &info);
-    while ((opState = pa_operation_get_state(paOp)) != PA_OPERATION_DONE) {
-      if (AM_LIKELY(opState == PA_OPERATION_CANCELLED)) {
-        WARN("Getting server information operation is cancelled!");
-        break;
+    if (AM_LIKELY(paOp)) {
+      while ((opState = pa_operation_get_state(paOp)) != PA_OPERATION_DONE) {
+        if (AM_LIKELY(opState == PA_OPERATION_CANCELLED)) {
+          NOTICE("Get server info operation cancelled!");
+          break;
+        }
+        pa_threaded_mainloop_wait(m_main_loop);
       }
-      pa_threaded_mainloop_wait(m_main_loop);
+      pa_operation_unref(paOp);
+    } else {
+      ERROR("Failed to get server info!");
+      opState = PA_OPERATION_CANCELLED;
     }
-    pa_operation_unref(paOp);
     pa_threaded_mainloop_unlock(m_main_loop);
 
     if (AM_UNLIKELY(opState != PA_OPERATION_DONE)) {
@@ -130,24 +147,29 @@ bool AMAudioCapturePulse::start(int32_t volume)
                                                     strlen(".echo-cancel"));
       }
 
-      info.data = &found;
       pa_threaded_mainloop_lock(m_main_loop);
+      info.data = &found;
       paOp = pa_context_get_source_info_by_name(m_context,
                                                 aec_source_name.c_str(),
                                                 static_pa_source_info,
                                                 &info);
-      while ((opState = pa_operation_get_state(paOp)) != PA_OPERATION_DONE) {
-        if (AM_LIKELY(opState == PA_OPERATION_CANCELLED)) {
-          WARN("Getting source information operation is cancelled!");
-          break;
+      if (AM_LIKELY(paOp)) {
+        while ((opState = pa_operation_get_state(paOp)) != PA_OPERATION_DONE) {
+          if (AM_LIKELY(opState == PA_OPERATION_CANCELLED)) {
+            WARN("Getting source information operation is cancelled!");
+            break;
+          }
+          pa_threaded_mainloop_wait(m_main_loop);
         }
-        pa_threaded_mainloop_wait(m_main_loop);
+        pa_operation_unref(paOp);
+      } else {
+        opState = PA_OPERATION_CANCELLED;
       }
-      pa_operation_unref(paOp);
       pa_threaded_mainloop_unlock(m_main_loop);
 
       if (AM_UNLIKELY(opState != PA_OPERATION_DONE)) {
-        ERROR("Failed to get source information!");
+        ERROR("Failed to get information of source %s!",
+              aec_source_name.c_str());
         ret = false;
         break;
       }
@@ -170,11 +192,14 @@ bool AMAudioCapturePulse::start(int32_t volume)
     bufAttr.fragsize = m_chunk_bytes * 5;
     m_read_data->data = m_main_loop;
     m_over_flow->data = m_main_loop;
+    m_stream_data->data = m_main_loop;
 
-    pa_stream_set_read_callback(m_stream_record, static_pa_read, m_read_data);
     pa_stream_set_overflow_callback(m_stream_record,
                                     static_pa_over_flow,
                                     m_over_flow);
+    pa_stream_set_state_callback(m_stream_record,
+                                 static_pa_stream_state,
+                                 m_stream_data);
     if (AM_UNLIKELY(pa_stream_connect_record(
         m_stream_record,
         m_def_src_name.c_str(),
@@ -187,36 +212,49 @@ bool AMAudioCapturePulse::start(int32_t volume)
       ret = false;
       break;
     } else {
-      pa_stream_state_t streamState;
-      while ((streamState = pa_stream_get_state(m_stream_record)) !=
-             PA_STREAM_READY) {
-        if (AM_LIKELY((PA_STREAM_FAILED == streamState) ||
-                      (PA_STREAM_TERMINATED == streamState))) {
+      pa_threaded_mainloop_lock(m_main_loop);
+      while((m_stream_state = pa_stream_get_state(m_stream_record)) !=
+            PA_STREAM_READY) {
+        if (AM_UNLIKELY((m_stream_state == PA_STREAM_FAILED) ||
+                        (m_stream_state == PA_STREAM_TERMINATED))) {
           break;
         }
+        pa_threaded_mainloop_wait(m_main_loop);
       }
+      /* Disable stream state callback */
+      pa_stream_set_state_callback(m_stream_record, nullptr, nullptr);
+      pa_threaded_mainloop_unlock(m_main_loop);
 
-      if (AM_LIKELY(PA_STREAM_READY == streamState)) {
-        const pa_buffer_attr *attr = pa_stream_get_buffer_attr(m_stream_record);
-        std::string stream_mainloop_name = m_context_name + ".thread";
-        pa_threaded_mainloop_set_name(m_main_loop,
-                                      stream_mainloop_name.c_str());
-        m_is_capture_running = true;
-        if (AM_LIKELY((volume > 0) && !set_volume(volume))) {
-          ERROR("Failed to set volume to %d", volume);
-        }
-        if (AM_LIKELY(attr)) {
-          INFO("Client requested fragment size : %u", bufAttr.fragsize);
-          INFO("Server returned fragment size  : %u", attr->fragsize);
-        } else {
+      switch(m_stream_state) {
+        case PA_STREAM_READY: {
+          const pa_buffer_attr *attr = nullptr;
+          std::string stream_mainloop_name = m_context_name + ".cap";
+          pa_threaded_mainloop_lock(m_main_loop);
+          pa_threaded_mainloop_set_name(m_main_loop,
+                                        stream_mainloop_name.c_str());
+          attr = pa_stream_get_buffer_attr(m_stream_record);
+          pa_threaded_mainloop_unlock(m_main_loop);
+          m_is_capture_running = true;
+          if (AM_LIKELY((volume > 0) && !set_volume(volume))) {
+            ERROR("Failed to set volume to %d", volume);
+          }
+          if (AM_LIKELY(attr)) {
+            INFO("Client requested fragment size : %u", bufAttr.fragsize);
+            INFO("Server returned fragment size  : %u", attr->fragsize);
+          } else {
+            ret = false;
+            ERROR("Failed to get buffer's attribute of stream %s!",
+                  stream_record_name.c_str());
+          }
+          pa_stream_set_read_callback(m_stream_record,
+                                      static_pa_read,
+                                      m_read_data);
+        }break;
+        default: {
           ret = false;
-          ERROR("Failed to get buffer's attribute of stream %s!",
+          ERROR("Failed to connect record stream %s to PulseAudio server!",
                 stream_record_name.c_str());
-        }
-      } else {
-        ret = false;
-        ERROR("Failed connecting record stream %s to audio server!",
-              stream_record_name.c_str());
+        }break;
       }
     }
   }while(0);
@@ -226,7 +264,7 @@ bool AMAudioCapturePulse::start(int32_t volume)
 
 bool AMAudioCapturePulse::stop()
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   if (AM_LIKELY(m_is_capture_running)) {
     pa_threaded_mainloop_stop(m_main_loop);
     finalize();
@@ -240,7 +278,7 @@ bool AMAudioCapturePulse::stop()
 
 bool AMAudioCapturePulse::set_channel(uint32_t channel)
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   INFO("Audio channel of %s is set to %u.", m_context_name.c_str(), channel);
   m_channel = channel;
   m_sample_spec.channels = m_channel;
@@ -249,7 +287,7 @@ bool AMAudioCapturePulse::set_channel(uint32_t channel)
 
 bool AMAudioCapturePulse::set_sample_rate(uint32_t sample_rate)
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   INFO("Audio sample rate of %s is set to %u.",
        m_context_name.c_str(), sample_rate);
   m_sample_rate = sample_rate;
@@ -259,7 +297,7 @@ bool AMAudioCapturePulse::set_sample_rate(uint32_t sample_rate)
 
 bool AMAudioCapturePulse::set_chunk_bytes(uint32_t chunk_bytes)
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   INFO("Audio chunk bytes of %s is set to %u.",
        m_context_name.c_str(), chunk_bytes);
   m_chunk_bytes = chunk_bytes;
@@ -268,7 +306,7 @@ bool AMAudioCapturePulse::set_chunk_bytes(uint32_t chunk_bytes)
 
 bool AMAudioCapturePulse::set_sample_format(AM_AUDIO_SAMPLE_FORMAT format)
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   bool ret = true;
   switch(format) {
     case AM_SAMPLE_U8: {
@@ -302,17 +340,13 @@ bool AMAudioCapturePulse::set_sample_format(AM_AUDIO_SAMPLE_FORMAT format)
   return ret;
 }
 
-static void set_volume_callback(pa_context *context, int success, void *data)
-{
-  *((bool*)data) = (0 != success);
-}
-
 bool AMAudioCapturePulse::set_volume(uint32_t volume)
 {
   bool ret = false;
 
   if (AM_LIKELY(m_context && m_stream_record &&
                 (volume > 0) && (volume <= 100))) {
+    PaData volumeData(this, &ret);
     pa_cvolume cvolume = {0};
     pa_operation *op = nullptr;
     pa_operation_state_t opState = PA_OPERATION_CANCELLED;
@@ -323,23 +357,28 @@ bool AMAudioCapturePulse::set_volume(uint32_t volume)
       cvolume.values[i] = PA_VOLUME_NORM * volume / 100;
     }
 
+    pa_threaded_mainloop_lock(m_main_loop);
     op = pa_context_set_source_output_volume(
         m_context,
         pa_stream_get_index(m_stream_record),
         &cvolume,
-        set_volume_callback,
-        (void*)&ret);
-    while ((opState = pa_operation_get_state(op)) != PA_OPERATION_DONE) {
+        static_set_volume_callback,
+        (void*)&volumeData);
+    if (AM_LIKELY(op)) {
+      pa_threaded_mainloop_wait(m_main_loop);
+      pa_threaded_mainloop_accept(m_main_loop);
+      opState = pa_operation_get_state(op);
       if (AM_LIKELY(opState == PA_OPERATION_CANCELLED)) {
         WARN("Setting source volume is cancelled!");
         ret = false;
-        break;
       }
-      usleep(10000);
+      pa_operation_unref(op);
+    } else {
+      ret = false;
     }
-    pa_operation_unref(op);
+    pa_threaded_mainloop_unlock(m_main_loop);
     if (AM_LIKELY(ret)) {
-      NOTICE("Volume of stream %s is set to %u",
+      NOTICE("Volume of record stream %s is set to %u",
              m_context_name.c_str(), volume);
     }
   } else if ((volume == 0) || (volume > 100)) {
@@ -351,31 +390,31 @@ bool AMAudioCapturePulse::set_volume(uint32_t volume)
 
 uint32_t AMAudioCapturePulse::get_channel()
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   return m_channel;
 }
 
 uint32_t AMAudioCapturePulse::get_sample_rate()
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   return m_sample_rate;
 }
 
 uint32_t AMAudioCapturePulse::get_chunk_bytes()
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   return m_chunk_bytes;
 }
 
 uint32_t AMAudioCapturePulse::get_sample_size()
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   return pa_sample_size(&m_sample_spec);
 }
 
 int64_t AMAudioCapturePulse::get_chunk_pts()
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   m_frame_bytes  = pa_frame_size(&m_sample_spec) * m_sample_spec.rate;
   m_fragment_pts = ((int64_t)(90000LL * m_chunk_bytes) / m_frame_bytes);
   return m_fragment_pts;
@@ -383,7 +422,7 @@ int64_t AMAudioCapturePulse::get_chunk_pts()
 
 AM_AUDIO_SAMPLE_FORMAT AMAudioCapturePulse::get_sample_format()
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   AM_AUDIO_SAMPLE_FORMAT format = AM_SAMPLE_INVALID;
   switch(m_sample_format) {
     case PA_SAMPLE_U8:
@@ -418,16 +457,8 @@ AM_AUDIO_SAMPLE_FORMAT AMAudioCapturePulse::get_sample_format()
 
 void AMAudioCapturePulse::pa_state(pa_context *context, void *data)
 {
-  if (AM_LIKELY(context)) {
-    m_context_state = pa_context_get_state(context);
-  }
-
-  if (AM_LIKELY(!context || (m_context_state == PA_CONTEXT_READY) ||
-                (m_context_state == PA_CONTEXT_FAILED) ||
-                (m_context_state == PA_CONTEXT_TERMINATED))) {
-    pa_threaded_mainloop_signal((pa_threaded_mainloop*)data, 0);
-  }
   DEBUG("pa_state is called!");
+  pa_threaded_mainloop_signal((pa_threaded_mainloop*)data, 0);
 }
 
 void AMAudioCapturePulse::pa_server_info_cb(pa_context *context,
@@ -512,9 +543,22 @@ void AMAudioCapturePulse::pa_source_info_cb(pa_context *context,
   }
 }
 
+void AMAudioCapturePulse::pa_set_volume_cb(pa_context *context,
+                                           int success,
+                                           void *data)
+{
+  *((bool*)data) = (0 != success);
+  if (AM_LIKELY(0 != success)) {
+    NOTICE("Set volume done!");
+  } else {
+    WARN("Failed to set volume!");
+  }
+  pa_threaded_mainloop_signal(m_main_loop, 1);
+}
+
 void AMAudioCapturePulse::pa_read(pa_stream *stream, size_t bytes, void *data)
 {
-  const void *audio_data = NULL;
+  const void *audio_data = nullptr;
   uint32_t avail_data_size = 0;
   int64_t current_pts = get_current_pts();
 
@@ -550,7 +594,6 @@ void AMAudioCapturePulse::pa_read(pa_stream *stream, size_t bytes, void *data)
 
     for (uint32_t i = 0; i < packet_num; ++ i) {
       m_last_pts += curr_pts_seg;
-      m_lock->lock();
       if (AM_LIKELY(m_owner && m_capture_callback)) {
         AudioCapture a_capture;
         a_capture.owner = m_owner;
@@ -559,7 +602,6 @@ void AMAudioCapturePulse::pa_read(pa_stream *stream, size_t bytes, void *data)
         a_capture.packet.pts = m_last_pts;
         m_capture_callback(&a_capture);
       }
-      m_lock->unlock();
       m_audio_ptr_r = m_audio_buffer +
           (((m_audio_ptr_r - m_audio_buffer) + m_chunk_bytes) %
               m_audio_buffer_size);
@@ -570,6 +612,12 @@ void AMAudioCapturePulse::pa_read(pa_stream *stream, size_t bytes, void *data)
 void AMAudioCapturePulse::pa_over_flow(pa_stream *stream, void *data)
 {
   ERROR("Audio data over flow! Is I/O too slow?");
+}
+
+void AMAudioCapturePulse::pa_stream_state(pa_stream *stream, void *data)
+{
+  DEBUG("pa_stream_state is called!");
+  pa_threaded_mainloop_signal((pa_threaded_mainloop*)data, 0);
 }
 
 void AMAudioCapturePulse::static_pa_state(pa_context *context, void *data)
@@ -607,42 +655,57 @@ void AMAudioCapturePulse::static_pa_over_flow(pa_stream *stream, void *data)
   ((PaData*)data)->adev->pa_over_flow(stream, ((PaData*)data)->data);
 }
 
+void AMAudioCapturePulse::static_pa_stream_state(pa_stream *stream, void *data)
+{
+  ((PaData*)data)->adev->pa_stream_state(stream, ((PaData*)data)->data);
+}
+
+void AMAudioCapturePulse::static_set_volume_callback(pa_context *context,
+                                                     int success,
+                                                     void *data)
+{
+  ((PaData*)data)->adev->pa_set_volume_cb(context,
+                                          success,
+                                          ((PaData*)data)->data);
+}
+
 bool AMAudioCapturePulse::initialize()
 {
   bool ret = false;
 
   do {
-    if (AM_LIKELY(m_hw_timer_fd < 0)) {
-      if (AM_UNLIKELY((m_hw_timer_fd = open(HW_TIMER, O_RDONLY)) < 0)) {
-        ERROR("Failed to open %s: %s", HW_TIMER, strerror(errno));
-        break;
-      }
-    }
-
     if (AM_LIKELY(!m_main_loop)) {
+      PaData stateData(this, nullptr);
+      setenv("PULSE_RUNTIME_PATH", "/var/run/pulse/", 1);
       m_main_loop = pa_threaded_mainloop_new();
       if (AM_UNLIKELY(!m_main_loop)) {
         ERROR("Failed to create threaded mainloop!");
         break;
       }
-      m_main_loop_api = pa_threaded_mainloop_get_api(m_main_loop);
-      m_context = pa_context_new(m_main_loop_api,
+      m_context = pa_context_new(pa_threaded_mainloop_get_api(m_main_loop),
                                  (const char*)m_context_name.c_str());
       if (AM_UNLIKELY(!m_context))  {
         ERROR("Failed to create context %s", m_context_name.c_str());
         break;
       }
-      PaData stateData(this, m_main_loop);
+      stateData.data = m_main_loop;
       pa_context_set_state_callback(m_context, static_pa_state, &stateData);
-      pa_context_connect(m_context, NULL, PA_CONTEXT_NOFLAGS, NULL);
-
+      pa_context_connect(m_context, nullptr, /* Default PulseAudio server */
+                         PA_CONTEXT_NOFLAGS, nullptr);
       pa_threaded_mainloop_start(m_main_loop);
       pa_threaded_mainloop_lock(m_main_loop);
-      /* Will be signaled in pa_state()*/
-      pa_threaded_mainloop_wait(m_main_loop);
+      while ((m_context_state = pa_context_get_state(m_context)) !=
+             PA_CONTEXT_READY) {
+        if (AM_UNLIKELY((m_context_state == PA_CONTEXT_FAILED) ||
+                        (m_context_state == PA_CONTEXT_TERMINATED))) {
+          break;
+        }
+        /* Will be signaled in pa_state()*/
+        pa_threaded_mainloop_wait(m_main_loop);
+      }
       pa_threaded_mainloop_unlock(m_main_loop);
       /* Disable context state callback, not used in the future */
-      pa_context_set_state_callback(m_context, NULL, NULL);
+      pa_context_set_state_callback(m_context, nullptr, nullptr);
 
       m_is_context_connected = (PA_CONTEXT_READY == m_context_state);
       if (AM_UNLIKELY(!m_is_context_connected)) {
@@ -655,10 +718,10 @@ bool AMAudioCapturePulse::initialize()
         ERROR("Failed to connect context %s", m_context_name.c_str());
         break;
       }
-      ret = m_is_context_connected;
     } else {
       INFO("Threaded mainloop is already created!");
     }
+    ret = m_is_context_connected;
   }while(0);
 
   if (AM_LIKELY(!ret && m_main_loop)) {
@@ -674,41 +737,33 @@ void AMAudioCapturePulse::finalize()
     pa_stream_disconnect(m_stream_record);
     DEBUG("pa_stream_disconnect(m_stream_record)");
     pa_stream_unref(m_stream_record);
-    m_stream_record = NULL;
+    m_stream_record = nullptr;
     DEBUG("pa_stream_unref(m_stream_record)");
   }
 
   if (AM_LIKELY(m_is_context_connected)) {
-    pa_context_set_state_callback(m_context, NULL, NULL);
+    pa_context_set_state_callback(m_context, nullptr, nullptr);
     pa_context_disconnect(m_context);
     m_is_context_connected = false;
   }
 
   if (AM_LIKELY(m_context)) {
     pa_context_unref(m_context);
-    m_context = NULL;
+    m_context = nullptr;
     DEBUG("pa_context_unref(m_context)");
   }
 
   if (AM_LIKELY(m_main_loop)) {
     pa_threaded_mainloop_free(m_main_loop);
-    m_main_loop = NULL;
+    m_main_loop = nullptr;
     DEBUG("pa_threaded_mainloop_free(m_main_loop)");
   }
 
-  if (AM_LIKELY(m_hw_timer_fd >= 0)) {
-    close(m_hw_timer_fd);
-    m_hw_timer_fd = -1;
-  }
-
-  if (AM_LIKELY(m_audio_buffer)) {
-    delete[] m_audio_buffer;
-  }
-
+  delete[] m_audio_buffer;
   m_def_src_name.clear();
-  m_audio_buffer = NULL;
-  m_audio_ptr_r = NULL;
-  m_audio_ptr_w = NULL;
+  m_audio_buffer = nullptr;
+  m_audio_ptr_r = nullptr;
+  m_audio_ptr_w = nullptr;
   m_is_capture_running = false;
 
   INFO("AudioCapturePulse's resources have been released!");
@@ -716,13 +771,13 @@ void AMAudioCapturePulse::finalize()
 
 int64_t AMAudioCapturePulse::get_current_pts()
 {
-  uint8_t pts[32] = {0};
+  char pts[32] = {0};
   int64_t cur_pts = m_last_pts;
   if (AM_LIKELY(m_hw_timer_fd >= 0)) {
     if (AM_UNLIKELY(read(m_hw_timer_fd, pts, sizeof(pts)) < 0)) {
-      PERROR("read");
+      ERROR("read: %d %s", m_hw_timer_fd, strerror(errno));
     } else {
-      cur_pts = (int64_t)strtoull((const char*)pts, (char**)NULL, 10);
+      cur_pts = strtoll(pts, nullptr, 10);
     }
   }
 
@@ -737,27 +792,27 @@ uint32_t AMAudioCapturePulse::get_available_data_size()
 }
 
 AMAudioCapturePulse::AMAudioCapturePulse() :
-    m_capture_callback(NULL),
-    m_lock(NULL),
-    m_owner(NULL),
-    m_read_data(NULL),
-    m_over_flow(NULL),
-    m_main_loop(NULL),
-    m_main_loop_api(NULL),
-    m_context(NULL),
-    m_stream_record(NULL),
-    m_audio_buffer(NULL),
-    m_audio_ptr_r(NULL),
-    m_audio_ptr_w(NULL),
+    m_last_pts(0LL),
+    m_fragment_pts(0LL),
+    m_capture_callback(nullptr),
+    m_owner(nullptr),
+    m_read_data(nullptr),
+    m_over_flow(nullptr),
+    m_stream_data(nullptr),
+    m_main_loop(nullptr),
+    m_context(nullptr),
+    m_stream_record(nullptr),
+    m_audio_buffer(nullptr),
+    m_audio_ptr_r(nullptr),
+    m_audio_ptr_w(nullptr),
     m_context_state(PA_CONTEXT_UNCONNECTED),
+    m_stream_state(PA_STREAM_UNCONNECTED),
     m_sample_format(PA_SAMPLE_INVALID),
     m_sample_rate(0),
     m_channel(0),
     m_chunk_bytes(0),
     m_audio_buffer_size(0),
     m_frame_bytes(0),
-    m_last_pts(0LL),
-    m_fragment_pts(0LL),
     m_hw_timer_fd(-1),
     m_is_context_connected(false),
     m_is_capture_running(false),
@@ -774,8 +829,10 @@ AMAudioCapturePulse::~AMAudioCapturePulse()
   finalize();
   delete m_read_data;
   delete m_over_flow;
-  if (AM_LIKELY(m_lock)) {
-    m_lock->destroy();
+  delete m_stream_data;
+  if (AM_LIKELY(m_hw_timer_fd >= 0)) {
+    close(m_hw_timer_fd);
+    m_hw_timer_fd = -1;
   }
 }
 
@@ -797,23 +854,29 @@ bool AMAudioCapturePulse::init(void *owner,
       WARN("Audio capture callback function is not set!");
     }
 
-    m_lock = AMSpinLock::create();
-    if (AM_UNLIKELY(!m_lock)) {
-      ERROR("Failed to create lock!");
-      break;
-    }
-
-    m_read_data = new PaData(this, NULL);
+    m_read_data = new PaData(this, nullptr);
     if (AM_UNLIKELY(!m_read_data)) {
       ERROR("Failed to create m_read_data!");
       break;
     }
 
-    m_over_flow = new PaData(this, NULL);
+    m_over_flow = new PaData(this, nullptr);
     if (AM_UNLIKELY(!m_over_flow)) {
       ERROR("Failed to create m_over_flow!");
       break;
     }
+
+    m_stream_data = new PaData(this, nullptr);
+    if (AM_UNLIKELY(!m_stream_data)) {
+      ERROR("Failed to create m_stream_state_data!");
+      break;
+    }
+
+    if (AM_UNLIKELY((m_hw_timer_fd = open(HW_TIMER, O_RDONLY)) < 0)) {
+      ERROR("Failed to open %s: %s", HW_TIMER, strerror(errno));
+      break;
+    }
+
     ret = true;
   } while(0);
   return ret;

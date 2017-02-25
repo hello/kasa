@@ -4,13 +4,31 @@
  * History:
  *   2015-01-04 - [Zhi He]      created file
  *   2015-04-21 - [Shupeng Ren] modified file
+ *   2016-07-08 - [Guohua Zheng] modified file
  *
- * Copyright (C) 2015, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -20,6 +38,8 @@
 
 #ifndef __AM_EXPORT_IF_H__
 #define __AM_EXPORT_IF_H__
+
+#include "am_result.h"
 
 /*! Export Unix Domain Socket File Path */
 #define DEXPORT_PATH ("/run/oryx/export.socket")
@@ -40,25 +60,46 @@ enum AM_EXPORT_PACKET_TYPE {
  *  @brief Packet format types indicate which kind of data is in the packet
  */
 enum AM_EXPORT_PACKET_FORMAT {
-  AM_EXPORT_PACKET_FORMAT_INVALID     = 0x00, //!< Invalid format
+  AM_EXPORT_PACKET_FORMAT_INVALID         = 0x00, //!< Invalid format
 
   //For Video
-  AM_EXPORT_PACKET_FORMAT_AVC         = 0x01, //!< H.264 Video
-  AM_EXPORT_PACKET_FORMAT_HEVC        = 0x02, //!< H.265 Video
-  AM_EXPORT_PACKET_FORMAT_MJPEG       = 0x03, //!< MJPEG Video
+  AM_EXPORT_PACKET_FORMAT_AVC             = 0x01, //!< H.264 Video
+  AM_EXPORT_PACKET_FORMAT_HEVC            = 0x02, //!< H.265 Video
+  AM_EXPORT_PACKET_FORMAT_MJPEG           = 0x03, //!< MJPEG Video
 
-  //For Audio
-  AM_EXPORT_PACKET_FORMAT_AAC         = 0x10, //!< AAC ADTS Audio
-  AM_EXPORT_PACKET_FORMAT_G711MuLaw   = 0x11, //!< G.711 MuLaw Audio
-  AM_EXPORT_PACKET_FORMAT_G711ALaw    = 0x12, //!< G.711 ALaw Audio
-  AM_EXPORT_PACKET_FORMAT_G726_40     = 0x13, //!< G.726 40kbps Audio
-  AM_EXPORT_PACKET_FORMAT_G726_32     = 0x14, //!< G.726 32kbps Audio
-  AM_EXPORT_PACKET_FORMAT_G726_24     = 0x15, //!< G.726 24kbps Audio
-  AM_EXPORT_PACKET_FORMAT_G726_16     = 0x16, //!< G.726 16kbps Audio
-  AM_EXPORT_PACKET_FORMAT_PCM         = 0x17, //!< S16LE PCM Audio
-  AM_EXPORT_PACKET_FORMAT_OPUS        = 0x18, //!< OPUS Audio
-  AM_EXPORT_PACKET_FORMAT_BPCM        = 0x19, //!< S16BE PCM Audio
-  AM_EXPORT_PACKET_FORMAT_SPEEX       = 0x1A, //!< SPEEX Audio
+  //For Audio HZ:sample rate
+  AM_EXPORT_PACKET_FORMAT_AAC_8KHZ        = 0x08, //!< AAC ADTS Audio
+  AM_EXPORT_PACKET_FORMAT_AAC_16KHZ       = 0x09,
+  AM_EXPORT_PACKET_FORMAT_AAC_48KHZ       = 0x0A,
+
+  AM_EXPORT_PACKET_FORMAT_G711MuLaw_8KHZ  = 0x0C, //!< G.711 MuLaw Audio
+  AM_EXPORT_PACKET_FORMAT_G711MuLaw_16KHZ = 0x0D,
+  AM_EXPORT_PACKET_FORMAT_G711MuLaw_48KHZ = 0x0E,
+
+  AM_EXPORT_PACKET_FORMAT_G711ALaw_8KHZ   = 0x10, //!< G.711 ALaw Audio
+  AM_EXPORT_PACKET_FORMAT_G711ALaw_16KHZ  = 0x11,
+  AM_EXPORT_PACKET_FORMAT_G711ALaw_48KHZ  = 0x12,
+
+  AM_EXPORT_PACKET_FORMAT_G726_40KBPS     = 0x14, //!< G.726 40kbps Audio
+  AM_EXPORT_PACKET_FORMAT_G726_32KBPS     = 0x15, //!< G.726 32kbps Audio
+  AM_EXPORT_PACKET_FORMAT_G726_24KBPS     = 0x16, //!< G.726 24kbps Audio
+  AM_EXPORT_PACKET_FORMAT_G726_16KBPS     = 0x17, //!< G.726 16kbps Audio
+
+  AM_EXPORT_PACKET_FORMAT_PCM_8KHZ        = 0x20, //!< S16LE PCM Audio
+  AM_EXPORT_PACKET_FORMAT_PCM_16KHZ       = 0x21,
+  AM_EXPORT_PACKET_FORMAT_PCM_48KHZ       = 0x22,
+
+  AM_EXPORT_PACKET_FORMAT_OPUS_8KHZ       = 0x24, //!< OPUS Audio
+  AM_EXPORT_PACKET_FORMAT_OPUS_16KHZ      = 0x25,
+  AM_EXPORT_PACKET_FORMAT_OPUS_48KHZ      = 0x26,
+
+  AM_EXPORT_PACKET_FORMAT_BPCM_8KHZ       = 0x28, //!< S16BE PCM Audio
+  AM_EXPORT_PACKET_FORMAT_BPCM_16KHZ      = 0x29,
+  AM_EXPORT_PACKET_FORMAT_BPCM_48KHZ      = 0x2A,
+
+  AM_EXPORT_PACKET_FORMAT_SPEEX_8KHZ      = 0x2C, //!< SPEEX Audio
+  AM_EXPORT_PACKET_FORMAT_SPEEX_16KHZ     = 0x2D,
+  AM_EXPORT_PACKET_FORMAT_SPEEX_48KHZ     = 0x2E,
 };
 
 /*! @enum AM_EXPORT_VIDEO_FRAME_TYPE
@@ -92,50 +133,20 @@ struct AMExportAudioInfo {
     uint32_t bitrate; //!< Audio Bitrate
 
     uint32_t pts_increment; //!< PTS duration of a audio packet
+    uint16_t reserved1; //!< Reserved Bytes
     uint8_t  channels; //!< Audio Channels
     uint8_t  sample_size; //!< Audio Sample Size
-    uint16_t reserved1; //!< Reserved Bytes
 };
 
 /*! @struct AMExportPacket
  *  @brief Export Data Packet
  */
 struct AMExportPacket {
-    /*! Video or Audio Stream Index
-     */
-    uint8_t     stream_index;
-    /*! Export Packet Type
-     *  @sa enum AM_EXPORT_PACKET_TYPE
-     */
-    uint8_t     packet_type;
-
-    /*! Packet Data format
-     *  @sa enum AM_EXPORT_PACKET_FORMAT
-     */
-    uint8_t     packet_format;
-
-    /*! Video Frame Type
-     *  @sa enum AM_EXPORT_VIDEO_FRAME_TYPE
-     */
-    uint8_t     frame_type;
-
-    /*! Used for Video, if this is a IDR frame
-     * - 0: IPB Frame,
-     * - 1: IDR Frame
-     */
-    uint8_t     is_key_frame;
-
-    /*! Ignore this member for users
-     */
-    uint8_t     is_direct_mode;
-    uint8_t     user_alloc_memory;
-    uint8_t     reserved1;
 
     /*! Packet PTS
      */
     uint64_t    pts;
     uint64_t    seq_num;
-
     /*! Raw Data Pointer
      *
      * if (packet_type == AM_EXPORT_PACKET_TYPE_(VIDEO/AUDIO)_INFO),
@@ -158,11 +169,67 @@ struct AMExportPacket {
      * @sa AMExportAudioInfo
      */
     uint8_t    *data_ptr;
-
     /*! Raw Data Size
      *  @sa data_ptr
      */
     uint32_t    data_size;
+    /*! Video or Audio Stream Index
+     */
+    uint8_t     stream_index;
+
+    /*! Export Packet Type
+     *  @sa enum AM_EXPORT_PACKET_TYPE
+     */
+    uint8_t     packet_type;
+
+    /*! Packet Data format
+     *  @sa enum AM_EXPORT_PACKET_FORMAT
+     */
+    uint8_t     packet_format;
+
+    /*! Video Frame Type
+     *  @sa enum AM_EXPORT_VIDEO_FRAME_TYPE
+     */
+    uint8_t     frame_type;
+
+    /*! Audio Sample Rate
+     * The measure unit of audio sample rate is kHz
+     */
+    uint8_t     audio_sample_rate;
+
+    /*! Used for Video, if this is a IDR frame
+     * - 0: IPB Frame,
+     * - 1: IDR Frame
+     */
+    uint8_t     is_key_frame;
+
+    /*! Ignore these members for users
+     */
+    uint8_t     is_direct_mode;
+    uint8_t     user_alloc_memory;
+    uint8_t     reserved1;
+};
+
+/*! @struct AMExportConfig
+ *  @brief Export Muxer configuration
+ */
+struct AMExportConfig
+{
+    /*! Specify the type of audio to export by bits mask.
+     *@sa enum AM_EXPORT_PACKET_FORMAT
+     */
+    uint64_t audio_map;
+
+    /*! Specify the type of video to export by bits mask.
+     *@sa enum AM_EXPORT_PACKET_FORMAT
+     */
+    uint32_t video_map;
+
+    /*! Config if need to sort video and audio packets by PTS.
+     *  - 0: no sort
+     *  - 1: sort
+     */
+    uint32_t need_sort;
 };
 
 /*! @class AMIExportClient
@@ -179,7 +246,7 @@ class AMIExportClient
      *  @sa disconnect_server()
      *  @sa DEXPORT_PATH
      */
-    virtual bool connect_server(const char *url)    = 0;
+    virtual AM_RESULT connect_server(const char *url)    = 0;
 
     /*! Disconnect to export server
      *  @sa connect_server()
@@ -191,7 +258,13 @@ class AMIExportClient
      *  @return true if success, otherwise return false
      *  @sa release()
      */
-    virtual bool receive(AMExportPacket *packet)    = 0;
+    virtual AM_RESULT receive(AMExportPacket *packet)    = 0;
+
+    /*! Set config to export clients
+     *  @return true if success, otherwise return false
+     *  @sa set_config
+     */
+    virtual AM_RESULT set_config(AMExportConfig *config) = 0;
 
     /*! Release one packet if you have processed it
      *  @param packet @ref AMExportPacket pointer
@@ -221,18 +294,6 @@ enum AM_EXPORT_CLIENT_TYPE
    *  to transfer data with data export agent
    */
   AM_EXPORT_TYPE_UNIX_DOMAIN_SOCKET = 0x01,
-};
-
-/*! @struct AMExportConfig
- *  @brief Export Muxer configuration
- */
-struct AMExportConfig
-{
-    /*! Config if need to sort video and audio packets by PTS.
-     *  - 0: no sort
-     *  - 1: sort
-     */
-    uint8_t need_sort;
 };
 
 /*!

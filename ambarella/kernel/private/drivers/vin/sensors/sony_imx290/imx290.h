@@ -4,14 +4,33 @@
  * History:
  *    2015/03/23 - [Long Zhao] Create
  *
- * Copyright (C) 2004-2015, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 
 #ifndef __IMX290_PRI_H__
 #define __IMX290_PRI_H__
@@ -84,11 +103,15 @@
 #define IMX290_HI_GAIN_MODE	(1<<4)
 
 #define IMX290_1080P_BRL		(1109)
-#define IMX290_720P_BRL		(735)
-#define IMX290_1080P_H_PIXEL	(1945)
-#define IMX290_1080P_HBLANK	(695)
+#define IMX290_1080P_H_PIXEL	(1948)
+#define IMX290_1080P_HBLANK	(692)
 #define IMX290_1080P_H_PERIOD	(2640)
 #define IMX290_1080P_12B_H_PERIOD	(2200)
+
+#define IMX290_720P_BRL		(735)
+#define IMX290_720P_H_PIXEL	(1308)
+#define IMX290_720P_HBLANK	(1332)
+#define IMX290_720P_H_PERIOD	(2640)
 
 #ifdef USE_1080P_2X_30FPS
 #define IMX290_1080P_2X_RHS1		(0x1B3)/* for 1080p30 2x, the max value of RHS1 is 2259 */
@@ -96,10 +119,23 @@
 #define IMX290_1080P_2X_RHS1		(11)/* for 1080p60 2x, the max value of RHS1 is 11 */
 #endif
 
+#define IMX290_1080P_2X_RATIO_RHS1	(0x57B)/* for 1080p30 2x, the max value of RHS1 is 2259 */
+
 #define IMX290_1080P_2X_12B_RHS1	(11)
 
 #define IMX290_1080P_3X_RHS1		(0x208)
 #define IMX290_1080P_3X_RHS2		(0x25A)/* for 1080p30 3x, the max value of RHS2 is 1148 */
+
+#define USE_720P_2X_30FPS	1
+
+#if USE_720P_2X_30FPS
+#define IMX290_720P_2X_RHS1		(0x1B3)
+#else
+#define IMX290_720P_2X_RHS1		(9)
+#endif
+
+#define IMX290_720P_3X_RHS1		(0x208)
+#define IMX290_720P_3X_RHS2		(0x25A)
 
 #endif /* __IMX290_PRI_H__ */
 

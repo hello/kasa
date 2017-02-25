@@ -3,14 +3,33 @@
  *
  * History:
  *	2015/07/01 - [Zhaoyang Chen] created file
- * Copyright (C) 2015-2019, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 #include <config.h>
 #include <linux/module.h>
 #include <linux/ambpriv_device.h>
@@ -115,9 +134,9 @@ void handle_efm_msg(struct ambarella_iav *iav, DSP_MSG *msg)
 		pool->req_idx = (pool->req_idx + 1) % efm->req_buf_num;
 		pool->req_msg_num++;
 		if (pool->req_num > 1 && pool->req_msg_num == pool->req_num) {
-			wake_up_interruptible(&efm->wq);
 			pool->req_num = 1;
 			efm->state = EFM_STATE_WORKING_OK;
+			wake_up_interruptible(&efm->wq);
 		}
 		break;
 	case DSP_STATUS_MSG_EFM_HANDSHAKE:
@@ -226,6 +245,7 @@ int iav_ioc_efm_handshake_frame(struct ambarella_iav * iav, void __user * arg)
 	struct iav_efm_buf_pool *pool = &efm->buf_pool;
 	struct iav_efm_handshake_frame handshake;
 	int ret = 0;
+	u64 hwpts = 0;
 
 	if (copy_from_user(&handshake, arg, sizeof(handshake)))
 		return -EFAULT;
@@ -242,9 +262,14 @@ int iav_ioc_efm_handshake_frame(struct ambarella_iav * iav, void __user * arg)
 
 	mutex_lock(&iav->iav_mutex);
 
-	efm->curr_pts = handshake.frame_pts;
+	if (handshake.use_hw_pts) {
+		get_hwtimer_output_ticks(&hwpts);
+	} else {
+		hwpts = handshake.frame_pts;
+	}
+	efm->curr_pts = hwpts & 0xFFFFFFFF;
 
-	ret = cmd_efm_handshake(iav, NULL);
+	ret = cmd_efm_handshake(iav, NULL, handshake.is_last_frame);
 
 	pool->requested[pool->hs_idx] = 0;
 	pool->hs_idx = (pool->hs_idx + 1) % efm->req_buf_num;

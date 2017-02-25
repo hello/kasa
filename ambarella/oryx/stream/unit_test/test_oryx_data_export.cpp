@@ -4,305 +4,422 @@
  * History:
  *   2015-01-04 - [Zhi He]      created file
  *   2015-04-02 - [Shupeng Ren] modified  file
+ *   2016-07-08 - [Guohua Zheng] modified  file
  *
- * Copyright (C) 2015, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
+
+#include <signal.h>
+#include <map>
+
+#include <getopt.h>
+#include <condition_variable>
 
 #include "am_base_include.h"
 #include "am_define.h"
 #include "am_log.h"
-
 #include "am_export_if.h"
+#include "am_thread.h"
+#include "am_event.h"
 
-#include <signal.h>
+#define NO_ARG 0
+#define HAS_ARG 1
 
-#define DMAX_STREAM_NUMBER 8
+using std::map;
 
-struct unittest_content {
-  char    output_filenamebase[512];
-  uint8_t b_no_dump;
-  uint8_t reserved0;
-  uint8_t reserved1;
-  uint8_t reserved2;
+std::string namebase;
+bool write_flag = 0;
 
-  uint8_t b_video_output_file_opened[DMAX_STREAM_NUMBER];
-  uint8_t b_audio_output_file_opened[DMAX_STREAM_NUMBER];
-
-  FILE*   p_video_output_file[DMAX_STREAM_NUMBER];
-  FILE*   p_audio_output_file[DMAX_STREAM_NUMBER];
-};
+map<uint8_t, int8_t> video_output_file;
+map<uint8_t, map <uint8_t, int8_t>> audio_output_file;
 
 static AMIExportClient* g_client = nullptr;
 static bool running_flag = true;
+static uint32_t video_choice = ~0;
+static uint64_t audio_choice = ~0;
+static uint32_t mode = 0;
+
+AMThread *data_process_thread = nullptr;
+AMEvent  *monitor_wait = nullptr;
+
+AMExportConfig m_config;
+AM_RESULT ret = AM_RESULT_OK;
+
+static struct option long_options[]=
+{
+ {"help",            NO_ARG,   0, 'h'},
+ {"mode",            HAS_ARG,  0, 'm'},
+ {"video",           HAS_ARG,  0, 'v'},
+ {"audio",           HAS_ARG,  0, 'a'},
+ {"nodump",          NO_ARG,   0, 'n'},
+ {"filename",        HAS_ARG,  0, 'f'},
+};
+
+static const char *short_options = "hm:v:a:nf:";
+
+static void show_usage()
+{
+  PRINTF("test_oryx_data_export usage:\n");
+  PRINTF("\t-f [%%s]: specify output filename base, "
+      "when write the files, users could set data export dynamic"
+      "final video file name will be 'filename_video_%%d.h264', "
+      "same with '--filename'\n");
+  PRINTF("\t-m [%%d]: specify sort mode of packet export,"
+      "0: no-sort mode, 1: sort mode,"
+      "same with '--mode'\n");
+  PRINTF("\t-v [%%d]: specify the video stream to be exported,"
+      "set by bit-mask, i.g. stream 0 + stream 1: -v 3(11)"
+      "same with '--video'\n");
+  PRINTF("\t-a [%%d]: specify the audio stream to be exported,"
+      "set by bit-mask, i.g. stream 0 + stream 1: -a 3(11)"
+      "same with '--audio'\n");
+  PRINTF("\t--nodump: will not save file, print only, "
+      "same with '-n'\n ");
+  PRINTF("\t--help: show usage, same with -h\n");
+}
+
+static void show_interactive_usage()
+{
+  PRINTF("\n==========================================\n");
+  PRINTF("b----------------begin set\n");
+  PRINTF("a----------------audio map(bit mask)\n");
+  PRINTF("v----------------video map(bit mask)\n");
+  PRINTF("r----------------reset the export data\n");
+  PRINTF("u----------------go back to previous menu\n");
+  PRINTF("e----------------exit\n");
+  PRINTF("==========================================\n");
+  PRINTF("> ");
+
+}
+static AM_RESULT init_params(int argc, char **argv) {
+  int32_t ch;
+  int32_t option_index = 0;
+  AM_RESULT ret = AM_RESULT_OK;
+  while ((ch = getopt_long(argc, argv, short_options, long_options,
+                           &option_index)) != -1) {
+    switch (ch) {
+      case 'h':
+        ret = AM_RESULT_ERR_INVALID;
+        break;
+      case 'm':
+        mode = atoi(optarg);
+        break;
+      case 'n':
+        write_flag = 1;
+        break;
+      case 'v':
+        video_choice = atoi(optarg);
+        break;
+      case 'a':
+        audio_choice = atoll(optarg);
+        break;
+      case 'f':
+        namebase = optarg;
+        if (namebase.c_str() == nullptr) {
+          ERROR("input filename error");
+          ret = AM_RESULT_ERR_INVALID;
+        }
+        break;
+      default:
+        ERROR("unknown options");
+        ret = AM_RESULT_ERR_INVALID;
+        break;
+    }
+  }
+  return ret;
+}
 
 static void __sigstop(int i)
 {
   running_flag = false;
+  monitor_wait->signal();
 }
 
-static void show_usage()
-{
-  printf("test_oryx_data_export usage:\n");
-  printf("\t-f [%%s]: specify output filename base, "
-      "final video file name will be 'filename_video_%%d.h264', "
-      "same with '--filename'\n");
-  printf("\t--filename [%%s]: specify output filename base, "
-      "final video file name will be 'filename_video_%%d.h264', "
-      "same with '-f'\n");
-  printf("\t--nodump: will not save file, print only\n");
-  printf("\t--help: show usage\n");
-}
-
-static int init_params(int argc, char **argv, unittest_content* content)
-{
-  int i = 0;
-
-  for (i = 1; i < argc; i ++) {
-    if (!strcmp("--filename", argv[i])) {
-      if (((i + 1) < argc)) {
-        snprintf(content->output_filenamebase, 512, "%s", argv[i + 1]);
-        printf("[input argument]: '--filename': (%s).\n",
-               content->output_filenamebase);
-      } else {
-        printf("[input argument error]: '--filename', "
-            "should follow with output filename base, argc %d, i %d.\n",
-            argc, i);
-        return (-1);
-      }
-      i ++;
-    } else if (!strcmp("-f", argv[i])) {
-      if (((i + 1) < argc)) {
-        snprintf(content->output_filenamebase, 512, "%s", argv[i + 1]);
-        printf("[input argument]: '-f': (%s).\n",
-               content->output_filenamebase);
-      } else {
-        printf("[input argument error]: '-f', "
-            "should follow with output filename base, argc %d, i %d.\n",
-            argc, i);
-        return (-2);
-      }
-      i ++;
-    } else if (!strcmp("--nodump", argv[i])) {
-      content->b_no_dump = 1;
-    } else if (!strcmp("--help", argv[i])) {
-      show_usage();
-      return 1;
-    } else {
-      printf("[input argument error]: unknwon input params, [%d][%s]\n",
-             i, argv[i]);
-      return (-20);
-    }
-  }
-
-  return 0;
-}
-
-static void open_video_output_file(unittest_content* content,
-                                   uint32_t stream_index,
+static void open_video_output_file(uint32_t stream_index,
                                    uint8_t packet_format)
 {
   char filename[512] = {0};
-
   switch (packet_format) {
-    case AM_EXPORT_PACKET_FORMAT_AVC:
-      snprintf(filename, 512, "%s_video_%d.h264",
-               content->output_filenamebase, stream_index);
-      content->p_video_output_file[stream_index] = fopen(filename, "wb+");
-      break;
-    case AM_EXPORT_PACKET_FORMAT_HEVC:
-      snprintf(filename, 512, "%s_video_%d.h265",
-               content->output_filenamebase, stream_index);
-      content->p_video_output_file[stream_index] = fopen(filename, "wb+");
-      break;
-    case AM_EXPORT_PACKET_FORMAT_MJPEG:
-      snprintf(filename, 512, "%s_video_%d.mjpeg",
-               content->output_filenamebase, stream_index);
-      content->p_video_output_file[stream_index] = fopen(filename, "wb+");
-      break;
+    case AM_EXPORT_PACKET_FORMAT_AVC: {
+      snprintf(filename, 512, "%s_video_%d_%ld.h264",
+               namebase.c_str(), stream_index, clock());
+      if ((video_output_file[stream_index] =
+          open(filename, O_CREAT | O_TRUNC | O_WRONLY, 0777)) < 0) {
+        perror(filename);
+      }
+    } break;
+    case AM_EXPORT_PACKET_FORMAT_HEVC: {
+      snprintf(filename, 512, "%s_video_%d_%ld.h265",
+               namebase.c_str(), stream_index, clock());
+      if ((video_output_file[stream_index] =
+          open(filename, O_CREAT | O_TRUNC | O_WRONLY, 0777)) < 0) {
+        perror(filename);
+      }
+    } break;
+    case AM_EXPORT_PACKET_FORMAT_MJPEG: {
+      snprintf(filename, 512, "%s_video_%d_%ld.mjpeg",
+               namebase.c_str(), stream_index, clock());
+      if ((video_output_file[stream_index] =
+          open(filename, O_CREAT | O_TRUNC | O_WRONLY, 0777)) < 0) {
+        perror(filename);
+      }
+    } break;
     default:
       ERROR("BAD video format %d", packet_format);
       break;
   }
 }
 
-static void open_audio_output_file(unittest_content* content,
-                                   uint32_t stream_index,
-                                   uint8_t packet_format)
+static void open_audio_output_file(uint32_t stream_index,
+                                   uint8_t packet_format,
+                                   uint8_t sample_rate)
 {
   char filename[512] = {0};
-
+  uint8_t tem_index = (sample_rate / 16) > 1 ? 2:(sample_rate / 16);
   switch (packet_format) {
-    case AM_EXPORT_PACKET_FORMAT_AAC:
-      snprintf(filename, 512, "%s_audio_%d.aac",
-               content->output_filenamebase, stream_index);
-      content->p_audio_output_file[stream_index] = fopen(filename, "wb+");
-      break;
-    case AM_EXPORT_PACKET_FORMAT_G711MuLaw:
-      snprintf(filename, 512, "%s_audio_g711mu_%d.g711",
-               content->output_filenamebase, stream_index);
-      content->p_audio_output_file[stream_index] = fopen(filename, "wb+");
-      break;
-    case AM_EXPORT_PACKET_FORMAT_G711ALaw:
-      snprintf(filename, 512, "%s_audio_g711a_%d.g711",
-               content->output_filenamebase, stream_index);
-      content->p_audio_output_file[stream_index] = fopen(filename, "wb+");
-      break;
-    case AM_EXPORT_PACKET_FORMAT_G726_40:
-      snprintf(filename, 512, "%s_audio_g726_40_%d.g726",
-               content->output_filenamebase, stream_index);
-      content->p_audio_output_file[stream_index] = fopen(filename, "wb+");
-      break;
-    case AM_EXPORT_PACKET_FORMAT_G726_32:
-      snprintf(filename, 512, "%s_audio_g726_32_%d.g726",
-               content->output_filenamebase, stream_index);
-      content->p_audio_output_file[stream_index] = fopen(filename, "wb+");
-      break;
-    case AM_EXPORT_PACKET_FORMAT_G726_24:
-      snprintf(filename, 512, "%s_audio_g726_24_%d.g726",
-               content->output_filenamebase, stream_index);
-      content->p_audio_output_file[stream_index] = fopen(filename, "wb+");
-      break;
-    case AM_EXPORT_PACKET_FORMAT_G726_16:
-      snprintf(filename, 512, "%s_audio_g726_16_%d.g726",
-               content->output_filenamebase, stream_index);
-      content->p_audio_output_file[stream_index] = fopen(filename, "wb+");
-      break;
-    case AM_EXPORT_PACKET_FORMAT_PCM:
-      snprintf(filename, 512, "%s_audio_%d.pcm",
-               content->output_filenamebase, stream_index);
-      content->p_audio_output_file[stream_index] = fopen(filename, "wb+");
-      break;
-    case AM_EXPORT_PACKET_FORMAT_OPUS:
-      snprintf(filename, 512, "%s_audio_%d.opus",
-               content->output_filenamebase, stream_index);
-      content->p_audio_output_file[stream_index] = fopen(filename, "wb+");
-      break;
-    case AM_EXPORT_PACKET_FORMAT_BPCM:
-      snprintf(filename, 512, "%s_audio_%d.bpcm",
-               content->output_filenamebase, stream_index);
-      content->p_audio_output_file[stream_index] = fopen(filename, "wb+");
-      break;
-    case AM_EXPORT_PACKET_FORMAT_SPEEX:
-      snprintf(filename, 512, "%s_audio_%d.speex",
-               content->output_filenamebase, stream_index);
-      content->p_audio_output_file[stream_index] = fopen(filename, "wb+");
-      break;
+    case AM_EXPORT_PACKET_FORMAT_AAC_8KHZ:
+    case AM_EXPORT_PACKET_FORMAT_AAC_16KHZ:
+    case AM_EXPORT_PACKET_FORMAT_AAC_48KHZ: {
+      snprintf(filename, 512, "%s_audio_%dkHz_%d_%ld.aac",
+               namebase.c_str(), sample_rate,stream_index, clock());
+      if ((audio_output_file[stream_index][tem_index] =
+          open(filename, O_CREAT | O_TRUNC | O_WRONLY, 0777)) < 0) {
+        perror(filename);
+      }
+    } break;
+    case AM_EXPORT_PACKET_FORMAT_G711MuLaw_8KHZ:
+    case AM_EXPORT_PACKET_FORMAT_G711MuLaw_16KHZ:
+    case AM_EXPORT_PACKET_FORMAT_G711MuLaw_48KHZ: {
+      snprintf(filename, 512, "%s_audio_g711mu_%dkHz_%d_%ld.g711",
+               namebase.c_str(), sample_rate, stream_index, clock());
+      if ((audio_output_file[stream_index][tem_index] =
+          open(filename, O_CREAT | O_TRUNC | O_WRONLY, 0777)) < 0) {
+        perror(filename);
+      }
+    } break;
+    case AM_EXPORT_PACKET_FORMAT_G711ALaw_8KHZ:
+    case AM_EXPORT_PACKET_FORMAT_G711ALaw_16KHZ:
+    case AM_EXPORT_PACKET_FORMAT_G711ALaw_48KHZ: {
+      snprintf(filename, 512, "%s_audio_g711a_%dkHz_%d_%ld.g711",
+               namebase.c_str(), sample_rate, stream_index, clock());
+      if ((audio_output_file[stream_index][tem_index] =
+          open(filename, O_CREAT | O_TRUNC | O_WRONLY, 0777)) < 0) {
+        perror(filename);
+      }
+    } break;
+    case AM_EXPORT_PACKET_FORMAT_G726_40KBPS: {
+      snprintf(filename, 512, "%s_audio_g726_40_%dkHz_%d_%ld.g726",
+               namebase.c_str(), sample_rate, stream_index, clock());
+      if ((audio_output_file[stream_index][tem_index] =
+          open(filename, O_CREAT | O_TRUNC | O_WRONLY, 0777)) < 0) {
+        perror(filename);
+      }
+    } break;
+    case AM_EXPORT_PACKET_FORMAT_G726_32KBPS: {
+      snprintf(filename, 512, "%s_audio_g726_32_%dkHz_%d_%ld.g726",
+               namebase.c_str(), sample_rate, stream_index, clock());
+      if ((audio_output_file[stream_index][tem_index] =
+          open(filename, O_CREAT | O_TRUNC | O_WRONLY, 0777)) < 0) {
+        perror(filename);
+      }
+    } break;
+    case AM_EXPORT_PACKET_FORMAT_G726_24KBPS: {
+      snprintf(filename, 512, "%s_audio_g726_24_%dkHz_%d_%ld.g726",
+               namebase.c_str(), sample_rate, stream_index, clock());
+      if ((audio_output_file[stream_index][tem_index] =
+          open(filename, O_CREAT | O_TRUNC | O_WRONLY, 0777)) < 0) {
+        perror(filename);
+      }
+    } break;
+    case AM_EXPORT_PACKET_FORMAT_G726_16KBPS: {
+      snprintf(filename, 512, "%s_audio_g726_16_%dkHz_%d_%ld.g726",
+               namebase.c_str(), sample_rate, stream_index, clock());
+      if ((audio_output_file[stream_index][tem_index] =
+          open(filename, O_CREAT | O_TRUNC | O_WRONLY, 0777)) < 0) {
+        perror(filename);
+      }
+    } break;
+    case AM_EXPORT_PACKET_FORMAT_PCM_8KHZ:
+    case AM_EXPORT_PACKET_FORMAT_PCM_16KHZ:
+    case AM_EXPORT_PACKET_FORMAT_PCM_48KHZ: {
+      snprintf(filename, 512, "%s_audio_%dkHz_%d_%ld.pcm",
+               namebase.c_str(), sample_rate, stream_index, clock());
+      if ((audio_output_file[stream_index][tem_index] =
+          open(filename, O_CREAT | O_TRUNC | O_WRONLY, 0777)) < 0) {
+        perror(filename);
+      }
+    } break;
+    case AM_EXPORT_PACKET_FORMAT_OPUS_8KHZ:
+    case AM_EXPORT_PACKET_FORMAT_OPUS_16KHZ:
+    case AM_EXPORT_PACKET_FORMAT_OPUS_48KHZ: {
+      snprintf(filename, 512, "%s_audio_%dkHz_%d_%ld.opus",
+               namebase.c_str(), sample_rate, stream_index, clock());
+      if ((audio_output_file[stream_index][tem_index] =
+          open(filename, O_CREAT | O_TRUNC | O_WRONLY, 0777)) < 0) {
+        perror(filename);
+      }
+    } break;
+    case AM_EXPORT_PACKET_FORMAT_BPCM_8KHZ:
+    case AM_EXPORT_PACKET_FORMAT_BPCM_16KHZ:
+    case AM_EXPORT_PACKET_FORMAT_BPCM_48KHZ: {
+      snprintf(filename, 512, "%s_audio_%dkHz_%d_%ld.bpcm",
+               namebase.c_str(), sample_rate, stream_index, clock());
+      if ((audio_output_file[stream_index][tem_index] =
+          open(filename, O_CREAT | O_TRUNC | O_WRONLY, 0777)) < 0) {
+        perror(filename);
+      }
+    } break;
+    case AM_EXPORT_PACKET_FORMAT_SPEEX_8KHZ:
+    case AM_EXPORT_PACKET_FORMAT_SPEEX_16KHZ:
+    case AM_EXPORT_PACKET_FORMAT_SPEEX_48KHZ: {
+      snprintf(filename, 512, "%s_audio_%dkHz_%d_%ld.speex",
+               namebase.c_str(), sample_rate, stream_index, clock());
+      if ((audio_output_file[stream_index][tem_index] =
+          open(filename, O_CREAT | O_TRUNC | O_WRONLY, 0777)) < 0) {
+        perror(filename);
+      }
+    } break;
     default:
       ERROR("BAD audio format %d", packet_format);
       break;
   }
 }
 
-static void write_packet(unittest_content* content, AMExportPacket* packet)
+static void write_packet(AMExportPacket* packet)
 {
-  if (AM_LIKELY(DMAX_STREAM_NUMBER > packet->stream_index)) {
-    switch (packet->packet_type) {
-      case AM_EXPORT_PACKET_TYPE_VIDEO_DATA:
-        if (AM_UNLIKELY(!content->b_video_output_file_opened[packet->stream_index])) {
-          open_video_output_file(content, packet->stream_index,
-                                 packet->packet_format);
-          content->b_video_output_file_opened[packet->stream_index] = 1;
+  uint8_t tem_index = (packet->audio_sample_rate)/16 > 1
+      ? 2 : (packet->audio_sample_rate)/16;
+  switch (packet->packet_type) {
+    case AM_EXPORT_PACKET_TYPE_VIDEO_DATA:
+      if (video_output_file.find(packet->stream_index) ==
+          video_output_file.end()) {
+        open_video_output_file(packet->stream_index, packet->packet_format);
+      }
+      if (write(video_output_file[packet->stream_index], packet->data_ptr,
+                packet->data_size) != (ssize_t)packet->data_size) {
+        switch (errno) {
+          case EIO :
+          case EINTR :
+          case EAGAIN :
+            for (auto &m : video_output_file) {
+              close(m.second);
+              video_output_file.erase(m.first);
+            }
+            break;
+          default :
+            PERROR("write failed");
         }
-        if (AM_LIKELY(content->p_video_output_file[packet->stream_index])) {
-          fwrite(packet->data_ptr, 1, packet->data_size,
-                 content->p_video_output_file[packet->stream_index]);
+      }
+      break;
+    case AM_EXPORT_PACKET_TYPE_AUDIO_DATA:
+      if (audio_output_file.find(packet->stream_index) ==
+          audio_output_file.end() || audio_output_file
+          [packet->stream_index].find(tem_index) ==
+              audio_output_file[packet->stream_index].end()) {
+        open_audio_output_file(packet->stream_index,
+                               packet->packet_format,
+                               packet->audio_sample_rate);
+      }
+      if (write(audio_output_file[packet->stream_index][tem_index],
+                packet->data_ptr,
+                packet->data_size) != (ssize_t)packet->data_size) {
+        switch (errno) {
+          case EIO :
+          case EINTR :
+          case EAGAIN:
+            for (auto &m : audio_output_file) {
+              for (auto &m_sub : m.second) {
+                close(m_sub.second);
+                audio_output_file[m.first].erase(m_sub.first);
+              }
+            }
+            break;
+          default :
+            PERROR("write failed");
         }
-        break;
-
-      case AM_EXPORT_PACKET_TYPE_AUDIO_DATA:
-        if (AM_UNLIKELY(!content->b_audio_output_file_opened[packet->stream_index])) {
-          open_audio_output_file(content, packet->stream_index,
-                                 packet->packet_format);
-          content->b_audio_output_file_opened[packet->stream_index] = 1;
-        }
-        if (AM_LIKELY(content->p_audio_output_file[packet->stream_index])) {
-          fwrite(packet->data_ptr, 1, packet->data_size,
-                 content->p_audio_output_file[packet->stream_index]);
-        }
-        break;
-
-      default:
-        NOTICE("discard non-video-audio packet here\n");
-        break;
-    }
-  } else {
-    ERROR("BAD stream index %d", packet->stream_index);
+      }
+      break;
+    default:
+      NOTICE("discard non-video-audio packet here\n");
+      break;
   }
 }
 
-int main(int argc, char *argv[])
+static void data_process_fun(void *arg)
 {
-  if (AM_UNLIKELY(2 > argc)) {
-    show_usage();
-    return (-10);
-  }
-
-  int ret = 0;
   AMExportPacket packet;
-  AMExportConfig config = {0};
-  unittest_content content;
-  memset(&content, 0x0, sizeof(unittest_content));
+  int video_count_export = 0;
+  int audio_count_export = 0;
 
-  if ((ret = init_params(argc, argv, &content)) < 0) {
-    show_usage();
-    return (-1);
-  } else if (ret) {
-    return ret;
-  }
-
+  AMIExportClient* g_client = (AMIExportClient*) arg;
   do {
-    if (!(g_client = am_create_export_client(AM_EXPORT_TYPE_UNIX_DOMAIN_SOCKET,
-                                             &config))) {
-      ERROR("am_create_export_client() failed");
-      ret = (-3);
+
+
+    if ((ret = g_client->connect_server(DEXPORT_PATH)) != AM_RESULT_OK) {
+      ERROR("p_client->connect() failed, return code = %d\n",ret);
       break;
     }
 
-    signal(SIGINT, __sigstop);
-    signal(SIGQUIT, __sigstop);
-    signal(SIGTERM, __sigstop);
-
-    if (!g_client->connect_server(DEXPORT_PATH)) {
-      ERROR("p_client->connect() failed");
-      ret = (-4);
-      break;
-    }
-
-    NOTICE("read packet loop start");
     while (running_flag) {
-      if (g_client->receive(&packet)) {
+      if (video_count_export == 30 || audio_count_export == 3) {
+        video_count_export = 0;
+        audio_count_export = 0;
+      }
+      if ((ret = g_client->receive(&packet)) == AM_RESULT_OK) {
         switch (packet.packet_type) {
           case AM_EXPORT_PACKET_TYPE_VIDEO_INFO: {
             AMExportVideoInfo *video_info = (AMExportVideoInfo*)packet.data_ptr;
             printf("Video INFO[%d]: "
                 "width: %d, height: %d, framerate factor: %d/%d\n",
-                 packet.stream_index,
-                 video_info->width, video_info->height,
-                 video_info->framerate_num, video_info->framerate_den);
+                packet.stream_index,
+                video_info->width, video_info->height,
+                video_info->framerate_num, video_info->framerate_den);
           } break;
           case AM_EXPORT_PACKET_TYPE_AUDIO_INFO: {
             AMExportAudioInfo *audio_info = (AMExportAudioInfo*)packet.data_ptr;
             printf("Audio INFO[%d]: "
-                "samplerate: %d, frame size: %d, "
-                "bitrate: %d, channel: %d, sample size: %d\n",
+                "samplerate: %d, "
+                "channel: %d, sample size: %d\n",
                 packet.stream_index,
-                audio_info->samplerate, audio_info->frame_size,
-                audio_info->bitrate, audio_info->channels,
+                audio_info->samplerate,
+                audio_info->channels,
                 audio_info->sample_size);
           } break;
           case AM_EXPORT_PACKET_TYPE_VIDEO_DATA:
           case AM_EXPORT_PACKET_TYPE_AUDIO_DATA: {
-            if (!content.b_no_dump) {
-              write_packet(&content, &packet);
+            if (!write_flag) {
+              write_packet(&packet);
             } else {
               printf("receive a packet, stream index %d, format %d, size %d\n",
                      packet.stream_index, packet.packet_type, packet.data_size);
+            }
+            if (packet.packet_type == AM_EXPORT_PACKET_TYPE_VIDEO_DATA) {
+              video_count_export++;
+            } else {
+              audio_count_export++;
             }
           } break;
           default:
@@ -311,28 +428,117 @@ int main(int argc, char *argv[])
         g_client->release(&packet);
       } else {
         running_flag = false;
-        WARN("receive_packet failed, server shut down");
+        ERROR("receive_packet failed(return code = %d), server shut down",ret);
         break;
       }
     }
-    NOTICE("read packet loop end");
   } while (0);
 
   if (g_client) {
+    g_client->disconnect_server();
     g_client->destroy();
   }
 
-  for (ret = 0; ret < DMAX_STREAM_NUMBER; ret ++) {
-    if (content.p_video_output_file[ret]) {
-      fclose(content.p_video_output_file[ret]);
-      content.p_video_output_file[ret] = nullptr;
-    }
+  for (auto &m : video_output_file) {
+    close(m.second);
+    m.second = -1;
+  }
 
-    if (content.p_audio_output_file[ret]) {
-      fclose(content.p_audio_output_file[ret]);
-      content.p_audio_output_file[ret] = nullptr;
+  for (auto &m : audio_output_file) {
+    for (auto &m_sub : m.second) {
+      close(m_sub.second);
+      m_sub.second = -1;
     }
   }
 
+}
+
+int main(int argc, char *argv[])
+{
+  bool first_check = false;
+
+  if (AM_UNLIKELY(2 > argc)) {
+    show_usage();
+    return (-10);
+  }
+
+  if ((ret = init_params(argc, argv)) != AM_RESULT_OK) {
+    show_usage();
+    return (-1);
+  } else if (ret) {
+    return ret;
+  }
+  m_config.need_sort = mode;
+  m_config.video_map = video_choice;
+  m_config.audio_map = audio_choice;
+
+  signal(SIGINT, __sigstop);
+  signal(SIGQUIT, __sigstop);
+  signal(SIGTERM, __sigstop);
+  do {
+
+    if (!(monitor_wait = AMEvent::create())) {
+      ERROR("Create Event failed");
+      ret = AM_RESULT_ERR_INVALID;
+      break;
+    }
+
+    if (!(g_client = am_create_export_client(AM_EXPORT_TYPE_UNIX_DOMAIN_SOCKET,
+                                             &m_config))) {
+      ERROR("am_create_export_client() failed");
+      ret = AM_RESULT_ERR_MEM;
+      break;
+    }
+
+    if (!(data_process_thread = AMThread::create("data_process", data_process_fun,
+                                           g_client))) {
+      ERROR("Create Thread failed");
+      ret = AM_RESULT_ERR_INVALID;
+      break;
+    }
+
+    NOTICE("read packet loop end");
+  } while (0);
+
+  if (1 == write_flag) {
+    monitor_wait->wait();
+  }
+
+  while (running_flag ) {
+    char input_char;
+    AMExportConfig config_dyn;
+    if (!first_check) {
+      config_dyn.audio_map = audio_choice;
+      config_dyn.video_map = video_choice;
+      config_dyn.need_sort = 0;
+      first_check = true;
+    }
+    show_interactive_usage();
+    while((input_char = getchar()) != 'u' && running_flag)
+    {
+      switch (input_char) {
+        case 'a':
+          printf("please input audio map\n");
+          scanf("%lld\n", &config_dyn.audio_map);
+          break;
+        case 'v':
+          printf("please input video map\n");
+          scanf("%d\n", &config_dyn.video_map);
+          break;
+        case 'r':
+          if (g_client) {
+            if (!(g_client->set_config(&config_dyn))) {
+              printf("Update the map\n");
+            };
+          }
+          break;
+        case 'e':
+          running_flag = false;
+          break;
+        default:
+          break;
+      }
+    }
+  }
   return ret;
 }

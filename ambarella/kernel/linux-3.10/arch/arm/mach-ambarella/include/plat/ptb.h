@@ -104,6 +104,17 @@ typedef struct fldev_s
 	u32	magic;		/**< Magic number */
 } __attribute__((packed)) fldev_t;
 
+/*The header of PTB*/
+#define PTB_HEADER_SIZE		64
+#define PTB_HEADER_PAD_SIZE	(PTB_HEADER_SIZE - sizeof(u32) * 4)
+typedef struct ptb_header_s
+{
+	u32	magic;
+	u32	crc32;
+	u32	version;
+	u32	dev;
+	u8	rsv[PTB_HEADER_PAD_SIZE];
+} __attribute__((packed)) ptb_header_t;
 
 #define PTB_SIZE		4096
 #define PTB_PAD_SIZE		\
@@ -117,7 +128,6 @@ typedef struct flpart_table_s
 	u8		rsv[PTB_PAD_SIZE];	/**< Padding to 2048 bytes */
 } __attribute__((packed)) flpart_table_t;
 
-
 /**
  * The meta data table is a region in flash after partition table.
  * The data need by dual boot are stored.
@@ -128,20 +138,19 @@ typedef struct flpart_table_s
 #define PTB_META_MAGIC2		0x4432a0ce
 #define PTB_META_MAGIC3		0x42405891
 #define PART_NAME_LEN		8
-#define PTB_META_ACTURAL_LEN	((sizeof(u32) * 2 + PART_NAME_LEN + \
-				sizeof(u32)) * PART_MAX + sizeof(u32) + \
-				sizeof(u32) + FW_MODEL_NAME_SIZE)
+#define PTB_META_ACTURAL_LEN	(sizeof(u32) + (sizeof(u32) * 3 + PART_NAME_LEN) * PART_MAX + \
+				FW_MODEL_NAME_SIZE)
 #define PTB_META_SIZE		2048
 #define PTB_META_PAD_SIZE	(PTB_META_SIZE - PTB_META_ACTURAL_LEN)
 typedef struct flpart_meta_s
 {
+	u32		magic;
 	struct {
 		u32	sblk;
 		u32	nblk;
+		u32	dev;
 		char	name[PART_NAME_LEN];
 	} part_info[PART_MAX];
-	u32		magic;
-	u32		part_dev[PART_MAX];
 	u8		model_name[FW_MODEL_NAME_SIZE];
 	u8 		rsv[PTB_META_PAD_SIZE];
 	/* This meta crc32 doesn't include itself. */

@@ -629,7 +629,7 @@ struct _GTypeQuery
  * This macro should only be used in type implementations.
  * 
  * Since: 2.4
- * Returns: a pointer to the private data structure
+ * Returns: (not nullable): a pointer to the private data structure
  */
 #define G_TYPE_INSTANCE_GET_PRIVATE(instance, g_type, c_type)   ((c_type*) g_type_instance_get_private ((GTypeInstance*) (instance), (g_type)))
 
@@ -646,7 +646,7 @@ struct _GTypeQuery
  * This macro should only be used in type implementations.
  * 
  * Since: 2.24
- * Returns: a pointer to the private data structure
+ * Returns: (not nullable): a pointer to the private data structure
  */
 #define G_TYPE_CLASS_GET_PRIVATE(klass, g_type, c_type)   ((c_type*) g_type_class_get_private ((GTypeClass*) (klass), (g_type)))
 
@@ -656,6 +656,7 @@ struct _GTypeQuery
  * @G_TYPE_DEBUG_OBJECTS: Print messages about object bookkeeping
  * @G_TYPE_DEBUG_SIGNALS: Print messages about signal emissions
  * @G_TYPE_DEBUG_MASK: Mask covering all debug flags
+ * @G_TYPE_DEBUG_INSTANCE_COUNT: Keep a count of instances of each type
  *
  * These flags used to be passed to g_type_init_with_debug_flags() which
  * is now deprecated.
@@ -670,7 +671,8 @@ typedef enum	/*< skip >*/
   G_TYPE_DEBUG_NONE	= 0,
   G_TYPE_DEBUG_OBJECTS	= 1 << 0,
   G_TYPE_DEBUG_SIGNALS	= 1 << 1,
-  G_TYPE_DEBUG_MASK	= 0x03
+  G_TYPE_DEBUG_INSTANCE_COUNT = 1 << 2,
+  G_TYPE_DEBUG_MASK	= 0x07
 } GTypeDebugFlags;
 
 
@@ -738,11 +740,13 @@ GLIB_AVAILABLE_IN_ALL
 void		      g_type_query		     (GType	       type,
 						      GTypeQuery      *query);
 
+GLIB_AVAILABLE_IN_2_44
+int                   g_type_get_instance_count      (GType            type);
 
 /* --- type registration --- */
 /**
  * GBaseInitFunc:
- * @g_class: The #GTypeClass structure to initialize
+ * @g_class: (type GObject.TypeClass): The #GTypeClass structure to initialize
  * 
  * A callback function used by the type system to do base initialization
  * of the class structures of derived types. It is called as part of the
@@ -751,23 +755,23 @@ void		      g_type_query		     (GType	       type,
  * For example, class members (such as strings) that are not sufficiently
  * handled by a plain memory copy of the parent class into the derived class
  * have to be altered. See GClassInitFunc() for a discussion of the class
- * intialization process.
+ * initialization process.
  */
 typedef void   (*GBaseInitFunc)              (gpointer         g_class);
 /**
  * GBaseFinalizeFunc:
- * @g_class: The #GTypeClass structure to finalize
+ * @g_class: (type GObject.TypeClass): The #GTypeClass structure to finalize
  * 
  * A callback function used by the type system to finalize those portions
  * of a derived types class structure that were setup from the corresponding
  * GBaseInitFunc() function. Class finalization basically works the inverse
- * way in which class intialization is performed.
- * See GClassInitFunc() for a discussion of the class intialization process.
+ * way in which class initialization is performed.
+ * See GClassInitFunc() for a discussion of the class initialization process.
  */
 typedef void   (*GBaseFinalizeFunc)          (gpointer         g_class);
 /**
  * GClassInitFunc:
- * @g_class: The #GTypeClass structure to initialize.
+ * @g_class: (type GObject.TypeClass): The #GTypeClass structure to initialize.
  * @class_data: The @class_data member supplied via the #GTypeInfo structure.
  * 
  * A callback function used by the type system to initialize the class
@@ -870,7 +874,7 @@ typedef void   (*GClassInitFunc)             (gpointer         g_class,
 					      gpointer         class_data);
 /**
  * GClassFinalizeFunc:
- * @g_class: The #GTypeClass structure to finalize
+ * @g_class: (type GObject.TypeClass): The #GTypeClass structure to finalize
  * @class_data: The @class_data member supplied via the #GTypeInfo structure
  * 
  * A callback function used by the type system to finalize a class.
@@ -886,7 +890,8 @@ typedef void   (*GClassFinalizeFunc)         (gpointer         g_class,
 /**
  * GInstanceInitFunc:
  * @instance: The instance to initialize
- * @g_class: The class of the type the instance is created for
+ * @g_class: (type GObject.TypeClass): The class of the type the instance is
+ *    created for
  * 
  * A callback function used by the type system to initialize a new
  * instance of a type. This function initializes all instance members and
@@ -904,7 +909,7 @@ typedef void   (*GInstanceInitFunc)          (GTypeInstance   *instance,
 					      gpointer         g_class);
 /**
  * GInterfaceInitFunc:
- * @g_iface: The interface structure to initialize
+ * @g_iface: (type GObject.TypeInterface): The interface structure to initialize
  * @iface_data: The @interface_data supplied via the #GInterfaceInfo structure
  * 
  * A callback function used by the type system to initialize a new
@@ -918,7 +923,7 @@ typedef void   (*GInterfaceInitFunc)         (gpointer         g_iface,
 					      gpointer         iface_data);
 /**
  * GInterfaceFinalizeFunc:
- * @g_iface: The interface structure to finalize
+ * @g_iface: (type GObject.TypeInterface): The interface structure to finalize
  * @iface_data: The @interface_data supplied via the #GInterfaceInfo structure
  * 
  * A callback function used by the type system to finalize an interface.
@@ -930,7 +935,8 @@ typedef void   (*GInterfaceFinalizeFunc)     (gpointer         g_iface,
 /**
  * GTypeClassCacheFunc:
  * @cache_data: data that was given to the g_type_add_class_cache_func() call
- * @g_class: The #GTypeClass structure which is unreferenced
+ * @g_class: (type GObject.TypeClass): The #GTypeClass structure which is
+ *    unreferenced
  * 
  * A callback function which is called when the reference count of a class 
  * drops to zero. It may use g_type_class_ref() to prevent the class from
@@ -950,7 +956,8 @@ typedef gboolean (*GTypeClassCacheFunc)	     (gpointer	       cache_data,
 /**
  * GTypeInterfaceCheckFunc:
  * @check_data: data passed to g_type_add_interface_check()
- * @g_iface: the interface that has been initialized
+ * @g_iface: (type GObject.TypeInterface): the interface that has been
+ *    initialized
  * 
  * A callback called after an interface vtable is initialized.
  * See g_type_add_interface_check().
@@ -1110,12 +1117,10 @@ struct _GInterfaceInfo
  *  this value bit-by-bit. Each character in the format represents
  *  an argument to be collected, and the characters themselves indicate
  *  the type of the argument. Currently supported arguments are:
- *
  *  - 'i' - Integers. passed as collect_values[].v_int.
  *  - 'l' - Longs. passed as collect_values[].v_long.
  *  - 'd' - Doubles. passed as collect_values[].v_double.
  *  - 'p' - Pointers. passed as collect_values[].v_pointer.
- *
  *  It should be noted that for variable argument list construction,
  *  ANSI C promotes every type smaller than an integer to an int, and
  *  floats to doubles. So for collection of short int or char, 'i'
@@ -1316,6 +1321,257 @@ guint     g_type_get_type_registration_serial (void);
 
 
 /* --- GType boilerplate --- */
+/**
+ * G_DECLARE_FINAL_TYPE:
+ * @ModuleObjName: The name of the new type, in camel case (like GtkWidget)
+ * @module_obj_name: The name of the new type in lowercase, with words
+ *  separated by '_' (like 'gtk_widget')
+ * @MODULE: The name of the module, in all caps (like 'GTK')
+ * @OBJ_NAME: The bare name of the type, in all caps (like 'WIDGET')
+ * @ParentName: the name of the parent type, in camel case (like GtkWidget)
+ *
+ * A convenience macro for emitting the usual declarations in the header file for a type which is not (at the
+ * present time) intended to be subclassed.
+ *
+ * You might use it in a header as follows:
+ *
+ * |[
+ * #ifndef _myapp_window_h_
+ * #define _myapp_window_h_
+ *
+ * #include <gtk/gtk.h>
+ *
+ * #define MY_APP_TYPE_WINDOW my_app_window_get_type ()
+ * G_DECLARE_FINAL_TYPE (MyAppWindow, my_app_window, MY_APP, WINDOW, GtkWindow)
+ *
+ * MyAppWindow *    my_app_window_new    (void);
+ *
+ * ...
+ *
+ * #endif
+ * ]|
+ *
+ * This results in the following things happening:
+ *
+ * - the usual my_app_window_get_type() function is declared with a return type of #GType
+ *
+ * - the MyAppWindow types is defined as a typedef of struct _MyAppWindow.  The struct itself is not
+ *   defined and should be defined from the .c file before G_DEFINE_TYPE() is used.
+ *
+ * - the MY_APP_WINDOW() cast is emitted as static inline function along with the MY_APP_IS_WINDOW() type
+ *   checking function
+ *
+ * - the MyAppWindowClass type is defined as a struct containing GtkWindowClass.  This is done for the
+ *   convenience of the person defining the type and should not be considered to be part of the ABI.  In
+ *   particular, without a firm declaration of the instance structure, it is not possible to subclass the type
+ *   and therefore the fact that the size of the class structure is exposed is not a concern and it can be
+ *   freely changed at any point in the future.
+ *
+ * - g_autoptr() support being added for your type, based on the type of your parent class
+ *
+ * You can only use this function if your parent type also supports g_autoptr().
+ *
+ * Because the type macro (MY_APP_TYPE_WINDOW in the above example) is not a callable, you must continue to
+ * manually define this as a macro for yourself.
+ *
+ * The declaration of the _get_type() function is the first thing emitted by the macro.  This allows this macro
+ * to be used in the usual way with export control and API versioning macros.
+ *
+ * If you want to declare your own class structure, use G_DECLARE_DERIVABLE_TYPE().
+ *
+ * If you are writing a library, it is important to note that it is possible to convert a type from using
+ * G_DECLARE_FINAL_TYPE() to G_DECLARE_DERIVABLE_TYPE() without breaking API or ABI.  As a precaution, you
+ * should therefore use G_DECLARE_FINAL_TYPE() until you are sure that it makes sense for your class to be
+ * subclassed.  Once a class structure has been exposed it is not possible to change its size or remove or
+ * reorder items without breaking the API and/or ABI.
+ *
+ * Since: 2.44
+ **/
+#define G_DECLARE_FINAL_TYPE(ModuleObjName, module_obj_name, MODULE, OBJ_NAME, ParentName) \
+  GType module_obj_name##_get_type (void);                                                               \
+  G_GNUC_BEGIN_IGNORE_DEPRECATIONS                                                                       \
+  typedef struct _##ModuleObjName ModuleObjName;                                                         \
+  typedef struct { ParentName##Class parent_class; } ModuleObjName##Class;                               \
+                                                                                                         \
+  _GLIB_DEFINE_AUTOPTR_CHAINUP (ModuleObjName, ParentName)                                               \
+                                                                                                         \
+  static inline ModuleObjName * MODULE##_##OBJ_NAME (gpointer ptr) {                                     \
+    return G_TYPE_CHECK_INSTANCE_CAST (ptr, module_obj_name##_get_type (), ModuleObjName); }             \
+  static inline gboolean MODULE##_IS_##OBJ_NAME (gpointer ptr) {                                         \
+    return G_TYPE_CHECK_INSTANCE_TYPE (ptr, module_obj_name##_get_type ()); }                            \
+  G_GNUC_END_IGNORE_DEPRECATIONS
+
+/**
+ * G_DECLARE_DERIVABLE_TYPE:
+ * @ModuleObjName: The name of the new type, in camel case (like GtkWidget)
+ * @module_obj_name: The name of the new type in lowercase, with words
+ *  separated by '_' (like 'gtk_widget')
+ * @MODULE: The name of the module, in all caps (like 'GTK')
+ * @OBJ_NAME: The bare name of the type, in all caps (like 'WIDGET')
+ * @ParentName: the name of the parent type, in camel case (like GtkWidget)
+ *
+ * A convenience macro for emitting the usual declarations in the header file for a type which will is intended
+ * to be subclassed.
+ *
+ * You might use it in a header as follows:
+ *
+ * |[
+ * #ifndef _gtk_frobber_h_
+ * #define _gtk_frobber_h_
+ *
+ * #define GTK_TYPE_FROBBER gtk_frobber_get_type ()
+ * GDK_AVAILABLE_IN_3_12
+ * G_DECLARE_DERIVABLE_TYPE (GtkFrobber, gtk_frobber, GTK, FROBBER, GtkWidget)
+ *
+ * struct _GtkFrobberClass
+ * {
+ *   GtkWidgetClass parent_class;
+ *
+ *   void (* handle_frob)  (GtkFrobber *frobber,
+ *                          guint       n_frobs);
+ *
+ *   gpointer padding[12];
+ * };
+ *
+ * GtkWidget *    gtk_frobber_new   (void);
+ *
+ * ...
+ *
+ * #endif
+ * ]|
+ *
+ * This results in the following things happening:
+ *
+ * - the usual gtk_frobber_get_type() function is declared with a return type of #GType
+ *
+ * - the GtkFrobber struct is created with GtkWidget as the first and only item.  You are expected to use
+ *   a private structure from your .c file to store your instance variables.
+ *
+ * - the GtkFrobberClass type is defined as a typedef to struct _GtkFrobberClass, which is left undefined.
+ *   You should do this from the header file directly after you use the macro.
+ *
+ * - the GTK_FROBBER() and GTK_FROBBER_CLASS() casts are emitted as static inline functions along with
+ *   the GTK_IS_FROBBER() and GTK_IS_FROBBER_CLASS() type checking functions and GTK_FROBBER_GET_CLASS()
+ *   function.
+ *
+ * - g_autoptr() support being added for your type, based on the type of your parent class
+ *
+ * You can only use this function if your parent type also supports g_autoptr().
+ *
+ * Because the type macro (GTK_TYPE_FROBBER in the above example) is not a callable, you must continue to
+ * manually define this as a macro for yourself.
+ *
+ * The declaration of the _get_type() function is the first thing emitted by the macro.  This allows this macro
+ * to be used in the usual way with export control and API versioning macros.
+ *
+ * If you are writing a library, it is important to note that it is possible to convert a type from using
+ * G_DECLARE_FINAL_TYPE() to G_DECLARE_DERIVABLE_TYPE() without breaking API or ABI.  As a precaution, you
+ * should therefore use G_DECLARE_FINAL_TYPE() until you are sure that it makes sense for your class to be
+ * subclassed.  Once a class structure has been exposed it is not possible to change its size or remove or
+ * reorder items without breaking the API and/or ABI.  If you want to declare your own class structure, use
+ * G_DECLARE_DERIVABLE_TYPE().  If you want to declare a class without exposing the class or instance
+ * structures, use G_DECLARE_FINAL_TYPE().
+ *
+ * If you must use G_DECLARE_DERIVABLE_TYPE() you should be sure to include some padding at the bottom of your
+ * class structure to leave space for the addition of future virtual functions.
+ *
+ * Since: 2.44
+ **/
+#define G_DECLARE_DERIVABLE_TYPE(ModuleObjName, module_obj_name, MODULE, OBJ_NAME, ParentName) \
+  GType module_obj_name##_get_type (void);                                                               \
+  G_GNUC_BEGIN_IGNORE_DEPRECATIONS                                                                       \
+  typedef struct _##ModuleObjName ModuleObjName;                                                         \
+  typedef struct _##ModuleObjName##Class ModuleObjName##Class;                                           \
+  struct _##ModuleObjName { ParentName parent_instance; };                                               \
+                                                                                                         \
+  _GLIB_DEFINE_AUTOPTR_CHAINUP (ModuleObjName, ParentName)                                               \
+                                                                                                         \
+  static inline ModuleObjName * MODULE##_##OBJ_NAME (gpointer ptr) {                                     \
+    return G_TYPE_CHECK_INSTANCE_CAST (ptr, module_obj_name##_get_type (), ModuleObjName); }             \
+  static inline ModuleObjName##Class * MODULE##_##OBJ_NAME##_CLASS (gpointer ptr) {                      \
+    return G_TYPE_CHECK_CLASS_CAST (ptr, module_obj_name##_get_type (), ModuleObjName##Class); }         \
+  static inline gboolean MODULE##_IS_##OBJ_NAME (gpointer ptr) {                                         \
+    return G_TYPE_CHECK_INSTANCE_TYPE (ptr, module_obj_name##_get_type ()); }                            \
+  static inline gboolean MODULE##_IS_##OBJ_NAME##_CLASS (gpointer ptr) {                                 \
+    return G_TYPE_CHECK_CLASS_TYPE (ptr, module_obj_name##_get_type ()); }                               \
+  static inline ModuleObjName##Class * MODULE##_##OBJ_NAME##_GET_CLASS (gpointer ptr) {                  \
+    return G_TYPE_INSTANCE_GET_CLASS (ptr, module_obj_name##_get_type (), ModuleObjName##Class); }       \
+  G_GNUC_END_IGNORE_DEPRECATIONS
+
+/**
+ * G_DECLARE_INTERFACE:
+ * @ModuleObjName: The name of the new type, in camel case (like GtkWidget)
+ * @module_obj_name: The name of the new type in lowercase, with words
+ *  separated by '_' (like 'gtk_widget')
+ * @MODULE: The name of the module, in all caps (like 'GTK')
+ * @OBJ_NAME: The bare name of the type, in all caps (like 'WIDGET')
+ * @PrerequisiteName: the name of the prerequisite type, in camel case (like GtkWidget)
+ *
+ * A convenience macro for emitting the usual declarations in the header file for a GInterface type.
+ *
+ * You might use it in a header as follows:
+ *
+ * |[
+ * #ifndef _my_model_h_
+ * #define _my_model_h_
+ *
+ * #define MY_TYPE_MODEL my_model_get_type ()
+ * GDK_AVAILABLE_IN_3_12
+ * G_DECLARE_INTERFACE (MyModel, my_model, MY, MODEL, GObject)
+ *
+ * struct _MyModelInterface
+ * {
+ *   GTypeInterface g_iface;
+ *
+ *   gpointer (* get_item)  (MyModel *model);
+ * };
+ *
+ * gpointer my_model_get_item (MyModel *model);
+ *
+ * ...
+ *
+ * #endif
+ * ]|
+ *
+ * This results in the following things happening:
+ *
+ * - the usual my_model_get_type() function is declared with a return type of #GType
+ *
+ * - the MyModelInterface type is defined as a typedef to struct _MyModelInterface,
+ *   which is left undefined. You should do this from the header file directly after
+ *   you use the macro.
+ *
+ * - the MY_MODEL() cast is emitted as static inline functions along with
+ *   the MY_IS_MODEL() type checking function and MY_MODEL_GET_IFACE() function.
+ *
+ * - g_autoptr() support being added for your type, based on your prerequisite type.
+ *
+ * You can only use this function if your prerequisite type also supports g_autoptr().
+ *
+ * Because the type macro (MY_TYPE_MODEL in the above example) is not a callable, you must continue to
+ * manually define this as a macro for yourself.
+ *
+ * The declaration of the _get_type() function is the first thing emitted by the macro.  This allows this macro
+ * to be used in the usual way with export control and API versioning macros.
+ *
+ * Since: 2.44
+ **/
+#define G_DECLARE_INTERFACE(ModuleObjName, module_obj_name, MODULE, OBJ_NAME, PrerequisiteName) \
+  GType module_obj_name##_get_type (void);                                                                 \
+  G_GNUC_BEGIN_IGNORE_DEPRECATIONS                                                                         \
+  typedef struct _##ModuleObjName ModuleObjName;                                                           \
+  typedef struct _##ModuleObjName##Interface ModuleObjName##Interface;                                     \
+                                                                                                           \
+  _GLIB_DEFINE_AUTOPTR_CHAINUP (ModuleObjName, PrerequisiteName)                                           \
+                                                                                                           \
+  static inline ModuleObjName * MODULE##_##OBJ_NAME (gpointer ptr) {                                       \
+    return G_TYPE_CHECK_INSTANCE_CAST (ptr, module_obj_name##_get_type (), ModuleObjName); }               \
+  static inline gboolean MODULE##_IS_##OBJ_NAME (gpointer ptr) {                                           \
+    return G_TYPE_CHECK_INSTANCE_TYPE (ptr, module_obj_name##_get_type ()); }                              \
+  static inline ModuleObjName##Interface * MODULE##_##OBJ_NAME##_GET_IFACE (gpointer ptr) {                \
+    return G_TYPE_INSTANCE_GET_INTERFACE (ptr, module_obj_name##_get_type (), ModuleObjName##Interface); } \
+  G_GNUC_END_IGNORE_DEPRECATIONS
+
 /**
  * G_DEFINE_TYPE:
  * @TN: The name of the new type, in Camel case.
@@ -1570,6 +1826,8 @@ guint     g_type_get_type_registration_serial (void);
  *   {
  *     MyObjectPrivate *priv = my_object_get_instance_private (obj);
  *
+ *     g_return_val_if_fail (MY_IS_OBJECT (obj), 0);
+ *
  *     return priv->foo;
  *   }
  *
@@ -1578,6 +1836,8 @@ guint     g_type_get_type_registration_serial (void);
  *                      gint      bar)
  *   {
  *     MyObjectPrivate *priv = my_object_get_instance_private (obj);
+ *
+ *     g_return_if_fail (MY_IS_OBJECT (obj));
  *
  *     if (priv->bar != bar)
  *       priv->bar = bar;
@@ -1589,6 +1849,10 @@ guint     g_type_get_type_registration_serial (void);
  *
  * Also note that private structs added with these macros must have a struct
  * name of the form `TypeNamePrivate`.
+ *
+ * It is safe to call _get_instance_private on %NULL or invalid object since
+ * it's only adding an offset to the instance pointer. In that case the returned
+ * pointer must not be dereferenced.
  *
  * Since: 2.38
  */
@@ -1768,7 +2032,17 @@ type_name##_get_type (void) \
  * A convenience macro for boxed type implementations.
  * Similar to G_DEFINE_BOXED_TYPE(), but allows to insert custom code into the
  * type_name_get_type() function, e.g. to register value transformations with
- * g_value_register_transform_func().
+ * g_value_register_transform_func(), for instance:
+ *
+ * |[<!-- language="C" -->
+ * G_DEFINE_BOXED_TYPE_WITH_CODE (GdkRectangle, gdk_rectangle,
+ *                                gdk_rectangle_copy,
+ *                                gdk_rectangle_free,
+ *                                register_rectangle_transform_funcs (g_define_type_id))
+ * ]|
+ *
+ * Similarly to the %G_DEFINE_TYPE family of macros, the #GType of the newly
+ * defined boxed type is exposed in the `g_define_type_id` variable.
  *
  * Since: 2.26
  */

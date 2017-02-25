@@ -3,14 +3,33 @@
  *
  * History:
  *	2012/04/13 - [Jian Tang] created file
- * Copyright (C) 2007-2016, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 #include <config.h>
 #include <linux/random.h>
 #include <linux/slab.h>
@@ -65,7 +84,7 @@ static int check_src_buf_type(u32 buf_id, enum iav_srcbuf_type t)
 	switch (buf_id) {
 	case IAV_SRCBUF_MN:
 		if (t != IAV_SRCBUF_TYPE_ENCODE) {
-			iav_error("Source buffer [0] type cannot be OFF or PREVIEW.\n");
+			iav_error("Source buffer [0] type cannot be OFF, PREVIEW or VCA.\n");
 			return -1;
 		}
 		break;
@@ -298,9 +317,13 @@ static int check_sub_buf_zoom(struct ambarella_iav *iav, u32 id, u8 unwarp,
 				str, input->width, input->height);
 			return -1;
 		}
-		if (type == IAV_SRCBUF_TYPE_ENCODE) {
+
+		switch (type) {
+		case IAV_SRCBUF_TYPE_ENCODE:
+		case IAV_SRCBUF_TYPE_VCA:
 			output = *win;
-		} else {
+			break;
+		case IAV_SRCBUF_TYPE_PREVIEW:
 			if (id == IAV_SRCBUF_PB) {
 				if (vout_swap) {
 					vout1_info = &iav->pvoutinfo[0]->video_info;
@@ -321,6 +344,10 @@ static int check_sub_buf_zoom(struct ambarella_iav *iav, u32 id, u8 unwarp,
 				iav_error("Buffer [%d] cannot be set as PREV.\n", id);
 				return -1;
 			}
+			break;
+		default:
+			BUG();
+			break;
 		}
 		if (check_zoom_limit(id, input, &output, str) < 0) {
 			return -1;
@@ -336,6 +363,77 @@ static int check_sub_buf_zoom(struct ambarella_iav *iav, u32 id, u8 unwarp,
 
 	return 0;
 }
+
+static int check_vca_buf_param(struct ambarella_iav *iav, struct iav_srcbuf_setup *setup)
+{
+
+	int i;
+	u32 vca_buf_size, idsp_out_frame_rate;
+	u32 vca_buf_num = 0;
+	u16 vca_dump_duration, vca_dump_interval;
+	struct iav_window *win;
+	struct iav_window *size;
+
+	if (iav_vin_get_idsp_frame_rate(iav, &idsp_out_frame_rate) < 0) {
+		return -1;
+	}
+	idsp_out_frame_rate = DIV_CLOSEST(FPS_Q9_BASE, idsp_out_frame_rate);
+
+	for (i = IAV_SUB_SRCBUF_FIRST; i < IAV_SUB_SRCBUF_LAST; ++i) {
+		vca_dump_duration = setup->dump_duration[i];
+		vca_dump_interval = setup->dump_interval[i];
+		if (vca_dump_duration > MAX_NUM_VCA_DUMP_DURATION) {
+			iav_error("Dutation number [%d] not in range [0~%d] for buffer [%d].\n",
+				vca_dump_duration, MAX_NUM_VCA_DUMP_DURATION, i);
+			return -1;
+		}
+
+		if (vca_dump_interval > idsp_out_frame_rate) {
+			iav_error("Interval number [%d] not in range [0~%d] for buffer [%d].\n",
+				vca_dump_interval, idsp_out_frame_rate, i);
+			return -1;
+		}
+
+		if (setup->type[i] == IAV_SRCBUF_TYPE_VCA) {
+			++vca_buf_num;
+			if (vca_buf_num > 1) {
+				iav_error("Only one buffer can be set to VCA type.\n");
+				return -1;
+			}
+
+			win = &iav->srcbuf[i].max;
+			size = &setup->size[i];
+			if (((win->width != size->width) || (win->height != size->height)) &&
+				(size->width != 0 && size->height != 0)) {
+				iav_error("Max resolution shoule be equal with real resolution for VCA buffer.\n");
+				return -1;
+			}
+
+			if (vca_dump_duration == 0) {
+				iav_error("Dutation number [%d] cannot be 0 for VCA buffer.\n",
+					vca_dump_duration);
+				return -1;
+			}
+
+			if (vca_dump_interval == 0) {
+				iav_error("Interval number [%d] cannot be 0 for VCA buffer.\n",
+					vca_dump_interval);
+				return -1;
+			}
+
+			vca_buf_size = (ALIGN(win->width, PIXEL_IN_MB) *
+				(1 + win->height + (win->height >> 1)) * vca_dump_duration);
+			if (vca_buf_size > iav->mmap[IAV_BUFFER_VCA].size) {
+				iav_error("Vca Buffer size should be 0x%x, more than max 0x%x.\n",
+					vca_buf_size, iav->mmap[IAV_BUFFER_VCA].size);
+				return -1;
+			}
+		}
+	}
+
+	return 0;
+}
+
 
 static int iav_check_srcbuf_setup(struct ambarella_iav *iav,
 	struct iav_srcbuf_setup *setup)
@@ -388,6 +486,10 @@ static int iav_check_srcbuf_setup(struct ambarella_iav *iav,
 			setup->type[i], &setup->size[i], &setup->input[i]) < 0) {
 			return -1;
 		}
+	}
+
+	if (check_vca_buf_param(iav, setup) < 0) {
+		return -1;
 	}
 
 	if (setup->type[IAV_SRCBUF_PMN] == IAV_SRCBUF_TYPE_ENCODE
@@ -475,16 +577,16 @@ static int iav_check_dptz_II(struct ambarella_iav *iav,
 	}
 }
 
-inline void inc_srcbuf_ref(struct iav_buffer *srcbuf)
+inline void inc_srcbuf_ref(struct iav_buffer *srcbuf, u32 stream_id)
 {
-	++srcbuf->ref_cnt;
+	srcbuf->ref_cnt |= (1 << stream_id);
 	srcbuf->state = IAV_SRCBUF_STATE_BUSY;
 }
 
-inline void dec_srcbuf_ref(struct iav_buffer *srcbuf)
+inline void dec_srcbuf_ref(struct iav_buffer *srcbuf, u32 stream_id)
 {
 	if (srcbuf->ref_cnt) {
-		--srcbuf->ref_cnt;
+		srcbuf->ref_cnt &= ~(1 << stream_id);
 		if (srcbuf->ref_cnt == 0) {
 			srcbuf->state = IAV_SRCBUF_STATE_IDLE;
 		}
@@ -545,6 +647,8 @@ int iav_ioc_s_srcbuf_setup(struct ambarella_iav *iav, void __user *arg)
 			buf->input = setup.input[i];
 			buf->type = setup.type[i];
 //			buf->unwarp = setup.unwarp[i];
+			buf->dump_interval = setup.dump_interval[i];
+			buf->dump_duration = setup.dump_duration[i];
 		}
 	} while (0);
 	mutex_unlock(&iav->iav_mutex);
@@ -574,6 +678,8 @@ int iav_ioc_g_srcbuf_setup(struct ambarella_iav *iav, void __user *arg)
 				setup.size[i].height = 0;
 			}
 		}
+		setup.dump_interval[i] = buffer->dump_interval;
+		setup.dump_duration[i] = buffer->dump_duration;
 	}
 	i = IAV_SRCBUF_PMN;
 	buffer = &iav->srcbuf[i];
@@ -611,7 +717,8 @@ int iav_ioc_s_srcbuf_format(struct ambarella_iav *iav, void __user *arg)
 	buf_id = format.buf_id;
 	iav->srcbuf[buf_id].win = format.size;
 	iav->srcbuf[buf_id].input = format.input;
-	if (iav->srcbuf[buf_id].type == IAV_SRCBUF_TYPE_ENCODE) {
+	if ((iav->srcbuf[buf_id].type == IAV_SRCBUF_TYPE_ENCODE) ||
+		(iav->srcbuf[buf_id].type == IAV_SRCBUF_TYPE_VCA)) {
 		if (iav->encode_mode == DSP_MULTI_REGION_WARP_MODE) {
 			clear_default_warp_dptz(iav, 1 << buf_id);
 			/* Wait 3 frames to sync up the warp control and capture

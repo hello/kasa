@@ -206,6 +206,7 @@ config PLAT_AMBARELLA_S2E
 	select PLAT_AMBARELLA_CORTEX_SMP
 	select PLAT_AMBARELLA_LOCAL_TIMERS if LOCAL_TIMERS
 	select PLAT_AMBARELLA_SUPPORT_PM if PM
+	select AMBARELLA_SREF_FIFO_EXEC
 	select PLAT_AMBARELLA_MEM_START_LOW
 	select PLAT_AMBARELLA_SUPPORT_MMAP_AXI
 	select PLAT_AMBARELLA_SUPPORT_MMAP_DRAMC
@@ -213,7 +214,9 @@ config PLAT_AMBARELLA_S2E
 	select PLAT_AMBARELLA_SUPPORT_HW_CRYPTO
 	select USB_ARCH_HAS_EHCI if USB_SUPPORT
 	select USB_ARCH_HAS_OHCI if USB_SUPPORT
+	select ARM_ERRATA_754322
 	select ARM_ERRATA_764369 if SMP
+	select ARM_ERRATA_775420
 	select PL310_ERRATA_588369 if CACHE_PL310
 	select PL310_ERRATA_727915 if CACHE_PL310
 	help
@@ -260,6 +263,7 @@ config PLAT_AMBARELLA_S2L
 	select PLAT_AMBARELLA_SUPPORT_PM if PM
 	select PLAT_AMBARELLA_MEM_START_LOW
 	select PLAT_AMBARELLA_AHB_APB_HIGH
+	select AMBARELLA_SREF_FIFO_EXEC
 	select PLAT_AMBARELLA_SUPPORT_MMAP_AXI
 	select PLAT_AMBARELLA_SUPPORT_MMAP_DRAMC
 	select PLAT_AMBARELLA_SUPPORT_MMAP_DBGBUS
@@ -293,9 +297,35 @@ config PLAT_AMBARELLA_S3
 	help
 	  Say Y here if you are using Ambarella S3.
 
+config PLAT_AMBARELLA_S3L
+	bool "S3L"
+	select PLAT_AMBARELLA_CORTEX
+	select PLAT_AMBARELLA_SUPPORT_PM if PM
+	select AMBARELLA_SREF_FIFO_EXEC
+	select PLAT_AMBARELLA_MEM_START_LOW
+	select PLAT_AMBARELLA_AHB_APB_HIGH
+	select PLAT_AMBARELLA_SUPPORT_MMAP_AXI
+	select PLAT_AMBARELLA_SUPPORT_MMAP_DRAMC
+	select PLAT_AMBARELLA_SUPPORT_MMAP_DBGBUS
+	select PLAT_AMBARELLA_SUPPORT_VIC
+	select PLAT_AMBARELLA_SUPPORT_HW_CRYPTO
+	select USB_ARCH_HAS_EHCI if USB_SUPPORT
+	select USB_ARCH_HAS_OHCI if USB_SUPPORT
+	select PL310_ERRATA_588369 if CACHE_PL310
+	select PL310_ERRATA_727915 if CACHE_PL310
+	help
+	  Say Y here if you are using Ambarella S3L.
+
 endchoice
 
 menu "Generic Platform Configuration"
+
+config AMBARELLA_CALC_PLL
+	bool "Setup PLL by Calculation"
+	select RATIONAL
+	default n
+	help
+	  If you are not sure, say N here.
 
 config AMBARELLA_RAW_BOOT
 	bool "Raw boot mode"
@@ -307,13 +337,6 @@ config PLAT_AMBARELLA_LOWER_ARM_PLL
 	bool "Lower ARM11 PLL when use Cortex only"
 	default n
 	depends on PLAT_AMBARELLA_S2_CORTEX
-	help
-	  If you are not sure, say N here.
-
-config AMBARELLA_SUPPORT_BAPI
-	bool "Suport BAPI"
-	depends on !AMBARELLA_RAW_BOOT
-	default n
 	help
 	  If you are not sure, say N here.
 
@@ -334,12 +357,6 @@ depends on SYSFS
 
 config AMBARELLA_SYS_CACHE_CALL
 	bool "Support Cache Configuration"
-	default n
-	help
-	  If you are not sure, say N here.
-
-config AMBARELLA_SYS_BAPI_CALL
-	bool "Support BAPI Configuration"
 	default n
 	help
 	  If you are not sure, say N here.
@@ -452,6 +469,12 @@ config AMBARELLA_EXT_GPIO_NUM
 	help
 	  Depends on your HW design.
 
+config AMBARELLA_SREF_FIFO_EXEC
+	bool "Self refresh code executed in FIO fifo"
+	default n
+	depends on PLAT_AMBARELLA_SUPPORT_PM
+	help
+		Self refresh 2nd solution.
 endmenu
 
 endif

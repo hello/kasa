@@ -4,92 +4,99 @@
  *  History:
  *		Dec 31, 2014 - [Shupeng Ren] created file
  *
- * Copyright (C) 2007-2014, Ambarella, Inc.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 #ifndef _AM_AV_QUEUE_BUILDER_H_
 #define _AM_AV_QUEUE_BUILDER_H_
 
 struct ExPayload: public AMPacket::Payload
 {
-  bool              m_normal_use;
-  bool              m_event_use;
-  uint8_t          *m_mem_end;
-  std::atomic_int   m_ref;
+  int32_t           m_normal_ref;
+  int32_t           m_event_ref;
   explicit ExPayload():
     Payload(),
-    m_normal_use(false),
-    m_event_use(false),
-    m_mem_end(nullptr),
-    m_ref(0)
+    m_normal_ref(0),
+    m_event_ref(0)
   {}
   void operator=(const AMPacket::Payload& payload)
   {
-    memcpy(&m_header, &(payload.m_header), sizeof(m_header));
-    memcpy(&m_data, &(payload.m_data), sizeof(m_data));
-    m_normal_use = false;
-    m_event_use = false;
-    m_ref = 0;
+    m_header = payload.m_header;
+    m_data = payload.m_data;
+    m_normal_ref = 0;
+    m_event_ref = 0;
   }
   virtual ~ExPayload(){}
 };
 
-enum class queue_mode {
-  normal = 0,
-  event = 1
-};
+enum class queue_mode {normal = 0, event = 1};
 
 class AMRingQueue
 {
   public:
-    static AMRingQueue* create(uint32_t count, uint32_t size);
+    static AMRingQueue* create(uint32_t count);
     void destroy();
 
   public:
-    void write(AMPacket::Payload *payload, queue_mode mode);
+    bool write(const AMPacket::Payload *payload, queue_mode mode);
     ExPayload* get();
     ExPayload* event_get();
     ExPayload* event_get_prev();
 
     void read_pos_inc(queue_mode mode);
     void event_backtrack();
-    void release(ExPayload *payload);
-    void drop();
+    void normal_release(ExPayload *payload);
+    void event_release(ExPayload *payload);
 
     void reset();
     void event_reset();
 
-    bool is_in_use();
-    bool is_full(queue_mode mode, uint32_t payload_size = 0);
-    bool is_empty(queue_mode mode);
+    bool in_use();
+    bool normal_in_use();
+    bool event_in_use();
+
+    bool full(queue_mode mode);
+    bool empty(queue_mode mode);
+    bool event_empty();
     bool about_to_full(queue_mode mode);
     bool about_to_empty(queue_mode mode);
-    bool is_event_sync();
 
-    uint32_t get_free_mem_size();
-    uint32_t get_free_payload_num();
+    int32_t get_free_payload_num();
 
   private:
     AMRingQueue();
-    AM_STATE construct(uint32_t count, uint32_t size);
+    AM_STATE construct(uint32_t count);
     ~AMRingQueue();
 
   private:
-    uint8_t            *m_mem;
-    uint8_t            *m_mem_end;
-    uint8_t            *m_current;
-    int32_t             m_free_mem;
-    int32_t             m_reserved_mem_size;
-    int32_t             m_datasize;
+    ExPayload          *m_payload;
+    int32_t             m_payload_num;
+
     int32_t             m_read_pos;
     int32_t             m_read_pos_e;
     int32_t             m_write_pos;
-    ExPayload          *m_payload;
-    int32_t             m_payload_num;
+    int32_t             m_write_count;
 
     int32_t             m_in_use_payload_num;
     int32_t             m_in_use_payload_num_e;

@@ -1,23 +1,31 @@
+7zdec
+    Description: 7z format decoding library
+    License: GNU GPL
+    Version: 16.00
+    URL: https://sourceforge.net/projects/sevenzip/files/LZMA%20SDK
+
 aac
-    Description:
-    License: Ambarella Private
+    Description: Advanced Audio Coding (AAC) is an audio coding standard for lossy digital audio compression. 
+    License: Licensed by Ambarella from Coding Technologies (acquired by Dolby).
+             Licensee may need to obtain additional licenses from holders of
+             intellectual property rights relating to AAC standard.
 
 alsa-lib
     Description: the ALSA library used to access the ALSA sound interface. Must.
     License: GNU GPLv2.1
-    Version: 1.0.28
+    Version: 1.1.2
     URL: ftp://ftp.alsa-project.org/pub/lib
 
 alsa-plugins
     Description: plugins for various audio libraries and sound servers. Optional.
     License: GNU GPLv2, GNU LGPLv2.1
-    Version: 1.0.28
+    Version: 1.1.1
     URL: ftp://ftp.alsa-project.org/pub/plugins
 
 alsa-utils
     Description: utilities for controlling sound card. Optional.
     License: GNU GPLv2
-    Version: 1.0.28
+    Version: 1.1.2
     URL: ftp://ftp.alsa-project.org/pub/utils
 
 audiofile
@@ -29,7 +37,7 @@ audiofile
 avahi
     Description: the Avahi package is a system which facilitates service discovery on a local network. Must.
     License: GNU LGPLv2.1
-    Version: 0.6.31
+    Version: 0.6.32
     URL: http://avahi.org/download/
 
 bcmdl
@@ -38,22 +46,28 @@ bcmdl
     Version: NA
     URL: NA
 
+bind
+    Description: lite version of BIND suite libraries which are used by various programs to work with DNS protocol.
+    License: ISC
+    Version: 9.9.5
+    URL: http://www.isc.org/products/BIND
+
+connman
+    Description: ConnMan is a daemon for managing Internet connections within embedded device.
+    License: GNU GPL v2.0
+    Version: 1.33
+    URL: https://01.org/connman
+
 cooee
     Description: Broadcom WiFi Cooee Utility
     License: Broadcom
     Version: NA
     URL: NA
 
-bluez4
-    Description: Bluez4 is an older version of the Linux bluetooth stack.
-    License: GNU GPLv2, GNU LGPLv2.1
-    Version: 4.101
-    URL: https://www.kernel.org/pub/linux/bluetooth/
-
 bluez5
     Description: the latest version of the Linux bluetooth stack. Must.
     License: GNU GPLv2, GNU LGPLv2.1
-    Version: 5.23
+    Version: 5.39
     URL: https://www.kernel.org/pub/linux/bluetooth/
 
 bluez-tools
@@ -65,7 +79,7 @@ bluez-tools
 busybox
     Description: a toolkit provides tiny versions of many common UNIX utilities into a single small executable file. Must.
     License: GNU GPLv2
-    Version: 1.21.1
+    Version: 1.24.1
     URL: http://busybox.net/downloads/
 
 bzip2
@@ -83,7 +97,7 @@ clearsilver
 cyclictest
     Description: cyclictest is one system RT performance benchmark. Optional.
     License: GNU GPLv2
-    Version: 0.85
+    Version: 0.92
     URL: https://www.kernel.org/pub/linux/kernel/people/clrkwllms/
 
 dbus
@@ -101,7 +115,7 @@ dbus-glib
 dhcp
     Description: a dhcp server. Optional.
     License: ISC
-    Version: 4.2.5
+    Version: 4.3.0
     URL: http://ftp.isc.org/isc/dhcp/
 
 dhcpcd
@@ -113,13 +127,13 @@ dhcpcd
 dnsmasq
     Description: a lightweight, easy to configure DNS forwarder and DHCP server. Optional.
     License: GNU GPLv2, or GNU GPLv3
-    Version: 2.71
+    Version: 2.75
     URL: http://www.thekelleys.org.uk/dnsmasq/
 
 dosfstools
     Description: utilities for making and checking MS-DOS FAT filesystems. Must.
     License: GNU GPLv3
-    Version: 3.0.26
+    Version: 3.0.28
     URL: http://daniel-baumann.ch/files/software/dosfstools/
 
 e2fsprogs
@@ -143,6 +157,12 @@ ethtool
     Version: 3.11
     URL: https://www.kernel.org/pub/software/network/ethtool/
 
+exfat-utils
+    Description: exfat file system utilities
+    License: GNU GPLv2
+    Version: 1.2.3
+    URL: https://github.com/relan/exfat
+
 expat
     Description: an XML parser library written in C. Optional.
     License: BSD-style License
@@ -161,6 +181,12 @@ fcgi
     Version: 2.4.0
     URL: http://www.fastcgi.com/dist/fcgi.tar.gz
 
+ffmpeg
+    Description: FFmpeg is the leading multimedia framework, able to decode, encode pretty much anything that humans and machines have created. Optional.
+    License: GNU LGPLV2.1
+    Version: 2.8.4
+    URL: https://www.ffmpeg.org/releases/ffmpeg-2.8.4.tar.xz
+
 freetype
     Description: a free, high-quality and portable font engine. Optional.
     License: FreeType License, or GNU GPLv2.
@@ -176,25 +202,31 @@ ftpd
 fuse
     Description: a library to implement a fully functional filesystem in a userspace program.
     License: kernel part is under GNU GPLv2, libfuse is under GNU LGPLv2.1
-    Version: 2.9.3
+    Version: 2.9.4
     URL: http://hivelocity.dl.sourceforge.net/project/fuse/
+
+fuse-exfat
+    Description: FUSE module of exfat file system
+    License: GNU GPLv2
+    Version 1.2.3
+    URL: https://github.com/relan/exfat
 
 glib2
     Description: a library for providing data structure handling for C, portability wrappers and interfaces for such runtime functionality as an event loop, threads, dynamic loading and an object system. Must.
     License: GNU Library GPLv2
-    Version: 2.41.2
+    Version: 2.51.0
     URL: http://ftp.gnome.org/pub/gnome/sources/glib/
 
 gmp
     Description: a library for arbitrary-precision arithmetic, operating on signed integers, rational numbers, and floating point numbers. Optional.
     License: GNU GPLv3 and GNU GPLv2
-    Version: 6.0.0a
+    Version: 6.1.0
     URL: https://ftp.gnu.org/gnu/gmp
 
 gnutls
     Description: a library implementing the SSL, TLS and DTLS protocols and technologies around them. Optional.
     License: GNU GPLv3, GNU LGPLv2.1
-    Version: 3.3.4
+    Version: 3.4.11
     URL: ftp://ftp.gnutls.org/gcrypt/gnutls/v3.2
 
 gprof
@@ -230,14 +262,20 @@ iniparser
 iozone
     Description: a filesystem benchmark tool. Optional.
     License: MIT-like License
-    Version: 420
+    Version: 3 release 434
     URL: http://www.iozone.org/src/current/
 
 iperf
     Description: a commonly used network testing tool that create data streams and measure throughput. Optional.
     License: BSD License
-    Version: 2.0.5
+    Version: 2.0.8
     URL: http://iweb.dl.sourceforge.net/project/iperf/
+
+iperf3
+    Description: a commonly used network testing tool that create data streams and measure throughput. Optional.
+    License: BSD License
+    Version: 3.1.2
+    URL: http://downloads.es.net/pub/iperf/
 
 iptables-2.6.38
     Description: a user space application to configure the 2.6.38 Linux kernel firewall. Optional.
@@ -263,23 +301,11 @@ iw
     Version: 3.11
     URL: https://www.kernel.org/pub/software/network/iw
 
-jrtplib
-    Description:  a WiFi tool, useful for WiFi setup. Optional.
-    License: MIT
-    Version: 3.9.1
-    URL: http://wiki.unify.com/ftp/OpenStage-OSSW/V3R1/JRTPLIB/
-
 json-c
     Description: a C library for working with JSON data. Optional.
     License: JSON License
     Version: 0.11-20130402
     URL: https://codeload.github.com/json-c/json-c/zip/master
-
-jthread
-    Description: a package provides some classes to make use of threads easy on different platforms. Optional.
-    License: MIT
-    Version: 1.3.1
-    URL: http://research.edm.uhasselt.be/jori/jthread/
 
 kmod
     Description: a package contains libraries and utilities for loading kernel modules. Must.
@@ -296,7 +322,7 @@ libatomic_ops
 libattr
     Description: a library for the extended attributes on filesystem objects. Optional.
     License: GNU LGPLv2.1, or GNU GPLv2
-    Version: 2.4.46
+    Version: 2.4.47
     URL:http://ftp.twaren.net/Unix/NonGNU/attr
 
 libcap
@@ -308,7 +334,7 @@ libcap
 libcurl
     Description: a URL transfer library. Optional.
     License: MIT/X derivate License
-    Version: 7.36.0
+    Version: 7.50.1
     URL: http://curl.haxx.se/download/
 
 libdaemon
@@ -317,11 +343,29 @@ libdaemon
     Version: 0.14
     URL: http://0pointer.de/lennart/projects/libdaemon/
 
+libevent
+    Description: The libevent API provides a mechanism to execute a callback function when a specific event occurs on a file descriptor or after a timeout has been reached.
+    License: 3-clause BSD
+    Version: 2.0.22
+    URL: http://libevent.org/
+
+libev
+    Description: A full-featured and high-performance event loop that is loosely modelled after libevent, but without its limitations and bugs.
+    License: BSD
+    Version: 4.22
+    URL: http://software.schmorp.de/pkg/libev.html
+
 libeXosip2
     Description: eXosip is a GPL library that extend the capability of the oSIP library.
     License: GNU GPLv2
     Version: 4.1.0
     URL: http://download.savannah.gnu.org/releases/exosip
+
+libexif
+    Description: Library for extracting extra information from image files
+    License: LGPLv2+
+    Version: 0.6.21
+    URL: http://libexif.sourceforge.net
 
 libffi
     Description: a library provides a portable, high level programming interface to various calling conventions. Optional.
@@ -344,7 +388,7 @@ libgcrypt
 libgpg-error
     Description: a package contains a library that defines common error values for all GnuPG components. Optional.
     License: GNU GPLv2, for lib GNU LGPLv2.1
-    Version: 1.11
+    Version: 1.12
     URL: http://ftp.heanet.ie/mirrors/ftp.gnupg.org/gcrypt/libgpg-error/
 
 libical
@@ -356,20 +400,32 @@ libical
 libidn
     Description: a fully documented implementation of the Stringprep, Punycode and IDNA specifications. Optional.
     License: GNU GPLv2, or GNU LGPLv2.1, or GNU GPLv3, or GNU LGPLv3
-    Version: 1.25
+    Version: 1.28
     URL: http://ftp.gnu.org/gnu/libidn/
 
 libjpeg-turbo
     Description: libjpeg-turbo is a JPEG image codec that uses SIMD instructions (MMX, SSE2, NEON) to accelerate baseline JPEG compression and decompression on x86, x86-64, and ARM systems.
     License: BSD License
-    Version: 1.3.1
+    Version: 1.5.0
     URL: http://sourceforge.net/projects/libjpeg-turbo/files/
 
 libmicrohttpd
     Description: a library to run an HTTP server as part of another application. Optional.
     License: GNU LGPLv2.1
-    Version: 0.9.34
+    Version: 0.9.49
     URL: http://ftp.gnu.org/gnu/libmicrohttpd
+
+libmtp
+    Description: A software library for MTP media players
+    License: GNU LGPLv2.1
+    Version: 1.1.12
+    URL: http://libmtp.sourceforge.net
+
+libNE10
+    Description: An open optimized software library project for the ARM architecture
+    License: BSD 3-clause
+    Version: 1.2.1
+    URL: https://projectne10.github.io/Ne10
 
 libndp
     Description: A library which provides a wrapper for IPv6 Neighbor Discovery Protocol.
@@ -408,6 +464,12 @@ libpcap
     Version: 1.7.2
     URL: http://www.tcpdump.org/release
 
+libpng
+    Description: A library of functions for manipulating PNG image format files.
+    License: zlib
+    Version: 1.6.21
+    URL: http://www.libpng.org/pub/png/libpng.html
+
 libsamplerate
     Description: a library for audio sample rate converter. Optional.
     License: GNU GPLv2
@@ -417,13 +479,13 @@ libsamplerate
 libselinux
     Description: a library contains the core library of an SELinux system. Optional.
     License: Public domain software
-    Version: 2.1.13
+    Version: 2.3
     URL: http://userspace.selinuxproject.org/releases/
 
 libsepol
     Description: a library provides an API for the manipulation of SELinux binary policies. Optional.
     License: GNU LGPLv2.1
-    Version: 2.1.9
+    Version: 2.3
     URL: http://userspace.selinuxproject.org/releases/
 
 libsndfile
@@ -441,25 +503,25 @@ libsodium
 libssh2
     Description: a client-side C library implementing the SSH2 protocol.
     License: BSD License
-    Version: 1.4.3
+    Version: 1.6.0
     URL: http://www.libssh2.org/download/
 
 libtasn1
     Description: a highly portable C library that encodes and decodes DER/BER data following an ASN.1 schema. Optional.
     License: GNU GPLv3
-    Version: 3.4
+    Version: 4.8
     URL: http://ftp.gnu.org/gnu/libtasn1
 
 libtool
     Description: a computer programming tool from the GNU build system used for creating portable compiled libraries.Optional.
     License: GNU GPLv2
-    Version: 2.4.2
+    Version: 2.4.6
     URL: http://mirror.hust.edu.cn/gnu/libtool/
 
 libusbx
     Description: a library that provides generic access to USB devices. Optional.
     License: GNU LGPLv2.1
-    Version: 1.0.19
+    Version: 1.0.21
     URL: http://libusb.info
 
 libusb-compat
@@ -468,22 +530,27 @@ libusb-compat
     Version: 0.1.5
     URL: http://downloads.sourceforge.net/libusb/libusb-compat-0.1.5.tar.bz2 
 
-libvorbis
-    Description: a package contains a general purpose audio and music encoding format. Optional.
-    License: BSD License
-    Version: 1.3.3
-    URL: http://downloads.xiph.org/releases/vorbis/
-
 libxml2
     Description: a software library for parsing XML documents. Optional.
     License: MIT License
-    Version: 2.9.0
+    Version: 2.9.1
     URL: http://xmlsoft.org/sources/
+
+libzrtpcpp
+    Description: This package provides a library that adds ZRTP support to the
+    GNU ccRTP stack and serves as library for other RTP stacks (PJSIP, GStreamer). Phil
+    Zimmermann developed ZRTP to allow ad-hoc, easy to use key negotiation to
+    setup Secure RTP (SRTP) sessions. GNU ZRTP works together with GNU ccRTP
+    (1.5.0 or later) and provides a ZRTP implementation that can be directly
+    embedded into client and server applications.
+    License: LGPL
+    Version: 4.4.0
+    URL: https://github.com/wernerd/ZRTPCPP
 
 lighttpd
     Description: a web server optimized for speed-critical environments. Optional.
     License: BSD License
-    Version: 1.4.35
+    Version: 1.4.40
     URL: http://download.lighttpd.net/lighttpd/
 
 lmbench
@@ -495,13 +562,13 @@ lmbench
 ltrace
     Description: a debugging utility to display the calls a userland application makes to shared libraries. Optional.
     License: GNU GPLv2
-    Version: 0.7.2
+    Version: 0.7.91
     URL: http://anonscm.debian.org/gitweb/?p=collab-maint/ltrace.git
 
 lua
     Description: a lightweight multi-paradigm programming language. Optional.
     License: MIT License
-    Version: 5.2.3
+    Version: 5.3.2
     URL: http://www.lua.org/ftp/
 
 mrvl-wireless
@@ -513,7 +580,7 @@ mrvl-wireless
 mxml
     Description: an XML-based user interface markup language. Optional.
     License: Mini-XML License(GNU Library GPLv2 with exceptions)
-    Version: 2.7
+    Version: 2.8
     URL: http://www.msweet.org/files/project3/
 
 ncurses
@@ -525,13 +592,13 @@ ncurses
 networkmanager
     Description: a program for providing detection and configuration for systems to automatically connect to network. Must.
     License: GNU GPL
-    Version: 1.0.6
+    Version: 1.4.0
     URL: http://mirrors.ustc.edu.cn/gnome/sources/NetworkManager/
 
-nettle
+nettle3
     Description: a library contains the low-level cryptographic library.
     License: GNU LGPLv2.1
-    Version: 2.7.1
+    Version: 3.2
     URL: http://www.lysator.liu.se/~nisse/archive/
 
 nfs
@@ -549,37 +616,37 @@ nss-mdns
 ntp
     Description: a networking protocol for clock synchronization. Optional.
     License: Network Time Protocol Version 4 Distribution
-    Version: 4.2.8p1
+    Version: 4.2.8p4
     URL: http://www.eecis.udel.edu/~ntp/ntp_spool/ntp4/ntp-4.2/
 
 opencv
     Description:  a library of programming functions mainly aimed at real-time computer vision. Optional.
     License: BSD License
-    Version:
-    URL: http://iweb.dl.sourceforge.net/project/opencvlibrary/opencv-unix/
+    Version: 3.1.0
+    URL: https://github.com/Itseez/opencv/archive/3.1.0/opencv-3.1.0.tar.gz
 
 openssh
     Description:  a SSH connectivity tool that technical users of the Internet rely on.  Optional.
     License: Simplified BSD License
-    Version:
+    Version: 7.1p1
     URL: http://openbsd.org.ar/pub/OpenBSD/OpenSSH/portable/
 
 openssl
     Description: an open-source implementation of the SSL and TLS protocols. Optional.
     License: BSD-style License(OpenSSL License and original SSLeay License)
-    Version: 1.0.1h
+    Version: 1.0.2h
     URL: https://www.openssl.org/source
 
 opus
     Description: a lossy audio compression format. Must.
     License: BSD License
-    Version: 1.1.1-beta
+    Version: 1.2-alpha
     URL: http://www.opus-codec.org/downloads
 
 opusfile
     Description: a package provides application developers with a high-level API for decoding and seeking in .opus files. Must.
     License: BSD License
-    Version: 0.5
+    Version: 0.6.2
     URL: http://www.opus-codec.org/downloads
 
 opus-tools
@@ -597,7 +664,7 @@ orc
 pam
     Description: a implementation of flexible mechanism for authenticating users. Optional.
     License: BSD License
-    Version: 1.1.8
+    Version: 1.3.0
     URL: http://www.linux-pam.org/library
 
 parted
@@ -609,43 +676,31 @@ parted
 pcre
     Description: a Perl library to implement regular expression pattern matching. Optional.
     License: BSD
-    Version: 8.31
+    Version: 8.35
     URL: http://softlayer-dal.dl.sourceforge.net/project/pcre/pcre/
-
-perl
-    Description: the interpreter for Perl programming language. Optional.
-    License: GNU GPLv1
-    Version: 5.18.1
-    URL: http://www.cpan.org/src/
-
-pppd
-    Description: the Point-to-Point Protocol daemon. Optional.
-    License: BSD-like License
-    Version: 2.4.5
-    URL: http://ppp.samba.org/download.html
 
 procps-ng
     Description: a package provides command line and full screen utilities for browsing procfs. Optional.
     License: GNU GPLv2, for library is GNU Library GPLv2.
-    Version: 3.3.6
+    Version: 3.3.10
     URL: http://hivelocity.dl.sourceforge.net/project/procps-ng/Production/
 
 pulseaudio
     Description: a free cross-platform network sound server. Must.
     License: GNU LGPLv2.1
-    Version: 6.0
+    Version: 9.0
     URL: http://freedesktop.org/software/pulseaudio/releases/
 
 python
     Description: the interpreter for Python programming language. Optional.
     License: Python Software Foundation License
-    Version: 2.7.3
-    URL: https://www.python.org/ftp/python/2.7.3/
+    Version: 2.7.11
+    URL: https://www.python.org/ftp/python/2.7.11/
 
 readline
     Description: a library that allow users to edit command lines as they are typed in. Optional.
     License: GNU GPLv3
-    Version: 6.2
+    Version: 6.3
     URL: http://git.savannah.gnu.org/cgit/readline.git/snapshot/readline-master.tar.gz
 
 samba
@@ -657,38 +712,38 @@ samba
 sbc
     Description: a digital audio encoder and decoder used to transfer data to Bluetooth audio output devices like headphones or loudspeakers. Optional.
     License: GNU GPLv2, for library is GNU LGPLv2.1
-    Version: 1.1
+    Version: 1.2
     URL: http://sbc.cvs.sourceforge.net/viewvc/sbc/
 
 spawn-fcgi
     Description: an utility to spawn remote and local FastCGI processes. Optional.
     License: BSD License
-    Version: 1.6.3
+    Version: 1.6.4
     URL: https://codeload.github.com/lighttpd/spawn-fcgi/zip/master
 
-speex
+speex/speex-dsp
     Description: a lossy audio codec optimized for speech. Optional.
     License: BSD-style License
-    Version: 1.2rc1
+    Version: 1.2rc2 / 1.2rc3
     URL: http://downloads.xiph.org/releases/speex/
 
 sqlite
     Description: Library that implements an embeddable SQL database engine
     License: Public Domain (https://www.sqlite.org/copyright.html)
-    Version: 3.8.9
+    Version: 3.13.0
     URL: https://www.sqlite.org
 
 sshfs-fuse
     Description: a filesystem client based on the SSH File Transfer Protocol. Optional.
     License: GNU GPLv2
-    Version: 2.4
+    Version: 2.5
     URL: http://iweb.dl.sourceforge.net/project/fuse/sshfs-fuse/
 
 strace
     Description: a system call tracer. Optional.
     License: BSD License
-    Version: 4.8
-    URL: http://softlayer-dal.dl.sourceforge.net/project/strace/strace/
+    Version: 4.11
+    URL: https://sourceforge.net/projects/strace/files/strace
 
 systemd
     Description: a system management daemon designed exclusively for the Linux kernel API. Optional.
@@ -711,13 +766,13 @@ telnetd
 ubi-tools
     Description: a tool-kit for various UBI tests. Optional.
     License: GNU GPLv2
-    Version: 1.5.0
+    Version: 1.5.2
     URL: http://git.infradead.org/mtd-utils.git
 
 udev
     Description: a device manager for the Linux kernel. Must.
     License: GNU GPLv2
-    Version: 212
+    Version: 215
     URL: http://www.freedesktop.org/software/systemd
 
 ustream
@@ -729,19 +784,25 @@ ustream
 util-linux
     Description: a standard package of the Linux operating system. Must.
     License: GNU GPLv2
-    Version: 2.24.2
-    URL: https://www.kernel.org/pub/linux/utils/util-linux/v2.24
+    Version: 2.25.2
+    URL: https://www.kernel.org/pub/linux/utils/util-linux/v2.25
 
 valgrind
     Description: a programming tool for memory debugging, memory leak detection, and profiling. Optional.
     License: GNU GPLv2
-    Version: 3.9.0
+    Version: 3.11.0
     URL: http://valgrind.org/downloads
+
+vtable-dumper
+    Desciption: Tool to list content of virtual tables in a C++ shared library.
+    License: GNU GPL+ or LGPLv2+
+    Version: 1.1
+    URL: https://github.com/lvc/vtable-dumper
 
 webrtc-audio-processing
     Description: This is meant to be a more Linux packaging friendly copy of the AudioProcessing module from the WebRTC project
     License: BSD
-    Version: 0.1
+    Version: 0.3
     URL: http://freedesktop.org/software/pulseaudio/webrtc-audio-processing
 
 wireless-tools
@@ -759,19 +820,19 @@ wl
 wpa_supplicant
     Description: a free software implementation of an IEEE 802.11i. Optional.
     License: GNU GPLv2, or BSD
-    Version: 2.4
+    Version: 2.5
     URL: http://hostap.epitest.fi/wpa_supplicant
 
 x265
     Description: a H.265/HEVC encoder library
     License: GNU GPLv2, or BSD
-    Version: 1.5
+    Version: 1.9
     URL: https://bitbucket.org/multicoreware/x265/get/x265_1.5.tar.gz
 
 xz
     Description: general-purpose data compression software with high compression ratio. Optional.
     License: Public Domain
-    Version: 5.1.2alpha
+    Version: 5.2.2
     URL: http://tukaani.org/xz
 
 zbar

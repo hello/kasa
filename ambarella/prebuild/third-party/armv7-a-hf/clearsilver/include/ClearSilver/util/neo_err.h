@@ -85,7 +85,7 @@ typedef struct _neo_err
  */
 #if defined(USE_C99_VARARG_MACROS)
 #define nerr_raise(e,f,...) \
-   nerr_raisef(__PRETTY_FUNCTION__,__FILE__,__LINE__,e,f,__VA_ARGS__)
+   nerr_raisef(__PRETTY_FUNCTION__,__FILE__,__LINE__,e,f, ##__VA_ARGS__)
 #elif defined(USE_GNUC_VARARG_MACROS)
 #define nerr_raise(e,f,a...) \
    nerr_raisef(__PRETTY_FUNCTION__,__FILE__,__LINE__,e,f,##a)
@@ -99,7 +99,7 @@ NEOERR *nerr_raisef (const char *func, const char *file, int lineno,
 
 #if defined(USE_C99_VARARG_MACROS)
 #define nerr_raise_errno(e,f,...) \
-   nerr_raise_errnof(__PRETTY_FUNCTION__,__FILE__,__LINE__,e,f,__VA_ARGS__)
+   nerr_raise_errnof(__PRETTY_FUNCTION__,__FILE__,__LINE__,e,f, ##__VA_ARGS__)
 #elif defined(USE_GNUC_VARARG_MACROS)
 #define nerr_raise_errno(e,f,a...) \
    nerr_raise_errnof(__PRETTY_FUNCTION__,__FILE__,__LINE__,e,f,##a)

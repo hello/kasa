@@ -4,12 +4,29 @@
  * History:
  *   2014-9-10 - [ypchang] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -27,7 +44,6 @@
 #include "am_audio_define.h"
 #include "am_player_if.h"
 #include "am_player.h"
-#include "am_player_audio.h"
 #include "am_player_config.h"
 #include "am_player_version.h"
 
@@ -96,15 +112,15 @@ AM_STATE AMPlayer::start()
 
 AM_STATE AMPlayer::stop()
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   AM_STATE state = AM_STATE_OK;
-  if (AM_UNLIKELY(m_is_paused)) {
+  if (AM_UNLIKELY(m_is_paused.load())) {
     for (uint32_t i = 0; i < m_input_num; ++ i) {
       m_input_pins[i]->enable(true);
     }
     m_is_paused = false;
   }
-  if (AM_LIKELY(m_run)) {
+  if (AM_LIKELY(m_run.load())) {
     m_run = false;
     m_event->signal();
     for (uint32_t i = 0; i < m_input_num; ++ i) {
@@ -119,19 +135,25 @@ AM_STATE AMPlayer::stop()
 
 AM_STATE AMPlayer::pause(bool enabled)
 {
-  AUTO_SPIN_LOCK(m_lock);
-  AM_STATE state = AM_STATE_ERROR;
-  if (AM_LIKELY(m_audio_player->is_player_running())) {
-    state = m_audio_player->pause(enabled);
-    m_is_paused = (AM_STATE_OK == state) ? enabled : m_is_paused;
+  AUTO_MEM_LOCK(m_lock);
+  bool ret = false;
+  if (AM_LIKELY(m_player_audio->is_player_running())) {
+    ret = m_player_audio->pause(enabled);
+    m_is_paused = ret ? enabled : m_is_paused.load();
     for (uint32_t i = 0; i < m_input_num; ++ i) {
-      m_input_pins[i]->enable(!m_is_paused);
+      m_input_pins[i]->enable(!m_is_paused.load());
     }
   }
-  post_engine_msg((AM_STATE_OK == state) ?
-      AMIEngine::ENG_MSG_OK : AMIEngine::ENG_MSG_ERROR);
+  post_engine_msg(ret ? AMIEngine::ENG_MSG_OK : AMIEngine::ENG_MSG_ERROR);
 
-  return state;
+  return (ret ? AM_STATE_OK : AM_STATE_ERROR);
+}
+
+void AMPlayer::set_aec_enabled(bool enabled)
+{
+  if (AM_LIKELY(m_player_config)) {
+    m_player_config->audio.enable_aec = enabled;
+  }
 }
 
 uint32_t AMPlayer::version()
@@ -153,7 +175,10 @@ void AMPlayer::on_run()
     m_event->wait();
   }
 
-  m_audio_player->stop(false /* Don't wait */);
+  m_player_audio->stop(false/* Don't wait */);
+  while (m_audio_queue && !m_audio_queue->empty()) {
+    m_audio_queue->front_pop()->release();
+  }
   if (AM_LIKELY(!m_run)) {
     NOTICE("%s posts EOS!", m_name);
     post_engine_msg(AMIEngine::ENG_MSG_EOS);
@@ -171,8 +196,6 @@ inline AM_STATE AMPlayer::on_info(AMPacket *packet)
   switch(packet->get_attr()) {
     case AMPacket::AM_PAYLOAD_ATTR_AUDIO: {
       AM_AUDIO_INFO *audioInfo = (AM_AUDIO_INFO*)(packet->get_data_ptr());
-      m_eos_map |= 1 << 0;
-      state = m_audio_player->start(*audioInfo);
       INFO("\n%s received audio information:"
            "\n                     Channels: %u"
            "\n                  Sample Rate: %u"
@@ -181,6 +204,24 @@ inline AM_STATE AMPlayer::on_info(AMPacket *packet)
            audioInfo->channels,
            audioInfo->sample_rate,
            audioInfo->sample_format);
+      m_eos_map |= 1 << 0;
+      m_wait_finish =
+          ((m_last_audio_info.channels != audioInfo->channels) ||
+           (m_last_audio_info.sample_rate != audioInfo->sample_rate) ||
+           (m_last_audio_info.sample_format != audioInfo->sample_format));
+      m_player_audio->set_audio_info(*audioInfo);
+      m_player_audio->set_player_default_latency(m_player_config->\
+                                                 audio.buffer_delay_ms);
+      m_player_audio->set_echo_cancel_enabled(m_player_config->\
+                                              audio.enable_aec);
+      if (AM_LIKELY(m_wait_finish && !m_audio_queue->empty())) {
+        NOTICE("Waiting for last file to finish playing!");
+        m_player_audio->stop();
+      }
+      m_wait_finish = false;
+      memcpy(&m_last_audio_info, audioInfo, sizeof(m_last_audio_info));
+      state = m_player_audio->start(m_player_config->audio.initial_volume) ?
+          AM_STATE_OK : AM_STATE_ERROR;
     }break;
     case AMPacket::AM_PAYLOAD_ATTR_VIDEO: {
       /* todo: Add video playback */
@@ -199,7 +240,8 @@ inline AM_STATE AMPlayer::on_data(AMPacket *packet)
   AM_STATE state = AM_STATE_OK;
   switch(packet->get_attr()) {
     case AMPacket::AM_PAYLOAD_ATTR_AUDIO: {
-      m_audio_player->add_packet(packet);
+      packet->add_ref();
+      m_audio_queue->push(packet);
     }break;
     case AMPacket::AM_PAYLOAD_ATTR_VIDEO: {
       /* todo: Add video player */
@@ -224,16 +266,18 @@ AM_STATE AMPlayer::on_eof(AMPacket *packet)
   if (AM_LIKELY(m_eos_map & (1 << 0))) {
     NOTICE("Prepare to stop audio!");
     m_eos_map &= ~(1 << 0);
-    m_audio_player->add_packet(packet);
-    m_audio_player->stop(true /* Wait player to stop */);
+    packet->add_ref();
+    m_audio_queue->push(packet);
+    m_player_audio->stop(true /* Wait player to stop */);
   }
 
-  return post_engine_msg(AMIEngine::ENG_MSG_EOF);
+  return (packet->get_type() == AMPacket::AM_PAYLOAD_TYPE_EOF) ?
+      post_engine_msg(AMIEngine::ENG_MSG_EOF) :
+      post_engine_msg(AMIEngine::ENG_MSG_EOL);
 }
 
 AM_STATE AMPlayer::process_packet(AMPacket *packet)
 {
-//  AUTO_SPIN_LOCK(m_lock);
   AM_STATE state = AM_STATE_OK;
   if (AM_LIKELY(packet)) {
     switch(packet->get_type()) {
@@ -246,6 +290,7 @@ AM_STATE AMPlayer::process_packet(AMPacket *packet)
       case AMPacket::AM_PAYLOAD_TYPE_DATA: {
         state = on_data(packet);
       }break;
+      case AMPacket::AM_PAYLOAD_TYPE_EOL:
       case AMPacket::AM_PAYLOAD_TYPE_EOF: {
         state = on_eof(packet);
       }break;
@@ -260,31 +305,24 @@ AM_STATE AMPlayer::process_packet(AMPacket *packet)
 }
 
 AMPlayer::AMPlayer(AMIEngine *engine) :
-    inherited(engine),
-    m_lock(nullptr),
-    m_audio_player(nullptr),
-    m_config(nullptr),
-    m_event(nullptr),
-    m_player_config(nullptr),
-    m_input_pins(nullptr),
-    m_eos_map(0),
-    m_input_num(0),
-    m_output_num(0),
-    m_run(false),
-    m_is_paused(false)
+  inherited(engine)
 {
+  memset(&m_last_audio_info, 0, sizeof(m_last_audio_info));
 }
 
 AMPlayer::~AMPlayer()
 {
-  AM_DESTROY(m_lock);
-  AM_DESTROY(m_audio_player);
+  AM_DESTROY(m_player_audio);
   AM_DESTROY(m_event);
+  while (m_audio_queue && !m_audio_queue->empty()) {
+    m_audio_queue->front_pop()->release();
+  }
   for (uint32_t i = 0; i < m_input_num; ++ i) {
     AM_DESTROY(m_input_pins[i]);
   }
   delete[] m_input_pins;
   delete m_config;
+  delete m_audio_queue;
   DEBUG("~AMPlayer");
 }
 
@@ -329,12 +367,6 @@ AM_STATE AMPlayer::init(const std::string& config,
                m_name, m_output_num);
           m_output_num = 0;
         }
-        m_lock = AMSpinLock::create();
-        if (AM_UNLIKELY(!m_lock)) {
-          ERROR("Failed to create AMSpinLock!");
-          state = AM_STATE_NO_MEMORY;
-          break;
-        }
         m_input_pins = new AMPlayerInput*[m_input_num];
         if (AM_UNLIKELY(!m_input_pins)) {
           ERROR("Failed to allocate memory PlayerInputPin pointers!");
@@ -354,9 +386,18 @@ AM_STATE AMPlayer::init(const std::string& config,
         if (AM_UNLIKELY(AM_STATE_OK != state)) {
           break;
         }
-        m_audio_player =
-            AMPlayerAudio::get_player(m_player_config->audio);
-        if (AM_UNLIKELY(!m_audio_player)) {
+        m_audio_queue = new PacketQueue();
+        if (AM_UNLIKELY(!m_audio_queue)) {
+          state = AM_STATE_NO_MEMORY;
+          ERROR("Failed to create audio queue!");
+          break;
+        }
+        m_player_audio = create_audio_player(m_player_config->audio.interface,
+                                             m_player_config->name + "." +
+                                             m_player_config->audio.interface,
+                                             this,
+                                             static_player_callback);
+        if (AM_UNLIKELY(!m_player_audio)) {
           ERROR("Failed to create audio player!");
           state = AM_STATE_ERROR;
           break;
@@ -366,4 +407,68 @@ AM_STATE AMPlayer::init(const std::string& config,
   }while(0);
 
   return state;
+}
+
+void AMPlayer::static_player_callback(AudioPlayer *data)
+{
+  ((AMPlayer*)data->owner)->player_callback(&data->data);
+}
+
+void AMPlayer::player_callback(AudioData *data)
+{
+
+  if (AM_LIKELY(data)) {
+    uint8_t   *data_write = data->data;
+    uint32_t   &need_size = data->need_size;
+    uint32_t written_size = 0;
+    while(written_size < need_size) {
+      AMPacket *packet = nullptr;
+      if (AM_UNLIKELY(m_audio_queue->empty())) {
+        /* If audio packet queue is empty,
+         * just feed audio server empty data
+         */
+        switch(m_last_audio_info.sample_format) {
+          case AM_SAMPLE_U8:
+            memset(data_write + written_size, 0x80, (need_size - written_size));
+            break;
+          case AM_SAMPLE_ALAW:
+          case AM_SAMPLE_ULAW:
+          default:
+            memset(data_write + written_size, 0xff, (need_size - written_size));
+            break;
+        }
+        written_size = need_size;
+        data->written_size = written_size;
+        data->drain = m_wait_finish.load();
+        continue;
+      }
+      data->drain = false;
+      packet = m_audio_queue->front();
+      if (AM_LIKELY(packet->get_type() == AMPacket::AM_PAYLOAD_TYPE_DATA)) {
+        uint32_t    space = (need_size - written_size);
+        uint32_t data_offset = packet->get_data_offset();
+        uint32_t avail_size = packet->get_data_size() - data_offset;
+        uint8_t *data_ptr = (uint8_t*)(packet->get_data_ptr() + data_offset);
+
+        avail_size = (avail_size < space) ? avail_size : space;
+        memcpy(data_write + written_size, data_ptr, avail_size);
+        written_size += avail_size;
+        data_offset += avail_size;
+        if (AM_LIKELY(data_offset == packet->get_data_size())) {
+          m_audio_queue->pop();
+          packet->set_data_offset(0);
+          packet->release();
+        } else {
+          packet->set_data_offset(data_offset);
+        }
+      } else if ((packet->get_type() == AMPacket::AM_PAYLOAD_TYPE_EOF) ||
+                 (packet->get_type() == AMPacket::AM_PAYLOAD_TYPE_EOL)) {
+        data->drain = true;
+        m_audio_queue->pop();
+        packet->release();
+        break;
+      }
+    }
+    data->written_size = written_size;
+  }
 }

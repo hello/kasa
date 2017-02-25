@@ -89,6 +89,9 @@ int sysctl_tcp_tw_reuse __read_mostly;
 int sysctl_tcp_low_latency __read_mostly;
 EXPORT_SYMBOL(sysctl_tcp_low_latency);
 
+#ifdef CONFIG_WLAN_UPDATE_SEQ
+extern struct sock_sequence_update ipv4_update;
+#endif
 
 #ifdef CONFIG_TCP_MD5SIG
 static int tcp_v4_md5_hash_hdr(char *md5_hash, const struct tcp_md5sig_key *key,
@@ -1015,7 +1018,8 @@ int tcp_md5_do_add(struct sock *sk, const union tcp_md5_addr *addr,
 	}
 
 	md5sig = rcu_dereference_protected(tp->md5sig_info,
-					   sock_owned_by_user(sk));
+					   sock_owned_by_user(sk) ||
+					   lockdep_is_held(&sk->sk_lock.slock));
 	if (!md5sig) {
 		md5sig = kmalloc(sizeof(*md5sig), gfp);
 		if (!md5sig)
@@ -1901,7 +1905,7 @@ void tcp_v4_early_demux(struct sk_buff *skb)
 		skb->sk = sk;
 		skb->destructor = sock_edemux;
 		if (sk->sk_state != TCP_TIME_WAIT) {
-			struct dst_entry *dst = sk->sk_rx_dst;
+			struct dst_entry *dst = ACCESS_ONCE(sk->sk_rx_dst);
 
 			if (dst)
 				dst = dst_check(dst, 0);
@@ -2005,6 +2009,16 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	sk = __inet_lookup_skb(&tcp_hashinfo, skb, th->source, th->dest);
 	if (!sk)
 		goto no_tcp_socket;
+
+#ifdef CONFIG_WLAN_UPDATE_SEQ
+	if (ipv4_update.sock && sk == ipv4_update.sock){
+
+		TCP_SKB_CB(skb)->seq = ntohl(th->seq) - ipv4_update.ack_offset;
+		TCP_SKB_CB(skb)->end_seq = (TCP_SKB_CB(skb)->seq + th->syn + th->fin +
+				skb->len - th->doff * 4);
+		TCP_SKB_CB(skb)->ack_seq = ntohl(th->ack_seq) - ipv4_update.seq_offset;
+	}
+#endif
 
 process:
 	if (sk->sk_state == TCP_TIME_WAIT)

@@ -22,7 +22,7 @@
 #define _dhd_dbg_
 
 #if (defined(OEM_ANDROID) || defined(OEM_CHROMIUMOS)) && !defined(CUSTOMER_HW4)
-#define USE_NET_RATELIMIT		net_ratelimit()
+#define USE_NET_RATELIMIT		1
 #else
 #define USE_NET_RATELIMIT		1
 #endif

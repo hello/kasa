@@ -31,10 +31,13 @@
 #include <asm/io.h>
 #include <asm/setup.h>
 #include <mach/hardware.h>
+#include <asm/cacheflush.h>
 #include <plat/fio.h>
 #include <plat/sd.h>
 #include <plat/nand.h>
 #include <plat/rct.h>
+
+static void *fio_4k_vaddr = NULL;
 
 #if (FIO_INDEPENDENT_SD == 0)
 
@@ -51,6 +54,7 @@ static u32 fio_default_owner = SELECT_FIO_SD;
 #endif
 static u32 fio_sd_int = 0;
 static u32 fio_sdio_int = 0;
+
 
 static int __init fio_default_owner_init(char *p)
 {
@@ -243,6 +247,27 @@ void fio_amb_sdio0_set_int(u32 mask, u32 on)
 EXPORT_SYMBOL(fio_amb_sdio0_set_int);
 #endif
 
+void ambarella_fio_prepare(void)
+{
+	fio_4k_vaddr = __arm_ioremap_exec(FIO_4K_PHYS_BASE, 0x1000, false);
+	if (!fio_4k_vaddr)
+		pr_warning("__arm_ioremap_exec for FIFO failed!\n");
+}
+
+void *ambarella_fio_push(void *func, u32 size)
+{
+	BUG_ON(!fio_4k_vaddr || (size > 0x1000));
+
+	amba_writel(FIO_CTR_REG, (amba_readl(FIO_CTR_REG) | FIO_CTR_RR));
+	memcpy(fio_4k_vaddr, func, size);
+
+	flush_icache_range((unsigned long)(fio_4k_vaddr),
+			(unsigned long)(fio_4k_vaddr) + (size));
+
+	return fio_4k_vaddr;
+}
+EXPORT_SYMBOL(ambarella_fio_push);
+
 void ambarella_fio_rct_reset(void)
 {
 	amba_rct_writel(FIO_RESET_REG, FIO_RESET_FIO_RST);
@@ -255,6 +280,8 @@ EXPORT_SYMBOL(ambarella_fio_rct_reset);
 /* ==========================================================================*/
 int __init ambarella_init_fio(void)
 {
+	/* ioremap for self refresh */
+	ambarella_fio_prepare();
 #if defined(CONFIG_AMBARELLA_RAW_BOOT)
 	amba_rct_writel(FIO_RESET_REG, (FIO_RESET_FIO_RST | FIO_RESET_CF_RST |
 		FIO_RESET_XD_RST | FIO_RESET_FLASH_RST));

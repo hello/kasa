@@ -120,7 +120,8 @@ int ambpriv_i2c_update_addr(const char *name, int bus, int addr)
 			return -ENODEV;
 		}
 
-		if (!strcmp(client->name, AMBARELLA_I2C_VIN_FDT_NAME))
+		if (!strcmp(client->name, AMBARELLA_I2C_VIN_FDT_NAME) ||
+			!strcmp(client->name, name))
 			break;
 	}
 
@@ -455,6 +456,15 @@ amba_i2c_irq_write:
 		}
 		break;
 	default:
+		if (status_reg & IDC_STS_FIFO_EMP) { /* for bulk write fifo mode */
+			if (pinfo->state == AMBA_I2C_STATE_IDLE) {
+				goto amba_i2c_irq_exit;
+			} else if (pinfo->state == AMBA_I2C_STATE_NO_ACK) {
+				ack_control = IDC_CTRL_STOP | IDC_CTRL_ACK;
+				amba_writel(pinfo->regbase + IDC_CTRL_OFFSET, ack_control);
+				goto amba_i2c_irq_exit;
+			}
+		}
 		dev_err(pinfo->dev, "ambarella_i2c_irq in wrong state[0x%x]\n",
 			pinfo->state);
 		dev_err(pinfo->dev, "status_reg[0x%x]\n", status_reg);
@@ -491,7 +501,7 @@ static int ambarella_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg *msgs,
 
 		ambarella_i2c_start_current_msg(pinfo);
 		timeout = wait_event_timeout(pinfo->msg_wait,
-			pinfo->msg_num == 0, CONFIG_I2C_AMBARELLA_ACK_TIMEOUT);
+			pinfo->msg_num == 0, adap->timeout);
 		if (timeout <= 0) {
 			pinfo->state = AMBA_I2C_STATE_NO_ACK;
 		}
@@ -697,8 +707,8 @@ static int ambarella_i2c_resume(struct device *dev)
 }
 
 static const struct dev_pm_ops ambarella_i2c_dev_pm_ops = {
-	.suspend = ambarella_i2c_suspend,
-	.resume = ambarella_i2c_resume,
+	.suspend_late = ambarella_i2c_suspend,
+	.resume_early = ambarella_i2c_resume,
 	.freeze = ambarella_i2c_suspend,
 	.thaw = ambarella_i2c_resume,
 };

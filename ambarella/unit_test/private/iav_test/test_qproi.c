@@ -1,16 +1,34 @@
-/*
- * test_qproi.c
+/*******************************************************************************
+ *  test_qproi.c
  *
  * History:
- * 2014/11/28  - [Zhaoyang Chen] created for S2L
- * Copyright (C) 2012-2016, Ambarella, Inc.
+ *    2014/11/28  - [Zhaoyang Chen] created for S2L
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
  *
- */
+ * This file and its contents ( "Software" ) are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+******************************************************************************/
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,6 +46,15 @@
 #include <basetypes.h>
 #include <iav_ioctl.h>
 
+#ifndef AM_IOCTL
+#define AM_IOCTL(_filp, _cmd, _arg)	\
+		do { 						\
+			if (ioctl(_filp, _cmd, _arg) < 0) {	\
+				perror(#_cmd);		\
+				return -1;			\
+			}						\
+		} while (0)
+#endif
 
 #define MAX_ENCODE_STREAM_NUM		(IAV_STREAM_MAX_NUM_IMPL)
 #define QP_MATRIX_SINGLE_SIZE		(96 << 10)
@@ -50,20 +77,25 @@
 		}	\
 	} while (0)
 
+typedef enum {
+	ROI_TYPE_QP_QUALITY = 0,
+	ROI_TYPE_QP_OFFSET,
+	ROI_TYPE_ZMV_THRESHOLD,
+} ROI_TYPE;
 
-typedef struct qp_roi_s {
+typedef struct h264_roi_s {
 	int quality;		// 0 means the ROI is in the default QP RC.
 	int qp_frame_type;
 	int qp_offset;
+	int zmv_threshold;
 	int start_x;
 	int start_y;
 	int width;
 	int height;
-} qp_roi_t;
+} h264_roi_t;
 
 typedef struct stream_roi_s {
 	int enable;
-	int qp_type;
 	int encode_width;
 	int encode_height;
 	s8 qp_delta[MAX_QP_DELTA_NUM];
@@ -78,7 +110,7 @@ static int single_matrix_size = 0;
 static int stream_matrix_num = 0;
 
 static stream_roi_t stream_roi[MAX_ENCODE_STREAM_NUM];
-static qp_roi_t qp_roi[MAX_ENCODE_STREAM_NUM];
+static h264_roi_t h264_roi[MAX_ENCODE_STREAM_NUM];
 
 static void usage(void)
 {
@@ -109,13 +141,19 @@ static int show_stream_menu(int stream_id)
 	VERIFY_STREAMID(stream_id);
 	printf("\n|-------------------------------|\n");
 	printf("| Stream %c                \t|\n", 'A' + stream_id);
-	printf("| 1 - Config QP ROI        \t|\n");
-	printf("| 2 - Add an ROI         \t|\n");
-	printf("| 3 - Remove an ROI      \t|\n");
-	printf("| 4 - Clear all ROIs     \t|\n");
-	printf("| 5 - View ROI           \t|\n");
-	printf("| 6 - Check ROI pattern	 \t|\n");
-	printf("| q - Back to Main menu  \t|\n");
+	printf("|  1 - Config QP Quality       \t|\n");
+	printf("|  2 - Add QP Quality          \t|\n");
+	printf("|  3 - View QP Quality         \t|\n");
+	printf("|  4 - Remove QP Quality       \t|\n");
+	printf("|  5 - Add QP Offset           \t|\n");
+	printf("|  6 - View QP Offset          \t|\n");
+	printf("|  7 - Remove QP Offset        \t|\n");
+	printf("|  8 - Config ZMV Threshold    \t|\n");
+	printf("|  9 - Add ZMV Threshold       \t|\n");
+	printf("|  a - View ZMV Threshold      \t|\n");
+	printf("|  b - Remove ZMV Threshold    \t|\n");
+	printf("|  c - Clear all ROI           \t|\n");
+	printf("|  q - Back to Main menu       \t|\n");
 	printf("|-------------------------------|\n");
 
 	return 0;
@@ -143,7 +181,7 @@ static int map_qp_matrix(void)
 	return 0;
 }
 
-static int check_for_qp_roi(int stream_id)
+static int check_for_roi(int stream_id)
 {
 	struct iav_stream_info stream_info;
 	struct iav_stream_format stream_format;
@@ -171,8 +209,14 @@ static int check_for_qp_roi(int stream_id)
 		printf("Stream %c encode format shall be H.264.\n", 'A' + stream_id);
 		return -1;
 	}
-	stream_roi[stream_id].encode_width = stream_format.enc_win.width;
-	stream_roi[stream_id].encode_height = stream_format.enc_win.height;
+
+	if (stream_format.rotate_cw == 0) {
+		stream_roi[stream_id].encode_width = stream_format.enc_win.width;
+		stream_roi[stream_id].encode_height = stream_format.enc_win.height;
+	} else {
+		stream_roi[stream_id].encode_width = stream_format.enc_win.height;
+		stream_roi[stream_id].encode_height = stream_format.enc_win.width;
+	}
 
 	return 0;
 }
@@ -196,7 +240,7 @@ static int get_qp_roi(int stream_id, struct iav_qpmatrix *matrix)
 	return 0;
 }
 
-static int set_qp_roi(int stream_id, int qp_type)
+static int set_qp_roi(int stream_id, int type)
 {
 	struct iav_stream_cfg stream_cfg;
 	struct iav_qpmatrix *qp_matrix;
@@ -221,33 +265,46 @@ static int set_qp_roi(int stream_id, int qp_type)
 	buf_pitch = ROUND_UP(buf_width, 8);
 	buf_height = ROUND_UP(stream_roi[stream_id].encode_height, 16) / 16;
 
-	start_x = ROUND_DOWN(qp_roi[stream_id].start_x, 16) / 16;
-	start_y = ROUND_DOWN(qp_roi[stream_id].start_y, 16) / 16;
-	end_x = ROUND_UP(qp_roi[stream_id].width, 16) / 16 + start_x;
-	end_y = ROUND_UP(qp_roi[stream_id].height, 16) / 16 + start_y;
+	start_x = ROUND_DOWN(h264_roi[stream_id].start_x, 16) / 16;
+	start_y = ROUND_DOWN(h264_roi[stream_id].start_y, 16) / 16;
+	end_x = ROUND_UP(h264_roi[stream_id].width, 16) / 16 + start_x;
+	end_y = ROUND_UP(h264_roi[stream_id].height, 16) / 16 + start_y;
 
-	if (qp_type == QPROI_TYPE_QP_QUALITY) {
+	if (type == ROI_TYPE_QP_QUALITY) {
+		// Always use I frame buffer no matter in IPB mode or not
 		addr = qp_matrix_addr + stream_qp_matrix_size * stream_id;
+	} else if (type == ROI_TYPE_ZMV_THRESHOLD) {
+		if (stream_matrix_num == 3) {
+			// Only P frame setting is valid
+			addr = qp_matrix_addr + stream_qp_matrix_size * stream_id +
+			single_matrix_size;
+		} else {
+			addr = qp_matrix_addr + stream_qp_matrix_size * stream_id;
+		}
 	} else {
 		addr = qp_matrix_addr + stream_qp_matrix_size * stream_id +
-			qp_roi[stream_id].qp_frame_type * single_matrix_size;
+			h264_roi[stream_id].qp_frame_type * single_matrix_size;
 	}
 	roi_addr = (struct iav_qproi_data *)addr;
-	if (qp_type == QPROI_TYPE_QP_QUALITY) {
+	if (type == ROI_TYPE_QP_QUALITY) {
 		for (i = start_y; i < end_y && i < buf_height; i++) {
 			for (j = start_x; j < end_x && j < buf_width; j++)
-				roi_addr[i * buf_pitch + j].qp_quality = qp_roi[stream_id].quality;
+				roi_addr[i * buf_pitch + j].qp_quality = h264_roi[stream_id].quality;
+		}
+	} else if (type == ROI_TYPE_QP_OFFSET){
+		for (i = start_y; i < end_y && i < buf_height; i++) {
+			for (j = start_x; j < end_x && j < buf_width; j++)
+				roi_addr[i * buf_pitch + j].qp_offset = h264_roi[stream_id].qp_offset;
 		}
 	} else {
 		for (i = start_y; i < end_y && i < buf_height; i++) {
 			for (j = start_x; j < end_x && j < buf_width; j++)
-				roi_addr[i * buf_pitch + j].qp_offset = qp_roi[stream_id].qp_offset;
+				roi_addr[i * buf_pitch + j].zmv_threshold = h264_roi[stream_id].zmv_threshold;
 		}
 	}
 
 	stream_cfg.id = stream_id;
 	stream_cfg.cid = IAV_H264_CFG_QP_ROI;
-	qp_matrix->type = qp_type;
 	qp_matrix->size = buf_pitch * buf_height * sizeof(struct iav_qproi_data);
 	if (ioctl(fd_iav, IAV_IOC_SET_STREAM_CONFIG, &stream_cfg) < 0) {
 		perror("IAV_IOC_SET_STREAM_CONFIG");
@@ -258,15 +315,15 @@ static int set_qp_roi(int stream_id, int qp_type)
 	return 0;
 }
 
-static int clear_qp_roi(int stream_id)
+static int clear_all_roi(int stream_id)
 {
 	struct iav_stream_cfg stream_cfg;
 	struct iav_qpmatrix *qp_matrix;
 	u32 *addr = (u32 *)(qp_matrix_addr + stream_qp_matrix_size * stream_id);
 
 	VERIFY_STREAMID(stream_id);
-	if (check_for_qp_roi(stream_id) < 0) {
-		perror("check_for_qp_roi\n");
+	if (check_for_roi(stream_id) < 0) {
+		perror("check_for_roi\n");
 		return -1;
 	}
 
@@ -287,12 +344,12 @@ static int clear_qp_roi(int stream_id)
 		return -1;
 	}
 	stream_roi[stream_id].enable = 0;
-	printf("\nClear all qp matrix for stream %c.\n", 'A' + stream_id);
+	printf("\nClear all roi matrix for stream %c.\n", 'A' + stream_id);
 
 	return 0;
 }
 
-static int display_qp_roi(int stream_id)
+static int display_roi(int stream_id, int type)
 {
 	int i, j, k;
 	struct iav_qpmatrix qp_matrix;
@@ -308,12 +365,13 @@ static int display_qp_roi(int stream_id)
 		return -1;
 
 	if (qp_matrix.enable) {
-		if (qp_matrix.type == QPROI_TYPE_QP_QUALITY) {
+		if (type == ROI_TYPE_QP_QUALITY) {
+			// Always use I frame buffer no matter in IPB mode or not
 			addr = qp_matrix_addr + stream_qp_matrix_size * stream_id;
 			roi_addr = (struct iav_qproi_data *)addr;
 			for (i = 0; i < QP_FRAME_TYPE_NUM; i++) {
 				printf("\n\n=============================================\n");
-				printf("QP ROI TYPE: QUALITY\n");
+				printf("QP QUALITY\n");
 				printf("Quality level: 0-[%d], 1-[%d], 2-[%d], 3-[%d]\n",
 				       qp_matrix.qp_delta[i][0], qp_matrix.qp_delta[i][1],
 				       qp_matrix.qp_delta[i][2],qp_matrix.qp_delta[i][3]);
@@ -322,12 +380,12 @@ static int display_qp_roi(int stream_id)
 			for (i = 0; i < buf_height; i++) {
 				printf("\n");
 				for (j = 0; j < buf_width; j++)
-					printf("%-2d", roi_addr[i * buf_pitch + j].qp_quality);
+					printf("%-3d", roi_addr[i * buf_pitch + j].qp_quality);
 			}
 			printf("\n");
-		} else if (qp_matrix.type == QPROI_TYPE_QP_OFFSET) {
+		} else if (type == ROI_TYPE_QP_OFFSET) {
 			printf("\n\n=============================================\n");
-			printf("QP ROI TYPE: QP offset\n");
+			printf("QP offset\n");
 			for (i = 0; i < stream_matrix_num; i++) {
 				addr = qp_matrix_addr + stream_qp_matrix_size * stream_id +
 					i * single_matrix_size;
@@ -354,32 +412,36 @@ static int display_qp_roi(int stream_id)
 				for (j = 0; j < buf_height; j++) {
 					printf("\n");
 					for (k = 0; k < buf_width; k++)
-						printf("%2d", roi_addr[j * buf_pitch + k].qp_offset);
+						printf("%3d", roi_addr[j * buf_pitch + k].qp_offset);
 				}
 				printf("\n");
 			}
+		} else if (type == ROI_TYPE_ZMV_THRESHOLD) {
+			if (stream_matrix_num == 3) {
+				// Only P frame setting is valid
+				addr = qp_matrix_addr + stream_qp_matrix_size * stream_id +
+				single_matrix_size;
+			} else {
+				addr = qp_matrix_addr + stream_qp_matrix_size * stream_id;
+			}
+			roi_addr = (struct iav_qproi_data *)addr;
+			printf("\n\n=============================================\n");
+			printf("ZMV THRESHOLD\n");
+			printf("=============================================\n");
+			for (i = 0; i < buf_height; i++) {
+				printf("\n");
+				for (j = 0; j < buf_width; j++)
+					printf("%-3d", roi_addr[i * buf_pitch + j].zmv_threshold);
+			}
+			printf("\n");
 		} else {
-			printf("Invalid qp roi type!\n");
+			printf("Invalid roi type!\n");
 			return -1;
 		}
 	}
 
 	return 0;
 }
-
-static int get_qp_roi_type(int stream_id)
-{
-	struct iav_qpmatrix qp_matrix;
-
-	VERIFY_STREAMID(stream_id);
-	if (get_qp_roi(stream_id, &qp_matrix) < 0)
-		return -1;
-
-	stream_roi[stream_id].qp_type = qp_matrix.type;
-
-	return 0;
-}
-
 
 static int get_quality_level(int stream_id)
 {
@@ -427,55 +489,6 @@ static int set_quality_level(int stream_id)
 	return 0;
 }
 
-static int fill_qp_offset(int stream_id)
-{
-	struct iav_stream_cfg stream_cfg;
-	struct iav_qpmatrix *qp_matrix;
-	int i, j, k;
-	u8 *addr;
-	struct iav_qproi_data *roi_addr;
-	u32 buf_width, buf_pitch, buf_height;
-
-	VERIFY_STREAMID(stream_id);
-	qp_matrix = &stream_cfg.arg.h264_roi;
-	if (get_qp_roi(stream_id, qp_matrix) < 0)
-		return -1;
-
-	qp_matrix->id = stream_id;
-	qp_matrix->enable = 1;
-	qp_matrix->qpm_no_update = 0;
-	qp_matrix->qpm_no_check = 1;
-
-	// QP matrix is MB level. One MB is 16x16 pixels.
-	buf_width = ROUND_UP(stream_roi[stream_id].encode_width, 16) / 16;
-	buf_pitch = ROUND_UP(buf_width, 8);
-	buf_height = ROUND_UP(stream_roi[stream_id].encode_height, 16) / 16;
-
-	for (i = 0; i < stream_matrix_num; i++) {
-		addr = qp_matrix_addr + stream_qp_matrix_size * stream_id +
-			i * single_matrix_size;
-		roi_addr = (struct iav_qproi_data *)addr;
-
-		for (j = 0; j < buf_height; j++)
-			for (k = 0; k < buf_width; k++) {
-				roi_addr[j * buf_pitch + k].qp_offset = k % 103 - 51;
-		}
-	}
-
-	stream_cfg.id = stream_id;
-	stream_cfg.cid = IAV_H264_CFG_QP_ROI;
-	qp_matrix->type = stream_roi[stream_id].qp_type;
-	qp_matrix->size = buf_pitch * buf_height * sizeof(struct iav_qproi_data);
-	if (ioctl(fd_iav, IAV_IOC_SET_STREAM_CONFIG, &stream_cfg) < 0) {
-		perror("IAV_IOC_SET_STREAM_CONFIG");
-		return -1;
-	}
-	stream_roi[stream_id].enable = 1;
-	printf("\nFilled qp matrix with qp offset for stream %c.\n", 'A' + stream_id);
-
-	return 0;
-}
-
 static int input_value(int min, int max)
 {
 	int retry, i, input = 0;
@@ -518,12 +531,50 @@ static int input_value(int min, int max)
 	return input;
 }
 
+static void input_roi_size(int stream_id)
+{
+	printf("\nInput ROI offset x (0~%d): ", stream_roi[stream_id].encode_width - 1);
+	h264_roi[stream_id].start_x = input_value(0, stream_roi[stream_id].encode_width - 1);
+	printf("Input ROI offset y (0~%d): ", stream_roi[stream_id].encode_height - 1);
+	h264_roi[stream_id].start_y = input_value(0, stream_roi[stream_id].encode_height -1);
+	printf("Input ROI width (1~%d): ", stream_roi[stream_id].encode_width
+	    - h264_roi[stream_id].start_x);
+	h264_roi[stream_id].width = input_value(1, stream_roi[stream_id].encode_width
+		- h264_roi[stream_id].start_x);
+	printf("Input ROI height (1~%d): ", stream_roi[stream_id].encode_height
+	    - h264_roi[stream_id].start_y);
+	h264_roi[stream_id].height = input_value(1, stream_roi[stream_id].encode_height
+		- h264_roi[stream_id].start_y);
+}
+
+static int get_mv_threshold_param(int stream)
+{
+	struct iav_h264_cfg h264cfg;
+
+	memset(&h264cfg, 0, sizeof(h264cfg));
+	h264cfg.id = stream;
+	AM_IOCTL(fd_iav, IAV_IOC_GET_H264_CONFIG, &h264cfg);
+
+	return h264cfg.mv_threshold;
+}
+
+static int set_mv_threshold_param(int stream, int enable)
+{
+	struct iav_h264_cfg h264cfg;
+
+	memset(&h264cfg, 0, sizeof(h264cfg));
+	h264cfg.id = stream;
+	AM_IOCTL(fd_iav, IAV_IOC_GET_H264_CONFIG, &h264cfg);
+	h264cfg.mv_threshold = enable;
+	AM_IOCTL(fd_iav, IAV_IOC_SET_H264_CONFIG, &h264cfg);
+
+	return 0;
+}
 
 static int config_stream_roi(int stream_id)
 {
 	int back2main = 0, i;
 	char opt, input[16];
-	char roi_type[2][32] = {"Quality Level", "QP offset"};
 	while (back2main == 0) {
 		show_stream_menu(stream_id);
 		printf("Your choice: ");
@@ -531,84 +582,102 @@ static int config_stream_roi(int stream_id)
 		opt = tolower(input[0]);
 		switch(opt) {
 		case '1':
-			if (check_for_qp_roi(stream_id) < 0)
+			if (check_for_roi(stream_id) < 0)
 				break;
-			get_qp_roi_type(stream_id);
-			printf("\nCurrent QP ROI type is: %s.\n",
-				roi_type[stream_roi[stream_id].qp_type]);
-			printf("Input QP ROI type (0 for Quality Level; 1 for QP offset): ");
-			stream_roi[stream_id].qp_type = input_value(0, 1);
-			if (stream_roi[stream_id].qp_type == QPROI_TYPE_QP_QUALITY) {
-				if (get_quality_level(stream_id) < 0)
-					break;
-				printf("\nCurrent quality level is 1:[%d], 2:[%d], 3:[%d].\n",
-						stream_roi[stream_id].qp_delta[0],
-						stream_roi[stream_id].qp_delta[1],
-						stream_roi[stream_id].qp_delta[2]);
-				i = 0;
-				do {
-					printf("Input QP delta (-51~51) for level %d: ", i+1);
-					stream_roi[stream_id].qp_delta[i] = input_value(-51, 51);
-				} while (++i < MAX_QP_DELTA_NUM);
-				set_quality_level(stream_id);
-			}
+			if (get_quality_level(stream_id) < 0)
+				break;
+			printf("\nCurrent quality level is 1:[%d], 2:[%d], 3:[%d].\n",
+					stream_roi[stream_id].qp_delta[0],
+					stream_roi[stream_id].qp_delta[1],
+					stream_roi[stream_id].qp_delta[2]);
+			i = 0;
+			do {
+				printf("Input QP delta (-51~51) for level %d: ", i+1);
+				stream_roi[stream_id].qp_delta[i] = input_value(-51, 51);
+			} while (++i < MAX_QP_DELTA_NUM);
+			set_quality_level(stream_id);
 			break;
 		case '2':
-		case '3':
-			if (check_for_qp_roi(stream_id) < 0)
-				break;
-			printf("\nInput ROI offset x (0~%d): ", stream_roi[stream_id].encode_width - 1);
-			qp_roi[stream_id].start_x = input_value(0, stream_roi[stream_id].encode_width - 1);
-			printf("Input ROI offset y (0~%d): ", stream_roi[stream_id].encode_height - 1);
-			qp_roi[stream_id].start_y = input_value(0, stream_roi[stream_id].encode_height -1);
-			printf("Input ROI width (1~%d): ", stream_roi[stream_id].encode_width
-		        - qp_roi[stream_id].start_x);
-			qp_roi[stream_id].width = input_value(1, stream_roi[stream_id].encode_width
-				- qp_roi[stream_id].start_x);
-			printf("Input ROI height (1~%d): ", stream_roi[stream_id].encode_height
-			    - qp_roi[stream_id].start_y);
-			qp_roi[stream_id].height = input_value(1, stream_roi[stream_id].encode_height
-				- qp_roi[stream_id].start_y);
-			if (stream_roi[stream_id].qp_type == QPROI_TYPE_QP_QUALITY) {
-				if (opt == '2') {
-					printf("Input ROI quality level (1~%d): ", MAX_QP_DELTA_NUM);
-					qp_roi[stream_id].quality = input_value(1, MAX_QP_DELTA_NUM);
-				} else {
-					qp_roi[stream_id].quality = 0;
-				}
-			} else {
-				if (stream_matrix_num == 3) {
-					printf("Input Frame type (0 for I frame; 1 for P frame; 2 for B frame): ");
-					qp_roi[stream_id].qp_frame_type = input_value(0, 2);
-				}
-				if (opt == '2') {
-					printf("Input ROI qp offset (-51~51): ");
-					qp_roi[stream_id].qp_offset = input_value(-51, 51);
-				} else {
-					qp_roi[stream_id].qp_offset = 0;
-				}
-			}
-			set_qp_roi(stream_id, stream_roi[stream_id].qp_type);
-			break;
 		case '4':
-			if (check_for_qp_roi(stream_id) < 0)
+			if (check_for_roi(stream_id) < 0)
 				break;
-			clear_qp_roi(stream_id);
+
+			input_roi_size(stream_id);
+
+			if (opt == '2') {
+				printf("Input ROI quality level (1~%d): ", MAX_QP_DELTA_NUM);
+				h264_roi[stream_id].quality = input_value(1, MAX_QP_DELTA_NUM);
+			} else {
+				h264_roi[stream_id].quality = 0;
+			}
+
+			set_qp_roi(stream_id, ROI_TYPE_QP_QUALITY);
 			break;
 		case '5':
-			if (check_for_qp_roi(stream_id) < 0)
+		case '7':
+			if (check_for_roi(stream_id) < 0)
 				break;
-			display_qp_roi(stream_id);
+
+			input_roi_size(stream_id);
+
+			if (stream_matrix_num == 3) {
+				printf("Input Frame type (0 for I frame; 1 for P frame; 2 for B frame): ");
+				h264_roi[stream_id].qp_frame_type = input_value(0, 2);
+			}
+			if (opt == '5') {
+				printf("Input ROI qp offset (-51~51): ");
+				h264_roi[stream_id].qp_offset = input_value(-51, 51);
+			} else {
+				h264_roi[stream_id].qp_offset = 0;
+			}
+
+			set_qp_roi(stream_id, ROI_TYPE_QP_OFFSET);
+			break;
+		case '8':
+			printf("\nConfig mv threshold: 0: Disable, 1: Enable; Current is %s.\n",
+				get_mv_threshold_param(stream_id) ? "Enable" : "Disable");
+			i = input_value(0, 1);
+			set_mv_threshold_param(stream_id, i);
+			break;
+		case '9':
+		case 'b':
+			if (check_for_roi(stream_id) < 0)
+				break;
+
+			if (get_mv_threshold_param(stream_id) == 0) {
+				printf("Please enable mv threshold in menu 8 first!\n");
+				break;
+			}
+			input_roi_size(stream_id);
+
+			if (opt == '9') {
+				printf("Input ROI zmv threshold (0~255): ");
+				h264_roi[stream_id].zmv_threshold= input_value(0, 255);
+			} else {
+				h264_roi[stream_id].zmv_threshold = 0;
+			}
+
+			set_qp_roi(stream_id, ROI_TYPE_ZMV_THRESHOLD);
+			break;
+		case '3':
+			if (check_for_roi(stream_id) < 0)
+				break;
+			display_roi(stream_id, ROI_TYPE_QP_QUALITY);
 			break;
 		case '6':
-			if (check_for_qp_roi(stream_id) < 0)
+			if (check_for_roi(stream_id) < 0)
 				break;
-			if (stream_roi[stream_id].qp_type != QPROI_TYPE_QP_OFFSET) {
-				printf("Invalid QP ROI type: %d!\n",
-					stream_roi[stream_id].qp_type);
-			} else {
-				fill_qp_offset(stream_id);
-			}
+			display_roi(stream_id, ROI_TYPE_QP_OFFSET);
+			break;
+		case 'a':
+			if (check_for_roi(stream_id) < 0)
+				break;
+			display_roi(stream_id, ROI_TYPE_ZMV_THRESHOLD);
+			break;
+		case 'c':
+			if (check_for_roi(stream_id) < 0)
+				break;
+			clear_all_roi(stream_id);
 			break;
 		case 'q':
 			back2main = 1;
@@ -621,13 +690,15 @@ static int config_stream_roi(int stream_id)
 	return 0;
 }
 
-static void quit_qp_roi()
+static void quit_roi()
 {
 	int i;
 	exit_flag = 1;
-	for (i = 0; i < MAX_ENCODE_STREAM_NUM; i++)
-		if (stream_roi[i].enable)
-			clear_qp_roi(i);
+	for (i = 0; i < MAX_ENCODE_STREAM_NUM; i++) {
+		if (stream_roi[i].enable) {
+			clear_all_roi(i);
+		}
+	}
 	exit(0);
 }
 
@@ -647,9 +718,9 @@ int main(int argc, char **argv)
 	if (map_qp_matrix() < 0)
 		return -1;
 
-	signal(SIGINT, quit_qp_roi);
-	signal(SIGTERM, quit_qp_roi);
-	signal(SIGQUIT, quit_qp_roi);
+	signal(SIGINT, quit_roi);
+	signal(SIGTERM, quit_roi);
+	signal(SIGQUIT, quit_roi);
 
 	while (exit_flag == 0) {
 		show_main_menu();

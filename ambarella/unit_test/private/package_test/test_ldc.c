@@ -1,17 +1,34 @@
-/********************************************************************
+/*
  * test_dewarp_lens.c
  *
  * History:
  *	2014/02/25 - [Qian Shen] created file
  *
- * Copyright (C) 2012-2016, Ambarella, Inc.
+ * Copyright (C) 2015 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
  *
- ********************************************************************/
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -42,7 +59,8 @@
 #define HAS_ARG         1
 #define MODE_STRING_LENGTH		(64)
 #define FILENAME_LENGTH			(256)
-#define MAX_PIT_YAW_ANGLE		(90)
+#define MAX_PIT_YAW_ANGLE			(90)
+#define MAX_ROTATE_ANGLE			(10)
 #define BOLD_PRINT(msg, arg...)		printf("\033[1m"msg"\033[22m", arg)
 #define BOLD_PRINT0(msg, arg...)		printf("\033[1m"msg"\033[22m")
 
@@ -78,7 +96,7 @@ typedef struct warp_debug_s {
 static int fd_iav = -1;
 static int clear_flag = 0;
 static int verbose = 0;
-static int log_level = LOG_INFO;
+static int log_level = AMBA_LOG_INFO;
 static int file_flag = 0;
 static char file[FILENAME_LENGTH] = "lens";
 
@@ -121,6 +139,9 @@ enum numeric_short_options {
 	SPECIFY_FORCE_ZERO = 130,
 	SPECIFY_H_DISABLE,
 	SPECIFY_V_DISABLE,
+	SPECIFY_H_ZOOM,
+	SPECIFY_V_ZOOM,
+	SPECIFY_ROTATE_ANGLE,
 };
 
 static const char *short_opts = "R:F:L:C:m:z:h:p:t:r:cf:vl:P:Y:";
@@ -133,7 +154,10 @@ static struct option long_opts[] = {
 	{ "mode", HAS_ARG, 0, 'm' },
 	{ "pitch", HAS_ARG, 0, 'P' },
 	{ "yaw", HAS_ARG, 0, 'Y' },
+	{ "rotate", HAS_ARG, 0, SPECIFY_ROTATE_ANGLE},
 	{ "zoom", HAS_ARG, 0, 'z' },
+	{ "zh", HAS_ARG, 0, SPECIFY_H_ZOOM },
+	{ "zv", HAS_ARG, 0, SPECIFY_V_ZOOM },
 	{ "hor-range", HAS_ARG, 0, 'h' },
 	{ "pan", HAS_ARG, 0, 'p' },
 	{ "tilt", HAS_ARG, 0, 't' },
@@ -161,7 +185,10 @@ static const struct hint_s hint[] =
 	{ "0~3", "\t\t0: No transform, 1: Normal, 2: Panorama, 3: Subregion" },
 	{ "-90~90", "\tLens Pitch in degree" },
 	{ "-90~90", "\tLens Yaw in degree" },
+	{ "-10~10", "\tLens Rotate in degree" },
 	{ "a/b", "\t\tZoom factor. a<b: zoom out (Wall/Ceiling Normal, Wall Panorama), a>b: zoom in (for all mode expect no transform" },
+	{ "a/b", "\t\tSpecify Horizontal Zoom" },
+	{ "a/b", "\t\tSpecify Vertical Zoom" },
 
 	{ "0~180", "\t(Wall panorama)Panorama horizontal angle." },
 	{ "-90~90", "\t(Wall Subregion)Pan angle. -90~90 for wall mount." },
@@ -250,6 +277,8 @@ static void usage_examples(char * program_self)
 	printf("    %s -F 185 -R 736 -m %d -P 10 -Y 10\n\n", program_self, WARP_NORMAL);
 	printf("4.[Panorama Lens Pitch/Yaw]  \n");
 	printf("    %s -F 185 -R 736 -h180 -m %d -P 10 -Y 10\n\n", program_self, WARP_PANOR);
+	printf("5.[Wall Normal]  Do vertical zoom and horizontal zoom separately\n");
+	printf("    %s -F 185 -R 736 -m %d --zh 3/2 --zv 2/1\n\n", program_self, WARP_NORMAL);
 }
 
 static void usage(char* program_self)
@@ -372,6 +401,8 @@ static int init_param(int argc, char **argv)
 					return -1;
 				lens_warp_region.zoom.denom = second;
 				lens_warp_region.zoom.num = first;
+				lens_warp_region.hor_zoom = lens_warp_region.zoom;
+				lens_warp_region.vert_zoom = lens_warp_region.zoom;
 				break;
 			case 'P':
 				value = atoi(optarg);
@@ -390,6 +421,15 @@ static int init_param(int argc, char **argv)
 					return -1;
 				}
 				lens_warp_region.yaw = value;
+				break;
+			case SPECIFY_ROTATE_ANGLE:
+				value = atoi(optarg);
+				if (value > MAX_ROTATE_ANGLE|| value < -MAX_ROTATE_ANGLE) {
+					ERROR("Rotate should be within [%d~%d]\n", -MAX_ROTATE_ANGLE,
+						MAX_ROTATE_ANGLE);
+					return -1;
+				}
+				lens_warp_region.rotate = value;
 				break;
 			case 'f':
 				value = strlen(optarg);
@@ -455,6 +495,18 @@ static int init_param(int argc, char **argv)
 				break;
 			case SPECIFY_V_DISABLE:
 				debug_info.v_disable = 1;
+				break;
+			case SPECIFY_H_ZOOM:
+				if (get_two_int(optarg, &first, &second, '/') < 0)
+					return -1;
+				lens_warp_region.hor_zoom.denom = second;
+				lens_warp_region.hor_zoom.num = first;
+				break;
+			case SPECIFY_V_ZOOM:
+				if (get_two_int(optarg, &first, &second, '/') < 0)
+					return -1;
+				lens_warp_region.vert_zoom.denom = second;
+				lens_warp_region.vert_zoom.num = first;
 				break;
 			default:
 				printf("unknown option found: %d\n", ch);
@@ -687,6 +739,7 @@ static int create_lens_warp_vector(void)
 	lens_warp_region.output.height = main_buffer.size.height;
 	lens_warp_region.output.upper_left.x = 0;
 	lens_warp_region.output.upper_left.y = 0;
+
 	switch (lens_warp_mode) {
 		case WARP_NO_TRANSFORM:
 			snprintf(mode_str, MODE_STRING_LENGTH, "No Transform");

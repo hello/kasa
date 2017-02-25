@@ -5,12 +5,29 @@
  *  2013-01-24 [Hanbo Xiao] created file
  *  2014-11-19 [Dongge Wu] Reconstruct plugin and porting to oryx
  *
- * Copyright (C) 2009, Ambarella, Inc.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "am_base_include.h"
@@ -23,7 +40,10 @@
 #include "am_audio_alert_config.h"
 #include "am_audio_alert.h"
 
+#include <mutex>
+
 #define AUDIO_ALERT_CONFIG ((const char*)"event-audio-alert.acs")
+#define AUTO_LOCK_AUDIO(mtx) std::lock_guard<std::mutex> lck(mtx)
 
 static std::mutex audio_alert_mtx;
 
@@ -36,7 +56,7 @@ AMIEventPlugin* AMAudioAlert::create(EVENT_MODULE_ID mid)
   if (result && !result->construct()) {
     ERROR("Failed to create an instance of AMAudioAlert");
     delete result;
-    result = NULL;
+    result = nullptr;
   }
 
   return result;
@@ -45,11 +65,17 @@ AMIEventPlugin* AMAudioAlert::create(EVENT_MODULE_ID mid)
 AMAudioAlert::AMAudioAlert(EVENT_MODULE_ID mid,
                            uint32_t sensitivity,
                            uint32_t threshold) :
+    m_volume_sum(0LL),
+    m_seq_num(0UL),
+    m_micro_history(nullptr),
+    m_macro_history(nullptr),
+    m_callback(nullptr),
+    m_audio_capture(nullptr),
+    m_alert_config(nullptr),
     m_plugin_id(mid),
     m_alert_sensitivity(sensitivity),
     m_alert_threshold(threshold),
     m_alert_direction(0),
-    m_volume_sum(0LL),
     m_sample_num(0),
     m_bits_per_sample(0),
     m_maximum_peak(0),
@@ -57,18 +83,12 @@ AMAudioAlert::AMAudioAlert(EVENT_MODULE_ID mid,
     m_macro_history_head(0),
     m_micro_history_tail(0),
     m_macro_history_tail(0),
-    m_micro_history(NULL),
-    m_macro_history(NULL),
-    m_callback(NULL),
     m_snd_pcm_format(SND_PCM_FORMAT_UNKNOWN),
     m_audio_format(AM_SAMPLE_INVALID),
-    m_audio_capture(NULL),
-    m_seq_num(0UL),
-    m_enable_alert_detect(false),
     m_reference_count(AM_AUDIO_ALERT_MAX_SENSITIVITY - sensitivity),
-    m_alert_config(NULL),
-    m_conf_path(ORYX_EVENT_CONF_DIR),
-    m_running_state(false)
+    m_enable_alert_detect(false),
+    m_running_state(false),
+    m_conf_path(ORYX_EVENT_CONF_DIR)
 {
 }
 
@@ -82,12 +102,9 @@ AMAudioAlert::~AMAudioAlert()
 
   m_running_state = false;
 
-  if (m_alert_config) {
-    delete m_alert_config;
-  }
-  if (m_audio_capture) {
-    delete m_audio_capture;
-  }
+  delete m_alert_config;
+  delete m_audio_capture;
+
   if (m_micro_history) {
     free(m_micro_history);
   }
@@ -103,7 +120,7 @@ bool AMAudioAlert::construct()
                                          "AudioAlert",
                                          (void*) this,
                                          static_audio_alert_detect);
-  if (NULL == m_audio_capture) {
+  if (nullptr == m_audio_capture) {
     ERROR("Failed to create AmPulseAudioCapture object!\n");
     return false;
   }
@@ -143,7 +160,7 @@ bool AMAudioAlert::construct()
 
   m_micro_history = (int32_t*) malloc((m_reference_count + 1)
       * sizeof(int32_t));
-  if (m_micro_history == NULL) {
+  if (m_micro_history == nullptr) {
     ERROR("new failed for m_micro_history!\n");
     return false;
   }
@@ -151,7 +168,7 @@ bool AMAudioAlert::construct()
 
   m_macro_history = (int64_t*) malloc((m_reference_count + 1)
       * sizeof(int64_t));
-  if (m_macro_history == NULL) {
+  if (m_macro_history == nullptr) {
     ERROR("new failed for m_macro_history!\n");
     return false;
   }
@@ -172,14 +189,14 @@ bool AMAudioAlert::set_alert_sensitivity(int32_t sensitivity)
   }
 
   if (m_alert_sensitivity != sensitivity) {
-    AUTO_LOCK(audio_alert_mtx);
+    AUTO_LOCK_AUDIO(audio_alert_mtx);
     m_alert_sensitivity = sensitivity;
     m_reference_count = AM_AUDIO_ALERT_MAX_SENSITIVITY - sensitivity;
 
     m_micro_history = (int32_t*) realloc(m_micro_history,
                                          (m_reference_count + 1)
                                              * sizeof(int32_t));
-    if (m_micro_history == NULL) {
+    if (m_micro_history == nullptr) {
       ERROR("realloc failed for m_micro_history!\n");
       return false;
     }
@@ -187,10 +204,10 @@ bool AMAudioAlert::set_alert_sensitivity(int32_t sensitivity)
     m_macro_history = (int64_t*) realloc(m_macro_history,
                                          (m_reference_count + 1)
                                              * sizeof(int64_t));
-    if (m_macro_history == NULL) {
+    if (m_macro_history == nullptr) {
       ERROR("realloc failed for m_macro_history!\n");
       free(m_micro_history);
-      m_micro_history = NULL;
+      m_micro_history = nullptr;
       return false;
     }
 
@@ -207,20 +224,20 @@ bool AMAudioAlert::set_alert_sensitivity(int32_t sensitivity)
 
 int32_t AMAudioAlert::get_alert_sensitivity()
 {
-  AUTO_LOCK(audio_alert_mtx);
+  AUTO_LOCK_AUDIO(audio_alert_mtx);
   return m_alert_sensitivity;
 }
 
 bool AMAudioAlert::set_alert_direction(int32_t alert_direction)
 {
-  AUTO_LOCK(audio_alert_mtx);
+  AUTO_LOCK_AUDIO(audio_alert_mtx);
   m_alert_direction = alert_direction;
   return true;
 }
 
 int32_t AMAudioAlert::get_alert_direction()
 {
-  AUTO_LOCK(audio_alert_mtx);
+  AUTO_LOCK_AUDIO(audio_alert_mtx);
   return m_alert_direction;
 }
 
@@ -231,44 +248,44 @@ bool AMAudioAlert::set_alert_threshold(int32_t threshold)
     return false;
   }
 
-  AUTO_LOCK(audio_alert_mtx);
+  AUTO_LOCK_AUDIO(audio_alert_mtx);
   m_alert_threshold = threshold;
   return true;
 }
 int32_t AMAudioAlert::get_alert_threshold()
 {
-  AUTO_LOCK(audio_alert_mtx);
+  AUTO_LOCK_AUDIO(audio_alert_mtx);
   return m_alert_threshold;
 }
 
 AM_AUDIO_SAMPLE_FORMAT AMAudioAlert::get_audio_format()
 {
-  AUTO_LOCK(audio_alert_mtx);
+  AUTO_LOCK_AUDIO(audio_alert_mtx);
   return m_audio_format;
 }
 
 bool AMAudioAlert::set_alert_callback(AM_EVENT_CALLBACK callback)
 {
-  if (callback == NULL) {
+  if (callback == nullptr) {
     ERROR("callback is NULL!\n");
     return false;
   }
 
-  AUTO_LOCK(audio_alert_mtx);
+  AUTO_LOCK_AUDIO(audio_alert_mtx);
   m_callback = callback;
   return true;
 }
 
 bool AMAudioAlert::set_alert_state(bool enable)
 {
-  AUTO_LOCK(audio_alert_mtx);
+  AUTO_LOCK_AUDIO(audio_alert_mtx);
   m_enable_alert_detect = enable;
   return true;
 }
 
 bool AMAudioAlert::get_alert_state()
 {
-  AUTO_LOCK(audio_alert_mtx);
+  AUTO_LOCK_AUDIO(audio_alert_mtx);
   return m_enable_alert_detect;
 }
 
@@ -281,8 +298,8 @@ bool AMAudioAlert::is_silent(int32_t percent)
     return false;
   }
 
-  AUTO_LOCK(audio_alert_mtx);
-  if (m_macro_history == NULL) {
+  AUTO_LOCK_AUDIO(audio_alert_mtx);
+  if (m_macro_history == nullptr) {
     ERROR("m_macro_history is NULL !\n");
     return false;
   }
@@ -300,7 +317,7 @@ bool AMAudioAlert::is_silent(int32_t percent)
 
 bool AMAudioAlert::sync_config()
 {
-  AUTO_LOCK(audio_alert_mtx);
+  AUTO_LOCK_AUDIO(audio_alert_mtx);
   AudioAlertConfig * audio_alert_config =
       m_alert_config->get_config(m_conf_path);
   if (!audio_alert_config) {
@@ -323,13 +340,12 @@ bool AMAudioAlert::sync_config()
 bool AMAudioAlert::start_plugin()
 {
   bool ret = true;
-  AUTO_LOCK(audio_alert_mtx);
-
   if (!m_running_state) {
     if (!m_audio_capture->start()) {
       ret = false;
       ERROR("failed to start audio alert!\n");
     } else {
+      AUTO_LOCK_AUDIO(audio_alert_mtx);
       INFO("start audio alert!\n");
       m_running_state = true;
     }
@@ -343,17 +359,17 @@ bool AMAudioAlert::start_plugin()
 bool AMAudioAlert::stop_plugin()
 {
   bool ret = true;
-  AUTO_LOCK(audio_alert_mtx);
   if (m_running_state) {
     if (!m_audio_capture->stop()) {
       ret = false;
       ERROR("failed to stop audio alert !\n");
     } else {
+      AUTO_LOCK_AUDIO(audio_alert_mtx);
       INFO("stop audio alert!\n");
       m_running_state = false;
     }
   } else {
-    NOTICE("audio alert is already stopped!\n");
+    NOTICE("audio alert has been stopped already!\n");
   }
 
   return ret;
@@ -363,7 +379,7 @@ bool AMAudioAlert::set_plugin_config(EVENT_MODULE_CONFIG *pConfig)
 {
   bool ret = true;
 
-  if (pConfig == NULL || pConfig->value == NULL) {
+  if (pConfig == nullptr || pConfig->value == nullptr) {
     ERROR("Invalid argument!\n");
     return false;
   }
@@ -412,7 +428,7 @@ bool AMAudioAlert::get_plugin_config(EVENT_MODULE_CONFIG *pConfig)
 {
   bool ret = true;
 
-  if (pConfig == NULL || pConfig->value == NULL) {
+  if (pConfig == nullptr || pConfig->value == nullptr) {
     ERROR("Invalid argument!\n");
     return false;
   }
@@ -458,7 +474,7 @@ EVENT_MODULE_ID AMAudioAlert::get_plugin_ID()
 
 int32_t AMAudioAlert::store_macro_data(int64_t macro_data)
 {
-  if (m_macro_history == NULL) {
+  if (m_macro_history == nullptr) {
     ERROR("m_macro_history is NULL\n");
     return -1;
   }
@@ -478,7 +494,7 @@ int32_t AMAudioAlert::trigger_event(int32_t micro_data)
   int32_t ret = 0;
   micro_data = micro_data * 100 / m_maximum_peak;
 
-  if (m_micro_history == NULL) {
+  if (m_micro_history == nullptr) {
     ERROR("m_micro_history is NULL\n");
     return -1;
   }
@@ -540,7 +556,7 @@ int32_t AMAudioAlert::audio_alert_detect(AudioPacket *pkg)
   int32_t format = snd_pcm_format_little_endian(m_snd_pcm_format);
   AM_EVENT_MESSAGE msg;
 
-  AUTO_LOCK(audio_alert_mtx);
+  AUTO_LOCK_AUDIO(audio_alert_mtx);
 
   if (!m_enable_alert_detect)
     return 0;
@@ -599,8 +615,8 @@ int32_t AMAudioAlert::audio_alert_detect(AudioPacket *pkg)
 
       count >>= 1; /* One sample takes up two bytes */
       while (count -- > 0) {
-        val = format ? __le16_to_cpu(*ptr ++) : __be16_to_cpu(*ptr ++);
-
+        val = format ? __le16_to_cpu(*ptr) : __be16_to_cpu(*ptr);
+        ++ ptr;
         if (val & (1 << (m_bits_per_sample - 1))) {
           val |= 0xffff << 16;
         }
@@ -702,8 +718,9 @@ int32_t AMAudioAlert::audio_alert_detect(AudioPacket *pkg)
 
       count >>= 2; /* One sample takes up four bytes. */
       while (count -- > 0) {
-        val = abs(format ? __le32_to_cpu(*ptr ++) : __be32_to_cpu(*ptr ++))
-            ^ mask;
+        val = format ? __le32_to_cpu(*ptr) : __be32_to_cpu(*ptr);
+        val = abs(val) ^ mask;
+        ++ ptr;
         sum += val;
         m_volume_sum += val;
         m_sample_num ++;

@@ -28,8 +28,16 @@ ifeq ($(BUILD_BROADCOM_WIFI_ARP_OFFLOAD), y)
 export ARP_OFFLOAD_SUPPORT = y
 endif
 
+ifeq ($(BUILD_BROADCOM_WIFI_PROC_PM_STATE), y)
+export PROC_PM_STAT_SUPPORT = y
+endif
+
 ifeq ($(BUILD_BROADCOM_WIFI_TXGLOM), y)
 export TXGLOM_SUPPORT = y
+endif
+
+ifeq ($(BUILD_BROADCOM_WIFI_INSMOD_NO_FW_LOAD), y)
+export INSMOD_NO_FW_LOAD_SUPPORT = y
 endif
 
 ifeq ($(BUILD_BROADCOM_WIFI_SDIO_V3_0), y)
@@ -69,6 +77,30 @@ export BCMDHD_NVRAM_PATH="\"/lib/firmware/broadcom/ap6212/nvram_ap6212_tcpka.txt
 else
 export BCMDHD_NVRAM_PATH="\"/lib/firmware/broadcom/ap6212/nvram_ap6212.txt\""
 endif
+else ifeq ($(BUILD_BROADCOM_WIFI_SDIO_MODULE_AP6452), y)
+export BCMDHD_FW_PATH="\"/lib/firmware/broadcom/ap6452/fw_bcm43438a0.bin\""
+ifeq ($(BUILD_BROADCOM_WIFI_SDIO_TCPKA), y)
+export BCMDHD_NVRAM_PATH="\"/lib/firmware/broadcom/ap6452/nvram_ap6452_tcpka.txt\""
+else
+export BCMDHD_NVRAM_PATH="\"/lib/firmware/broadcom/ap6452/nvram_ap6452.txt\""
+endif
+else ifeq ($(BUILD_BROADCOM_WIFI_SDIO_MODULE_AP6212A), y)
+export BCMDHD_FW_PATH="\"/lib/firmware/broadcom/ap6212a/fw_bcm43438a1.bin\""
+ifeq ($(BUILD_BROADCOM_WIFI_SDIO_TCPKA), y)
+export BCMDHD_NVRAM_PATH="\"/lib/firmware/broadcom/ap6212a/nvram_ap6212a_tcpka.txt\""
+else
+export BCMDHD_NVRAM_PATH="\"/lib/firmware/broadcom/ap6212a/nvram_ap6212a.txt\""
+endif
+else ifeq ($(BUILD_BROADCOM_WIFI_SDIO_MODULE_AP6255), y)
+export BCMDHD_FW_PATH="\"/lib/firmware/broadcom/ap6255/fw_bcm43455c0_ag.bin\""
+ifeq ($(BUILD_BROADCOM_WIFI_SDIO_TCPKA), y)
+export BCMDHD_NVRAM_PATH="\"/lib/firmware/broadcom/ap6255/nvram_ap6255_tcpka.txt\""
+else
+export BCMDHD_NVRAM_PATH="\"/lib/firmware/broadcom/ap6255/nvram_ap6255.txt\""
+endif
+else ifeq ($(BUILD_BROADCOM_WIFI_SDIO_MODULE_AP62X2), y)
+export BCMDHD_FW_PATH="\"/lib/firmware/broadcom/ap62x2/fw_bcm43241b4_ag.bin\""
+export BCMDHD_NVRAM_PATH="\"/lib/firmware/broadcom/ap62x2/nvram_ap62x2.txt\""
 endif
 
 ######## USB WiFi ########

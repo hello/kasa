@@ -1,0 +1,101 @@
+##
+## prebuild/ambarella/AmbaConfig
+##
+## History:
+##    2016/07/22 - [Hao Qian] Create
+##
+## Copyright (c) 2016 Ambarella, Inc.
+##
+## This file and its contents ("Software") are protected by intellectual
+## property rights including, without limitation, U.S. and/or foreign
+## copyrights. This Software is also the confidential and proprietary
+## information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+## disclose, distribute, modify, or otherwise prepare derivative works of this
+## Software or any portion thereof except pursuant to a signed license agreement
+## or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+## In the absence of such an agreement, you agree to promptly notify and return
+## this Software to Ambarella, Inc.
+##
+## THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+## INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+## MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+## IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+## INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+## (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+## LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+## INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+## CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+## ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+## POSSIBILITY OF SUCH DAMAGE.
+##
+
+config CONFIG_AMBARELLA_DEWARP_LIBRARY
+	bool "Configure Ambarella dewarp library"
+	default n
+	help
+		Configure to include Ambarella dewarp library.
+
+config CONFIG_AMBARELLA_EIS_LIBRARY
+	bool "Configure Ambarella eis library"
+	default n
+	help
+		Configure to include Ambarella eis library.
+
+config CONFIG_AMBARELLA_SMARTRC_LIBRARY
+	bool "Configure Ambarella smartrc library"
+	default n
+	help
+		Configure to include Ambarella smartrc library.
+
+config CONFIG_AMBARELLA_SMARTRC2_LIBRARY
+	bool "Configure Ambarella smartrc library V2"
+	depends on (CONFIG_ARCH_S3L)
+	default n
+	help
+		Configure to include Ambarella smartrc library V2.
+
+config CONFIG_AMBARELLA_PREANALYSIS_PACKAGE
+	bool "Configure Ambarella smart rate pre-analysis library"
+	depends on (CONFIG_ARCH_S3L)
+	default n
+	help
+		Build Ambarella smart rate pre-analysis library
+
+if CONFIG_AMBARELLA_PREANALYSIS_PACKAGE
+
+config BUILD_AMBARELLA_PREANALYSIS_PACKAGE_UT
+	bool "Build Ambarella smart rate pre-analysis unit test"
+	default n
+	help
+		Build Ambarella smart rate pre-analysis unit test
+
+endif
+
+menuconfig CONFIG_AMBARELLA_SMARTCAM_PREBUILD
+	bool "CONFIG Ambarella Smartcam prebuild"
+	default y
+	help
+		Configure Smartcam prebuild.
+
+if CONFIG_AMBARELLA_SMARTCAM_PREBUILD
+config CONFIG_AMBARELLA_MDET_LIBRARY
+	bool "Configure Ambarella mdet library"
+	select CONFIG_AMBARELLA_OPENCV_SUPPORT
+	select CONFIG_AMBARELLA_OPENCV_CORE_LIB_SUPPORT
+	default n
+	help
+		Configure to include Ambarella mdet
+
+config CONFIG_AMBARELLA_LENS_MASK_DET_LIBRARY
+        bool "Configure Ambarella lens mask detection library"
+        default n
+        help
+                Configure to include Ambarella lens_mask_det
+
+config CONFIG_AMBARELLA_MOTION_PROFILE_DET_LIBRARY
+        bool "Configure Ambarella motion profile detection library"
+        default n
+        help
+                Configure to include Ambarella motion_profile_det
+
+endif

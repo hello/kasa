@@ -4,19 +4,39 @@
  * History:
  *	2012/01/25 - [Jian Tang] created file
  *
- * Copyright (C) 2012-2018, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2016 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
 
 #include <sys/ioctl.h>
 #include <sys/mman.h>
@@ -25,7 +45,7 @@
 #include <basetypes.h>
 
 #include <config.h>
-#if (defined(CONFIG_ARCH_S2L) || defined(CONFIG_ARCH_S3) || defined(CONFIG_ARCH_S3L))
+#if (defined(CONFIG_ARCH_S2L) || defined(CONFIG_ARCH_S3) || defined(CONFIG_ARCH_S3L) || defined(CONFIG_ARCH_S5) || defined(CONFIG_ARCH_S5L))
 #include "iav_ioctl.h"
 #include "iav_ucode_ioctl.h"
 #else
@@ -39,9 +59,9 @@ int load_ucode(const char *ucode_path)
 	FILE *fp = NULL;
 	ucode_load_info_t info;
 	ucode_version_t version;
-	u8 *ucode_mem;
+	u8 *ucode_mem = NULL, *addr = NULL;
 	char filename[256];
-	int file_length;
+	long file_length;
 
 	do {
 		if ((fd = open("/dev/ucode", O_RDWR, 0)) < 0) {
@@ -56,7 +76,7 @@ int load_ucode(const char *ucode_path)
 			break;
 		}
 
-		printf("map_size = 0x%x, nr_item = %d\n", (u32)info.map_size, info.nr_item);
+		printf("map_size = 0x%lx, nr_item = %lu\n", info.map_size, info.nr_item);
 		for (i = 0; i < info.nr_item; i++) {
 			printf("addr_offset = 0x%08x, ", (u32)info.items[i].addr_offset);
 			printf("filename = %s\n", info.items[i].filename);
@@ -64,15 +84,15 @@ int load_ucode(const char *ucode_path)
 
 		ucode_mem = (u8 *)mmap(NULL, info.map_size,
 			PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-		if ((int)ucode_mem == -1) {
+		if ((intptr_t)ucode_mem == -1) {
 			perror("mmap");
 			retv = -1;
 			break;
 		}
-		printf("mmap returns 0x%x\n", (unsigned)ucode_mem);
+		printf("mmap returns %p\n", ucode_mem);
 
 		for (i = 0; i < info.nr_item; i++) {
-			u8 *addr = ucode_mem + info.items[i].addr_offset;
+			addr = ucode_mem + info.items[i].addr_offset;
 			snprintf(filename, sizeof(filename), "%s/%s",
 				ucode_path, info.items[i].filename);
 
@@ -95,7 +115,7 @@ int load_ucode(const char *ucode_path)
 				break;
 			}
 
-			printf("addr = 0x%x, size = 0x%x\n", (u32)addr, file_length);
+			printf("addr = %p, size = 0x%lx\n", addr, file_length);
 
 			if (fread(addr, 1, file_length, fp) != file_length) {
 				perror("fread");
@@ -118,12 +138,40 @@ int load_ucode(const char *ucode_path)
 			break;
 		}
 
-		printf("===============================\n");
-		printf("u_code version = %d/%d/%d %d.%d\n",
+		printf("===============================================\n");
+		printf("ucode ");
+#if (defined(CONFIG_ARCH_S2) || defined(CONFIG_ARCH_S2E))
+		if (version.chip_version & 0x1) {
+			printf("(S2E) ");
+		} else {
+			printf("(S2) ");
+		}
+		if (version.chip_version & 0x2) {
+			printf("(S2 test) ");
+		}
+#else
+		switch (version.chip_arch) {
+		case UCODE_ARCH_S2L:
+			printf("(S2L) ");
+			break;
+		case UCODE_ARCH_S3L:
+			printf("(S3L) ");
+			break;
+		case UCODE_ARCH_S5:
+			printf("(S5) ");
+			break;
+		case UCODE_ARCH_S5L:
+			printf("(S5L)");
+			break;
+		default:
+			printf("(Unknown: %d) ", version.chip_arch);
+			break;
+		}
+#endif
+		printf("version = %d/%d/%d %d.%d\n",
 			version.year, version.month, version.day,
 			version.edition_num, version.edition_ver);
-		printf("===============================\n");
-
+		printf("===============================================\n");
 		if (munmap(ucode_mem, info.map_size) < 0) {
 			perror("munmap");
 			retv = -1;
@@ -138,7 +186,6 @@ int load_ucode(const char *ucode_path)
 
 	return retv;
 }
-
 
 int main(int argc, char **argv)
 {

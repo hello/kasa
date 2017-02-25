@@ -5,14 +5,32 @@
  *	2012/05/05 - [Jian Tang] created file
  * 	2013/09/26 - [Louis Sun] improve it to prevent data loss
  *
- * Copyright (C) 2012-2016, Ambarella, Inc.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 
 #include "dsplog_cap.h"
 
@@ -55,7 +73,6 @@ static dsplog_debug_obj dsplog_debug = {
 	.pinpong_filesize_limit = DEFAULT_PINPONG_FILE_SIZE,
 };
 
-
 static sem_t exit_main_sem;
 
 static struct option long_options[] = {
@@ -74,10 +91,11 @@ static struct option long_options[] = {
 	{"version",	NO_ARG,        0,   'w'},  // when file1 has reached the size, go to truncate and write file2, and when file2 reaches the size, go back to truncate and write to file1
 	{"verify",		HAS_ARG,          0,   'y'},  // when file1 has reached the size, go to truncate and write file2, and when file2 reaches the size, go back to truncate and write to file1
 	{"add",		NO_ARG,         0,    'a'},     //"Add or Set" operation to debug mask.  when specified, it's Add.   else it's set
+	{"caponly",		NO_ARG,         0,    's'},     //not set level and bitmask
 	{0, 0, 0, 0}
 };
 
-static const char *short_options = "b:m:l:r:o:i:td:cf:p:vwy:a";
+static const char *short_options = "b:m:l:r:o:i:td:cf:p:vwy:as";
 
 static const struct hint_s hint[] = {
 	{"string", "\tcommon, vcap, vout, encoder, decoder,  idsp, memd, api, perf, all"},
@@ -95,6 +113,7 @@ static const struct hint_s hint[] = {
 	{"", "\t\tshow dsplog_cap tool version"},
 	{"filename", "\tuse dsp log mem buffer to verify captured log file (DSP should have halted)"},
 	{"",  "\t\tif specified, current bitmask is added to, but not set.  (else it's set by default)"},
+	{"",  "\t\tif specified, capture only, do not set debug level and bitmask"},
 };
 
 static void show_quit(void)
@@ -108,20 +127,22 @@ static void usage(void)
 	int i;
 	char *itself = "dsplog_cap";
 	printf("\n\n############################################################\n");
-	printf("%s ver %s,  it supports A5s / A7L / iOne / S2 / S2L.  usage:\n\n",
+	printf("%s ver %s,  it supports A5s / A7L / iOne / S2 / S2L / S3L.  usage:\n\n",
 		itself, DSPLOG_VERSION_STRING);
 	for (i = 0; i < sizeof(long_options) / sizeof(long_options[0]) - 1; i++) {
-		if (isalpha(long_options[i].val))
+		if (isalpha(long_options[i].val)) {
 			printf("-%c ", long_options[i].val);
-		else
+		} else {
 			printf("   ");
+		}
 		printf("--%s", long_options[i].name);
-		if (hint[i].arg[0] != 0)
+		if (hint[i].arg[0] != 0) {
 			printf(" [%s]", hint[i].arg);
+		}
 		printf("\t%s\n", hint[i].str);
 	}
 	printf("\n");
-       extra_usage(itself);
+	extra_usage(itself);
 }
 
 static int get_ucode_version(char * buffer, int max_len)
@@ -161,15 +182,16 @@ static int init_param(int argc, char **argv)
 	int thread_mask;
 
 	opterr = 0;
-	while ((ch = getopt_long(argc, argv, short_options, long_options, &option_index)) != -1) {
+	while ((ch = getopt_long(argc, argv, short_options,
+					long_options, &option_index)) != -1) {
 		switch (ch) {
 		case 'm':
-			if ((module_id=get_dsp_module_id(optarg)) < 0) {
-				fprintf(stderr,"invalid dsp module id \n");
+			if ((module_id = get_dsp_module_id(optarg)) < 0) {
+				fprintf(stderr,"Invalid dsp module id.\n");
 				return -1;
 			} else {
-				if (dsplog_debug.module_id >= 8) {
-					fprintf(stderr, "too many modules to debug \n");
+				if (dsplog_debug.module_id >= DSP_MODULE_TOTAL_NUM) {
+					fprintf(stderr, "Too many modules to debug.\n");
 					return -1;
 				}
 				dsplog_debug.modules[dsplog_debug.module_id] = module_id;
@@ -184,14 +206,14 @@ static int init_param(int argc, char **argv)
 				dsplog_debug.debug_level = value;
 				dsplog_debug.debug_level_flag = 1;
 			} else {
-				fprintf(stderr, "invalid debug level \n");
+				fprintf(stderr, "Invalid debug level.\n");
 				return -1;
 			}
 			break;
 
 		case 'r':
 			if ((thread_mask = get_thread_bitmask(optarg)) < 0) {
-				fprintf(stderr, "invalid thread bit mask \n");
+				fprintf(stderr, "Invalid thread bit mask.\n");
 				return -1;
 			} else {
 				dsplog_debug.thread_bitmask = thread_mask;
@@ -205,7 +227,7 @@ static int init_param(int argc, char **argv)
 				dsplog_debug.output[STR_LEN - 1] = '\0';
 				dsplog_debug.output_file_flag =1;
 			} else {
-				fprintf(stderr, "invalid output DSP log file name \n");
+				fprintf(stderr, "Invalid parse_out DSP log file name.\n");
 				return -1;
 			}
 			break;
@@ -216,7 +238,7 @@ static int init_param(int argc, char **argv)
 				dsplog_debug.parse_in[STR_LEN - 1] = '\0';
 				dsplog_debug.input_file_flag =1;
 			} else {
-				fprintf(stderr, "invalid parse_in DSP log file name \n");
+				fprintf(stderr, "Invalid parse_in DSP log file name.\n");
 				return -1;
 			}
 			break;
@@ -231,14 +253,14 @@ static int init_param(int argc, char **argv)
 			dsplog_debug.debug_bitmask[dsplog_debug.module_id_last] = bitmask;
 			break;
 
-			case 'd':
+		case 'd':
 			strncpy(dsplog_debug.ucode, optarg, STR_LEN);
 			dsplog_debug.ucode[STR_LEN - 1] = '\0';
 			break;
 
 		case 'c':
 			dsplog_debug.capture_current_flag = 1;
-		break;
+			break;
 
 		case 'f':
 			strncpy(dsplog_debug.parse_out, optarg, STR_LEN);
@@ -250,8 +272,8 @@ static int init_param(int argc, char **argv)
 			dsplog_debug.pinpong_filesize_limit = atoi(optarg);
 			if (dsplog_debug.pinpong_filesize_limit < (2 << 20)) {
 				dsplog_debug.pinpong_filesize_limit = DEFAULT_PINPONG_FILE_SIZE;
-				fprintf(stderr, "Use pinpong buffer with default size %d\n",
-					DEFAULT_PINPONG_FILE_SIZE);
+				fprintf(stderr, "Use pinpong buffer with default size %d MB.\n",
+					(DEFAULT_PINPONG_FILE_SIZE >> 20));
 			}
 			break;
 
@@ -272,12 +294,16 @@ static int init_param(int argc, char **argv)
 			dsplog_debug.operation_add[dsplog_debug.module_id_last] = 1;
 			break;
 
+		case 's':
+			dsplog_debug.capture_only_flag = 1;
+			break;
+
 		default:
 			break;
 		}
 	}
 
-      //check the options
+	//check the options
 	if (dsplog_debug.capture_current_flag ||
 		dsplog_debug.show_ucode_flag ||
 		dsplog_debug.show_version_flag ||
@@ -287,9 +313,10 @@ static int init_param(int argc, char **argv)
 
 	if ((dsplog_debug.input_file_flag) && (dsplog_debug.output_file_flag)) {
 		fprintf(stderr, "Cannot enable dsplog capture (output) and dsplog "
-			"parse (parse_in) at same time! \n");
+			"parse (parse_in) at same time!\n");
 		return -1;
-	} else if ((!dsplog_debug.input_file_flag) && (!dsplog_debug.output_file_flag)) {
+	} else if ((!dsplog_debug.input_file_flag) &&
+			(!dsplog_debug.output_file_flag)) {
 		fprintf(stderr,"Please specify cmd to either capture or parse!\n");
 		return -1;
 	}
@@ -363,13 +390,14 @@ int dsplog_get_transfer_fd(int method, char * output_filename,  int dsplog_port)
 		if (dsplog_debug.transfer_fd >=0) {
 			return dsplog_debug.transfer_fd;
 		}
-		if ((transfer_fd = amba_transfer_open(output_filename, method, dsplog_port)) < 0) {
-			fprintf(stderr, "create file for transfer failed %s \n", output_filename);
+		if ((transfer_fd = amba_transfer_open(output_filename,
+						method, dsplog_port)) < 0) {
+			fprintf(stderr, "Create file for transfer failed %s.\n",
+				output_filename);
 			return -1;
 		}
 		dsplog_debug.transfer_fd = transfer_fd;
 		dsplog_debug.transfer_method = method;
-		return transfer_fd;
 	} else {
 		if (dsplog_debug.transfer_fd >=0) {
 			//now it's pinpong mode.
@@ -390,7 +418,8 @@ int dsplog_get_transfer_fd(int method, char * output_filename,  int dsplog_port)
 			sprintf(filename, "%s.2", output_filename);
 		}
 
-		if ((transfer_fd = amba_transfer_open(filename, method, dsplog_port)) < 0) {
+		if ((transfer_fd = amba_transfer_open(filename,
+							method, dsplog_port)) < 0) {
 			fprintf(stderr, "create file for transfer failed %s \n", filename);
 			return -1;
 		} else {
@@ -400,8 +429,8 @@ int dsplog_get_transfer_fd(int method, char * output_filename,  int dsplog_port)
 
 		//reset to new file with size
 		dsplog_debug.pinpong_filesize_now = 0;
-		return transfer_fd;
 	}
+	return transfer_fd;
 }
 
 
@@ -426,7 +455,7 @@ int dsplog_capture(int dsplog_drv_fd, char * log_buffer,
 	}
 
 	while (1) {
-		transfer_fd = dsplog_get_transfer_fd(method,  output_filename, dsplog_port);
+		transfer_fd = dsplog_get_transfer_fd(method, output_filename, dsplog_port);
 		if (!transfer_fd) {
 			fprintf(stderr, "dsplog_get_transfer_fd failed for %s \n ", output_filename);
 			return -1;
@@ -472,7 +501,7 @@ int dsplog_capture(int dsplog_drv_fd, char * log_buffer,
 int dsplog_capture_stop(int dsplog_drv_fd)
 {
 	//start capture
-	if (ioctl(dsplog_drv_fd,  AMBA_IOC_DSPLOG_STOP_CAPTURE ) < 0) {
+	if (ioctl(dsplog_drv_fd, AMBA_IOC_DSPLOG_STOP_CAPTURE) < 0) {
 		perror("AMBA_IOC_DSPLOG_STOP_CAPUTRE");
 		return -1;
 	} else {
@@ -505,7 +534,7 @@ u8 *mmap_ucode_bin(char *dir, char *name)
 		}
 		sprintf(filename, "%s/%s", dir, name);
 		if ((fp = fopen(filename, "r")) == NULL) {
-			fprintf(stderr, "cannot open ucode bin file [%s].\n", filename);
+			fprintf(stderr, "Cannot open ucode bin file [%s].\n", filename);
 			perror(filename);
 			mem = NULL;
 			break;
@@ -519,7 +548,7 @@ u8 *mmap_ucode_bin(char *dir, char *name)
 		fsize = ftell(fp);
 
 		mem = (u8 *)mmap(NULL, fsize, PROT_READ, MAP_SHARED, fileno(fp), 0);
-		if ((int)mem == -1) {
+		if ((intptr_t)mem == -1) {
 			perror("mmap");
 			mem = NULL;
 			break;
@@ -529,35 +558,13 @@ u8 *mmap_ucode_bin(char *dir, char *name)
 	return mem;
 }
 
-int print_log(idsp_printf_t *record, u8 * pcode,
-	u8 * pmdxf, u8 * pmemd,  FILE *  write_file)
-{
-	char *fmt;
-	u8 *ptr;
-	u32 offset;
-	if (record->format_addr == 0)
-		return -1;
-	switch (record->dsp_core) {
-	case 0: ptr = pcode; offset = dsplog_mem.core_offset; break;
-	case 1: ptr = pmdxf; offset = dsplog_mem.mdxf_offset; break;
-	case 2: ptr = pmemd; offset = dsplog_mem.memd_offset; break;
-	default:
-		fprintf(stderr, "dsp_core = %d\n", record->dsp_core);
-		return -1;
-	}
-	fmt = (char*)(ptr + (record->format_addr - offset));
-	fprintf(write_file, "[core:%d:%d] ", record->thread_id, record->seq_num);
-	fprintf(write_file, fmt, record->arg1, record->arg2,
-		record->arg3, record->arg4, record->arg5);
-	return 0;
-}
-
 static int dsplog_parse(char * log_filename, u8 * pcode,
 	u8 * pmdxf, u8 * pmemd,  char * output_text_file)
 {
 	FILE * parse_in = NULL;
 	FILE * parse_out = NULL;
-	idsp_printf_t record;
+	idsp_printf_base_t record;
+	u8 is_first_record = 1;
 	int first = 0;
 	int last = 0;
 	int total = 0;
@@ -565,13 +572,13 @@ static int dsplog_parse(char * log_filename, u8 * pcode,
 
 	do {
 		if ((parse_in = fopen(log_filename, "rb")) == NULL) {
-			fprintf(stderr, "cannot open dsplog file %s to parse, "
-				"please use '-i' option to specify \n", log_filename);
+			fprintf(stderr, "Cannot open dsplog file %s to parse, "
+				"please use '-i' option to specify.\n", log_filename);
 			break;
 		}
 		if ((parse_out = fopen(output_text_file, "wb")) == NULL) {
-			fprintf(stderr, "cannot open dsplog parse text file %s to write, "
-				"please use '-f' option to specify\n", output_text_file);
+			fprintf(stderr, "Cannot open dsplog parse text file %s to write, "
+				"please use '-f' option to specify.\n", output_text_file);
 			break;
 		}
 	} while (0);
@@ -588,17 +595,16 @@ static int dsplog_parse(char * log_filename, u8 * pcode,
 	fprintf(stderr, "You may press Ctrl+C to quit parsing.\n");
 	while (1) {
 		int rval;
-		if ((rval = fread(&record, sizeof(record), 1, parse_in)) != 1) {
+		if ((rval = fread(&record, IDSP_LOG_SIZE, 1, parse_in)) != 1) {
 			break;
 		}
-		if (first == 0) {
+		if (is_first_record) {
 			first = record.seq_num;
-			last = first - 1;
+			is_first_record = 0;
 		}
-		print_log(&record, pcode, pmdxf, pmemd, parse_out);
+		print_log(&record, pcode, pmdxf, pmemd, parse_out, &dsplog_mem);
 
 		total++;
-		++last;
 		last = record.seq_num;
 		if ((total % 1000) == 0) {
 			fprintf(stderr, "\r%d", total);
@@ -607,15 +613,15 @@ static int dsplog_parse(char * log_filename, u8 * pcode,
 	}
 
 	fprintf(stderr, "\r");
-	fprintf(stderr, "first record: %d\n", first);
-	fprintf(stderr, "total record: %d\n", total);
-	fprintf(stderr, "last record: %d\n", last);
+	fprintf(stderr, " first record : %d\n", first);
+	fprintf(stderr, "  last record : %d\n", last);
+	fprintf(stderr, "total records : %d\n", total);
 
 	loss = (last - first + 1) - total;
 	if ((loss < 0) && (loss + total == 0)) {
 		fprintf(stderr, "this is a LOGMEM ring buf direct dump\n");
 	} else {
-		fprintf(stderr, "lost records: %d\n", loss);
+		fprintf(stderr, " lost records : %d\n", loss);
 	}
 
 	if (parse_in) {
@@ -678,14 +684,15 @@ static void * dsp_log_capture_sig_thread_func(void * context)
 	case SIGTERM:
 		// send exit event to MainLoop
 		if (dsplog_debug.work_mode == 0) {
-			//  fprintf(stderr, "signal captured in sig thread!tell main process to exit\n");
+//			fprintf(stderr, "signal captured in sig thread!tell main process to exit\n");
 			sem_post(&exit_main_sem);
 		} else {
 			fprintf(stderr, "dsplog_cap: parse mode force quit. \n");
 			exit(1);
 		}
 		break;
-	default:         /* should normally not happen */
+	default:
+		/* should normally not happen */
 		fprintf(stderr, "\nUnexpected signal caught in sig thread%d\n",
 			sig_caught);
 		break;
@@ -698,11 +705,18 @@ static void * dsp_log_capture_sig_thread_func(void * context)
  * is not boot yet, so that amba_debug can dump the dsplog buffer to verify. */
 static int verify_dsplog_file(char * bin_file)
 {
+	int ret = 0;
+
+#ifdef CONFIG_DSP_LOG_START_IAVMEM
+
+	fprintf(stderr, "Cannot run VERIFY function due to the non-fixed DSP log buffer start address.\n");
+	ret = -1;
+
+#else
 	FILE * fp;
 	int length;
-	int ret = 0;
 	u32 last_record_in_logfile;
-	idsp_printf_t   record;
+	idsp_printf_base_t record;
 	char cmdstr[256];
 	u32 log_entry_max;
 	int log_lines_diff;
@@ -717,14 +731,14 @@ static int verify_dsplog_file(char * bin_file)
 
 		fseek(fp, 0, SEEK_END);
 		length = ftell(fp);
-		if (length % sizeof(idsp_printf_t)) {
+		if (length % IDSP_LOG_SIZE) {
 			fprintf(stderr, "dsplog verify found file %s has size not multiple"
 				" of 32, should have data missing\n", bin_file);
 			ret = -1;
 			break;
 		}
-		fseek(fp, 0-sizeof(idsp_printf_t), SEEK_END);
-		if (fread(&record, 1, sizeof(idsp_printf_t), fp)!= sizeof(idsp_printf_t)) {
+		fseek(fp, 0-IDSP_LOG_SIZE, SEEK_END);
+		if (fread(&record, 1, IDSP_LOG_SIZE, fp) != IDSP_LOG_SIZE) {
 			fprintf(stderr, "dsplog verify read file error.\n");
 			ret = -1;
 			break;
@@ -748,13 +762,13 @@ static int verify_dsplog_file(char * bin_file)
 
 		fp = fopen("/tmp/.dsplogmem.bin", "r");
 		if (!fp) {
-			fprintf(stderr, "dsplog verify cannot open log mem file\n");
+			fprintf(stderr, "dsplog verify cannot open log mem file.\n");
 			ret = -1;
 			break;
 		}
 
 		log_entry_max = 0 ;
-		while(fread(&record, 1, sizeof(idsp_printf_t), fp)){
+		while (fread(&record, 1, IDSP_LOG_SIZE, fp)) {
 			if (record.seq_num > log_entry_max) {
 				log_entry_max = record.seq_num;
 			} else {
@@ -765,11 +779,11 @@ static int verify_dsplog_file(char * bin_file)
 		fp = NULL;
 		unlink("/tmp/.dsplogmem.bin");
 
-		fprintf(stderr, "log_entry_max = %d \n", log_entry_max);
+		fprintf(stderr, "log_entry_max = %d\n", log_entry_max);
 
 		log_lines_diff =  log_entry_max -  last_record_in_logfile;
 		if (last_record_in_logfile == log_entry_max) {
-			fprintf(stderr, "dsplog verify PERFECT! \n");
+			fprintf(stderr, "dsplog verify PERFECT!\n");
 		} else if (log_lines_diff < 10) {
 			fprintf(stderr, "dsplog verify result GOOD, only a few lines (%d)"
 				" of logs missing. \n", log_lines_diff );
@@ -782,6 +796,8 @@ static int verify_dsplog_file(char * bin_file)
 	if (fp) {
 		fclose(fp);
 	}
+
+#endif
 
 	return ret;
 }
@@ -800,8 +816,7 @@ int main(int argc, char **argv)
 	dsplog_cap_t  log_cap;
 	int ret = 0;
 	int sem_created = 0;
-	//        fprintf(stderr, "dsplog main tid = %d \n", getpid());
-
+//	fprintf(stderr, "dsplog main tid = %d \n", getpid());
 
 #ifdef ENABLE_RT_SCHED
 	struct sched_param param;
@@ -821,7 +836,7 @@ int main(int argc, char **argv)
 		if (dsplog_debug.show_ucode_flag) {
 			char tmp_str[STR_LEN];
 			get_ucode_version(tmp_str, STR_LEN);
-			fprintf(stderr, "Current ucode version is %s \n", tmp_str);
+			fprintf(stderr, "Current ucode version is %s.\n", tmp_str);
 			ret = 0;
 			break;
 		}
@@ -832,7 +847,7 @@ int main(int argc, char **argv)
 		}
 
 		if (dsplog_debug.show_version_flag) {
-			fprintf(stderr,"dsplog tool version is %s \n",  DSPLOG_VERSION_STRING);
+			fprintf(stderr, "dsplog tool version is %s.\n", DSPLOG_VERSION_STRING);
 			ret = 0;
 			break;
 		}
@@ -846,21 +861,21 @@ int main(int argc, char **argv)
 				ret = -1;
 				break;
 			} else {
-				fprintf(stderr, "log got and save to  /tmp/dspmem_dump.bin, please check \n");
+				fprintf(stderr, "log got and save to /tmp/dspmem_dump.bin, "
+					"please check it.\n");
 				ret = 0;
 				break;
 			}
 		}
 
-	            /*********************************************************/
-		if (dsplog_debug.work_mode == DSPLOG_CAPTURE_MODE)  {
+		if (dsplog_debug.work_mode == DSPLOG_CAPTURE_MODE) {
 			//capture log mode
 			//block signals
 			block_signals();
 
 			//init sem
 			if(sem_init(&exit_main_sem, 0, 0) < 0) {
-				fprintf(stderr, "dsplog_cap: create sem for exit failed \n");
+				fprintf(stderr, "dsplog_cap: create sem for exit failed.\n");
 				ret =  -1;
 				break;
 			} else {
@@ -868,26 +883,30 @@ int main(int argc, char **argv)
 			}
 
 			//create sig thread
-			if (pthread_create(&sig_thread, NULL, dsp_log_capture_sig_thread_func, &log_cap)!=0) {
-				fprintf(stderr, "dsplog_cap: create sig thread failed \n");
+			if (pthread_create(&sig_thread, NULL,
+					dsp_log_capture_sig_thread_func, &log_cap)!=0) {
+				fprintf(stderr, "dsplog_cap: create sig thread failed.\n");
 				ret = -1;
 				break;
 			}
 
-			if ((iav_fd =  open("/dev/iav", O_RDWR, 0)) < 0) {
-				perror("/dev/iav");
-				ret = -1;
-				break;
-			}
+			if (!dsplog_debug.capture_only_flag) {
+				if ((iav_fd = open("/dev/iav", O_RDWR, 0)) < 0) {
+					perror("/dev/iav");
+					ret = -1;
+					break;
+				}
 
-			if (dsplog_setup(iav_fd, &dsplog_debug) < 0 ) {
-				fprintf(stderr, "dsplog_cap: dsplog_setup failed \n");
-				ret = -1;
-				break;
+				if (dsplog_setup(iav_fd, &dsplog_debug) < 0 ) {
+					fprintf(stderr, "dsplog_cap: dsplog_setup failed \n");
+					ret = -1;
+					break;
+				} else {
+					close(iav_fd);
+				}
 			} else {
-				close(iav_fd);
+				fprintf(stderr, "dsplog_cap: capture only mode, do not send 'set debug level and bitmask' \n");
 			}
-
 
 			//open dsplog driver
 			if ((dsp_log_drv_fd = open("/dev/dsplog", O_RDONLY, 0)) < 0) {
@@ -972,7 +991,7 @@ int main(int argc, char **argv)
 				break;
 			}
 
-			if (dsplog_parse(dsplog_debug.parse_in, pcode, pmemd, pmdxf,
+			if (dsplog_parse(dsplog_debug.parse_in, pcode, pmdxf, pmemd,
 				dsplog_debug.parse_out) <  0) {
 				fprintf(stderr,"dsplog_cap: parse dsp log failed \n");
 				ret = -1;
@@ -982,12 +1001,13 @@ int main(int argc, char **argv)
 
 	}while(0);
 
-
 	if (sem_created)
 		sem_destroy(&exit_main_sem);
 
-	if (dsp_log_buffer)
+	if (dsp_log_buffer) {
 		free (dsp_log_buffer);
+		dsp_log_buffer = NULL;
+	}
 
         return ret;
 }

@@ -23,13 +23,11 @@ extern "C" {
 #include <stdint.h>
 #include <linux/types.h>
 
-/*
- * Required to limit what gets defined in the kernel header file.
- */
 #ifndef __user
 #define __user
 #endif
 #include <linux/capability.h>
+#include <linux/xattr.h>
 
 /*
  * POSIX capability types

@@ -1,23 +1,34 @@
-/*-------------------------------------------------------------------------------------------------------------------*\
- *  @FileName       :: AmbaDSP_ImgUtility.h
+/*
+ * include/arch_s2l/AmbaDSP_ImgUtility.h
  *
- *  @Copyright      :: Copyright (C) 2012 Ambarella Corporation. All rights reserved.
+ * History:
+ *	12/12/2012  - [Steve Chen] created file
  *
- *                     No part of this file may be reproduced, stored in a retrieval system,
- *                     or transmitted, in any form, or by any means, electronic, mechanical, photocopying,
- *                     recording, or otherwise, without the prior consent of Ambarella Corporation.
+ * Copyright (C) 2015 Ambarella, Inc.
  *
- *  @Description    :: Definitions & Constants for Ambarella DSP Liveview APIs
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
  *
- *  @History        ::
- *      Date        Name        Comments
- *      12/12/2012  Steve Chen  Created
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
- *  $LastChangedDate: 2013-11-08 18:21:53 +0800 (?±‰?, 08 ?Å‰???2013) $
- *  $LastChangedRevision: 7252 $
- *  $LastChangedBy: hfwang $
- *  $HeadURL: http://ambtwsvn2/svn/DSC_Platform/trunk/SoC/A9/DSP/inc/AmbaDSP_ImgUtility.h $
-\*-------------------------------------------------------------------------------------------------------------------*/
+ */
 
 #ifndef _AMBA_DSP_IMG_UTIL_H_
 #define _AMBA_DSP_IMG_UTIL_H_

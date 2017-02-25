@@ -1,17 +1,35 @@
 /*
- * dsplog_utils.c   (for S2L )
+ * dsplog_utils.c (for S2L)
  *
  * History:
  *	2014/09/10 - [Jian Tang] created file
  *
- * Copyright (C) 2007-2016, Ambarella, Inc.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 
 #include "../dsplog_cap.h"
 
@@ -27,6 +45,19 @@
 #define UCODE_CORE_OFFSET   0x900000
 #define UCODE_MDXF_OFFSET   0x600000
 #define UCODE_MEMD_OFFSET   0x300000
+
+typedef struct idsp_printf_s {
+	u32	seq_num;		/**< Sequence number */
+	u8	dsp_core;
+	u8	thread_id;
+	u16	reserved;
+	u32	format_addr;	/**< Address (offset) to find '%s' arg */
+	u32	arg1;		/**< 1st var. arg */
+	u32	arg2;		/**< 2nd var. arg */
+	u32	arg3;		/**< 3rd var. arg */
+	u32	arg4;		/**< 4th var. arg */
+	u32	arg5;		/**< 5th var. arg */
+} idsp_printf_t;
 
 static int do_dsp_setup_log(int iav_fd, u8 module, u8 level, u8 thread)
 {
@@ -117,7 +148,7 @@ int get_thread_bitmask(char * bitmask_str)
 int dsplog_setup(int iav_fd, dsplog_debug_obj *debug)
 {
 	int i;
-	for (i =0 ; i< debug->module_id; i++) {
+	for (i = 0 ; i < debug->module_id; i++) {
 		if (do_dsp_setup_log(iav_fd, debug->modules[i], debug->debug_level,
 			debug->thread_bitmask) < 0) {
 			printf("dsplog setup failed \n");
@@ -137,5 +168,31 @@ void extra_usage(char *itself)
 
 	printf("  Parse captured DSP log into txt file.\n");
 	printf("  #%s -i /tmp/dsplog1.bin -f /tmp/dsplog.txt \n\n", itself);
+}
+
+int print_log(idsp_printf_base_t *arg, u8 * pcode,
+	u8 * pmdxf, u8 * pmemd,  FILE *  write_file,
+	dsplog_memory_block *dsplog_mem)
+{
+	char *fmt;
+	u8 *ptr;
+	u32 offset;
+	idsp_printf_t *record = (idsp_printf_t *)arg;
+
+	if (record->format_addr == 0)
+		return -1;
+	switch (record->dsp_core) {
+	case 0: ptr = pcode; offset = dsplog_mem->core_offset; break;
+	case 1: ptr = pmdxf; offset = dsplog_mem->mdxf_offset; break;
+	case 2: ptr = pmemd; offset = dsplog_mem->memd_offset; break;
+	default:
+		fprintf(stderr, "dsp_core = %d\n", record->dsp_core);
+		return -1;
+	}
+	fmt = (char*)(ptr + (record->format_addr - offset));
+	fprintf(write_file, "[core:%d:%d] ", record->thread_id, record->seq_num);
+	fprintf(write_file, fmt, record->arg1, record->arg2,
+		record->arg3, record->arg4, record->arg5);
+	return 0;
 }
 

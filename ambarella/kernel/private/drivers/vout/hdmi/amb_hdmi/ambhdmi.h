@@ -1,7 +1,34 @@
 /*
- * kernel/private/drivers/ambarella/vout/hdmi/amb_hdmi/ambhdmi.h
- *
- */
+  * kernel/private/drivers/ambarella/vout/hdmi/amb_hdmi/ambhdmi.h
+  *
+  * History:
+  *    2009/06/02 - [Zhenwu Xue] Initial revision
+  *
+  * Copyright (c) 2015 Ambarella, Inc.
+  *
+  * This file and its contents ("Software") are protected by intellectual
+  * property rights including, without limitation, U.S. and/or foreign
+  * copyrights. This Software is also the confidential and proprietary
+  * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+  * disclose, distribute, modify, or otherwise prepare derivative works of this
+  * Software or any portion thereof except pursuant to a signed license agreement
+  * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+  * In the absence of such an agreement, you agree to promptly notify and return
+  * this Software to Ambarella, Inc.
+  *
+  * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+  * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+  * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+  * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+  * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+  * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+  * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+  * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+  * POSSIBILITY OF SUCH DAMAGE.
+  *
+  */
 
 #ifndef __AMBHW_HDMI_H__
 #define __AMBHW_HDMI_H__
@@ -52,6 +79,7 @@
 /* Controller registers definitions                 */
 /****************************************************/
 #define HDMI_OFFSET			0x13000
+#define HDMI_PHYS			(0xe0000000 + HDMI_OFFSET)
 #define HDMI_BASE			(AHB_BASE + HDMI_OFFSET)
 #define HDMI_REG(x)			(HDMI_BASE + (x))
 
@@ -565,17 +593,14 @@
 #define HDMI_AUNIT_SRC_FLAT_LINE1		(0x01 << 5)
 #define HDMI_AUNIT_SRC_FLAT_LINE0		(0x01 << 4)
 #define HDMI_AUNIT_SRC_I2S3_EN			(0x01 << 3)
-#define HDMI_AUNIT_SRC_I2S2_EN			(0x01 << 2)
-#define HDMI_AUNIT_SRC_I2S1_EN			(0x01 << 1)
-#define HDMI_AUNIT_SRC_I2S0_EN			(0x01)
 #else	/* (VOUT_HDMI_SUPPORT_AUDIO_CHANNELS == 6) */
 #define HDMI_AUNIT_SRC_FLAT_LINE2		(0x01 << 5)
 #define HDMI_AUNIT_SRC_FLAT_LINE1		(0x01 << 4)
 #define HDMI_AUNIT_SRC_FLAT_LINE0		(0x01 << 3)
+#endif
 #define HDMI_AUNIT_SRC_I2S2_EN			(0x01 << 2)
 #define HDMI_AUNIT_SRC_I2S1_EN			(0x01 << 1)
 #define HDMI_AUNIT_SRC_I2S0_EN			(0x01)
-#endif
 
 /* AUNIT_CS0_REG */
 /* AUNIT_CS1_REG */
@@ -1223,6 +1248,7 @@
 #else
 #define HDCP_HDCPCE_CTL_OFFSET		0x400
 #endif
+#define HDMI_EESS_CTL_OFFSET		HDCP_HDCPCE_CTL_OFFSET
 
 #if (VOUT_SUPPORT_ONCHIP_HDCP == 1)
 
@@ -1453,7 +1479,7 @@
 
 #endif
 
-#define HDMI_EESS_CTL_REG			HDMI_REG(HDCP_HDCPCE_CTL_OFFSET)
+#define HDMI_EESS_CTL_REG			HDMI_REG(HDMI_EESS_CTL_OFFSET)
 #define HDMI_HDCPCE_CTL_HDCPCE_EN		(0x1UL << 31)
 #define HDMI_HDCPCE_CTL_HDCP_ENC_EN		(0x1 << 5)
 #define HDMI_HDCPCE_CTL_USE_EESS(x)		(((x) & 0x01) << 4)

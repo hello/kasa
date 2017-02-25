@@ -4,12 +4,29 @@
  * History:
  *   2014-11-16 - [ccjing] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -59,59 +76,33 @@ AMIDemuxerCodec* get_demuxer_codec(uint32_t streamid)
 }
 
 AMDemuxerRtp::AMDemuxerRtp(uint32_t streamid) :
-    inherited(AM_DEMUXER_RTP, streamid),
-    m_audio_info(NULL),
-    m_sock_lock(NULL),
-    m_packet_queue_lock(NULL),
-    m_recv_buf(NULL),
-    m_thread(NULL),
-    m_packet_queue(NULL),
-    m_sock_fd(-1),
-    m_packet_count(1),
-    m_run(false),
-    m_is_new_sock(true),
-    m_is_info_ready(false),
-    m_audio_rtp_type(-1),
-    m_audio_codec_type(AM_AUDIO_CODEC_NONE)
+    inherited(AM_DEMUXER_RTP, streamid)
 {
 }
 
 AMDemuxerRtp::~AMDemuxerRtp()
 {
-  if (m_audio_info) {
-    delete m_audio_info;
-  }
-  AM_DESTROY(m_sock_lock);
-  m_packet_queue_lock->lock();
-  if (m_packet_queue) {
-    delete m_packet_queue;
-  }
-  m_packet_queue_lock->unlock();
-  AM_DESTROY(m_packet_queue_lock);
-  if (m_recv_buf) {
-    delete m_recv_buf;
-  }
+  delete   m_audio_info;
+  delete   m_packet_queue;
+  delete[] m_recv_buf;
 }
 
 void AMDemuxerRtp::stop()
 {
-  if (AM_LIKELY(m_run && CTRL_WRITE_RTP >= 0)) {
+  if (AM_LIKELY(m_run.load() && CTRL_WRITE_RTP >= 0)) {
     write(CTRL_WRITE_RTP, "s", 1);
     INFO("Write stop cmd to rtp demuxer mainloop!");
   }
   AM_DESTROY(m_thread);/*already set m_thread NULL inside of destroy*/
-  m_sock_lock->lock();
+  m_sock_lock.lock();
   if (m_sock_fd >= 0) {
     close(m_sock_fd);
     m_sock_fd = -1;
   }
-  m_sock_lock->unlock();
-  m_packet_queue_lock->lock();
+  m_sock_lock.unlock();
   while (AM_LIKELY(!m_packet_queue->empty())) {
-    m_packet_pool->release(m_packet_queue->front());
-    m_packet_queue->pop();
+    m_packet_pool->release(m_packet_queue->front_pop());
   }
-  m_packet_queue_lock->unlock();
   if (AM_LIKELY(CTRL_READ_RTP >= 0)) {
     close(CTRL_READ_RTP);
     CTRL_READ_RTP = -1;
@@ -144,12 +135,17 @@ void AMDemuxerRtp::enable(bool enabled)
   if(!enabled) {
     stop();
   }
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   if (AM_LIKELY(m_packet_pool && (m_is_enabled != enabled))) {
     m_is_enabled = enabled;
     m_packet_pool->enable(enabled);
-    NOTICE("%s Demuxer %d!", enabled ? "Enable" : "Disable", m_demuxer_type);
+    NOTICE("%s AMDemuxerRtp!", enabled ? "Enable" : "Disable");
   }
+}
+
+bool AMDemuxerRtp::is_drained()
+{
+  return (m_packet_pool->get_avail_packet_num() == PACKET_POOL_SIZE);
 }
 
 bool AMDemuxerRtp::is_play_list_empty()
@@ -169,8 +165,8 @@ bool AMDemuxerRtp::add_uri(const AMPlaybackUri& uri)
     const AMPlaybackRtpUri& rtp_info = uri.media.rtp;
     m_audio_info->sample_rate = rtp_info.sample_rate;
     m_audio_info->channels = rtp_info.channel;
-    m_audio_info->type = rtp_info.audio_format;
-    switch(rtp_info.audio_format) {
+    m_audio_info->type = rtp_info.audio_type;
+    switch(rtp_info.audio_type) {
       case AM_AUDIO_G711A:
         m_audio_info->sample_format = AM_SAMPLE_ALAW;
         m_audio_info->sample_size = sizeof(int8_t);
@@ -211,7 +207,7 @@ bool AMDemuxerRtp::add_udp_port(const AMPlaybackRtpUri& rtp_uri)
     NOTICE("The thread is running now, stop it first.");
     stop();
   }
-  AUTO_SPIN_LOCK(m_sock_lock);
+  AUTO_MEM_LOCK(m_sock_lock);
   if (AM_UNLIKELY(m_sock_fd >= 0)) {
     close(m_sock_fd);
     m_sock_fd = -1;
@@ -340,7 +336,6 @@ bool AMDemuxerRtp::add_udp_port(const AMPlaybackRtpUri& rtp_uri)
       m_thread = NULL;
       break;
     }
-
   } while (0);
 
   return ret;
@@ -389,13 +384,11 @@ AM_DEMUXER_STATE AMDemuxerRtp::get_packet(AMPacket* &packet)
       ret = AM_DEMUXER_NO_PACKET;
     }
   } else {
-    AUTO_SPIN_LOCK(m_packet_queue_lock);
     if (AM_LIKELY(!(m_packet_queue->empty()))) {
-      packet = m_packet_queue->front();
-      m_packet_queue->pop();
+      packet = m_packet_queue->front_pop();
     } else {
-      AUTO_SPIN_LOCK(m_sock_lock);
-      if (AM_UNLIKELY((m_sock_fd == -1) || (!m_run))) {
+      AUTO_MEM_LOCK(m_sock_lock);
+      if (AM_UNLIKELY((m_sock_fd == -1) || (!m_run.load()))) {
         ret = AM_DEMUXER_NO_FILE;
         NOTICE("Socket is closed or m_run is false, return AM_DEMUXER_NO_FILE");
       } else {
@@ -427,13 +420,6 @@ AM_STATE AMDemuxerRtp::init()
       state = AM_STATE_NO_MEMORY;
       break;
     }
-    m_sock_lock = AMSpinLock::create();
-    m_packet_queue_lock = AMSpinLock::create();
-    if (AM_LIKELY(!m_sock_lock || !m_packet_queue_lock)) {
-      ERROR("Failed to create m_sock_lock or m_packet_queue_lock!");
-      state = AM_STATE_NO_MEMORY;
-      break;
-    }
     m_recv_buf = new char[SOCKET_BUFFER_SIZE];
     if (AM_UNLIKELY(!m_recv_buf)) {
       ERROR("Failed to alloc m_recv_buf!");
@@ -456,6 +442,7 @@ void AMDemuxerRtp::thread_entry(void *p)
 {
   ((AMDemuxerRtp*)p)->main_loop();
 }
+
 void AMDemuxerRtp::main_loop()
 {
   AMPacket* packet = NULL;
@@ -471,21 +458,24 @@ void AMDemuxerRtp::main_loop()
   uint32_t packet_count = 0;
   if (AM_LIKELY(m_sock_fd >=0 && CTRL_READ_RTP >= 0)) {
     m_run = true;
-    AUTO_SPIN_LOCK(m_sock_lock);
+    AUTO_MEM_LOCK(m_sock_lock);
     FD_ZERO(&zfds);
     FD_SET(m_sock_fd, &zfds);
     FD_SET(CTRL_READ_RTP, &zfds);
-    max_fd = (m_sock_fd > CTRL_READ_RTP)? m_sock_fd : CTRL_READ_RTP;
+    max_fd = AM_MAX(m_sock_fd, CTRL_READ_RTP);
   } else {
     ERROR("m_socket_fd < 0 or CTRL_READ_RTP < 0. Stop it");
     m_run = false;
     stop();
   }
-  while (m_run) {
+  while (m_run.load()) {
     rfds = zfds;
     int sret = select(max_fd + 1, &rfds, NULL, NULL, NULL);
     if (AM_UNLIKELY(sret <= 0)) {
       PERROR("select");
+      if (errno != EAGAIN) {
+        m_run = false;
+      }
       ssrc = 0;
       continue;
     }
@@ -506,16 +496,16 @@ void AMDemuxerRtp::main_loop()
         data_len = 0;
         continue;
       } else {
-        m_sock_lock->lock();
+        m_sock_lock.lock();
         int recv_len = recv(m_sock_fd, m_recv_buf + data_len,
                                SOCKET_BUFFER_SIZE - data_len, 0);
-        m_sock_lock->unlock();
+        m_sock_lock.unlock();
         if(AM_UNLIKELY(recv_len < 0)) {
           if((errno == EAGAIN) || (errno == EWOULDBLOCK)) {
             continue;
           } else {
             PERROR("recvfrom");
-            m_run =false;
+            m_run = false;
             break;
           }
         }

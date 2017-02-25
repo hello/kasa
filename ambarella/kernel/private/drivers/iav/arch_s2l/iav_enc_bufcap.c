@@ -3,14 +3,33 @@
  *
  * History:
  *	2014/03/28 - [Zhaoyang Chen] created file
- * Copyright (C) 2007-2016, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 #include <config.h>
 #include <linux/random.h>
 #include <linux/slab.h>
@@ -36,6 +55,58 @@ static inline int is_invalid_dsp_addr(u32 addr)
 	return ((addr == 0x0) || (addr == 0xdeadbeef) || (addr == 0xc0000000));
 }
 
+static inline int is_invalid_qp_hist(struct ambarella_iav *iav)
+{
+	int i;
+	struct iav_stream *stream;
+
+	for (i = 0; i < IAV_MAX_ENCODE_STREAMS_NUM; ++i) {
+		stream = &iav->stream[i];
+		if (stream->format.type == IAV_STREAM_TYPE_H264
+				&& is_stream_in_encoding(stream)) {
+			return 0;
+		}
+	}
+
+	return 1;
+}
+
+static int check_qp_hist_param(struct ambarella_iav *iav, struct iav_qp_histogram *hist)
+{
+	int i, mb_sum, stream_id;
+	u32 width, height;
+	struct iav_stream *stream;
+
+	/* check stream id */
+	stream_id = hist->id;
+	if (stream_id < 0 || stream_id >= IAV_MAX_ENCODE_STREAMS_NUM) {
+		iav_error("Invalid stream id [%d] for QP histogram.\n", stream_id);
+		return -1;
+	}
+	stream = &iav->stream[stream_id];
+
+	mb_sum = 0;
+	/* check QP value */
+	for (i = 0; i < IAV_QP_HIST_BIN_MAX_NUM; ++i) {
+		if (hist->qp[i] < H264_QP_MIN || hist->qp[i] > H264_QP_MAX) {
+			iav_error("Stream [%d] : Invalid QP value [%d] for bin [%d].\n",
+				stream_id, hist->qp[i], i);
+			return -1;
+		}
+		mb_sum += hist->mb[i];
+	}
+	/* check total MB num */
+	width = ALIGN(stream->format.enc_win.width, 16);
+	height = ALIGN(stream->format.enc_win.height, 16);
+	if ((mb_sum << 8) != (width * height)) {
+		iav_error("Stream [%d] : Invalid total MB number for resolution %dx%d.\n",
+			stream_id, width, height);
+		return -1;
+	}
+
+	return 0;
+}
+
 static void save_raw_data_info(struct ambarella_iav *iav, encode_msg_t *msg)
 {
 	struct iav_bufcap_info *buf_cap;
@@ -43,12 +114,12 @@ static void save_raw_data_info(struct ambarella_iav *iav, encode_msg_t *msg)
 	struct iav_rect *vin;
 
 	buf_cap = &iav->buf_cap;
-	vin = &iav->vinc[0]->vin_format.vin_win;
 
 	if (unlikely(is_invalid_dsp_addr(msg->raw_pic_addr))) {
 		return ;
 	}
 
+	get_vin_win(iav, &vin, 1);
 	raw_cap = &buf_cap->raw_info[buf_cap->write_index];
 	raw_cap->raw_addr = msg->raw_pic_addr;
 	raw_cap->raw_width = vin->width;
@@ -179,6 +250,31 @@ static void save_me0_data_info(struct ambarella_iav *iav, encode_msg_t *msg)
 
 	buf_cap->me0_data_valid = 1;
 	wake_up_interruptible_all(&buf_cap->me0_wq);
+}
+
+void save_qp_hist_info(struct ambarella_iav *iav, encode_msg_t *msg)
+{
+	struct iav_bufcap_info *buf_cap;
+	struct iav_qp_hist_info *qp_hist;
+	u32 seq_num;
+
+	buf_cap = &iav->buf_cap;
+	qp_hist = &buf_cap->qp_hist;
+	seq_num = buf_cap->seq_num;
+
+	qp_hist->stream_num = msg->raw_cap_cnt;
+	qp_hist->seq_num = seq_num;
+	if ((msg->qp_histo_addr < qp_hist->data_dsp_addr_base)
+			|| (msg->qp_histo_addr >= qp_hist->data_dsp_addr_end)) {
+		qp_hist->data_dsp_addr_base = msg->qp_histo_addr;
+		qp_hist->data_dsp_addr_end = msg->qp_histo_addr +
+			NUM_QP_HISTOGRAM_BUF * sizeof(struct iav_qp_histogram);
+		qp_hist->base_addr_set_flag = 1;
+	}
+	qp_hist->data_dsp_addr_cur = msg->qp_histo_addr;
+
+	buf_cap->qp_hist_data_valid = 1;
+	wake_up_interruptible(&buf_cap->qp_hist_wq);
 }
 
 static u32 get_dsp_sub_buf_idx(u32 buf_id, u32 is_yuv)
@@ -418,6 +514,7 @@ void irq_update_bufcap(struct ambarella_iav *iav, encode_msg_t *msg)
 	save_srcbuf_data_info(iav, msg);
 	save_me1_data_info(iav, msg);
 	save_me0_data_info(iav, msg);
+	save_qp_hist_info(iav, msg);
 
 	++buf_cap->seq_num;
 
@@ -447,6 +544,14 @@ void iav_init_bufcap(struct ambarella_iav *iav)
 
 	buf_cap->me0_data_valid = 0;
 	init_waitqueue_head(&buf_cap->me0_wq);
+
+	buf_cap->qp_hist_data_valid = 0;
+	init_waitqueue_head(&buf_cap->qp_hist_wq);
+	buf_cap->qp_hist.base_addr_set_flag = 0;
+	buf_cap->qp_hist.data_dsp_addr_base = 0x0;
+	buf_cap->qp_hist.data_dsp_addr_cur = 0x0;
+	buf_cap->qp_hist.data_dsp_addr_end = 0x0;
+	buf_cap->qp_hist.data_virt_addr_base = 0x0;
 }
 
 int iav_query_rawdesc(struct ambarella_iav *iav,
@@ -458,7 +563,7 @@ int iav_query_rawdesc(struct ambarella_iav *iav,
 
 	if (iav->state == IAV_STATE_IDLE) {
 		iav_error("Invalid IAV state: %d!\n", iav->state);
-		return -EBADFD;
+		return -EPERM;
 	}
 
 	if (!iav->system_config[iav->encode_mode].raw_capture) {
@@ -486,8 +591,13 @@ int iav_query_rawdesc(struct ambarella_iav *iav,
 			break;
 		}
 
-		rawdesc->raw_addr_offset = DSP_TO_PHYS(raw_addr) -
-			iav->mmap[IAV_BUFFER_DSP].phys;
+		if (likely(!iav->dsp_partition_mapped)) {
+			rawdesc->raw_addr_offset = DSP_TO_PHYS(raw_addr) -
+					iav->mmap[IAV_BUFFER_DSP].phys;
+		} else {
+			rawdesc->raw_addr_offset = DSP_TO_PHYS(raw_addr) -
+					iav->mmap_dsp[IAV_DSP_SUB_BUF_RAW].phys;
+		}
 		rawdesc->width = buf_cap->raw_info[rd_idx].raw_width;
 		rawdesc->height = buf_cap->raw_info[rd_idx].raw_height;
 		rawdesc->pitch = buf_cap->raw_info[rd_idx].pitch;
@@ -516,7 +626,7 @@ int iav_query_yuvdesc(struct ambarella_iav *iav,
 
 	if (iav->state == IAV_STATE_IDLE) {
 		iav_error("Invalid IAV state: %d!\n", iav->state);
-		return -EBADFD;
+		return -EPERM;
 	}
 
 	buf_cap = &iav->buf_cap;
@@ -574,7 +684,7 @@ int iav_query_me1desc(struct ambarella_iav *iav,
 
 	if (iav->state == IAV_STATE_IDLE) {
 		iav_error("Invalid IAV state: %d!\n", iav->state);
-		return -EBADFD;
+		return -EPERM;
 	}
 
 	buf_cap = &iav->buf_cap;
@@ -630,7 +740,7 @@ int iav_query_me0desc(struct ambarella_iav *iav,
 
 	if (iav->state == IAV_STATE_IDLE) {
 		iav_error("Invalid IAV state: %d!\n", iav->state);
-		return -EBADFD;
+		return -EPERM;
 	}
 
 	buf_cap = &iav->buf_cap;
@@ -681,7 +791,7 @@ int iav_query_bufcapdesc(struct ambarella_iav *iav,
 
 	if (iav->state == IAV_STATE_IDLE) {
 		iav_error("Invalid IAV state: %d!\n", iav->state);
-		return -EBADFD;
+		return -EPERM;
 	}
 
 	buf_cap = &iav->buf_cap;
@@ -722,6 +832,94 @@ int iav_query_bufcapdesc(struct ambarella_iav *iav,
 	spin_unlock_irq(&iav->iav_lock);
 
 bufcapdesc_exit:
+	mutex_unlock(&iav->iav_mutex);
+
+	return rval;
+}
+
+int iav_query_qphistdesc(struct ambarella_iav *iav,
+	struct iav_qphistdesc *qphistdesc)
+{
+	int rval = 0;
+	u8 *start_addr, *buffer_base, *buffer_end;
+	u32 i, stream_num, seqnum;
+	void __iomem *base = NULL;
+	struct iav_bufcap_info *buf_cap;
+	struct iav_qp_hist_info *qp_hist;
+
+	buf_cap = &iav->buf_cap;
+	qp_hist = &buf_cap->qp_hist;
+
+	if (iav->state != IAV_STATE_ENCODING) {
+		qphistdesc->stream_num = 0;
+		return 0;
+	}
+	if (unlikely(is_invalid_qp_hist(iav))) {
+		qphistdesc->stream_num = 0;
+		return 0;
+	}
+
+	rval = wait_event_interruptible_timeout(buf_cap->qp_hist_wq,
+		(buf_cap->qp_hist_data_valid == 1), TWO_JIFFIES);
+	if (rval <= 0) {
+		iav_error("[TIMEOUT] Query QP HIST descriptor.\n");
+		return -EAGAIN;
+	} else {
+		rval = 0;
+	}
+
+	memset(qphistdesc, 0, sizeof(struct iav_qphistdesc));
+	mutex_lock(&iav->iav_mutex);
+	do {
+		stream_num = qp_hist->stream_num;
+		seqnum = qp_hist->seq_num;
+
+		iav_warn("Only can show accurate qp for QP delta case, "
+			"qp offset for MB level qp can't be supported. \n");
+
+		if (qp_hist->base_addr_set_flag == 1) {
+			if (qp_hist->data_virt_addr_base) {
+				base = (void __iomem *)qp_hist->data_virt_addr_base;
+				iounmap(base);
+				base = NULL;
+			}
+			base = ioremap_nocache(qp_hist->data_dsp_addr_base,
+				(qp_hist->data_dsp_addr_end - qp_hist->data_dsp_addr_base));
+			if (!base) {
+				iav_error("Failed to call ioremap() for IAV.\n");
+				return -ENOMEM;
+			}
+			qp_hist->data_virt_addr_base = (u32)base;
+			qp_hist->base_addr_set_flag = 0;
+		}
+		buffer_base = (u8 *)qp_hist->data_virt_addr_base;
+		buffer_end = (u8 *)(qp_hist->data_virt_addr_base +
+			(qp_hist->data_dsp_addr_end - qp_hist->data_dsp_addr_base));
+		start_addr = (u8 *)(qp_hist->data_virt_addr_base +
+			(qp_hist->data_dsp_addr_cur - qp_hist->data_dsp_addr_base));
+
+		/* now fill and check the data */
+		qphistdesc->stream_num = stream_num;
+		qphistdesc->seq_num = seqnum;
+		for (i = 0; i < stream_num; ++i) {
+			if (check_qp_hist_param(iav, (struct iav_qp_histogram *)start_addr) < 0) {
+				iav_error("Invalid QP histogram data!\n");
+				mutex_unlock(&iav->iav_mutex);
+				return -EINVAL;
+			}
+			memcpy(&qphistdesc->stream_qp_hist[i], start_addr,
+				sizeof(struct iav_qp_histogram));
+			start_addr += sizeof(struct iav_qp_histogram);
+			if (start_addr == buffer_end) {
+				start_addr = buffer_base;
+			}
+		}
+
+		/* clear data valid flag */
+		spin_lock_irq(&iav->iav_lock);
+		buf_cap->qp_hist_data_valid = 0;
+		spin_unlock_irq(&iav->iav_lock);
+	} while (0);
 	mutex_unlock(&iav->iav_mutex);
 
 	return rval;

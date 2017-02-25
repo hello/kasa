@@ -832,7 +832,8 @@ config USB_G_PRINTER
 
 config USB_AMB_STREAM
 	tristate "Gadget Ambarella Data Streaming"
-	depends on USB_GADGET_AMBARELLA
+	depends on USB_AMBARELLA
+	select USB_LIBCOMPOSITE
 	help
 	  Gadget Ambarella Data Streaming is a single-configuration
 	  single-interface device.

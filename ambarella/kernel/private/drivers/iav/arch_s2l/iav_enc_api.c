@@ -3,14 +3,33 @@
  *
  * History:
  *	2012/04/13 - [Jian Tang] created file
- * Copyright (C) 2007-2016, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 #include <config.h>
 #include <plat/ambcache.h>
 #include <linux/random.h>
@@ -36,10 +55,10 @@ static struct iav_driver_version iav_driver_info =
 {
 	.arch = S2L,
 	.model = 1,
-	.major = 2,		/* SDK version 2.6.0 */
+	.major = 2,		/* SDK version 2.6.21 */
 	.minor = 6,
-	.patch = 0,
-	.mod_time = 0x20150922,
+	.patch = 21,
+	.mod_time = 0x20161212,
 	.description = "S2L Flexible Linux",
 	.api_version = API_REVISION_U32,
 	.idsp_version = IDSP_REVISION_U32,
@@ -211,6 +230,23 @@ static void handle_hash_msg(struct ambarella_iav *iav, DSP_MSG *msg)
 	return ;
 }
 
+static void handle_hash_msg_ex(struct ambarella_iav *iav, DSP_MSG *msg)
+{
+	hash_verification_msg_ex_t *hash_msg = (hash_verification_msg_ex_t *)msg;
+
+	iav->hash_output[0] = hash_msg->hash_output[0];
+	iav->hash_output[1] = hash_msg->hash_output[1];
+	iav->hash_output[2] = hash_msg->hash_output[2];
+	iav->hash_output[3] = hash_msg->hash_output[3];
+
+	if (iav->wait_hash_msg) {
+		iav->hash_msg_cnt ++;
+		wake_up_interruptible(&iav->hash_wq);
+	}
+
+	return ;
+}
+
 static void handle_vcap_msg(void *data, DSP_MSG *msg)
 {
 	struct ambarella_iav *iav = data;
@@ -230,6 +266,9 @@ static void handle_vcap_msg(void *data, DSP_MSG *msg)
 	case DSP_STATUS_MSG_HASH_VERIFICATION:
 		handle_hash_msg(iav, msg);
 		break;
+	case DSP_STATUS_MSG_HASH_VERIFICATION_EX:
+		handle_hash_msg_ex(iav, msg);
+		break;
 	case DSP_STATUS_MSG_DECODE:
 	default:
 		iav_error("Invalid message status [%u] for encode mode.\n",
@@ -239,7 +278,7 @@ static void handle_vcap_msg(void *data, DSP_MSG *msg)
 }
 
 
-static int enter_preview_state(struct ambarella_iav *iav, u32 is_resume)
+static int enter_preview_state(struct ambarella_iav *iav)
 {
 	struct dsp_device *dsp = iav->dsp;
 	struct amb_dsp_cmd *first, *cmd;
@@ -253,16 +292,13 @@ static int enter_preview_state(struct ambarella_iav *iav, u32 is_resume)
 		return -ENOMEM;
 
 	/* VOUT configuration. It must run in the beginning. */
-	if (iav->dsp_enc_state != DSP_ENCODE_MODE || is_resume == 1) {
+	if (iav->dsp_enc_state != DSP_ENCODE_MODE || iav->resume_flag == 1) {
 		iav_config_vout(VOUT_SRC_ENC);
 	} else {
 		iav_change_vout_src(VOUT_SRC_ENC);
 	}
 
 	cmd = first;
-	cmd_chip_selection(iav, cmd);
-
-	get_next_cmd(cmd, first);
 	cmd_system_info_setup(iav, cmd, 0);
 
 	get_next_cmd(cmd, first);
@@ -294,7 +330,8 @@ static int enter_preview_state(struct ambarella_iav *iav, u32 is_resume)
 	}
 
 	for (i = IAV_SUB_SRCBUF_FIRST; i < IAV_SUB_SRCBUF_LAST; ++i) {
-		if ((iav->srcbuf[i].type == IAV_SRCBUF_TYPE_ENCODE) &&
+		if (((iav->srcbuf[i].type == IAV_SRCBUF_TYPE_ENCODE) ||
+			(iav->srcbuf[i].type == IAV_SRCBUF_TYPE_VCA)) &&
 			iav->srcbuf[i].max.width) {
 			get_next_cmd(cmd, first);
 			cmd_capture_buffer_default_setup(iav, cmd, i);
@@ -311,16 +348,17 @@ static int enter_preview_state(struct ambarella_iav *iav, u32 is_resume)
 
 	if (iav->dsp_enc_state != DSP_ENCODE_MODE) {
 		/* enter preview from bootup stage or other mode, like DECODE */
-		dsp->set_op_mode(dsp, DSP_ENCODE_MODE, first);
+		dsp->set_op_mode(dsp, DSP_ENCODE_MODE, first, iav->fast_resume);
 		iav->dsp_enc_state = DSP_ENCODE_MODE;
 	} else {
 		/* re-enter preview again */
-		dsp->set_enc_sub_mode(dsp, VIDEO_MODE, first, 0);
+		dsp->set_enc_sub_mode(dsp, VIDEO_MODE, first, iav->fast_resume, 0);
 	}
 
 	/* Config capture buffer resolution after entering preview for SMEM */
 	for (i = IAV_SUB_SRCBUF_FIRST; i < IAV_SUB_SRCBUF_LAST; ++i) {
-		if ((iav->srcbuf[i].type == IAV_SRCBUF_TYPE_ENCODE) &&
+		if (((iav->srcbuf[i].type == IAV_SRCBUF_TYPE_ENCODE) ||
+			(iav->srcbuf[i].type == IAV_SRCBUF_TYPE_VCA)) &&
 			iav->srcbuf[i].max.width) {
 			cmd_capture_buffer_setup(iav, NULL, i);
 		}
@@ -337,6 +375,7 @@ static void update_default_param_before_preview(struct ambarella_iav *iav,
 	struct iav_buffer * main_buffer, * buffer;
 	u32 encode_mode = iav->encode_mode;
 	struct iav_system_config *config = &iav->system_config[encode_mode];
+	struct iav_rect main_output;
 
 	/* default pre main input = vin */
 	buffer = &iav->srcbuf[IAV_SRCBUF_PMN];
@@ -381,9 +420,10 @@ static void update_default_param_before_preview(struct ambarella_iav *iav,
 	switch (encode_mode) {
 	case DSP_ADVANCED_ISO_MODE:
 		if (config->lens_warp) {
-			update_warp_aspect_ratio(IAV_SRCBUF_MN, 0,
-				&iav->vinc[0]->vin_format.vin_win,
-				(struct iav_rect *)&iav->srcbuf[IAV_SRCBUF_MN].win);
+			memset(&main_output, 0, sizeof(main_output));
+			main_output.width = iav->srcbuf[IAV_SRCBUF_MN].win.width;
+			main_output.height = iav->srcbuf[IAV_SRCBUF_MN].win.height;
+			update_warp_aspect_ratio(IAV_SRCBUF_MN, 0, &main_buffer->input, &main_output);
 		}
 		break;
 	default:
@@ -398,6 +438,8 @@ static int iav_cross_check_vin(struct ambarella_iav *iav, struct iav_rect *vin)
 	struct iav_window * main_win = NULL;
 	struct iav_rect * input = NULL;
 	struct iav_enc_limitation * limit = NULL;
+	struct iav_system_config * config = NULL;
+	u8 hdr_mode = iav->vinc[0]->dev_active->cur_format->hdr_mode;
 
 	enc_mode = iav->encode_mode;
 	limit = &G_encode_limit[enc_mode];
@@ -407,6 +449,28 @@ static int iav_cross_check_vin(struct ambarella_iav *iav, struct iav_rect *vin)
 		iav_error("VIN width %d cannot be greater than %d in mode %d. "
 			"It cannot support high MP sensor.\n", vin->width,
 			MAX_WIDTH_IN_FULL_FPS, enc_mode);
+		return -1;
+	}
+
+
+	/* check vin hdr-mode when set expo_num in iav */
+	config = &iav->system_config[enc_mode];
+	if (config->expo_num > MIN_HDR_EXPOSURES) {
+		if ((config->expo_num - hdr_mode) != 1) {
+			iav_error("The hdr-mode is [%d], the hdr-expo is [%d].\n", hdr_mode,
+				config->expo_num);
+			return -1;
+		}
+	}
+
+	/* error if vin width are not aligned to 32 when raw_capture is disable */
+	if (!config->raw_capture && !config->enc_raw_yuv && (vin->width & 0x1F)) {
+		iav_error("vin width %d must be multiple of 32.\n", vin->width);
+		return -1;
+	}
+	/* error if vin width are not aligned to 16 when raw_capture is enable */
+	if (config->raw_capture && (vin->width & 0x0F)) {
+		iav_error("vin width %d must be multiple of 16.\n", vin->width);
 		return -1;
 	}
 
@@ -592,6 +656,46 @@ static int iav_check_vout(struct ambarella_iav *iav)
 	return 0;
 }
 
+static int check_vin_resource_limit(struct ambarella_iav *iav)
+{
+	u32 chip_id, chip_idx;
+	u32 vin_pps;
+	u32 vin_pps_limit;
+	int vin_fps;
+	u32 vin_width, vin_height;
+	struct iav_rect *vin_win;
+
+	iav_no_check();
+
+	get_vin_win(iav, &vin_win, 1);
+	vin_width = ALIGN(vin_win->width, PIXEL_IN_MB);
+	vin_height = ALIGN(vin_win->height, PIXEL_IN_MB);
+
+	if (iav->vinc[0]->vin_format.frame_rate == 0) {
+		iav_error("Divider of frame_rate can not be zero\n");
+		return -1;
+	}
+	vin_fps = DIV_CLOSEST(512000000, iav->vinc[0]->vin_format.frame_rate);
+
+	chip_id = get_chip_id(iav);
+	if (chip_id < IAV_CHIP_ID_S2LM_FIRST ||
+		chip_id >= IAV_CHIP_ID_S2L_LAST) {
+		iav_error("Invalid S2L chip ID [%d].\n", chip_id);
+		chip_id = IAV_CHIP_ID_S2L_99;
+	}
+
+	vin_pps = vin_width * vin_height * vin_fps;
+
+	chip_idx = chip_id - IAV_CHIP_ID_S2LM_FIRST;
+	vin_pps_limit = G_system_load[chip_idx].vin_pps;
+	if (vin_pps > vin_pps_limit) {
+		iav_warn("Total vin pps %d exceed except pps %d (%s).\n",
+			vin_pps, vin_pps_limit, G_system_load[chip_idx].vin_pps_desc);
+	}
+
+	return 0;
+}
+
 static int iav_check_before_enter_preview(struct ambarella_iav *iav, struct iav_rect *vin)
 {
 	iav_no_check();
@@ -612,6 +716,12 @@ static int iav_check_before_enter_preview(struct ambarella_iav *iav, struct iav_
 		return -1;
 	}
 
+	/* check total vin performance limit */
+	if (check_vin_resource_limit(iav) < 0) {
+		iav_error("Cannot start preview, system resource is not enough.\n");
+		return -1;
+	}
+
 	if (iav_check_sys_mem_usage(iav, (int)IAV_STATE_PREVIEW, 0) < 0) {
 		return -1;
 	}
@@ -629,7 +739,8 @@ static int update_default_param_after_preview(struct ambarella_iav *iav)
 	int rval = 0;
 
 	/* use iav mem info to fill dsp default binary address for encoding */
-	iav_reset_pm(iav);
+	if (!iav->resume_flag)
+		iav_reset_pm(iav);
 
 	/* DSP partitions physical address may be updated after preview*/
 	if (iav->dsp_map_updated || iav->dsp_partition_mapped) {
@@ -647,11 +758,18 @@ static int update_default_param_after_preview(struct ambarella_iav *iav)
 
 	iav->state = IAV_STATE_PREVIEW;
 
+	/* Resend IDSP upsampling config */
+	rval = cmd_update_idsp_factor(iav, NULL);
+	if (rval < 0) {
+		iav_error("Failed to Update IDSP upsampling config!\n");
+		return rval;
+	}
+
 	return rval;
 }
 
 
-int iav_enable_preview(struct ambarella_iav *iav, u32 is_resume)
+int iav_enable_preview(struct ambarella_iav *iav)
 {
 	int rval = 0;
 	struct iav_rect *vin;
@@ -677,18 +795,16 @@ int iav_enable_preview(struct ambarella_iav *iav, u32 is_resume)
 		}
 
 		if ((iav->nl_obj[NL_OBJ_IMAGE].nl_connected == 1) &&
-			(is_resume == 0)) {
+			(iav->resume_flag == 0)) {
 			rval = nl_send_request(&iav->nl_obj[NL_OBJ_IMAGE],
 				NL_REQ_IMG_PREPARE_AAA);
 			if (rval < 0) {
-				iav->nl_obj[NL_OBJ_IMAGE].nl_connected = 0;
-				iav_error("iav netlink disconnected.\n");
 				rval = -EPERM;
 				break;
 			}
 		}
 
-		enter_preview_state(iav, is_resume);
+		enter_preview_state(iav);
 		if (unlikely(iav->err_vsync_again)) {
 			iav_error("Vsync loss in entering preview. Abort rest cmds.\n");
 			rval = -EAGAIN;
@@ -703,15 +819,9 @@ int iav_enable_preview(struct ambarella_iav *iav, u32 is_resume)
 
 		if ((iav->nl_obj[NL_OBJ_IMAGE].nl_connected == 1) &&
 			likely(!iav->err_vsync_again) &&
-			(is_resume == 0)) {
+			(iav->resume_flag == 0)) {
 			rval = nl_send_request(&iav->nl_obj[NL_OBJ_IMAGE],
 				NL_REQ_IMG_START_AAA);
-			if (rval < 0) {
-				iav->nl_obj[NL_OBJ_IMAGE].nl_connected = 0;
-				iav_error("iav netlink disconnected.\n");
-				rval = -EPERM;
-				break;
-			}
 		}
 	} while (0);
 	mutex_unlock(&iav->iav_mutex);
@@ -745,17 +855,12 @@ int iav_disable_preview(struct ambarella_iav *iav)
 	if (iav->nl_obj[NL_OBJ_IMAGE].nl_connected) {
 		rval = nl_send_request(&iav->nl_obj[NL_OBJ_IMAGE],
 			NL_REQ_IMG_STOP_AAA);
-		if (rval < 0) {
-			iav->nl_obj[NL_OBJ_IMAGE].nl_connected = 0;
-			iav_error("iav netlink disconnected.\n");
-			rval = 0;
-		}
 	}
 
 	iav->state = IAV_STATE_EXITING_PREVIEW;
 	cmd_vin_timer_mode(iav, cmd);
 	/* Wait for DSP to enter IDLE mode */
-	dsp->set_enc_sub_mode(dsp, TIMER_MODE, cmd, 0);
+	dsp->set_enc_sub_mode(dsp, TIMER_MODE, cmd, 0, 0);
 	iav->state = IAV_STATE_IDLE;
 	mutex_unlock(&iav->iav_mutex);
 
@@ -780,14 +885,14 @@ static inline int update_bsb_addr_in_dsp_init_data(struct ambarella_iav *iav)
 inline int iav_boot_dsp_action(struct ambarella_iav *iav)
 {
 	update_bsb_addr_in_dsp_init_data(iav);
-	iav->dsp->set_op_mode(iav->dsp, DSP_ENCODE_MODE, NULL);
+	iav->dsp->set_op_mode(iav->dsp, DSP_ENCODE_MODE, NULL, iav->resume_flag);
 	iav->dsp_enc_state = DSP_ENCODE_MODE;
 	iav->state = IAV_STATE_IDLE;
 
 	return 0;
 }
 
-static int iav_goto_timer_mode(struct ambarella_iav *iav)
+int iav_goto_timer_mode(struct ambarella_iav *iav)
 {
 	struct dsp_device *dsp = iav->dsp;
 	struct amb_dsp_cmd *cmd;
@@ -796,7 +901,7 @@ static int iav_goto_timer_mode(struct ambarella_iav *iav)
 	mutex_lock(&iav->iav_mutex);
 	// update bsb addr for encode mode
 	update_bsb_addr_in_dsp_init_data(iav);
-	rval = dsp->set_op_mode(dsp, DSP_ENCODE_MODE, NULL);
+	rval = dsp->set_op_mode(dsp, DSP_ENCODE_MODE, NULL, 0);
 	if (rval < 0) {
 		iav_error("set_op_mode(DSP_ENCODE_MODE) fail\n");
 		mutex_unlock(&iav->iav_mutex);
@@ -812,7 +917,7 @@ static int iav_goto_timer_mode(struct ambarella_iav *iav)
 		return -ENOMEM;
 	}
 	cmd_vin_timer_mode(iav, cmd);
-	dsp->set_enc_sub_mode(dsp, TIMER_MODE, cmd, 1);
+	dsp->set_enc_sub_mode(dsp, TIMER_MODE, cmd, 0, 1);
 
 	iav->state = IAV_STATE_IDLE;
 	mutex_unlock(&iav->iav_mutex);
@@ -916,12 +1021,13 @@ static inline int iav_ioc_g_drvdspinfo(struct ambarella_iav *iav, void __user *a
 		return -EPERM;
 	}
 
-	ret = wait_event_interruptible_timeout(iav->hash_wq, (pre_hash_cnt != iav->hash_msg_cnt), TWO_JIFFIES);
+	ret = wait_event_interruptible_timeout(iav->hash_wq,
+		(pre_hash_cnt != iav->hash_msg_cnt), TWO_JIFFIES);
 	iav->wait_hash_msg = 0;
 	if (0 > ret) {
 		iav_error("can not wait hash msg\n");
 		mutex_unlock(&iav->hash_mutex);
-		return -EPERM;
+		return -EINTR;
 	}
 
 	memcpy(iavdsp_info.dspout, iav->hash_output, 4);
@@ -929,6 +1035,72 @@ static inline int iav_ioc_g_drvdspinfo(struct ambarella_iav *iav, void __user *a
 
 	if (copy_to_user(arg, &iavdsp_info, sizeof(struct iav_driver_dsp_info))) {
 		return -EFAULT;
+	}
+
+	return 0;
+}
+
+static inline int iav_ioc_get_dsp_hash(struct ambarella_iav *iav, void __user *arg)
+{
+	struct iav_dsp_hash dsp_hash;
+	int ret = 0;
+	u32 pre_hash_cnt = 0;
+
+	if (copy_from_user(&dsp_hash, arg, sizeof(dsp_hash))) {
+		return -EFAULT;
+	}
+
+	mutex_lock(&iav->hash_mutex);
+	memset(iav->hash_output, 0x0, sizeof(iav->hash_output));
+
+	iav->wait_hash_msg = 1;
+	pre_hash_cnt = iav->hash_msg_cnt;
+
+	if (0 > cmd_hash_verification_long(iav, dsp_hash.input)) {
+		iav->wait_hash_msg = 0;
+		mutex_unlock(&iav->hash_mutex);
+		return -EPERM;
+	}
+
+	ret = wait_event_interruptible_timeout(iav->hash_wq,
+		(pre_hash_cnt != iav->hash_msg_cnt), TWO_JIFFIES);
+	iav->wait_hash_msg = 0;
+	if (0 > ret) {
+		iav_error("can not wait hash msg\n");
+		mutex_unlock(&iav->hash_mutex);
+		return -EINTR;
+	}
+
+	memcpy(dsp_hash.output, iav->hash_output, 4);
+	mutex_unlock(&iav->hash_mutex);
+
+	if (copy_to_user(arg, &dsp_hash, sizeof(dsp_hash))) {
+		return -EFAULT;
+	}
+
+	return 0;
+}
+
+static int iav_ioc_s_dsp_clock_state(struct ambarella_iav *iav, void __user *arg)
+{
+	struct dsp_device *dsp = iav->dsp;
+	u32 state = 0;
+
+	state = (u32)arg;
+
+	if (iav->state != IAV_STATE_IDLE) {
+		iav_error("Only can set dsp clcok state in IDLE!\n");
+		return -EPERM;
+	}
+
+	switch (state) {
+	case DSP_CLOCK_NORMAL_STATE:
+	case DSP_CLOCK_OFF_STATE:
+		dsp->set_clock_state(DSP_CLK_TYPE_IDSP, !state);
+		break;
+	default:
+		iav_error("Invalid DSP clock state: %d!", state);
+		break;
 	}
 
 	return 0;
@@ -971,9 +1143,11 @@ static int iav_ioc_g_query_buf(struct ambarella_iav *iav, void __user *args)
 	switch (querybuf.buf) {
 	case IAV_BUFFER_BSB:
 	case IAV_BUFFER_USR:
+	case IAV_BUFFER_MV:
 	case IAV_BUFFER_OVERLAY:
 	case IAV_BUFFER_QUANT:
 	case IAV_BUFFER_IMG:
+	case IAV_BUFFER_VCA:
 	case IAV_BUFFER_DSP:
 		querybuf.offset = iav->mmap[querybuf.buf].phys;
 		querybuf.length = iav->mmap[querybuf.buf].size;
@@ -984,23 +1158,25 @@ static int iav_ioc_g_query_buf(struct ambarella_iav *iav, void __user *args)
 		break;
 	case IAV_BUFFER_WARP:
 		querybuf.offset = iav->mmap[querybuf.buf].phys;
-		querybuf.length = WARP_VECT_PART_SIZE;
+		querybuf.length = iav->mmap[querybuf.buf].size ? WARP_VECT_PART_SIZE : 0;
 		break;
 	case IAV_BUFFER_PM_BPC:
 		querybuf.offset = iav->mmap[querybuf.buf].phys;
-		querybuf.length = PM_BPC_PARTITION_SIZE;
+		querybuf.length = iav->mmap[querybuf.buf].size ? PM_BPC_PARTITION_SIZE : 0;
 		break;
 	case IAV_BUFFER_BPC:
-		querybuf.offset = iav->mmap[querybuf.buf].phys + PAGE_SIZE;
-		querybuf.length = PM_BPC_PARTITION_SIZE;
+		querybuf.offset =
+			iav->mmap[querybuf.buf].size ? (iav->mmap[querybuf.buf].phys + PAGE_SIZE) : 0;
+		querybuf.length =
+			iav->mmap[querybuf.buf].size ? PM_BPC_PARTITION_SIZE : 0;
 		break;
 	case IAV_BUFFER_CMD_SYNC:
 		querybuf.offset = iav->mmap[querybuf.buf].phys;
-		querybuf.length = CMD_SYNC_TOTAL_SIZE;
+		querybuf.length = iav->mmap[querybuf.buf].size ? CMD_SYNC_TOTAL_SIZE : 0;
 		break;
 	case IAV_BUFFER_PM_MCTF:
 		querybuf.offset = iav->mmap[querybuf.buf].phys;
-		querybuf.length = PM_MCTF_TOTAL_SIZE;
+		querybuf.length = iav->mmap[querybuf.buf].size ? PM_MCTF_TOTAL_SIZE : 0;
 		break;
 	case IAV_BUFFER_FB_DATA:
 		querybuf.offset = iav->mmap[querybuf.buf].phys;
@@ -1154,6 +1330,7 @@ static int check_sys_resource_general(struct iav_system_resource * resource)
 	if (resource->idsp_upsample_type < IDSP_UPSAMPLE_TYPE_OFF ||
 		resource->idsp_upsample_type >= IDSP_UPSAMPLE_TYPE_TOTAL_NUM){
 		iav_error("Invaid idsp upsample type [%d]\n", resource->idsp_upsample_type);
+		return -1;
 	}
 	if (resource->idsp_upsample_type > IDSP_UPSAMPLE_TYPE_OFF &&
 		!limit->idsp_upsample_supported) {
@@ -1365,11 +1542,6 @@ static int check_sys_resource_general(struct iav_system_resource * resource)
 					resource->stream_max_size[i].width,
 					MAX_WIDTH_FOR_TWO_REF);
 				return -1;
-			} else if (resource->rotate_enable) {
-				iav_error("Stream %c cannot set max gop M [%d] larger "
-					"than 1, when stream rotation is enabled.\n",
-					'A' + i, resource->stream_max_M[i]);
-				return -1;
 			} else if (resource->lens_warp_enable == 1 &&
 					resource->stream_long_ref_enable[i] == 0) {
 				iav_error("Stream %c cannot set max gop M [%d] larger "
@@ -1380,7 +1552,18 @@ static int check_sys_resource_general(struct iav_system_resource * resource)
 		}
 		if (resource->stream_long_ref_enable[i] > 1) {
 			iav_error("Stream %c's long term reference enable [%d] should be "
-				"[0|1].\n", 'A' + i, resource->stream_long_ref_enable[0]);
+				"[0|1].\n", 'A' + i, resource->stream_long_ref_enable[i]);
+			return -1;
+		}
+	}
+	if (resource->long_ref_b_frame > 1) {
+		iav_error("Long term B frame [%d] should be [0|1].\n",
+			resource->long_ref_b_frame);
+		return -1;
+	} else {
+		if (resource->long_ref_b_frame && !limit->long_ref_b_supported) {
+			iav_error("Encode mode %d cannot support B frame for long term "
+				"reference case!\n", enc_mode);
 			return -1;
 		}
 	}
@@ -1394,12 +1577,12 @@ static int check_sys_resource_general(struct iav_system_resource * resource)
 	return 0;
 }
 
-static int check_sys_resource_buffer(struct iav_system_resource *resource)
+static int check_sys_resource_buffer(struct ambarella_iav *iav, struct iav_system_resource *resource)
 {
 	int buf_id;
 	u32 enc_mode = resource->encode_mode;
 	struct iav_enc_limitation * limit = &G_encode_limit[resource->encode_mode];
-	struct iav_window * max, * prop, * main_win;
+	struct iav_window * max, prop, * main_win;
 
 	/* error if main max > max limit */
 	buf_id = IAV_SRCBUF_MN;
@@ -1416,12 +1599,26 @@ static int check_sys_resource_buffer(struct iav_system_resource *resource)
 
 	for (buf_id = IAV_SRCBUF_FIRST; buf_id < IAV_SRCBUF_LAST; ++buf_id) {
 		max = &resource->buf_max_size[buf_id];
-		prop = &G_buffer_limit[buf_id].max_win;
+		prop = G_buffer_limit[buf_id].max_win;
+		if ((buf_id == IAV_SRCBUF_PA) || (buf_id == IAV_SRCBUF_PB)) {
+			/* Support 2560 width for PA&&PB when stitch is on */
+			if (resource->debug_enable_map & DEBUG_TYPE_STITCH) {
+				if (resource->debug_stitched == 1) {
+					prop.width = (buf_id == IAV_SRCBUF_PA) ?
+						PABUF_LIMIT_MAX_WIDTH_STITCH : PBBUF_LIMIT_MAX_WIDTH_STITCH;
+				}
+			} else {
+				if (is_stitched_vin(iav, enc_mode)) {
+					prop.width = (buf_id == IAV_SRCBUF_PA) ?
+						PABUF_LIMIT_MAX_WIDTH_STITCH : PBBUF_LIMIT_MAX_WIDTH_STITCH;
+				}
+			}
+		}
 		/* error if buffer max > buffer limit */
-		if ((max->width > prop->width) || (max->height > prop->height)) {
+		if ((max->width > prop.width) || (max->height > prop.height)) {
 			iav_error("Source buffer [%d] max %dx%d cannot be larger than "
 				"%dx%d.\n", buf_id, max->width, max->height,
-				prop->width, prop->height);
+				prop.width, prop.height);
 			return -1;
 		}
 		/* error if sub buffer max > main buffer max */
@@ -1483,7 +1680,7 @@ static int iav_check_sys_resource_limit(struct ambarella_iav *iav,
 		return -1;
 	} else if (check_sys_resource_general(resource) < 0) {
 		return -1;
-	} else if (check_sys_resource_buffer(resource) < 0) {
+	} else if (check_sys_resource_buffer(iav, resource) < 0) {
 		return -1;
 	} else if (check_sys_resource_enc_mode(resource) < 0) {
 		return -1;
@@ -1557,11 +1754,13 @@ static int update_system_resource(struct ambarella_iav *iav,
 		iav->stream[i].max_GOP_N = resource->stream_max_N[i];
 		iav->stream[i].long_ref_enable = resource->stream_long_ref_enable[i];
 	}
+	config->long_ref_b_frame = resource->long_ref_b_frame;
 	config->max_stream_num = resource->max_num_encode;
 	iav->mixer_a_enable = resource->mixer_a_enable;
 	iav->mixer_b_enable = resource->mixer_b_enable;
 	iav->osd_from_mixer_a = resource->osd_from_mixer_a;
 	iav->osd_from_mixer_b = resource->osd_from_mixer_b;
+	iav->vin_overflow_protection = resource->vin_overflow_protection;
 
 	spin_lock_irq(&iav->iav_lock);
 	if (resource->dsp_partition_map != iav->dsp_partition_mapped) {
@@ -1570,6 +1769,8 @@ static int update_system_resource(struct ambarella_iav *iav,
 	} else {
 		iav->dsp_map_updated = 0;
 	}
+
+	config->extra_top_row_buf_enable = resource->extra_top_row_buf_enable;
 	spin_unlock_irq(&iav->iav_lock);
 
 	mutex_unlock(&iav->iav_mutex);
@@ -1600,7 +1801,6 @@ static int iav_ioc_s_system_resource(struct ambarella_iav *iav, void __user *arg
 static int iav_ioc_g_system_resource(struct ambarella_iav *iav, void __user *arg)
 {
 	int i, enc_mode;
-	struct iav_rect *vin;
 	struct iav_system_resource param;
 	struct iav_system_config * config = NULL;
 
@@ -1610,8 +1810,6 @@ static int iav_ioc_g_system_resource(struct ambarella_iav *iav, void __user *arg
 	if (check_sys_resource_mode(param.encode_mode) < 0) {
 		return -1;
 	}
-
-	get_vin_win(iav, &vin, 1);
 
 	mutex_lock(&iav->iav_mutex);
 
@@ -1635,21 +1833,25 @@ static int iav_ioc_g_system_resource(struct ambarella_iav *iav, void __user *arg
 	param.enc_raw_yuv = config->enc_raw_yuv;
 	param.eis_delay_count = enc_mode == DSP_ADVANCED_ISO_MODE ?
 		config->eis_delay_count : 0;
+	param.vin_overflow_protection = iav->vin_overflow_protection;
 	if (config->enc_raw_rgb || config->enc_raw_yuv) {
 		param.raw_size = iav->raw_enc.raw_size;
 	}
 	param.enc_from_mem = config->enc_from_mem;
 	param.efm_buf_num = iav->efm.req_buf_num;
 	param.efm_size = iav->efm.efm_size;
+	param.extra_top_row_buf_enable = config->extra_top_row_buf_enable;
 
 	for (i = IAV_SRCBUF_FIRST; i < IAV_SRCBUF_LAST; ++i) {
 		param.buf_max_size[i] = iav->srcbuf[i].max;
 		param.extra_dram_buf[i] = iav->srcbuf[i].extra_dram_buf;
 	}
 	param.max_num_cap_sources = 2;
-	if (iav->srcbuf[IAV_SRCBUF_PA].type == IAV_SRCBUF_TYPE_ENCODE)
+	if ((iav->srcbuf[IAV_SRCBUF_PA].type == IAV_SRCBUF_TYPE_ENCODE) ||
+		(iav->srcbuf[IAV_SRCBUF_PA].type == IAV_SRCBUF_TYPE_VCA))
 		++param.max_num_cap_sources;
-	if (iav->srcbuf[IAV_SRCBUF_PB].type == IAV_SRCBUF_TYPE_ENCODE)
+	if ((iav->srcbuf[IAV_SRCBUF_PB].type == IAV_SRCBUF_TYPE_ENCODE) ||
+		(iav->srcbuf[IAV_SRCBUF_PB].type == IAV_SRCBUF_TYPE_VCA))
 		++param.max_num_cap_sources;
 
 	for (i = 0; i < IAV_STREAM_MAX_NUM_IMPL; ++i) {
@@ -1671,6 +1873,7 @@ static int iav_ioc_g_system_resource(struct ambarella_iav *iav, void __user *arg
 	param.max_padding_width = (enc_mode == DSP_ADVANCED_ISO_MODE) ?
 		LDC_PADDING_WIDTH_MAX : 0;
 	param.enc_dummy_latency = config->enc_dummy_latency;
+	param.long_ref_b_frame = config->long_ref_b_frame;
 
 	/* Read only fields */
 	param.raw_pitch_in_bytes = config->raw_capture ?
@@ -1692,6 +1895,9 @@ static int iav_ioc_g_system_resource(struct ambarella_iav *iav, void __user *arg
 	} else {
 		param.debug_iso_type = param.iso_type;
 	}
+
+	/* ARCH info */
+	param.arch = S2L;
 
 	mutex_unlock(&iav->iav_mutex);
 
@@ -1988,10 +2194,27 @@ static int iav_ioc_g_overlay_insert(struct ambarella_iav *iav,
 	for (i = 0; i < MAX_NUM_OVERLAY_AREA; ++i) {
 		info.area[i] = stream->osd.area[i];
 	}
+	info.osd_insert_always = stream->osd.osd_insert_always;
 
 	mutex_unlock(&stream->osd_mutex);
 
 	return copy_to_user(arg, &info, sizeof(info)) ? -EFAULT : 0;
+}
+
+int iav_overlay_resume(struct ambarella_iav *iav, struct iav_stream *stream)
+{
+	if (!is_enc_work_state(iav)) {
+		iav_error("IAV must be in PREVIEW or ENCODE for overlay.\n");
+		return -1;
+	}
+
+	mutex_lock(&stream->osd_mutex);
+
+	cmd_overlay_insert(stream, NULL, &stream->osd);
+
+	mutex_unlock(&stream->osd_mutex);
+
+	return 0;
 }
 
 static int iav_cfg_vproc_cawarp(struct ambarella_iav *iav,
@@ -2239,18 +2462,30 @@ static int iav_ioc_g_fastosd_insert(struct ambarella_iav *iav,
 	return copy_to_user(arg, &info, sizeof(info)) ? -EFAULT : 0;
 }
 
+int iav_set_dsplog_debug_level(struct ambarella_iav *iav,
+	struct iav_dsplog_setup *dsplog_setup)
+{
+	if (dsplog_setup->args[1] > 3) {
+		iav_debug("Set too high debug level, reduce to highest level [3].\n");
+		dsplog_setup->args[1] = 3;
+	}
+
+	cmd_dsp_set_debug_level(iav, NULL, dsplog_setup->args[0],
+		dsplog_setup->args[1], dsplog_setup->args[2]);
+	return 0;
+}
 
 static int iav_ioc_s_dsplog(struct ambarella_iav *iav, void __user *arg)
 {
-	u32 param;
-	u8 module, debug_level, mask;
+	u32 param = (u32)arg;
+	struct iav_dsplog_setup dsplog_setup;
 
-	param = (u32)arg;
-	module = (u8)param;
-	debug_level = (u8)(param >> 8);
-	mask = (u8)(param >> 16);
-
-	cmd_dsp_set_debug_level(iav, NULL, module, debug_level, mask);
+	memset(&dsplog_setup, 0, sizeof(struct iav_dsplog_setup));
+	dsplog_setup.args[0] = param & 0xFF; // module
+	dsplog_setup.args[1] = (param >> 8) & 0xFF; // debug level
+	dsplog_setup.args[2] = (param >> 16) & 0xFF; // mask
+	iav_set_dsplog_debug_level(iav, &dsplog_setup);
+	memcpy(&iav->dsplog_setup, &dsplog_setup, sizeof(struct iav_dsplog_setup));
 
 	return 0;
 }
@@ -2262,15 +2497,29 @@ static int iav_guard_task(void *arg)
 
 	while (1) {
 		if (!iav->err_vsync_again) {
-			wait_event_interruptible(iav->err_wq, iav->err_vsync_lost);
+			if (!iav->err_vsync_handling) {
+				wait_event_interruptible(iav->err_wq, iav->err_vsync_lost);
+			}
 		}
-		mutex_lock(&iav->iav_mutex);
-		iav->err_vsync_handling = 1;
-		if (iav->nl_obj[NL_OBJ_VSYNC].nl_connected) {
-			nl_send_request(&iav->nl_obj[NL_OBJ_VSYNC], NL_REQ_VSYNC_RESTORE);
+		if (!iav->err_vsync_handling) {
+			mutex_lock(&iav->iav_mutex);
+			iav->err_vsync_handling = 1;
+			if (iav->nl_obj[NL_OBJ_VSYNC].nl_connected) {
+				nl_send_request(&iav->nl_obj[NL_OBJ_VSYNC], NL_REQ_VSYNC_RESTORE);
+				if(is_nl_request_responded(&iav->nl_obj[NL_OBJ_VSYNC],
+					NL_REQ_VSYNC_RESTORE)) {
+					iav->err_vsync_handling = 0;
+				}
+			} else {
+				iav->err_vsync_handling = 0;
+			}
+			mutex_unlock(&iav->iav_mutex);
+		} else {
+			if(is_nl_request_responded(&iav->nl_obj[NL_OBJ_VSYNC],
+				NL_REQ_VSYNC_RESTORE)) {
+				iav->err_vsync_handling = 0;
+			}
 		}
-		iav->err_vsync_handling = 0;
-		mutex_unlock(&iav->iav_mutex);
 	}
 
 	return 0;
@@ -2316,13 +2565,12 @@ void iav_encode_exit(struct ambarella_iav *iav)
 int iav_encode_init(struct ambarella_iav *iav)
 {
 	struct iav_frame_desc *frame_desc;
-	dsp_init_data_t *dsp_init_data;
-	u32 data_addr_phys;
-	int i, size;
+	int i;
 
 	INIT_LIST_HEAD(&iav->frame_queue);
 	INIT_LIST_HEAD(&iav->frame_free);
 	init_waitqueue_head(&iav->frame_wq);
+	init_waitqueue_head(&iav->mv_wq);
 
 	iav->system_config = &G_system_config[0];
 	iav->raw_enc.raw_size.width = MAX_WIDTH_IN_FULL_FPS;
@@ -2365,25 +2613,6 @@ int iav_encode_init(struct ambarella_iav *iav)
 			goto encode_init_exit;
 		}
 		iav->bsh = iav->bsh_virt;
-		if (iav->probe_state == IAV_STATE_ENCODING) {
-			iav_sync_bsh_queue(iav);
-		}
-	}
-
-	/* Set up encode interrupt handler */
-	iav->dsp->msg_callback[CAT_ENC] = irq_iav_queue_frame;
-	iav->dsp->msg_data[CAT_ENC] = iav;
-	iav->dsp->msg_callback[CAT_VCAP] = handle_vcap_msg;
-	iav->dsp->msg_data[CAT_VCAP] = iav;
-	iav->dsp_used_dram = 0;
-	// map dsp encode data table
-	dsp_init_data = iav->dsp->get_dsp_init_data(iav->dsp);
-	data_addr_phys = DSP_TO_PHYS(dsp_init_data->default_binary_data_ptr);
-	size = PAGE_ALIGN(sizeof(default_enc_binary_data_t));
-	iav->dsp_enc_data_virt = ioremap_nocache(data_addr_phys, size);
-	if (!iav->dsp_enc_data_virt) {
-		iav_error("Failed to call ioremap() for dsp_enc_data_virt.\n");
-		goto encode_init_exit;
 	}
 
 	init_waitqueue_head(&iav->dsp_map_wq);
@@ -2402,6 +2631,32 @@ encode_init_exit:
 	iav_encode_exit(iav);
 
 	return -ENOMEM;
+}
+
+int iav_init_isr(struct ambarella_iav *iav)
+{
+	dsp_init_data_t *dsp_init_data;
+	u32 data_addr_phys;
+	int size;
+
+	/* Set up encode interrupt handler */
+	iav->dsp->msg_callback[CAT_ENC] = irq_iav_queue_frame;
+	iav->dsp->msg_data[CAT_ENC] = iav;
+	iav->dsp->msg_callback[CAT_VCAP] = handle_vcap_msg;
+	iav->dsp->msg_data[CAT_VCAP] = iav;
+	iav->dsp_used_dram = 0;
+	// map dsp encode data table
+	dsp_init_data = iav->dsp->get_dsp_init_data(iav->dsp);
+	data_addr_phys = DSP_TO_PHYS(dsp_init_data->default_binary_data_ptr);
+	size = PAGE_ALIGN(sizeof(default_enc_binary_data_t));
+	iav->dsp_enc_data_virt = ioremap_nocache(data_addr_phys, size);
+	if (!iav->dsp_enc_data_virt) {
+		iav_error("Failed to call ioremap() for dsp_enc_data_virt.\n");
+		iav_encode_exit(iav);
+		return -ENOMEM;
+	}
+
+	return 0;
 }
 
 static int iav_check_gdma_copy(struct ambarella_iav *iav, struct iav_gdma_copy *param)
@@ -2510,6 +2765,12 @@ int iav_encode_ioctl(struct ambarella_iav *iav, unsigned int cmd, unsigned long 
 	case IAV_IOC_DRV_DSP_INFO:
 		rval = iav_ioc_g_drvdspinfo(iav, (void __user *)arg);
 		break;
+	case IAV_IOC_GET_DSP_HASH:
+		rval = iav_ioc_get_dsp_hash(iav, (void __user *)arg);
+		break;
+	case IAV_IOC_SET_DSP_CLOCK_STATE:
+		rval = iav_ioc_s_dsp_clock_state(iav, (void __user *)arg);
+		break;
 
 	/* state ioctl */
 	case IAV_IOC_WAIT_NEXT_FRAME:
@@ -2522,13 +2783,16 @@ int iav_encode_ioctl(struct ambarella_iav *iav, unsigned int cmd, unsigned long 
 		rval = iav_goto_idle(iav);
 		break;
 	case IAV_IOC_ENABLE_PREVIEW:
-		rval = iav_enable_preview(iav, 0);
+		rval = iav_enable_preview(iav);
 		break;
 	case IAV_IOC_START_ENCODE:
 		rval = iav_ioc_start_encode(iav, (void __user *)arg);
 		break;
 	case IAV_IOC_STOP_ENCODE:
 		rval = iav_ioc_stop_encode(iav, (void __user *)arg);
+		break;
+	case IAV_IOC_ABORT_ENCODE:
+		rval = iav_ioc_abort_encode(iav, (void __user *)arg);
 		break;
 
 	/* system ioctl */
@@ -2712,6 +2976,11 @@ int iav_encode_ioctl(struct ambarella_iav *iav, unsigned int cmd, unsigned long 
 		break;
 	case IAV_IOC_GET_DEBUG_CONFIG:
 		rval = iav_ioc_g_debug_cfg(iav, (void __user *)arg);
+		break;
+
+	/* Customized IAV IOCTL */
+	case IAV_IOC_CUSTOM_CMDS:
+		rval = iav_ioc_custom_cmds(iav, (void __user *)arg);
 		break;
 
 	default:

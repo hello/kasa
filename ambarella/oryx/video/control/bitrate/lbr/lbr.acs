@@ -1,0 +1,99 @@
+--[[
+Copyright (c) 2016 Ambarella, Inc.
+
+This file and its contents ("Software") are protected by intellectual
+property rights including, without limitation, U.S. and/or foreign
+copyrights. This Software is also the confidential and proprietary
+information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+disclose, distribute, modify, or otherwise prepare derivative works of this
+Software or any portion thereof except pursuant to a signed license agreement
+or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+In the absence of such an agreement, you agree to promptly notify and return
+this Software to Ambarella, Inc.
+
+THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+--]]
+-- This is the configuration of low bit rate control
+__lbr__ = {
+  LogLevel = 1,
+  NoiseStatistics = {
+    NoiseLowThreshold   = 1, --sensor gain(dB)
+    NoiseHighThreshold  = 6
+  },
+  ProfileBTScaleFactor = {
+    Static = {1, 1},
+    SmallMotion = {1, 1},
+    BigMotion = {1, 1},
+    LowLight = {1, 1},
+    BigMotionWithFD = {1, 1}
+    --real bitrate tartget of profile=(numerator/denominator)*bitrate target of profile
+    --For example, StaticProfile = {2, 1}, bitrate_target of static profile =
+    --(2/1)*bitrate target of static profile
+  },
+  StreamConfig = {
+    {
+      --Stream0
+      EnableLBR           = true,
+      MotionControl       = true,
+      NoiseControl        = true,
+      FrameDrop           = false,
+      AutoBitrateTarget   = false,
+      BitrateCeiling      = 142, --bps per Macro Block
+      --if BitrateCeiling = 142 here
+      --final bitrate of 1080p = 142bps/MB * 8160MB = 1158720bps
+      --final bitrate of 720p = 142bps/MB * 3600MB = 511200bps
+      --final bitrate of VGA = 142bps/MB * 1200MB = 170400bps
+    },
+    {
+      --Stream1
+      EnableLBR           = true,
+      MotionControl       = true,
+      NoiseControl        = true,
+      FrameDrop           = false,
+      AutoBitrateTarget   = false,
+      BitrateCeiling      = 142, --bps per Macro Block
+      --if BitrateCeiling = 142 here
+      --final bitrate of 1080p = 142bps/MB * 8160MB = 1158720bps
+      --final bitrate of 720p = 142bps/MB * 3600MB = 511200bps
+      --final bitrate of VGA = 142bps/MB * 1200MB = 170400bps
+    },
+    {
+      --Stream2
+      EnableLBR           = true,
+      MotionControl       = true,
+      NoiseControl        = true,
+      FrameDrop           = false,
+      AutoBitrateTarget   = false,
+      BitrateCeiling      = 142, --bps per Macro Block
+      --if BitrateCeiling = 142 here
+      --final bitrate of 1080p = 142bps/MB * 8160MB = 1158720bps
+      --final bitrate of 720p = 142bps/MB * 3600MB = 511200bps
+      --final bitrate of VGA = 142bps/MB * 1200MB = 170400bps
+    },
+    {
+      --Stream3
+      EnableLBR           = true,
+      MotionControl       = true,
+      NoiseControl        = true,
+      FrameDrop           = false,
+      AutoBitrateTarget   = false,
+      BitrateCeiling      = 142, --bps per Macro Block
+      --if BitrateCeiling = 142 here
+      --final bitrate of 1080p = 142bps/MB * 8160MB = 1158720bps
+      --final bitrate of 720p = 142bps/MB * 3600MB = 511200bps
+      --final bitrate of VGA = 142bps/MB * 1200MB = 170400bps
+    }
+  }
+}
+
+return __lbr__

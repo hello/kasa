@@ -5,14 +5,33 @@
  *	2008/10/23 - [Louis Sun] created file
  *	2012/03/06 - [Jian Tang] modified file
  *
- * Copyright (C) 2007-2012, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 
 #ifndef __IAV_CONFIG_H__
 #define __IAV_CONFIG_H__
@@ -83,18 +102,19 @@
 #define MAX_SLICE_FOR_FRAME	(2)
 #define TWO_JIFFIES			(msecs_to_jiffies(2000))
 #define FIVE_JIFFIES		(msecs_to_jiffies(5000))
+#define INVALID_DSP_PTS_32	(0xFFFFFFFF)
 
 #define MIN_CRD_IN_MS		(4)
 #define AUDIO_CLK_KHZ		(12288)
 #define MIN_CRD_IN_CLK		(MIN_CRD_IN_MS * AUDIO_CLK_KHZ)
 
-#define MIN_VIN_UPSAMPLE_FRAME_RATE	(FPS_Q9_BASE / 10)
+#define MIN_VIN_UPSAMPLE_FRAME_RATE	(FPS_Q9_BASE / 8)
 
 #define KByte(x)				((x) << 10)
 #define MByte(x)				((x) << 20)
 
 #define MIN_WARP_INPUT_WIDTH	(320)
-#define MAX_WIDTH_FOR_TWO_REF	(2560)
+#define MAX_WIDTH_FOR_TWO_REF	(2688)
 
 /*
  * GOP and preview configuration for 2Gb and 1Gb
@@ -108,19 +128,22 @@
 #define IAV_MAX_ENCODE_STREAMS_NUM		(4)
 #define STREAM_ID_MASK			((1 << IAV_MAX_ENCODE_STREAMS_NUM) - 1)
 #define PREVIEW_ID_MASK			((1 << CONFIG_MAX_PREVIEW_NUM) - 1)
-#define LONG_TERM_INTVL_MAX 	(63)
+#define FAST_SEEK_INTVL_MAX 	(63)
 #define MAX_REF_FRAME_INTVL		(3)
 #define MAX_ZMV_THRESHOLD		(255)
 #define MIN_INTRABIAS 			(1)
 #define MAX_INTRABIAS			(4000)
 #define MIN_USER_BIAS 			(0)
-#define MAX_USER_BIAS			(128)
+#define MAX_USER_BIAS			(9)
 #define MAX_FRAME_DROP_COUNT	(255)
+#define MAX_PSKIP_REPEAT		(254)
 
 #define QP_QUALITY_MIN	(0)
 #define QP_QUALITY_MAX	(3)
 #define QP_OFFSET_MIN	(-51)
 #define QP_OFFSET_MAX	(51)
+#define ZMV_THRESHOLD_MIN	(0)
+#define ZMV_THRESHOLD_MAX	(255)
 
 
 
@@ -130,6 +153,38 @@ typedef enum {
 	IAV_EXTRA_DRAM_BUF_MAX = 7,
 } IAV_EXTRA_DRAM_BUF;
 
+/*
+ * Vin performance load
+ */
+typedef enum {
+	/* Pixel rate:
+		94371840	= 2048 * 1536 * 30
+		125829120	= 2048 * 2048 * 30
+		151787520	= 2592 * 1952 * 30
+		188743680	= 3072 * 2048 * 30
+		251658240	= 4096 * 2048 * 30
+		377487360	= 3072 * 2048 * 60
+	*/
+
+	VIN_PPS_3MP30 = (2048 * 1536 * 30),
+	VIN_PPS_4MP30 = (2048 * 2048 * 30),
+	VIN_PPS_5MP30 = (2592 * 1952 * 30),
+	VIN_PPS_6MP30 = (3072 * 2048 * 30),
+	VIN_PPS_8MP30 = (4096 * 2048 * 30),
+	VIN_PPS_6MP60 = (3072 * 2048 * 60),
+
+	SYS_VIN_PPS_S2L_22M = VIN_PPS_3MP30,
+	SYS_VIN_PPS_S2L_33M = VIN_PPS_6MP30,
+	SYS_VIN_PPS_S2L_55M = VIN_PPS_6MP30,
+	SYS_VIN_PPS_S2L_99M = VIN_PPS_8MP30,
+	SYS_VIN_PPS_S2L_63 = VIN_PPS_8MP30,
+	SYS_VIN_PPS_S2L_66 = VIN_PPS_6MP60,
+	SYS_VIN_PPS_S2L_88 = VIN_PPS_6MP60,
+	SYS_VIN_PPS_S2L_99 = VIN_PPS_6MP60,
+	SYS_VIN_PPS_S2L_TEST = VIN_PPS_8MP30,
+	SYS_VIN_PPS_S2L_22 = VIN_PPS_6MP30,
+
+} IAV_SYS_VIN_LOAD;
 
 /*
  * Encode performance load
@@ -144,12 +199,13 @@ typedef enum {
 		442044 = (2592/16) * (1952/16) * 21 + (720/16) * (480/16) * 20
 		491520 = (2048/16) * (2048/16) * 30
 		570600 = (1920/16) * (1088/16) * 60 + (720/16) * (480/16) * 60
-		592920 = (2592/16) * (1952/15) * 30
+		592920 = (2592/16) * (1952/16) * 30
 		633420 = (2592/16) * (1952/16) * 30 + (720/16) * (480/16) * 30
-		653184 = (2592/16) * (1952/15) * 31 + (720/16) * (480/16) * 30
+		653184 = (2592/16) * (1952/16) * 31 + (720/16) * (480/16) * 30
 		897600 = (1920/16) * (1088/16) * 110
 	*/
 	LOAD_720P60 = (1280 * 720 / 256 * 60),
+	LOAD_1080P25 = (1920 * 1088 / 256 * 25),
 	LOAD_1080P31_480P30_CIFP30 = (1920 * 1088 / 256 * 31 + 720 * 480 / 256 * 30 + 352 * 288 / 256 * 30),
 	LOAD_5MP15_480P30 = (2592 * 1952 / 256 * 15 + 720 * 480 / 256 * 30),
 	LOAD_3MP30_480P30 = (2048 * 1536 / 256 * 30 + 720 * 480 / 256 * 30),
@@ -170,6 +226,7 @@ typedef enum {
 	SYS_ENC_LOAD_S2L_88 = LOAD_5MP31_480P30,
 	SYS_ENC_LOAD_S2L_99 = LOAD_1080P110,
 	SYS_ENC_LOAD_S2L_TEST = LOAD_5MP20_480P20,
+	SYS_ENC_LOAD_S2L_22 = LOAD_1080P25,
 } IAV_SYS_ENC_LOAD;
 
 
@@ -179,7 +236,7 @@ typedef enum {
 typedef enum {
 	MIN_WIDTH_IN_STREAM = 320,
 	MIN_WIDTH_IN_STREAM_ROTATE = 240,
-	MIN_HEIGHT_IN_STREAM = 240,
+	MIN_HEIGHT_IN_STREAM = 180,
 
 	MAX_WIDTH_IN_BUFFER = 4 * 1024,
 	MAX_HEIGHT_IN_BUFFER = 4 * 1024,
@@ -218,6 +275,20 @@ typedef enum {
 	MIN_HEIGHT_FOR_EFM = MIN_HEIGHT_IN_FULL_FPS,
 } RESOLUTION_RESOURCE_LIMIT;
 
+/*
+ * DEBLOCKING filter limitation
+ */
+#define IAV_DEBLOCKING_ALPHA_MIN	(-6)
+#define IAV_DEBLOCKING_ALPHA_MAX	(6)
+#define IAV_DEBLOCKING_BETA_MIN		(-6)
+#define IAV_DEBLOCKING_BETA_MAX		(6)
+
+enum iav_h264_deblocking_filter_type {
+	H264_DEBLOCKING_DISABLE = 0,
+	H264_DEBLOCKING_ENABLE = 1,
+	H264_DEBLOCKING_AUTO = 2,
+	H264_DEBLOCKING_TYPE_NUM = 3,
+};
 
 /*
  * Capture source buffer configuration
@@ -248,9 +319,11 @@ typedef enum {
 	PCBUF_LIMIT_MAX_WIDTH = 720,
 	PCBUF_LIMIT_MAX_HEIGHT = 720,
 	PBBUF_LIMIT_MAX_WIDTH = 1920,
-	PBBUF_LIMIT_MAX_HEIGHT = 1920,
+	PBBUF_LIMIT_MAX_WIDTH_STITCH = 2560,
+	PBBUF_LIMIT_MAX_HEIGHT = 2048,
 	PABUF_LIMIT_MAX_WIDTH = 1280,
-	PABUF_LIMIT_MAX_HEIGHT = 1280,
+	PABUF_LIMIT_MAX_WIDTH_STITCH = 2560,
+	PABUF_LIMIT_MAX_HEIGHT = 2048,
 
 	/*
 	 * Default max resolution for the 4 source buffers
@@ -309,20 +382,25 @@ typedef enum {
 } IAV_CMD_SYNC_PARAMS;
 
 /*
- *
+ * QP matrix memory configuration
  */
 typedef enum {
+#if (!defined CONFIG_AMBARELLA_IAV_DRAM_DECODE_ONLY) && (!defined CONFIG_AMBARELLA_IAV_DRAM_VOUT_ONLY)
 	SINGLE_QP_MATRIX_SIZE = IAV_MEM_QPM_SIZE,
-#ifndef CONFIG_AMBARELLA_IAV_QP_OFFSET_IPB
+#else
+	SINGLE_QP_MATRIX_SIZE = 0,
+#endif
+#ifndef CONFIG_AMBARELLA_IAV_ROI_IPB
 	STREAM_QP_MATRIX_NUM = (1),
 #else
 	STREAM_QP_MATRIX_NUM = (3),
 #endif
 	STREAM_QP_MATRIX_SIZE = (SINGLE_QP_MATRIX_SIZE * STREAM_QP_MATRIX_NUM),
 	QP_MATRIX_SIZE = (STREAM_QP_MATRIX_SIZE * IAV_MAX_ENCODE_STREAMS_NUM),
-	/* 96KB * 4 * (1 + 8) = 3456 KB for 1 qp matrix per stream*/
-	/* 96KB * 3 * 4 * (1 + 8) = 10368 KB for 3 qp matrixes per stream*/
-	QP_MATRIX_TOTAL_SIZE = (QP_MATRIX_SIZE * (1 + ENC_CMD_TOGGLED_NUM)),
+	QP_MATRIX_TOGGLED_NUM = (4),
+	/* 96KB * 4 * (1 + 4) = 1920 KB for 1 qp matrix per stream*/
+	/* 96KB * 3 * 4 * (1 + 4) = 5760 KB for 3 qp matrixes per stream*/
+	QP_MATRIX_TOTAL_SIZE = (QP_MATRIX_SIZE * (1 + QP_MATRIX_TOGGLED_NUM)),
 }IAV_QPMATRIX_PARAMS;
 
 
@@ -398,10 +476,42 @@ typedef enum {
 	IAV_DRAM_SIZE_16Gb = 0x10,
 
 	/* All DRAM size must be aligned to PAGE size (4KB). */
+#ifdef CONFIG_AMBARELLA_IAV_DRAM_DECODE_ONLY
+
 	IAV_DRAM_BSB = DSP_BSB_SIZE,
-	IAV_DRAM_USR = IAV_MEM_USR_SIZE,
+	IAV_DRAM_USR = 0,
 	IAV_DRAM_MV = 0,
-	IAV_DRAM_OVERLAY = IAV_MEM_OVERLAY_SIZE,
+	IAV_DRAM_OVERLAY = 0,
+	IAV_DRAM_QPM = 0,
+	IAV_DRAM_WARP = 0,
+	IAV_DRAM_QUANT = 0,
+	IAV_DRAM_IMG = 0,
+	IAV_DRAM_PM = 0,
+	IAV_DRAM_BPC = 0,
+	IAV_DRAM_CMD_SYNC = 0,
+	IAV_DRAM_VCA = 0,
+
+#elif defined CONFIG_AMBARELLA_IAV_DRAM_VOUT_ONLY
+
+	IAV_DRAM_BSB = 0,
+	IAV_DRAM_USR = PAGE_ALIGN(IAV_MEM_USR_SIZE),
+	IAV_DRAM_MV = 0,
+	IAV_DRAM_OVERLAY = 0,
+	IAV_DRAM_QPM = 0,
+	IAV_DRAM_WARP = 0,
+	IAV_DRAM_QUANT = 0,
+	IAV_DRAM_IMG = PAGE_ALIGN(DSP_IMGRSVD_SIZE),
+	IAV_DRAM_PM = PAGE_ALIGN(IAV_MEM_PM_SIZE_S2L),
+	IAV_DRAM_BPC = PAGE_SIZE + PAGE_ALIGN(PM_BPC_PARTITION_SIZE),
+	IAV_DRAM_CMD_SYNC = 0,
+	IAV_DRAM_VCA = 0,
+
+#else
+
+	IAV_DRAM_BSB = DSP_BSB_SIZE,
+	IAV_DRAM_USR = PAGE_ALIGN(IAV_MEM_USR_SIZE),
+	IAV_DRAM_MV = PAGE_ALIGN(IAV_MEM_MV_SIZE),
+	IAV_DRAM_OVERLAY = PAGE_ALIGN(IAV_MEM_OVERLAY_SIZE),
 	IAV_DRAM_QPM = PAGE_ALIGN(QP_MATRIX_TOTAL_SIZE),
 #ifndef CONFIG_AMBARELLA_IAV_DRAM_WARP_MEM
 	IAV_DRAM_WARP = 0,
@@ -409,7 +519,7 @@ typedef enum {
 	IAV_DRAM_WARP = PAGE_ALIGN(WARP_BUFFER_TOTAL_SIZE),
 #endif
 	IAV_DRAM_QUANT = PAGE_ALIGN(JPEG_QT_TOTAL_SIZE),
-	IAV_DRAM_IMG = DSP_IMGRSVD_SIZE,
+	IAV_DRAM_IMG = PAGE_ALIGN(DSP_IMGRSVD_SIZE),
 
 	/* 768KB * (4 + 1) = 3840 KB */
 	IAV_DRAM_PM = PAGE_ALIGN(IAV_MEM_PM_SIZE_S2L),
@@ -419,14 +529,18 @@ typedef enum {
 	IAV_DRAM_BPC = PAGE_SIZE + PAGE_ALIGN(PM_BPC_PARTITION_SIZE),
 
 	IAV_DRAM_CMD_SYNC = PAGE_ALIGN(CMD_SYNC_TOTAL_SIZE),
+	IAV_DRAM_VCA = PAGE_ALIGN(IAV_MEM_VCA_SIZE),
+
 	/* The end of IAVRSVD */
+
+#endif
 
 	IAV_DRAM_FB_DATA = PAGE_ALIGN(DSP_FASTDATA_SIZE),
 	IAV_DRAM_FB_AUDIO = PAGE_ALIGN(DSP_FASTAUDIO_SIZE),
 
 	IAV_DRAM_MAX = IAV_DRAM_BSB + IAV_DRAM_USR + IAV_DRAM_MV + IAV_DRAM_OVERLAY +
 		IAV_DRAM_QPM + IAV_DRAM_WARP + IAV_DRAM_QUANT + IAV_DRAM_IMG +
-		IAV_DRAM_PM + IAV_DRAM_BPC + IAV_DRAM_CMD_SYNC,
+		IAV_DRAM_PM + IAV_DRAM_BPC + IAV_DRAM_CMD_SYNC + IAV_DRAM_VCA,
 
 	IAV_DRAM_IMG_OFFET = (MByte(4)),
 } IAV_DRAM;

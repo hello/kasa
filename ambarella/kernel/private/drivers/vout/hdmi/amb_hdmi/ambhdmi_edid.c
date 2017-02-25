@@ -4,14 +4,33 @@
  * History:
  *    2009/06/05 - [Zhenwu Xue] Initial revision
  *
- * Copyright (C) 2004-2009, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 
 #include "ambhdmi_cec.h"
 #include "ambhdmi_cec.c"
@@ -562,6 +581,10 @@ static void ambhdmi_edid_parse_extension(struct ambhdmi_sink *phdmi_sink,
         /* Native timings */
         pntiming = &pedid->native_timings;
         for (i = 0; i < (buf[0x03] & 0x0f); i++, offset += 0x12) {
+                if (!buf[offset] && !buf[offset + 1]) {
+                        continue;
+                }
+
                 pvtiming = &pntiming->supported_native_timings[pntiming->number];
 
                 pvtiming->pixel_clock =
@@ -843,7 +866,7 @@ static void ambhdmi_edid_print(const amba_hdmi_edid_t *pedid)
         for (i = 0; i < pntiming->number; i++) {
                 pvtiming = &pntiming->supported_native_timings[i];
                 EDID_PRINT("Native timing #%2d: %s\n", i + 1, pvtiming->name);
-                /*EDID_PRINT("Pixel Clock: %d.%03dMHz\n", pvtiming->pixel_clock / 1000, pvtiming->pixel_clock % 1000);
+                EDID_PRINT("Pixel Clock: %d.%03dMHz\n", pvtiming->pixel_clock / 1000, pvtiming->pixel_clock % 1000);
                 EDID_PRINT("H avtive: %d pixels, V active %d lines\n", pvtiming->h_active, pvtiming->v_active);
                 EDID_PRINT("H blanking: %d pixels, V blanking %d lines\n", pvtiming->h_blanking, pvtiming->v_blanking);
                 EDID_PRINT("H sync offset: %d pixels, width %d pixels\n", pvtiming->hsync_offset, pvtiming->hsync_width);
@@ -860,7 +883,7 @@ static void ambhdmi_edid_print(const amba_hdmi_edid_t *pedid)
                         EDID_PRINT("V sync Positive\n");
                 else
                         EDID_PRINT("V sync Negative\n");
-                EDID_PRINT("\n");*/
+                EDID_PRINT("\n");
         }
 
         /* CEA timings */
@@ -893,21 +916,21 @@ static const amba_hdmi_video_timing_t *ambhdmi_edid_find_video_mode(
         if (!pedid)
                 return vt;
 
+        /* Try to find it in EDID Native Timings */
+        pntiming = &pedid->native_timings;
+        for (i = 0; i < pntiming->number; i++) {
+                if (pntiming->supported_native_timings[i].vmode == vmode) {
+                        vt = &pntiming->supported_native_timings[i];
+                        return vt;
+                }
+        }
+
         /* Try to find it in EDID CEA Timings */
         pctiming = &pedid->cea_timings;
         for (i = 0; i < pctiming->number; i++) {
                 j = pctiming->supported_cea_timings[i];
                 if (CEA_Timings[j].vmode == vmode) {
                         vt = &CEA_Timings[j];
-                        return vt;
-                }
-        }
-
-        /* Try to find it in EDID Native Timings */
-        pntiming = &pedid->native_timings;
-        for (i = 0; i < pntiming->number; i++) {
-                if (pntiming->supported_native_timings[i].vmode == vmode) {
-                        vt = &pntiming->supported_native_timings[i];
                         return vt;
                 }
         }

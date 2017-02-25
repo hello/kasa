@@ -4,12 +4,29 @@
  * History:
  *   2014-11-11 - [ypchang] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -33,8 +50,8 @@
 #include "am_demuxer_ogg.h"
 #include "am_audio_define.h"
 
-#include <queue>
-#include <unistd.h>
+#include "am_queue.h"
+
 #include <ogg/ogg.h>
 #include <speex_header.h>
 #include <speex.h>
@@ -58,14 +75,14 @@ class LogicalStream
     LogicalStream() :
       m_page_granule(0),
       m_page_granule_prev(0),
+      m_spx_header(nullptr),
       m_packet_num(0),
       m_page_packet_count(0),
       /*m_spx_frame_size(0),*/
       m_serial_no(0),
       m_pre_skip_sample(0),
       /*m_spx_lookahead(0),*/
-      m_codec(AM_AUDIO_CODEC_NONE),
-      m_spx_header(NULL)
+      m_codec(AM_AUDIO_CODEC_NONE)
     {
       memset(&m_stream_state, 0, sizeof(m_stream_state));
       memset(&m_audio_info, 0, sizeof(m_audio_info));
@@ -175,6 +192,7 @@ class LogicalStream
   private:
     int64_t             m_page_granule;
     int64_t             m_page_granule_prev;
+    SpeexHeader        *m_spx_header;
     /* Indicates the packet number in this page
      * This is increased every time a packet is out from a page */
     uint32_t            m_packet_num;
@@ -184,7 +202,6 @@ class LogicalStream
     int                 m_pre_skip_sample;
     /*int                 m_spx_lookahead;*/
     AM_AUDIO_CODEC_TYPE m_codec;
-    SpeexHeader        *m_spx_header;
     ogg_stream_state    m_stream_state;
     AM_AUDIO_INFO       m_audio_info;
 };
@@ -192,7 +209,7 @@ class LogicalStream
 class Ogg
 {
     friend class AMDemuxerOgg;
-    typedef std::queue<LogicalStream*> OggStreamQ;
+    typedef AMSafeQueue<LogicalStream*> OggStreamQ;
 
   public:
     static Ogg* create()
@@ -424,8 +441,7 @@ class Ogg
       bool added = false;
       size_t count = m_ogg_stream_q->size();
       for (size_t i = 0; i < count; ++ i) {
-        LogicalStream* st = m_ogg_stream_q->front();
-        m_ogg_stream_q->pop();
+        LogicalStream* st = m_ogg_stream_q->front_pop();
         m_ogg_stream_q->push(st);
         if (AM_UNLIKELY(st->m_serial_no == stream->m_serial_no)) {
           added = true;
@@ -445,8 +461,7 @@ class Ogg
     {
       size_t count = m_ogg_stream_q->size();
       for (size_t i = 0; i < count; ++ i) {
-        LogicalStream *st = m_ogg_stream_q->front();
-        m_ogg_stream_q->pop();
+        LogicalStream *st = m_ogg_stream_q->front_pop();
         if (AM_LIKELY(st == stream)) {
           delete stream;
           stream = NULL;
@@ -522,8 +537,8 @@ class Ogg
 
   private:
     Ogg() :
-      m_ogg_stream_q(NULL),
-      m_stream(NULL),
+      m_ogg_stream_q(nullptr),
+      m_stream(nullptr),
       m_pkt_count(0)
     {}
 
@@ -554,17 +569,16 @@ class Ogg
     void stream_release()
     {
       while (m_ogg_stream_q && !m_ogg_stream_q->empty()) {
-        delete m_ogg_stream_q->front();
-        m_ogg_stream_q->pop();
+        delete m_ogg_stream_q->front_pop();
       }
       m_stream = NULL;
     }
 
   private:
-    ogg_sync_state m_sync_state;
-    OggStreamQ*    m_ogg_stream_q;
-    LogicalStream* m_stream;
+    OggStreamQ    *m_ogg_stream_q;
+    LogicalStream *m_stream;
     uint32_t       m_pkt_count;
+    ogg_sync_state m_sync_state;
 };
 /*
  * AMDemuxerOgg
@@ -591,6 +605,11 @@ AMIDemuxerCodec* AMDemuxerOgg::create(uint32_t streamid)
   return demuxer;
 }
 
+bool AMDemuxerOgg::is_drained()
+{
+  return (m_packet_pool->get_avail_packet_num() == PACKET_POOL_SIZE);
+}
+
 AM_DEMUXER_STATE AMDemuxerOgg::get_packet(AMPacket *&packet)
 {
   AM_DEMUXER_STATE state = AM_DEMUXER_OK;
@@ -602,6 +621,9 @@ AM_DEMUXER_STATE AMDemuxerOgg::get_packet(AMPacket *&packet)
       if (AM_UNLIKELY(!m_media)) {
         state = AM_DEMUXER_NO_FILE;
         break;
+      }
+      if (AM_LIKELY(m_is_new_file)) {
+        m_ogg->reset(); /* Reset OGG state when new file is get */
       }
     }
 
@@ -639,19 +661,11 @@ void AMDemuxerOgg::destroy()
   inherited::destroy();
 }
 
-void AMDemuxerOgg::enable(bool enable)
-{
-  inherited::enable(enable);
-  if (AM_LIKELY(m_ogg)) {
-    m_ogg->reset();
-  }
-}
-
 AMDemuxerOgg::AMDemuxerOgg(uint32_t streamid) :
     inherited(AM_DEMUXER_OGG, streamid),
-    m_is_new_file(true),
+    m_ogg(nullptr),
     m_audio_codec_type(AM_AUDIO_CODEC_NONE),
-    m_ogg(NULL)
+    m_is_new_file(true)
 {
 }
 

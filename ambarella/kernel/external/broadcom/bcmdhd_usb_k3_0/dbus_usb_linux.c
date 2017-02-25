@@ -316,6 +316,10 @@ typedef struct {
 	int maxps;
 	int txposted;
 	int rxposted;
+	int txctl;
+	int txctl_complete;
+	int txdata;
+	int txdata_complete;
 	bool rxctl_deferrespok;	/* Get a response for setup from dongle */
 
 	wait_queue_head_t wait;
@@ -362,7 +366,7 @@ typedef struct usbos_list_entry {
 	int                 urb_length;
 	int                 urb_status;
 } usbos_list_entry_t;
-
+static void dbus_usbos_bus_dump(void *bus, struct bcmstrbuf *b);
 void* dbus_usbos_thread_init(usbos_info_t *usbos_info);
 void  dbus_usbos_thread_deinit(usbos_info_t *usbos_info);
 void  dbus_usbos_dispatch_schedule(CALLBACK_ARGS);
@@ -519,7 +523,7 @@ static dbus_intf_t dbus_usbos_intf = {
 #if defined(DBUS_LINUX_HIST)
 	.dump = dbus_usbos_intf_dump,
 #else
-	.dump = NULL,
+	.dump = dbus_usbos_bus_dump,
 #endif 
 	.set_config = dbus_usbos_intf_set_config,
 	.get_config = NULL,
@@ -714,7 +718,8 @@ dbus_usbos_send_complete(CALLBACK_ARGS)
 	if (usbos_info->txposted_hist) {
 		usbos_info->txposted_hist[usbos_info->txposted]++;
 	}
-#endif 
+#endif
+	usbos_info->txdata_complete++;
 	if (unlikely (usbos_info->txposted < 0)) {
 		DBUSERR(("%s ERROR: txposted is negative!!\n", __FUNCTION__));
 	}
@@ -1148,6 +1153,7 @@ dbus_usbos_ctlwrite_complete(CALLBACK_ARGS)
 
 	ASSERT(urb);
 	usbos_info = (usbos_info_t *)urb->context;
+	usbos_info->txctl_complete++;
 
 	dbus_usbos_ctl_complete(usbos_info, DBUS_CBCTL_WRITE, urb->status);
 
@@ -1321,18 +1327,22 @@ static int dbus_usbos_reset_resume(struct usb_interface *intf)
 }
 
 #endif /* ((LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 21)) && defined(CONFIG_USB_SUSPEND)) */
+#endif /* KERNEL26 */
 
 /**
  * Called by Linux kernel at initialization time, kernel wants to know if our driver will accept the
  * caller supplied USB interface. Note that USB drivers are bound to interfaces, and not to USB
  * devices.
  */
-static int
-dbus_usbos_probe(struct usb_interface *intf, const struct usb_device_id *id)
+#ifdef KERNEL26
+#define DBUS_USBOS_PROBE() static int dbus_usbos_probe(struct usb_interface *intf, const struct usb_device_id *id)
+#define DBUS_USBOS_DISCONNECT() static void dbus_usbos_disconnect(struct usb_interface *intf)
 #else
-static void *
-dbus_usbos_probe(struct usb_device *usb, unsigned int ifnum, const struct usb_device_id *id)
+#define DBUS_USBOS_PROBE() static void * dbus_usbos_probe(struct usb_device *usb, unsigned int ifnum, const struct usb_device_id *id)
+#define DBUS_USBOS_DISCONNECT() static void dbus_usbos_disconnect(struct usb_device *usb, void *ptr)
 #endif /* KERNEL26 */
+
+DBUS_USBOS_PROBE()
 {
 	int ep;
 	struct usb_endpoint_descriptor *endpoint;
@@ -1347,6 +1357,8 @@ dbus_usbos_probe(struct usb_device *usb, unsigned int ifnum, const struct usb_de
 	int wlan_if = -1;
 	bool intr_ep = FALSE;
 #endif /* BCMUSBDEV_COMPOSITE */
+
+	printk("%s: Enter\n", __FUNCTION__);
 
 #ifdef BCMUSBDEV_COMPOSITE
 	wlan_if = dbus_usbos_intf_wlan(usb);
@@ -1445,16 +1457,20 @@ dbus_usbos_probe(struct usb_device *usb, unsigned int ifnum, const struct usb_de
 		IFDESC(usb, wlan_if).bInterfaceProtocol != 0xff) &&
 		(IFDESC(usb, wlan_if).bInterfaceClass != USB_CLASS_MISC ||
 		IFDESC(usb, wlan_if).bInterfaceSubClass != USB_SUBCLASS_COMMON ||
-		IFDESC(usb, wlan_if).bInterfaceProtocol != USB_PROTO_IAD)) {
+		IFDESC(usb, wlan_if).bInterfaceProtocol != USB_PROTO_IAD))
+#else
+	if (IFDESC(usb, CONTROL_IF).bInterfaceClass != USB_CLASS_VENDOR_SPEC ||
+		IFDESC(usb, CONTROL_IF).bInterfaceSubClass != 2 ||
+		IFDESC(usb, CONTROL_IF).bInterfaceProtocol != 0xff)
+#endif /* BCMUSBDEV_COMPOSITE */
+	{
+#ifdef BCMUSBDEV_COMPOSITE
 			DBUSERR(("%s: invalid control interface: class %d, subclass %d, proto %d\n",
 				__FUNCTION__,
 				IFDESC(usb, wlan_if).bInterfaceClass,
 				IFDESC(usb, wlan_if).bInterfaceSubClass,
 				IFDESC(usb, wlan_if).bInterfaceProtocol));
 #else
-	if (IFDESC(usb, CONTROL_IF).bInterfaceClass != USB_CLASS_VENDOR_SPEC ||
-		IFDESC(usb, CONTROL_IF).bInterfaceSubClass != 2 ||
-		IFDESC(usb, CONTROL_IF).bInterfaceProtocol != 0xff) {
 			DBUSERR(("%s: invalid control interface: class %d, subclass %d, proto %d\n",
 				__FUNCTION__,
 				IFDESC(usb, CONTROL_IF).bInterfaceClass,
@@ -1525,10 +1541,14 @@ dbus_usbos_probe(struct usb_device *usb, unsigned int ifnum, const struct usb_de
 	}
 	/* Check data endpoints and get pipes */
 #ifdef BCMUSBDEV_COMPOSITE
-	for (; ep <= num_of_eps; ep++) {
+	for (; ep <= num_of_eps; ep++)
+#else
+	for (ep = 1; ep <= num_of_eps; ep++)
+#endif /* BCMUSBDEV_COMPOSITE */
+	{
+#ifdef BCMUSBDEV_COMPOSITE
 		endpoint = &IFEPDESC(usb, wlan_if, ep);
 #else
-	for (ep = 1; ep <= num_of_eps; ep++) {
 		endpoint = &IFEPDESC(usb, BULK_IF, ep);
 #endif /* BCMUSBDEV_COMPOSITE */
 		if ((endpoint->bmAttributes & USB_ENDPOINT_XFERTYPE_MASK) !=
@@ -1582,6 +1602,7 @@ dbus_usbos_probe(struct usb_device *usb, unsigned int ifnum, const struct usb_de
 
 	g_probe_info.disc_cb_done = FALSE;
 
+	printk("%s: Exit ret=%d\n", __FUNCTION__, ret);
 	/* Success */
 #ifdef KERNEL26
 	return DBUS_OK;
@@ -1591,6 +1612,7 @@ dbus_usbos_probe(struct usb_device *usb, unsigned int ifnum, const struct usb_de
 #endif
 
 fail:
+	printk("%s: Exit ret=%d\n", __FUNCTION__, ret);
 #ifdef BCMUSBDEV_COMPOSITE
 	if (ret != BCME_UNSUPPORTED)
 #endif /* BCMUSBDEV_COMPOSITE */
@@ -1613,12 +1635,7 @@ fail:
 }
 
 /** Called by Linux kernel, is the counter part of dbus_usbos_probe() */
-static void
-#ifdef KERNEL26
-dbus_usbos_disconnect(struct usb_interface *intf)
-#else
-dbus_usbos_disconnect(struct usb_device *usb, void *ptr)
-#endif
+DBUS_USBOS_DISCONNECT()
 {
 #ifdef KERNEL26
 	struct usb_device *usb = interface_to_usbdev(intf);
@@ -1627,6 +1644,8 @@ dbus_usbos_disconnect(struct usb_device *usb, void *ptr)
 	probe_info_t *probe_usb_init_data = (probe_info_t *) ptr;
 #endif
 	usbos_info_t *usbos_info;
+
+	printk("%s: Enter\n", __FUNCTION__);
 
 	if (probe_usb_init_data) {
 		usbos_info = (usbos_info_t *) probe_usb_init_data->usbos_info;
@@ -1648,6 +1667,7 @@ dbus_usbos_disconnect(struct usb_device *usb, void *ptr)
 		usb_dec_dev_use(usb);
 #endif /* !KERNEL26 */
 	}
+	printk("%s: Exit\n", __FUNCTION__);
 }
 
 /** Higher layer (dbus_usb.c) wants to transmit an I/O Request Block */
@@ -1753,6 +1773,7 @@ dbus_usbos_intf_send_irb(void *bus, dbus_irb_tx_t *txirb)
 	}
 
 	usbos_info->txposted++;
+	usbos_info->txdata++;
 
 	dbus_usbos_qenq(&usbos_info->req_txpostedq, req, &usbos_info->txposted_lock);
 
@@ -1850,6 +1871,8 @@ dbus_usbos_intf_send_ctl(void *bus, uint8 *buf, int len)
 	if (ret < 0) {
 		DBUSERR(("%s: usb_submit_urb failed %d\n", __FUNCTION__, ret));
 		return DBUS_ERR_TXCTLFAIL;
+	} else {
+		usbos_info->txctl++;
 	}
 
 	return DBUS_OK;
@@ -3874,3 +3897,19 @@ dbus_usbos_intf_wlan(struct usb_device *usb)
 	return intf_wlan;
 }
 #endif /* BCMUSBDEV_COMPOSITE */
+
+static void
+dbus_usbos_bus_dump(void *bus, struct bcmstrbuf *b)
+{
+	usbos_info_t *usbos_info = (usbos_info_t *) bus;
+
+	if (b) {
+		bcm_bprintf(b, "\ndbus linux dump\n");
+		bcm_bprintf(b, "txposted %d rxposted %d\n",
+			usbos_info->txposted, usbos_info->rxposted);
+		bcm_bprintf(b,"TX ctl %d, done %d. Data %d, done %d\r\n",usbos_info->txctl,usbos_info->txctl_complete,
+			usbos_info->txdata,usbos_info->txdata_complete);
+	} 
+
+	return;
+}

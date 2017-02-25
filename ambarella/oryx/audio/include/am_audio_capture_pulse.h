@@ -4,22 +4,39 @@
  * History:
  *   2014-11-28 - [ypchang] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 #ifndef AM_AUDIO_CAPTURE_PULSE_H_
 #define AM_AUDIO_CAPTURE_PULSE_H_
 
+#include "am_mutex.h"
+#include "am_audio_capture_if.h"
 #include <pulse/pulseaudio.h>
 
 struct PaData;
-
-class AMSpinLock;
 class AMAudioCapturePulse: public AMIAudioCapture
 {
   public:
@@ -54,8 +71,10 @@ class AMAudioCapturePulse: public AMIAudioCapture
                            const pa_source_info *info,
                            int eol,
                            void *data);
+    void pa_set_volume_cb(pa_context *context, int success, void *data);
     void pa_read(pa_stream *stream, size_t bytes, void *data);
     void pa_over_flow(pa_stream *stream, void *data);
+    void pa_stream_state(pa_stream *stream, void *data);
 
   private:
     static void static_pa_state(pa_context *context, void *data);
@@ -68,6 +87,10 @@ class AMAudioCapturePulse: public AMIAudioCapture
                                       void *data);
     static void static_pa_read(pa_stream *stream, size_t bytes, void *data);
     static void static_pa_over_flow(pa_stream *stream, void *data);
+    static void static_pa_stream_state(pa_stream *stream, void *data);
+    static void static_set_volume_callback(pa_context *context,
+                                           int success,
+                                           void *data);
 
   private:
     bool initialize();
@@ -83,35 +106,36 @@ class AMAudioCapturePulse: public AMIAudioCapture
               AudioCaptureCallback callback);
 
   private:
+    int64_t               m_last_pts;
+    int64_t               m_fragment_pts;
     AudioCaptureCallback  m_capture_callback;
-    AMSpinLock           *m_lock;
     void                 *m_owner;     /* Ower of this class object */
     PaData               *m_read_data;
     PaData               *m_over_flow;
+    PaData               *m_stream_data;
     pa_threaded_mainloop *m_main_loop;
-    pa_mainloop_api      *m_main_loop_api;
     pa_context           *m_context;
     pa_stream            *m_stream_record;
     uint8_t              *m_audio_buffer;
     uint8_t              *m_audio_ptr_r;
     uint8_t              *m_audio_ptr_w;
-    pa_sample_spec        m_sample_spec;
-    pa_channel_map        m_channel_map;
-    pa_context_state      m_context_state;
+    pa_context_state_t    m_context_state;
+    pa_stream_state_t     m_stream_state;
     pa_sample_format_t    m_sample_format;
     uint32_t              m_sample_rate;
     uint32_t              m_channel;
     uint32_t              m_chunk_bytes;
     uint32_t              m_audio_buffer_size;
     uint32_t              m_frame_bytes;
-    int64_t               m_last_pts;
-    int64_t               m_fragment_pts;
     int                   m_hw_timer_fd;
-    bool                  m_is_context_connected;
-    bool                  m_is_capture_running;
-    bool                  m_is_aec_enabled;
+    std::atomic<bool>     m_is_context_connected;
+    std::atomic<bool>     m_is_capture_running;
+    std::atomic<bool>     m_is_aec_enabled;
     std::string           m_context_name;
     std::string           m_def_src_name;
+    pa_sample_spec        m_sample_spec;
+    pa_channel_map        m_channel_map;
+    AMMemLock             m_lock;
 };
 
 #endif /* AM_AUDIO_CAPTURE_PULSE_H_ */

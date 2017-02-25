@@ -40,6 +40,7 @@ extern void dhd_bus_clearcounts(dhd_pub_t *dhdp);
 #include <dhd_bus.h>
 #endif /* BCMDBUS */
 #include <dhd_proto.h>
+#include <dhd_config.h>
 #include <dhd_dbg.h>
 #include <msgtrace.h>
 
@@ -82,6 +83,8 @@ int dhd_msg_level = DHD_ERROR_VAL;
 
 char fw_path[MOD_PARAM_PATHLEN];
 char nv_path[MOD_PARAM_PATHLEN];
+// terence 20130703: customer can add some parameters to configure driver
+char conf_path[MOD_PARAM_PATHLEN];
 
 #ifdef SOFTAP
 char fw_path2[MOD_PARAM_PATHLEN];
@@ -120,6 +123,7 @@ void dhd_set_timer(void *bus, uint wdtick);
 /* IOVar table */
 enum {
 	IOV_VERSION = 1,
+	IOV_WLMSGLEVEL,
 	IOV_MSGLEVEL,
 	IOV_BCMERRORSTR,
 	IOV_BCMERROR,
@@ -159,6 +163,7 @@ enum {
 
 const bcm_iovar_t dhd_iovars[] = {
 	{"version", 	IOV_VERSION,	0,	IOVT_BUFFER,	sizeof(dhd_version) },
+	{"wlmsglevel",	IOV_WLMSGLEVEL,	0,	IOVT_UINT32,	0 },
 #ifdef DHD_DEBUG
 	{"msglevel",	IOV_MSGLEVEL,	0,	IOVT_UINT32,	0 },
 #endif /* DHD_DEBUG */
@@ -243,6 +248,11 @@ dhd_common_deinit(dhd_pub_t *dhd_pub, dhd_cmn_t *sa_cmn)
 	MFREE(osh, cmn, sizeof(dhd_cmn_t));
 }
 
+extern void dhd_dump_interface(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf);
+
+extern int flowcontrol_on_cnt;
+extern int flowcontrol_off_cnt;
+
 static int
 dhd_dump(dhd_pub_t *dhdp, char *buf, int buflen)
 {
@@ -256,8 +266,8 @@ dhd_dump(dhd_pub_t *dhdp, char *buf, int buflen)
 	/* Base DHD info */
 	bcm_bprintf(strbuf, "%s\n", dhd_version);
 	bcm_bprintf(strbuf, "\n");
-	bcm_bprintf(strbuf, "pub.up %d pub.txoff %d pub.busstate %d\n",
-	            dhdp->up, dhdp->txoff, dhdp->busstate);
+	bcm_bprintf(strbuf, "pub.up %d pub.txoff %d pub.busstate %d, oncnt:%d,offcnt:%d\n",
+	            dhdp->up, dhdp->txoff, dhdp->busstate, flowcontrol_on_cnt, flowcontrol_off_cnt);
 	bcm_bprintf(strbuf, "pub.hdrlen %u pub.maxctl %u pub.rxsz %u\n",
 	            dhdp->hdrlen, dhdp->maxctl, dhdp->rxsz);
 	bcm_bprintf(strbuf, "pub.iswl %d pub.drv_version %ld pub.mac %s\n",
@@ -286,6 +296,8 @@ dhd_dump(dhd_pub_t *dhdp, char *buf, int buflen)
 	            dhdp->rx_readahead_cnt, dhdp->tx_realloc);
 	bcm_bprintf(strbuf, "\n");
 
+	bcm_bprintf(strbuf,"Going to dump interface info\r\n");
+	dhd_dump_interface(dhdp,strbuf);
 	/* Add any prot info */
 	dhd_prot_dump(dhdp, strbuf);
 	bcm_bprintf(strbuf, "\n");
@@ -378,22 +390,52 @@ dhd_doiovar(dhd_pub_t *dhd_pub, const bcm_iovar_t *vi, uint32 actionid, const ch
 		bcm_strncpy_s((char*)arg, len, dhd_version, len);
 		break;
 
+	case IOV_GVAL(IOV_WLMSGLEVEL):
+		printk("android_msg_level=0x%x\n", android_msg_level);
+		printk("config_msg_level=0x%x\n", config_msg_level);
+#if defined(WL_WIRELESS_EXT)
+		int_val = (int32)iw_msg_level;
+		bcopy(&int_val, arg, val_size);
+		printk("iw_msg_level=0x%x\n", iw_msg_level);
+#endif
+#ifdef WL_CFG80211
+		int_val = (int32)wl_dbg_level;
+		bcopy(&int_val, arg, val_size);
+		printk("cfg_msg_level=0x%x\n", wl_dbg_level);
+#endif
+		break;
+
+	case IOV_SVAL(IOV_WLMSGLEVEL):
+		if (int_val & DHD_ANDROID_VAL) {
+			android_msg_level = (uint)(int_val & 0xFFFF);
+			printk("android_msg_level=0x%x\n", android_msg_level);
+		}
+		if (int_val & DHD_CONFIG_VAL) {
+			config_msg_level = (uint)(int_val & 0xFFFF);
+			printk("config_msg_level=0x%x\n", config_msg_level);
+		}
+#if defined(WL_WIRELESS_EXT)
+		if (int_val & DHD_IW_VAL) {
+			iw_msg_level = (uint)(int_val & 0xFFFF);
+			printk("iw_msg_level=0x%x\n", iw_msg_level);
+		}
+#endif
+#ifdef WL_CFG80211
+		if (int_val & DHD_CFG_VAL) {
+			wl_cfg80211_enable_trace((u32)(int_val & 0xFFFF));
+		}
+#endif
+		break;
+
 	case IOV_GVAL(IOV_MSGLEVEL):
 		int_val = (int32)dhd_msg_level;
 		bcopy(&int_val, arg, val_size);
 		break;
 
 	case IOV_SVAL(IOV_MSGLEVEL):
-#ifdef WL_CFG80211
-		/* Enable DHD and WL logs in oneshot */
-		if (int_val & DHD_WL_VAL2)
-			wl_cfg80211_enable_trace(TRUE, int_val & (~DHD_WL_VAL2));
-		else if (int_val & DHD_WL_VAL)
-			wl_cfg80211_enable_trace(FALSE, WL_DBG_DBG);
-		if (!(int_val & DHD_WL_VAL2))
-#endif /* WL_CFG80211 */
 		dhd_msg_level = int_val;
 		break;
+
 	case IOV_GVAL(IOV_BCMERRORSTR):
 		bcm_strncpy_s((char *)arg, len, bcmerrorstr(dhd_pub->bcmerror), BCME_STRLEN);
 		((char *)arg)[BCME_STRLEN - 1] = 0x00;
@@ -1497,6 +1539,8 @@ dhd_pktfilter_offload_enable(dhd_pub_t * dhd, char *arg, int enable, int master_
 
 	/* Parse packet filter id. */
 	enable_parm.id = htod32(strtoul(argv[i], NULL, 0));
+	if (dhd_conf_del_pkt_filter(dhd, enable_parm.id))
+		goto fail;
 
 	/* Parse enable/disable value. */
 	enable_parm.enable = htod32(enable);
@@ -1587,6 +1631,8 @@ dhd_pktfilter_offload_set(dhd_pub_t * dhd, char *arg)
 
 	/* Parse packet filter id. */
 	pkt_filter.id = htod32(strtoul(argv[i], NULL, 0));
+	if (dhd_conf_del_pkt_filter(dhd, pkt_filter.id))
+		goto fail;
 
 	if (argv[++i] == NULL) {
 		DHD_ERROR(("Polarity not provided\n"));

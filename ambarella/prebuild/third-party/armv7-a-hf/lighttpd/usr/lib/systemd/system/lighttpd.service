@@ -4,6 +4,7 @@ After=syslog.target network.target
 
 [Service]
 PIDFile=/var/run/lighttpd.pid
+EnvironmentFile=-/etc/sysconfig/lighttpd
 ExecStart=/usr/sbin/lighttpd -D -f /etc/lighttpd/lighttpd.conf
 
 [Install]

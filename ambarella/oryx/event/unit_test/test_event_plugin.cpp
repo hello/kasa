@@ -4,12 +4,29 @@
  * Histroy:
  *  2014-11-19  [Dongge Wu] created file
  *
- * Copyright (C) 2008-2016, Ambarella ShangHai Co,Ltd
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -26,6 +43,7 @@
 #include "am_jpeg_encoder_if.h"
 #include "am_event_monitor_if.h"
 #include "am_video_reader_if.h"
+#include "am_video_address_if.h"
 
 static bool g_run = true;
 
@@ -58,15 +76,11 @@ static bool g_thread_run = true;
 
 AMIEventMonitorPtr event_instance;
 AMIVideoReaderPtr m_video_reader;
+AMIVideoAddressPtr m_video_address;
 AMIJpegEncoderPtr m_jpeg_encoder;
 
 const char *event_type_str[EV_ALL_MODULE_NUM] =
-{ "Motion Detect", "Audio Alert", "Audio Analysis", "Face Detect", "Key Input", };
-const char *motion_type[AM_MD_MOTION_TYPE_NUM] =
-{"MOTION_NONE", "MOTION_START", "MOTION_LEVEL_CHANGED", "MOTION_END"};
-const char *motion_level[AM_MOTION_L_NUM] =
-{"MOTION_LEVEL_0", "MOTION_LEVEL_1", "MOTION_LEVEL_2"};
-
+{"Audio Alert", "Audio Analysis", "Face Detect", "Key Input", };
 static int32_t show_plugin_menu(void)
 {
   PRINTF("\n===============================\n");
@@ -202,11 +216,12 @@ static void free_yuv_buffer(AMYUVData *yuv)
 
 static AMYUVData *capture_yuv_buffer(int buf_id)
 {
-  AMQueryDataFrameDesc frame_desc;
-  AMMemMapInfo dsp_mem;
+  AMQueryFrameDesc frame_desc;
   AMYUVData *yuv = NULL;
+  AMAddress yaddr = {0};
+  AMAddress uvaddr = {0};
   AM_RESULT result = AM_RESULT_OK;
-  uint8_t *y_offset, *uv_offset, *y_tmp;
+  uint8_t *y_tmp;
   int32_t uv_height;
   int32_t i;
 
@@ -218,31 +233,32 @@ static AMYUVData *capture_yuv_buffer(int buf_id)
       break;
     }
 
-    result = m_video_reader->get_dsp_mem(&dsp_mem);
-    if (result != AM_RESULT_OK) {
-      ERROR("get dsp mem failed \n");
-      result = AM_RESULT_ERR_INVALID;
-      break;
-    }
-
-    result = m_video_reader->query_yuv_frame(&frame_desc,
-                                AM_ENCODE_SOURCE_BUFFER_ID(buf_id), false);
+    result = m_video_reader->query_yuv_frame(frame_desc,
+                                AM_SOURCE_BUFFER_ID(buf_id), false);
     if (result != AM_RESULT_OK) {
       ERROR("query yuv frame failed \n");
       result = AM_RESULT_ERR_INVALID;
       break;
     }
+    if (AM_RESULT_OK != m_video_address->yuv_y_addr_get(frame_desc, yaddr)) {
+      result = AM_RESULT_ERR_INVALID;
+      ERROR("Failed to get y address!");
+      break;
+    }
+    if (AM_RESULT_OK != m_video_address->yuv_uv_addr_get(frame_desc, uvaddr)) {
+      result = AM_RESULT_ERR_INVALID;
+      ERROR("Failed to get uv address!");
+      break;
+    }
 
-    y_offset = dsp_mem.addr + frame_desc.yuv.y_addr_offset;
-    uv_offset = dsp_mem.addr + frame_desc.yuv.uv_addr_offset;
     yuv->width = frame_desc.yuv.width;
     yuv->height = frame_desc.yuv.height;
     yuv->pitch = frame_desc.yuv.pitch;
     yuv->format = frame_desc.yuv.format;
 
-    if (frame_desc.yuv.format == AM_ENCODE_CHROMA_FORMAT_YUV420) {
+    if (frame_desc.yuv.format == AM_CHROMA_FORMAT_YUV420) {
       uv_height = yuv->height / 2;
-    } else if (frame_desc.yuv.format == AM_ENCODE_CHROMA_FORMAT_YUV422) {
+    } else if (frame_desc.yuv.format == AM_CHROMA_FORMAT_YUV422) {
       uv_height = yuv->height;
     } else {
       ERROR("not supported chroma format in YUV dump\n");
@@ -260,10 +276,10 @@ static AMYUVData *capture_yuv_buffer(int buf_id)
     }
     y_tmp = (uint8_t *)yuv->y.iov_base;
     if (yuv->pitch == yuv->width) {
-      memcpy(yuv->y.iov_base, y_offset, yuv->width * yuv->height);
+      memcpy(yuv->y.iov_base, yaddr.data, yuv->width * yuv->height);
     } else {
       for (i = 0; i < yuv->height ; i++) {
-        memcpy(y_tmp, y_offset + i * yuv->pitch, yuv->width);
+        memcpy(y_tmp, uvaddr.data + i * yuv->pitch, yuv->width);
         y_tmp += yuv->width;
       }
     }
@@ -276,7 +292,7 @@ static AMYUVData *capture_yuv_buffer(int buf_id)
       result = AM_RESULT_ERR_INVALID;
       break;
     }
-    memcpy(yuv->uv.iov_base, uv_offset, yuv->uv.iov_len);
+    memcpy(yuv->uv.iov_base, uvaddr.data, yuv->uv.iov_len);
   } while (0);
 
   if (result != AM_RESULT_OK) {
@@ -342,6 +358,7 @@ static void stop_encode_jpeg_thread()
   pthread_mutex_lock(&g_mutex);
   pthread_cond_signal(&g_cond);
   pthread_mutex_unlock(&g_mutex);
+
 }
 
 static void *encode_jpeg_thread(void *arg)
@@ -356,10 +373,8 @@ static void *encode_jpeg_thread(void *arg)
       pthread_mutex_lock(&g_mutex);
       pthread_cond_wait(&g_cond, &g_mutex);
       pthread_mutex_unlock(&g_mutex);
-      PRINTF("motion end\n");
       continue;
     } else {
-      PRINTF("motion start\n");
       gettimeofday(&curr, NULL);
       pre = curr;
       encode_yuv_to_jpeg();
@@ -376,35 +391,6 @@ static void *encode_jpeg_thread(void *arg)
   return NULL;
 }
 
-static int32_t on_motion_detect(struct AM_MD_MESSAGE *md_msg)
-{
-  int md_status = 0;
-
-  switch (md_msg->mt_type) {
-  case AM_MD_MOTION_START:
-    PRINTF("AM_MD_MOTION_START\n");
-  case AM_MD_MOTION_LEVEL_CHANGED:
-    PRINTF("AM_MD_MOTION_LEVEL_CHANGED\n");
-    md_status = 1;
-    break;
-  case AM_MD_MOTION_END:
-    PRINTF("motion_detect end\n");
-    md_status = 0;
-    break;
-  default:
-    ERROR("Unknown motion_detect type!\n");
-    break;
-  }
-  g_md_status = md_status;
-  if (md_status == 1) {
-    pthread_mutex_lock(&g_mutex);
-    pthread_cond_signal(&g_cond);
-    pthread_mutex_unlock(&g_mutex);
-  } else if (md_status == 0) {
-  }
-  return 0;
-}
-
 static int32_t event_callback(AM_EVENT_MESSAGE *msg)
 {
   PRINTF("event type: %s, pts: %llu, sequence number: %llu\n",
@@ -413,13 +399,6 @@ static int32_t event_callback(AM_EVENT_MESSAGE *msg)
          msg->seq_num);
 
   switch (msg->event_type) {
-    case EV_MOTION_DECT:
-      PRINTF("%s, %s, ROI#%d \n",
-             motion_type[msg->md_msg.mt_type],
-             motion_level[msg->md_msg.mt_level],
-             msg->md_msg.roi_id);
-      on_motion_detect(&msg->md_msg);
-      break;
     case EV_AUDIO_ALERT_DECT:
       break;
     case EV_FACE_DECT:
@@ -512,13 +491,14 @@ int main()
     return -1;
   }
 
-  if (m_video_reader->init() != AM_RESULT_OK) {
-    ERROR("unable to init AMVideoReader\n");
+  m_video_address = AMIVideoAddress::get_instance();
+  if (!m_video_address) {
+    ERROR("Failed to get instance of VideoAddress!");
     return -1;
   }
 
   m_jpeg_encoder = AMIJpegEncoder::get_instance();
-  if (!m_video_reader) {
+  if (!m_jpeg_encoder) {
     ERROR("m_jpeg_encoder is NULL!\n");
     return -1;
   }
@@ -567,11 +547,6 @@ int main()
                   module_config.value = (void *) &key_callback;
                   event_instance->set_monitor_config(module_id, &module_config);
                   key_callback.key_value = 238;
-                  event_instance->set_monitor_config(module_id, &module_config);
-                  break;
-                case EV_MOTION_DECT:
-                  module_config.key = AM_MD_CALLBACK;
-                  module_config.value = (void *) event_callback;
                   event_instance->set_monitor_config(module_id, &module_config);
                   break;
                 default:

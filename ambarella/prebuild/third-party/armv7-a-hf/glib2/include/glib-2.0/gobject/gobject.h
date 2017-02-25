@@ -627,8 +627,8 @@ G_STMT_START { \
   GObject *_glib__object = (GObject*) (object); \
   GParamSpec *_glib__pspec = (GParamSpec*) (pspec); \
   guint _glib__property_id = (property_id); \
-  g_warning ("%s: invalid %s id %u for \"%s\" of type '%s' in '%s'", \
-             G_STRLOC, \
+  g_warning ("%s:%d: invalid %s id %u for \"%s\" of type '%s' in '%s'", \
+             __FILE__, __LINE__, \
              (pname), \
              _glib__property_id, \
              _glib__pspec->name, \
@@ -650,6 +650,73 @@ G_STMT_START { \
 GLIB_AVAILABLE_IN_ALL
 void    g_clear_object (volatile GObject **object_ptr);
 #define g_clear_object(object_ptr) g_clear_pointer ((object_ptr), g_object_unref)
+
+/**
+ * g_set_object: (skip)
+ * @object_ptr: a pointer to a #GObject reference
+ * @new_object: (nullable) (transfer none): a pointer to the new #GObject to
+ *   assign to it, or %NULL to clear the pointer
+ *
+ * Updates a #GObject pointer to refer to @new_object. It increments the
+ * reference count of @new_object (if non-%NULL), decrements the reference
+ * count of the current value of @object_ptr (if non-%NULL), and assigns
+ * @new_object to @object_ptr. The assignment is not atomic.
+ *
+ * @object_ptr must not be %NULL.
+ *
+ * A macro is also included that allows this function to be used without
+ * pointer casts. The function itself is static inline, so its address may vary
+ * between compilation units.
+ *
+ * One convenient usage of this function is in implementing property setters:
+ * |[
+ *   void
+ *   foo_set_bar (Foo *foo,
+ *                Bar *new_bar)
+ *   {
+ *     g_return_if_fail (IS_FOO (foo));
+ *     g_return_if_fail (new_bar == NULL || IS_BAR (new_bar));
+ *
+ *     if (g_set_object (&foo->bar, new_bar))
+ *       g_object_notify (foo, "bar");
+ *   }
+ * ]|
+ *
+ * Returns: %TRUE if the value of @object_ptr changed, %FALSE otherwise
+ *
+ * Since: 2.44
+ */
+static inline gboolean
+(g_set_object) (GObject **object_ptr,
+                GObject  *new_object)
+{
+  GObject *old_object = *object_ptr;
+
+  /* rely on g_object_[un]ref() to check the pointers are actually GObjects;
+   * elide a (object_ptr != NULL) check because most of the time we will be
+   * operating on struct members with a constant offset, so a NULL check would
+   * not catch bugs
+   */
+
+  if (old_object == new_object)
+    return FALSE;
+
+  if (new_object != NULL)
+    g_object_ref (new_object);
+
+  *object_ptr = new_object;
+
+  if (old_object != NULL)
+    g_object_unref (old_object);
+
+  return TRUE;
+}
+
+#define g_set_object(object_ptr, new_object) \
+ (/* Check types match. */ \
+  0 ? *(object_ptr) = (new_object), FALSE : \
+  (g_set_object) ((GObject **) (object_ptr), (GObject *) (new_object)) \
+ )
 
 typedef struct {
     /*<private>*/

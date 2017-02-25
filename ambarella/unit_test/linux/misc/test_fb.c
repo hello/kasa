@@ -36,11 +36,12 @@ static struct option long_options[] = {
 	{"rgb",	HAS_ARG,	0,	'c'},
 	{"height",	HAS_ARG,	0,	'h'},
 	{"width",		HAS_ARG,	0,	'w'},
+	{"id",		HAS_ARG,	0,	'b'},
 
 	{0, 0, 0, 0}
 };
 
-static const char *short_options = "c:h:w:";
+static const char *short_options = "c:h:w:b:";
 
 struct hint_s {
 	const char *arg;
@@ -51,6 +52,7 @@ static const struct hint_s hint[] = {
 	{"",			"\t\tset color(Format:R, G, B, alpha), max value is 255"},
 	{"",			"\t\tset frame buffer height"},
 	{"",			"\t\tset frame buffer width"},
+	{"",			"\t\tset frame buffer id"},
 };
 
 struct fb_cmap_user {
@@ -73,6 +75,8 @@ static int fb_width = 0;
 static int fb_width_flag = 0;
 static int fb_height = 0;
 static int fb_height_flag = 0;
+static int fb_id = 0;
+static int fb_id_flag = 0;
 
 #define MAX_COLOR_VALUE	255
 enum {
@@ -184,6 +188,16 @@ int init_param(int argc, char ** argv)
 			fb_width = atoi(optarg);
 			fb_width_flag = 1;
 			break;
+		case 'b':
+			fb_id = atoi(optarg);
+			if ((2 > fb_id) && (0 <= fb_id)) {
+				fb_id_flag = 1;
+			} else {
+				printf("frame buffer id should in range [0, 1]\n");
+				fb_id = 0;
+				fb_id_flag = 0;
+			}
+			break;
 
 		default:
 			printf("unknown option found: %c\n", ch);
@@ -213,14 +227,28 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
-	fb = open("/dev/fb0", O_RDWR);
-	if (fb < 0) {
-		perror("Open fb error");
-		return -1;
-	}
-
 	if (init_param(argc, argv) < 0)
 		return -1;
+
+	if (!fb_id_flag) {
+		fb = open("/dev/fb0", O_RDWR);
+		if (fb < 0) {
+			printf("open /dev/fb0 fail\n");
+			perror("Open fb error");
+			return -1;
+		}
+		printf("open default /dev/fb0 done\n");
+	} else {
+		char fb_dev_string[32] = {0};
+		snprintf(fb_dev_string, sizeof(fb_dev_string), "/dev/fb%d", fb_id);
+		fb = open(fb_dev_string, O_RDWR);
+		if (fb < 0) {
+			printf("open /dev/fb%d fail\n", fb_id);
+			perror("Open fb error");
+			return -1;
+		}
+		printf("open %s done\n", fb_dev_string);
+	}
 
 	if(ioctl(fb, FBIOGET_VSCREENINFO, &var) >= 0
 		&& ioctl(fb, FBIOGET_FSCREENINFO, &fix) >= 0) {

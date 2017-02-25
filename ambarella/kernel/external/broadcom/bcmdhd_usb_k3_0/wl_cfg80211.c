@@ -605,18 +605,6 @@ do {									\
 	}								\
 } while (0)
 
-#ifdef RSSI_OFFSET
-static s32 wl_rssi_offset(s32 rssi)
-{
-	rssi += RSSI_OFFSET;
-	if (rssi > 0)
-		rssi = 0;
-	return rssi;
-}
-#else
-#define wl_rssi_offset(x)	x
-#endif
-
 #define IS_WPA_AKM(akm) ((akm) == RSN_AKM_NONE || 			\
 				 (akm) == RSN_AKM_UNSPECIFIED || 	\
 				 (akm) == RSN_AKM_PSK)
@@ -1627,8 +1615,8 @@ wl_cfg80211_change_virtual_iface(struct wiphy *wiphy, struct net_device *ndev,
 			chspec = wl_cfg80211_get_shared_freq(wiphy);
 
 			wlif_type = WL_P2P_IF_GO;
-			WL_ERR(("%s : ap (%d), infra (%d), iftype: (%d)\n",
-				ndev->name, ap, infra, type));
+			printk("%s : ap (%d), infra (%d), iftype: (%d)\n",
+				ndev->name, ap, infra, type);
 			wl_set_p2p_status(wl, IF_CHANGING);
 			wl_clr_p2p_status(wl, IF_CHANGED);
 			wl_cfgp2p_ifchange(wl, &wl->p2p->int_addr, htod32(wlif_type), chspec);
@@ -2544,7 +2532,8 @@ __wl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		/* we don't do iscan in ibss */
 		ssids = this_ssid;
 	}
-	if (request && !p2p_scan(wl))
+	// terence 20150407: fix for null pointer if fw not support p2p
+	if (request && wl->p2p && !p2p_scan(wl))
 		WL_TRACE_HW4(("START SCAN\n"));
 	wl->scan_request = request;
 	wl_set_drv_status(wl, SCANNING, ndev);
@@ -3814,9 +3803,9 @@ wl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 	err = wldev_iovar_setbuf_bsscfg(dev, "join", ext_join_params, join_params_size,
 		wl->ioctl_buf, WLC_IOCTL_MAXLEN, bssidx, &wl->ioctl_buf_sync);
 
-	WL_ERR(("Connectting with" MACDBG " channel (%d) ssid \"%s\", len (%d)\n\n",
+	printk("Connectting with " MACDBG " channel (%d) ssid \"%s\", len (%d)\n\n",
 		MAC2STRDBG((u8*)(&ext_join_params->assoc.bssid)), wl->channel,
-		ext_join_params->ssid.SSID, ext_join_params->ssid.SSID_len));
+		ext_join_params->ssid.SSID, ext_join_params->ssid.SSID_len);
 
 	kfree(ext_join_params);
 	if (err) {
@@ -4457,7 +4446,11 @@ wl_cfg80211_get_station(struct wiphy *wiphy, struct net_device *dev,
 			WL_ERR(("Could not get rssi (%d)\n", err));
 			goto get_station_err;
 		}
-		rssi = wl_rssi_offset(dtoh32(scb_val.val));
+		rssi = dtoh32(scb_val.val);
+#if !defined(RSSIAVG) && !defined(RSSIOFFSET)
+		// terence 20150419: limit the max. rssi to -2 or the bss will be filtered out in android OS
+		rssi = MIN(rssi, RSSI_MAXVAL);
+#endif
 		sinfo->filled |= STATION_INFO_SIGNAL;
 		sinfo->signal = rssi;
 		WL_DBG(("RSSI %d dBm\n", rssi));
@@ -5326,7 +5319,7 @@ wl_cfg80211_send_action_frame(struct wiphy *wiphy, struct net_device *dev,
 		} else {
 			WL_DBG(("Unknown Frame: category 0x%x, action 0x%x, length %d\n",
 				category, action, action_frame_len));
-	}
+		}
 	} else if (category == P2P_AF_CATEGORY) {
 		/* do not configure anything. it will be sent with a default configuration */
 	} else {
@@ -5736,8 +5729,8 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 
 	dev = ndev_to_wlc_ndev(dev, wl);
 	_chan = ieee80211_frequency_to_channel(chan->center_freq);
-	WL_ERR(("netdev_ifidx(%d), chan_type(%d) target channel(%d) \n",
-		dev->ifindex, channel_type, _chan));
+	printk("netdev_ifidx(%d), chan_type(%d) target channel(%d) \n",
+		dev->ifindex, channel_type, _chan);
 
 #ifdef NOT_YET
 	switch (channel_type) {
@@ -6591,9 +6584,9 @@ wl_cfg80211_del_station(
 		sizeof(scb_val_t), true);
 	if (err < 0)
 		WL_ERR(("WLC_SCB_DEAUTHENTICATE_FOR_REASON err %d\n", err));
-	WL_ERR(("Disconnect STA : %s scb_val.val %d\n",
+	printk("Disconnect STA : %s scb_val.val %d\n",
 		bcm_ether_ntoa((const struct ether_addr *)mac_addr, eabuf),
-		scb_val.val));
+		scb_val.val);
 
 	if (num_associated > 0 && ETHER_ISBCAST(mac_addr))
 		wl_delay(400);
@@ -7474,11 +7467,15 @@ static s32 wl_inform_single_bss(struct wl_priv *wl, struct wl_bss_info *bi)
 	else
 		band = wiphy->bands[IEEE80211_BAND_5GHZ];
 	if (!band) {
-		WL_ERR(("No valid band"));
+		WL_ERR(("No valid band\n"));
 		kfree(notif_bss_info);
 		return -EINVAL;
 	}
-	notif_bss_info->rssi = wl_rssi_offset(dtoh16(bi->RSSI));
+	notif_bss_info->rssi = dtoh16(bi->RSSI);
+#if !defined(RSSIAVG) && !defined(RSSIOFFSET)
+	// terence 20150419: limit the max. rssi to -2 or the bss will be filtered out in android OS
+	notif_bss_info->rssi = MIN(notif_bss_info->rssi, RSSI_MAXVAL);
+#endif
 	memcpy(mgmt->bssid, &bi->BSSID, ETHER_ADDR_LEN);
 	mgmt_type = wl->active_scan ?
 		IEEE80211_STYPE_PROBE_RESP : IEEE80211_STYPE_BEACON;
@@ -7505,21 +7502,21 @@ static s32 wl_inform_single_bss(struct wl_priv *wl, struct wl_bss_info *bi)
 	freq = ieee80211_channel_to_frequency(notif_bss_info->channel, band->band);
 #endif
 	if (freq == 0) {
-		WL_ERR(("Invalid channel, fail to chcnage channel to freq\n"));
+		WL_ERR(("Invalid channel, fail to change channel to freq\n"));
 		kfree(notif_bss_info);
 		return -EINVAL;
 	}
 	channel = ieee80211_get_channel(wiphy, freq);
 	if (unlikely(!channel)) {
-		WL_ERR(("ieee80211_get_channel error\n"));
+		WL_ERR(("ieee80211_get_channel error, freq=%d, channel=%d\n",
+			freq, notif_bss_info->channel));
 		kfree(notif_bss_info);
 		return -EINVAL;
 	}
-	WL_DBG(("SSID : \"%s\", rssi %d, channel %d, capability : 0x04%x, bssid %pM"
-			"mgmt_type %d frame_len %d\n", bi->SSID,
-			notif_bss_info->rssi, notif_bss_info->channel,
-			mgmt->u.beacon.capab_info, &bi->BSSID, mgmt_type,
-			notif_bss_info->frame_len));
+	WL_SCAN(("BSSID %pM, channel %d, rssi %d, capa 0x04%x, mgmt_type %d, "
+		"frame_len %d, SSID \"%s\"\n", &bi->BSSID, notif_bss_info->channel,
+		notif_bss_info->rssi, mgmt->u.beacon.capab_info, mgmt_type,
+		notif_bss_info->frame_len, bi->SSID));
 
 	signal = notif_bss_info->rssi * 100;
 	if (!mgmt->u.probe_resp.timestamp) {
@@ -7721,7 +7718,7 @@ wl_notify_connect_status_ap(struct wl_priv *wl, struct net_device *ndev,
 	else
 		band = wiphy->bands[IEEE80211_BAND_5GHZ];
 	if (!band) {
-		WL_ERR(("No valid band"));
+		WL_ERR(("No valid band\n"));
 		if (body)
 			kfree(body);
 		return -EINVAL;
@@ -7781,10 +7778,13 @@ exit:
 		}
 		sinfo.assoc_req_ies = data;
 		sinfo.assoc_req_ies_len = len;
+		printk("%s: connected device "MACDBG"\n", __FUNCTION__, MAC2STRDBG(e->addr.octet));
 		cfg80211_new_sta(ndev, e->addr.octet, &sinfo, GFP_ATOMIC);
 	} else if (event == WLC_E_DISASSOC_IND) {
+		printk("%s: disassociated device "MACDBG"\n", __FUNCTION__, MAC2STRDBG(e->addr.octet));
 		cfg80211_del_sta(ndev, e->addr.octet, GFP_ATOMIC);
 	} else if ((event == WLC_E_DEAUTH_IND) || (event == WLC_E_DEAUTH)) {
+		printk("%s: deauthenticated device "MACDBG"\n", __FUNCTION__, MAC2STRDBG(e->addr.octet));
 		cfg80211_del_sta(ndev, e->addr.octet, GFP_ATOMIC);
 	}
 #endif /* LINUX_VERSION < VERSION(3,2,0) && !WL_CFG80211_STA_EVENT && !WL_COMPAT_WIRELESS */
@@ -8689,7 +8689,6 @@ int wl_cfg80211_get_ioctl_version(void)
 static s32
 wl_notify_rx_mgmt_frame(struct wl_priv *wl, bcm_struct_cfgdev *cfgdev,
 	const wl_event_msg_t *e, void *data)
-
 {
 	struct ieee80211_supported_band *band;
 	struct wiphy *wiphy = wl_to_wiphy(wl);
@@ -8719,7 +8718,7 @@ wl_notify_rx_mgmt_frame(struct wl_priv *wl, bcm_struct_cfgdev *cfgdev,
 	else
 		band = wiphy->bands[IEEE80211_BAND_5GHZ];
 	if (!band) {
-		WL_ERR(("No valid band"));
+		WL_ERR(("No valid band\n"));
 		return -EINVAL;
 	}
 #if LINUX_VERSION_CODE == KERNEL_VERSION(2, 6, 38) && !defined(WL_COMPAT_WIRELESS)
@@ -9395,7 +9394,7 @@ static s32 wl_iscan_inprogress(struct wl_priv *wl)
 	wl_run_iscan(iscan, NULL, WL_SCAN_ACTION_CONTINUE);
 	mutex_unlock(&wl->usr_sync);
 	/* Reschedule the timer */
-	mod_timer(&iscan->timer, jiffies +  msecs_to_jiffies(iscan->timer_ms));
+	mod_timer(&iscan->timer, jiffies + msecs_to_jiffies(iscan->timer_ms));
 	iscan->timer_on = 1;
 
 	return err;
@@ -9612,6 +9611,7 @@ static void wl_cfg80211_scan_abort(struct wl_priv *wl)
 		}
 	}
 }
+
 static s32 wl_notify_escan_complete(struct wl_priv *wl,
 	struct net_device *ndev,
 	bool aborted, bool fw_abort)
@@ -9745,7 +9745,7 @@ static s32 wl_escan_handler(struct wl_priv *wl, bcm_struct_cfgdev *cfgdev,
 			goto exit;
 		}
 		if (wl_escan_check_sync_id(status, escan_result->sync_id,
-			wl->escan_info.cur_sync_id) < 0)
+				wl->escan_info.cur_sync_id) < 0)
 			goto exit;
 
 		if (!(wl_to_wiphy(wl)->interface_modes & BIT(NL80211_IFTYPE_ADHOC))) {
@@ -9809,6 +9809,8 @@ static s32 wl_escan_handler(struct wl_priv *wl, bcm_struct_cfgdev *cfgdev,
 				}
 #endif /* WL_HOST_BAND_MGMT */
 			}
+			WL_SCAN(("%s("MACDBG") RSSI %d flags 0x%x length %d\n", bi->SSID,
+				MAC2STRDBG(bi->BSSID.octet), bi->RSSI, bi->flags, bi->length));
 			for (i = 0; i < list->count; i++) {
 				bss = bss ? (wl_bss_info_t *)((uintptr)bss + dtoh32(bss->length))
 					: list->bss_info;
@@ -9826,7 +9828,7 @@ static s32 wl_escan_handler(struct wl_priv *wl, bcm_struct_cfgdev *cfgdev,
 						(bi->flags & WL_BSS_FLAGS_FROM_BEACON))
 						goto exit;
 
-					WL_DBG(("%s("MACDBG"), i=%d prev: RSSI %d"
+					WL_SCAN(("%s("MACDBG"), i=%d prev: RSSI %d"
 						" flags 0x%x, new: RSSI %d flags 0x%x\n",
 						bss->SSID, MAC2STRDBG(bi->BSSID.octet), i,
 						bss->RSSI, bss->flags, bi->RSSI, bi->flags));
@@ -9859,7 +9861,7 @@ static s32 wl_escan_handler(struct wl_priv *wl, bcm_struct_cfgdev *cfgdev,
 						WL_SCAN(("bss info replacement"
 							" is occured(bcast:%d->probresp%d)\n",
 							bss->ie_length, bi->ie_length));
-						WL_DBG(("%s("MACDBG"), replacement!(%d -> %d)\n",
+						WL_SCAN(("%s("MACDBG"), replacement!(%d -> %d)\n",
 						bss->SSID, MAC2STRDBG(bi->BSSID.octet),
 						prev_len, bi_length));
 
@@ -10086,7 +10088,7 @@ static void wl_cfg80211_determine_vsdb_mode(struct wl_priv *wl)
 			}
 		}
 	}
-	WL_ERR(("%s concurrency is enabled\n", wl->vsdb_mode ? "Multi Channel" : "Same Channel"));
+	printk("%s concurrency is enabled\n", wl->vsdb_mode ? "Multi Channel" : "Same Channel");
 	return;
 #endif /* CUSTOMER_HW4 */
 }
@@ -10367,7 +10369,7 @@ s32 wl_cfg80211_attach_post(struct net_device *ndev)
 	if (!wl_get_drv_status(wl, READY, ndev)) {
 			if (wl->wdev && wl_cfgp2p_supported(wl, ndev)) {
 #if !defined(WL_ENABLE_P2P_IF)
-					wl->wdev->wiphy->interface_modes |=
+				wl->wdev->wiphy->interface_modes |=
 					(BIT(NL80211_IFTYPE_P2P_CLIENT)|
 					BIT(NL80211_IFTYPE_P2P_GO));
 #endif /* !WL_ENABLE_P2P_IF */
@@ -10379,7 +10381,7 @@ s32 wl_cfg80211_attach_post(struct net_device *ndev)
 					/* Update MAC addr for p2p0 interface here. */
 					memcpy(wl->p2p_net->dev_addr, ndev->dev_addr, ETH_ALEN);
 					wl->p2p_net->dev_addr[0] |= 0x02;
-					printk("%s: p2p_dev_addr="MACDBG "\n",
+					printk("%s: %s p2p_dev_addr="MACDBG "\n", __FUNCTION__,
 						wl->p2p_net->name,
 						MAC2STRDBG(wl->p2p_net->dev_addr));
 				} else {
@@ -10391,7 +10393,7 @@ s32 wl_cfg80211_attach_post(struct net_device *ndev)
 
 				wl->p2p_supported = true;
 			}
-		}
+	}
 	wl_set_drv_status(wl, READY, ndev);
 fail:
 	return err;
@@ -10606,7 +10608,7 @@ static s32 wl_event_handler(void *data)
 			if (!cfgdev) {
 #if defined(WL_CFG80211_P2P_DEV_IF)
 				cfgdev = wl_to_prmry_wdev(wl);
-#elif defined(WL_ENABLE_P2P_IF)
+#else
 				cfgdev = wl_to_prmry_ndev(wl);
 #endif /* WL_CFG80211_P2P_DEV_IF */
 			}
@@ -11704,7 +11706,11 @@ wl_notify_device_discovery(struct wl_priv *wl, bcm_struct_cfgdev *cfgdev,
 		channel = bi->ctl_ch ? bi->ctl_ch :
 			CHSPEC_CHANNEL(wl_chspec_driver_to_host(bi->chanspec));
 		info.freq = wl_cfg80211_channel_to_freq(channel);
-		info.rssi = wl_rssi_offset(dtoh16(bi->RSSI));
+		info.rssi = dtoh16(bi->RSSI);
+#if !defined(RSSIAVG) && !defined(RSSIOFFSET)
+		// terence 20150419: limit the max. rssi to -2 or the bss will be filtered out in android OS
+		info->rssi = MIN(info->rssi, RSSI_MAXVAL);
+#endif
 		memcpy(info.bssid, &bi->BSSID, ETH_ALEN);
 		info.ie_len = buflen;
 
@@ -13170,13 +13176,12 @@ int wl_cfg80211_do_driver_init(struct net_device *net)
 	return 0;
 }
 
-void wl_cfg80211_enable_trace(bool set, u32 level)
+void wl_cfg80211_enable_trace(u32 level)
 {
-	if (set)
-		wl_dbg_level = level & WL_DBG_LEVEL;
-	else
-		wl_dbg_level |= (WL_DBG_LEVEL & level);
+	wl_dbg_level = level;
+	printk("%s: wl_dbg_level = 0x%x\n", __FUNCTION__, wl_dbg_level);
 }
+
 #if defined(WL_SUPPORT_BACKPORTED_KPATCHES) || (LINUX_VERSION_CODE >= KERNEL_VERSION(3, \
 	2, 0))
 static s32

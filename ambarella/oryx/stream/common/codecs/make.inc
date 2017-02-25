@@ -4,12 +4,29 @@
 ## History:
 ##   2014-11-3 - [ypchang] created file
 ##
-## Copyright (C) 2008-2014, Ambarella Co, Ltd.
+## Copyright (c) 2016 Ambarella, Inc.
 ##
-## All rights reserved. No Part of this file may be reproduced, stored
-## in a retrieval system, or transmitted, in any form, or by any means,
-## electronic, mechanical, photocopying, recording, or otherwise,
-## without the prior consent of Ambarella.
+## This file and its contents ("Software") are protected by intellectual
+## property rights including, without limitation, U.S. and/or foreign
+## copyrights. This Software is also the confidential and proprietary
+## information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+## disclose, distribute, modify, or otherwise prepare derivative works of this
+## Software or any portion thereof except pursuant to a signed license agreement
+## or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+## In the absence of such an agreement, you agree to promptly notify and return
+## this Software to Ambarella, Inc.
+##
+## THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+## INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+## MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+## IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+## INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+## (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+## LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+## INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+## CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+## ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+## POSSIBILITY OF SUCH DAMAGE.
 ##
 
 LOCAL_PATH := $(call my-dir)
@@ -51,9 +68,14 @@ $(call add-target-into-build, $(LOCAL_TARGET))
 include $(CLEAR_VARS)
 
 CODEC_AAC  = codec-aac.so
-AAC_CONFIG = codec-aac.acs
-CODEC_AAC_LOW  = codec-aac-low.so
-AAC_CONFIG_LOW = codec-aac-low.acs
+CODEC_AAC_48K = codec-aac-48k.so
+CODEC_AAC_16K = codec-aac-16k.so
+CODEC_AAC_8K  = codec-aac-8k.so
+
+AAC_CONFIG_48K = codec-aac-48k.acs
+AAC_CONFIG_16K = codec-aac-16k.acs
+AAC_CONFIG_8K  = codec-aac-8k.acs
+AAC_CONFIG     = codec-aac.acs
 
 LOCAL_TARGET := $(CODEC_AAC)
 LOCAL_SRCS   := $(wildcard $(LOCAL_PATH)/codec-aac/*.cpp)
@@ -88,10 +110,14 @@ $(LOCAL_TARGET): AAC_SRC_PATH := $(LOCAL_PATH)/codec-aac
 $(LOCAL_TARGET): $(LOCAL_MODULE)
 	@mkdir -p $(ORYX_CODEC_DIR)
 	@mkdir -p $(ORYX_CONF_DIR)/stream/codec
-	@cp -dpRf $(AAC_SRC_PATH)/$(AAC_CONFIG) $(ORYX_CONF_DIR)/stream/codec/$(AAC_CONFIG)
-	@cp -dpRf $(AAC_SRC_PATH)/$(AAC_CONFIG_LOW) $(ORYX_CONF_DIR)/stream/codec/$(AAC_CONFIG_LOW)
+	@cp -dpRf $(AAC_SRC_PATH)/$(AAC_CONFIG_48K) $(ORYX_CONF_DIR)/stream/codec/$(AAC_CONFIG_48K)
+	@cp -dpRf $(AAC_SRC_PATH)/$(AAC_CONFIG_16K) $(ORYX_CONF_DIR)/stream/codec/$(AAC_CONFIG_16K)
+	@cp -dpRf $(AAC_SRC_PATH)/$(AAC_CONFIG_8K) $(ORYX_CONF_DIR)/stream/codec/$(AAC_CONFIG_8K)
+	@ln -sf $(AAC_CONFIG_48K) $(ORYX_CONF_DIR)/stream/codec/$(AAC_CONFIG)
 	@cp -dpRf $< $(ORYX_CODEC_DIR)/$(CODEC_AAC_TARGET)
-	@ln -sf $(CODEC_AAC_TARGET) $(ORYX_CODEC_DIR)/$(CODEC_AAC_LOW)
+	@ln -sf $(CODEC_AAC_TARGET) $(ORYX_CODEC_DIR)/$(CODEC_AAC_48K)
+	@ln -sf $(CODEC_AAC_TARGET) $(ORYX_CODEC_DIR)/$(CODEC_AAC_16K)
+	@ln -sf $(CODEC_AAC_TARGET) $(ORYX_CODEC_DIR)/$(CODEC_AAC_8K)
 	@echo "Build $@ Done."
 
 $(call add-target-into-build, $(LOCAL_TARGET))
@@ -100,9 +126,13 @@ $(call add-target-into-build, $(LOCAL_TARGET))
 include $(CLEAR_VARS)
 
 CODEC_G711  = codec-g711.so
-G711_CONFIG = codec-g711.acs
-CODEC_G711_LOW  = codec-g711-low.so
-G711_CONFIG_LOW = codec-g711-low.acs
+
+CODEC_G711_16K = codec-g711-16k.so
+CODEC_G711_8K  = codec-g711-8k.so
+
+G711_CONFIG_16K = codec-g711-16k.acs
+G711_CONFIG_8K  = codec-g711-8k.acs
+G711_CONFIG     = codec-g711.acs
 
 LOCAL_TARGET := $(CODEC_G711)
 LOCAL_SRCS   := $(wildcard $(LOCAL_PATH)/codec-g711/*.cpp)
@@ -137,10 +167,12 @@ $(LOCAL_TARGET): G711_SRC_PATH := $(LOCAL_PATH)/codec-g711
 $(LOCAL_TARGET): $(LOCAL_MODULE)
 	@mkdir -p $(ORYX_CODEC_DIR)
 	@mkdir -p $(ORYX_CONF_DIR)/stream/codec
-	@cp -dpRf $(G711_SRC_PATH)/$(G711_CONFIG) $(ORYX_CONF_DIR)/stream/codec/$(G711_CONFIG)
-	@cp -dpRf $(G711_SRC_PATH)/$(G711_CONFIG_LOW) $(ORYX_CONF_DIR)/stream/codec/$(G711_CONFIG_LOW)
+	@cp -dpRf $(G711_SRC_PATH)/$(G711_CONFIG_16K) $(ORYX_CONF_DIR)/stream/codec/$(G711_CONFIG_16K)
+	@cp -dpRf $(G711_SRC_PATH)/$(G711_CONFIG_8K) $(ORYX_CONF_DIR)/stream/codec/$(G711_CONFIG_8K)
+	@ln -sf $(G711_CONFIG_16K) $(ORYX_CONF_DIR)/stream/codec/$(G711_CONFIG)
 	@cp -dpRf $< $(ORYX_CODEC_DIR)/$(CODEC_G711_TARGET)
-	@ln -sf $(CODEC_G711_TARGET) $(ORYX_CODEC_DIR)/$(CODEC_G711_LOW)
+	@ln -sf $(CODEC_G711_TARGET) $(ORYX_CODEC_DIR)/$(CODEC_G711_8K)
+	@ln -sf $(CODEC_G711_TARGET) $(ORYX_CODEC_DIR)/$(CODEC_G711_16K)
 	@echo "Build $@ Done."
 
 $(call add-target-into-build, $(LOCAL_TARGET))
@@ -149,7 +181,10 @@ $(call add-target-into-build, $(LOCAL_TARGET))
 include $(CLEAR_VARS)
 
 CODEC_G726  = codec-g726.so
-G726_CONFIG = codec-g726.acs
+
+CODEC_G726_8K  = codec-g726-8k.so
+G726_CONFIG_8K = codec-g726-8k.acs
+G726_CONFIG    = codec-g726.acs
 
 LOCAL_TARGET := $(CODEC_G726)
 LOCAL_SRCS   := $(wildcard $(LOCAL_PATH)/codec-g726/*.cpp)
@@ -184,8 +219,10 @@ $(LOCAL_TARGET): G726_SRC_PATH := $(LOCAL_PATH)/codec-g726
 $(LOCAL_TARGET): $(LOCAL_MODULE)
 	@mkdir -p $(ORYX_CODEC_DIR)
 	@mkdir -p $(ORYX_CONF_DIR)/stream/codec
-	@cp -dpRf $(G726_SRC_PATH)/$(G726_CONFIG) $(ORYX_CONF_DIR)/stream/codec/$(G726_CONFIG)
+	@cp -dpRf $(G726_SRC_PATH)/$(G726_CONFIG_8K) $(ORYX_CONF_DIR)/stream/codec/$(G726_CONFIG_8K)
+	@ln -sf $(G726_CONFIG_8K) $(ORYX_CONF_DIR)/stream/codec/$(G726_CONFIG)
 	@cp -dpRf $< $(ORYX_CODEC_DIR)/$(CODEC_G726_TARGET)
+	@ln -sf $(CODEC_G726_TARGET) $(ORYX_CODEC_DIR)/$(CODEC_G726_8K)
 	@echo "Build $@ Done."
 
 $(call add-target-into-build, $(LOCAL_TARGET))
@@ -194,9 +231,15 @@ $(call add-target-into-build, $(LOCAL_TARGET))
 include $(CLEAR_VARS)
 
 CODEC_OPUS  = codec-opus.so
-OPUS_CONFIG = codec-opus.acs
-CODEC_OPUS_LOW  = codec-opus-low.so
-OPUS_CONFIG_LOW = codec-opus-low.acs
+
+CODEC_OPUS_48K  = codec-opus-48k.so
+CODEC_OPUS_16K  = codec-opus-16k.so
+CODEC_OPUS_8K   = codec-opus-8k.so
+
+OPUS_CONFIG_48K = codec-opus-48k.acs
+OPUS_CONFIG_16K = codec-opus-16k.acs
+OPUS_CONFIG_8K  = codec-opus-8k.acs
+OPUS_CONFIG     = codec-opus.acs
 
 LOCAL_TARGET := $(CODEC_OPUS)
 LOCAL_SRCS   := $(wildcard $(LOCAL_PATH)/codec-opus/*.cpp)
@@ -230,10 +273,14 @@ $(LOCAL_TARGET): OPUS_SRC_PATH := $(LOCAL_PATH)/codec-opus
 $(LOCAL_TARGET): $(LOCAL_MODULE)
 	@mkdir -p $(ORYX_CODEC_DIR)
 	@mkdir -p $(ORYX_CONF_DIR)/stream/codec
-	@cp -dpRf $(OPUS_SRC_PATH)/$(OPUS_CONFIG) $(ORYX_CONF_DIR)/stream/codec/$(OPUS_CONFIG)
-	@cp -dpRf $(OPUS_SRC_PATH)/$(OPUS_CONFIG_LOW) $(ORYX_CONF_DIR)/stream/codec/$(OPUS_CONFIG_LOW)
+	@cp -dpRf $(OPUS_SRC_PATH)/$(OPUS_CONFIG_48K) $(ORYX_CONF_DIR)/stream/codec/$(OPUS_CONFIG_48K)
+	@cp -dpRf $(OPUS_SRC_PATH)/$(OPUS_CONFIG_16K) $(ORYX_CONF_DIR)/stream/codec/$(OPUS_CONFIG_16K)
+	@cp -dpRf $(OPUS_SRC_PATH)/$(OPUS_CONFIG_8K) $(ORYX_CONF_DIR)/stream/codec/$(OPUS_CONFIG_8K)
+	@ln -sf $(OPUS_CONFIG_48K) $(ORYX_CONF_DIR)/stream/codec/$(OPUS_CONFIG)
 	@cp -dpRf $< $(ORYX_CODEC_DIR)/$(CODEC_OPUS_TARGET)
-	@ln -sf $(CODEC_OPUS_TARGET) $(ORYX_CODEC_DIR)/$(CODEC_OPUS_LOW)
+	@ln -sf $(CODEC_OPUS_TARGET) $(ORYX_CODEC_DIR)/$(CODEC_OPUS_48K)
+	@ln -sf $(CODEC_OPUS_TARGET) $(ORYX_CODEC_DIR)/$(CODEC_OPUS_16K)
+	@ln -sf $(CODEC_OPUS_TARGET) $(ORYX_CODEC_DIR)/$(CODEC_OPUS_8K)
 	@echo "Build $@ Done."
 
 $(call add-target-into-build, $(LOCAL_TARGET))
@@ -242,9 +289,15 @@ $(call add-target-into-build, $(LOCAL_TARGET))
 include $(CLEAR_VARS)
 
 CODEC_SPEEX  = codec-speex.so
-SPEEX_CONFIG = codec-speex.acs
-CODEC_SPEEX_LOW  = codec-speex-low.so
-SPEEX_CONFIG_LOW = codec-speex-low.acs
+
+CODEC_SPEEX_48K = codec-speex-48k.so
+CODEC_SPEEX_16K = codec-speex-16k.so
+CODEC_SPEEX_8K  = codec-speex-8k.so
+
+SPEEX_CONFIG_48K = codec-speex-48k.acs
+SPEEX_CONFIG_16K = codec-speex-16k.acs
+SPEEX_CONFIG_8K  = codec-speex-8k.acs
+SPEEX_CONFIG     = codec-speex.acs
 
 LOCAL_TARGET := $(CODEC_SPEEX)
 LOCAL_SRCS   := $(wildcard $(LOCAL_PATH)/codec-speex/*.cpp)
@@ -278,10 +331,14 @@ $(LOCAL_TARGET): SPEEX_SRC_PATH := $(LOCAL_PATH)/codec-speex
 $(LOCAL_TARGET): $(LOCAL_MODULE)
 	@mkdir -p $(ORYX_CODEC_DIR)
 	@mkdir -p $(ORYX_CONF_DIR)/stream/codec
-	@cp -dpRf $(SPEEX_SRC_PATH)/$(SPEEX_CONFIG) $(ORYX_CONF_DIR)/stream/codec/$(SPEEX_CONFIG)
-	@cp -dpRf $(SPEEX_SRC_PATH)/$(SPEEX_CONFIG_LOW) $(ORYX_CONF_DIR)/stream/codec/$(SPEEX_CONFIG_LOW)
+	@cp -dpRf $(SPEEX_SRC_PATH)/$(SPEEX_CONFIG_48K) $(ORYX_CONF_DIR)/stream/codec/$(SPEEX_CONFIG_48K)
+	@cp -dpRf $(SPEEX_SRC_PATH)/$(SPEEX_CONFIG_16K) $(ORYX_CONF_DIR)/stream/codec/$(SPEEX_CONFIG_16K)
+	@cp -dpRf $(SPEEX_SRC_PATH)/$(SPEEX_CONFIG_8K) $(ORYX_CONF_DIR)/stream/codec/$(SPEEX_CONFIG_8K)
+	@ln -sf $(SPEEX_CONFIG_48K) $(ORYX_CONF_DIR)/stream/codec/$(SPEEX_CONFIG)
 	@cp -dpRf $< $(ORYX_CODEC_DIR)/$(CODEC_SPEEX_TARGET)
-	@ln -sf $(CODEC_SPEEX_TARGET) $(ORYX_CODEC_DIR)/$(CODEC_SPEEX_LOW)
+	@ln -sf $(CODEC_SPEEX_TARGET) $(ORYX_CODEC_DIR)/$(CODEC_SPEEX_48K)
+	@ln -sf $(CODEC_SPEEX_TARGET) $(ORYX_CODEC_DIR)/$(CODEC_SPEEX_16K)
+	@ln -sf $(CODEC_SPEEX_TARGET) $(ORYX_CODEC_DIR)/$(CODEC_SPEEX_8K)
 	@echo "Build $@ Done."
 
 $(call add-target-into-build, $(LOCAL_TARGET))

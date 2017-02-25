@@ -4,12 +4,30 @@
  * History:
  *	2015/04/17 - [Zhi He] create file
  *
- * Copyright (C) 2014 - 2024, the Ambarella Inc.
+ * Copyright (C) 2015 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of the Ambarella Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
 
 #include <stdio.h>
@@ -48,6 +66,8 @@ static void show_usage()
     printf("\t--iv [iv]\n");
     printf("\t--passphrase [passphrase]\n");
     printf("\t--salt [salt]\n");
+    printf("\t--mode-cbc: CBC mode\n");
+    printf("\t--mode-ctr: CTR mode\n");
 
     printf("\t--help: show usage\n");
 }
@@ -117,6 +137,12 @@ static int init_params(int argc, char **argv, tcypher_context* context)
                 return (-1);
             }
             i ++;
+        } else if (!strcmp("--mode-cbc", argv[i])) {
+            context->cypher_mode = BLOCK_CYPHER_MODE_CBC;
+            printf("[input argument]: '--mode-cbc': CBC mode.\n");
+        } else if (!strcmp("--mode-ctr", argv[i])) {
+            context->cypher_mode = BLOCK_CYPHER_MODE_CTR;
+            printf("[input argument]: '--mode-ctr': CTR mode.\n");
         } else if (!strcmp("--help", argv[i])) {
             show_usage();
             return 1;
@@ -145,7 +171,10 @@ int main(int argc, char** argv)
     memset(&context, 0x0, sizeof(context));
 
     context.cypher_type = CYPHER_TYPE_AES128;
-    context.cypher_mode = BLOCK_CYPHER_MODE_CTR;
+    if (BLOCK_CYPHER_MODE_NONE == context.cypher_type) {
+        context.cypher_mode = BLOCK_CYPHER_MODE_CTR;
+        printf("use CTR mode as default.\n");
+    }
     context.key_len_in_bytes = 16;
 
     if (argc < 2) {

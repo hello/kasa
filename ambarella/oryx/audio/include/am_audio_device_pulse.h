@@ -5,12 +5,29 @@
  * @Email : hbxiao@ambarella.com
  * @Time  : 25/06/2013 [Created]
  *
- * Copyright (C) 2009, Ambarella, Inc.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 #ifndef __AM_AUDIO_DEVICE_PULSE_H__
 #define __AM_AUDIO_DEVICE_PULSE_H__
@@ -45,7 +62,7 @@ class AMPulseAudioDevice: public AMIAudioDevice
      *
      *        We use an atomic reference count to record how many times
      *        this api is called. User should call release to subtract
-     *        reference count. It not, memory leak could be happen
+     *        reference count. If not, memory leak could be happen
      *        because audio_device_destroy only delete instance when
      *        reference count is equal to zero.
      *
@@ -68,7 +85,7 @@ class AMPulseAudioDevice: public AMIAudioDevice
 
     virtual bool get_volume_by_name(AM_AUDIO_DEVICE_TYPE device,
                                     unsigned char *volume,
-                                    const char *name = NULL);
+                                    const char *name = nullptr);
 
     virtual bool set_volume_by_index(AM_AUDIO_DEVICE_TYPE device,
                                      unsigned char volume,
@@ -76,22 +93,22 @@ class AMPulseAudioDevice: public AMIAudioDevice
 
     virtual bool set_volume_by_name(AM_AUDIO_DEVICE_TYPE device,
                                     unsigned char volume,
-                                    const char *name = NULL);
+                                    const char *name = nullptr);
 
     virtual bool mute_by_index(AM_AUDIO_DEVICE_TYPE device, int index = -1);
     virtual bool mute_by_name(AM_AUDIO_DEVICE_TYPE device, const char *name =
-                                  NULL);
+                                  nullptr);
 
     virtual bool unmute_by_index(AM_AUDIO_DEVICE_TYPE device, int index = -1);
     virtual bool unmute_by_name(AM_AUDIO_DEVICE_TYPE device, const char *name =
-                                    NULL);
+                                    nullptr);
 
     virtual bool is_muted_by_index(AM_AUDIO_DEVICE_TYPE device,
     bool *mute,
                                    int index = -1);
     virtual bool is_muted_by_name(AM_AUDIO_DEVICE_TYPE device,
     bool *mute,
-                                  const char *name = NULL);
+                                  const char *name = nullptr);
 
     virtual bool get_sample_rate(unsigned int *sample);
     virtual bool get_channels(unsigned char *channels);
@@ -290,6 +307,17 @@ class AMPulseAudioDevice: public AMIAudioDevice
                                                     void *user_data);
 
   private:
+    pa_cvolume                *m_sink_volume;
+    pa_cvolume                *m_sink_input_volume;
+    pa_cvolume                *m_source_volume;
+    pa_cvolume                *m_source_output_volume;
+    pa_context                *m_context;
+    pa_threaded_mainloop      *m_threaded_mainloop;
+    int                        m_sink_index;
+    int                        m_sink_input_index;
+    int                        m_source_index;
+    int                        m_source_output_index;
+    pa_context_state           m_context_state;
     bool                       m_ctx_connected;
     bool                       m_sink_muted;
     bool                       m_sink_input_muted;
@@ -297,18 +325,7 @@ class AMPulseAudioDevice: public AMIAudioDevice
     bool                       m_source_output_muted;
     bool                       m_list_flag;
     bool                       m_set_operation_success;
-    int                        m_sink_index;
-    int                        m_sink_input_index;
-    int                        m_source_index;
-    int                        m_source_output_index;
-    pa_context_state           m_context_state;
     pa_sample_spec             m_sample_spec;
-    pa_cvolume                *m_sink_volume;
-    pa_cvolume                *m_sink_input_volume;
-    pa_cvolume                *m_source_volume;
-    pa_cvolume                *m_source_output_volume;
-    pa_context                *m_context;
-    pa_threaded_mainloop      *m_threaded_mainloop;
     std::map<int, std::string> m_device_map;
     std::atomic_int            m_reference_count;
 

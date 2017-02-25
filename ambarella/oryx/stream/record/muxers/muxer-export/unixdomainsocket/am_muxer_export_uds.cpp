@@ -4,29 +4,50 @@
  * History:
  *   2015-01-04 - [Zhi He]      created file
  *   2015-04-01 - [Shupeng Ren] modified file
+ *   2016-07-08 - [Guohua Zheng] modified file
  *
- * Copyright (C) 2015, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
 #include <unistd.h>
+#include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <pthread.h>
-#include <map>
-#include <queue>
+#include <sys/epoll.h>
 
+#include "am_video_reader_if.h"
 #include "am_base_include.h"
 #include "am_define.h"
 #include "am_log.h"
+#include "am_file.h"
 #include "am_thread.h"
 #include "am_event.h"
 #include "am_mutex.h"
+#include "am_io.h"
 
 #include "am_amf_types.h"
 #include "am_export_if.h"
@@ -35,18 +56,8 @@
 #include "am_audio_define.h"
 #include "am_video_types.h"
 #include "am_muxer_export_uds.h"
-#include "am_file.h"
 
-enum
-{
-  EExportState_not_inited           = 0x0,
-  EExportState_no_client_connected  = 0x1,
-  EExportState_running              = 0x2,
-  EExportState_error                = 0x3,
-  EExportState_halt                 = 0x4,
-};
-
-AMIMuxerCodec *am_create_muxer_export_uds()
+AMIMuxerCodec* am_create_muxer_export_uds()
 {
   return AMMuxerExportUDS::create();
 }
@@ -63,119 +74,13 @@ AMMuxerExportUDS *AMMuxerExportUDS::create()
   return result;
 }
 
-bool AMMuxerExportUDS::init()
+void AMMuxerExportUDS::destroy()
 {
-  bool ret = false;
-
-  do {
-    if (!(m_send_mutex = AMMutex::create())) {
-      ERROR("Failed to create m_send_mutex!");
-      break;
-    }
-    if (!(m_send_cond = AMCondition::create())) {
-      ERROR("Failed to create m_send_cond!");
-      break;
-    }
-
-    if (!(m_thread_wait = AMEvent::create())) {
-      ERROR("Failed to create m_thread_wait!");
-      break;
-    }
-
-    if (pipe(m_control_fd) < 0) {
-      ERROR("Failed to create control fd!");
-      break;
-    }
-
-    if (!(m_accept_thread = AMThread::create("export_thread",
-                                             thread_entry,
-                                             this))) {
-      ERROR("Failed to create accept_thread!");
-      break;
-    }
-    ret = true;
-  } while (0);
-
-  return ret;
+  delete this;
 }
 
-AMMuxerExportUDS::AMMuxerExportUDS() :
-    m_export_state(EExportState_not_inited),
-    m_socket_fd(-1),
-    m_connect_fd(-1),
-    m_max_fd(-1),
-    m_running(false),
-    m_thread_exit(false),
-    m_client_connected(false),
-    m_video_map(0),
-    m_audio_map(0),
-    m_thread_wait(nullptr),
-    m_send_mutex(nullptr),
-    m_accept_thread(nullptr),
-    m_send_cond(nullptr),
-    m_send_block(false),
-    m_video_send_block(0, false),
-    m_audio_send_block(0, false),
-    m_audio_pts_increment(0)
-{
-  m_control_fd[0] = m_control_fd[1] = -1;
-  m_config.need_sort = 0;
-}
-
-void AMMuxerExportUDS::clean_resource()
-{
-  reset_resource();
-  if (m_control_fd[0] > 0) {
-    close(m_control_fd[0]);
-    m_control_fd[0] = -1;
-  }
-  if (m_control_fd[1] > 0) {
-    close(m_control_fd[1]);
-    m_control_fd[1] = -1;
-  }
-  m_thread_exit = true;
-  m_thread_wait->signal();
-  AM_DESTROY(m_accept_thread);
-  AM_DESTROY(m_thread_wait);
-  AM_DESTROY(m_send_mutex);
-  AM_DESTROY(m_send_cond);
-}
-
-void AMMuxerExportUDS::reset_resource()
-{
-  if (m_connect_fd > 0) {
-    close(m_connect_fd);
-    m_connect_fd = -1;
-  }
-
-  if (m_socket_fd > 0) {
-    close(m_socket_fd);
-    m_socket_fd = -1;
-    unlink(DEXPORT_PATH);
-  }
-
-  m_audio_last_pts.clear();
-  m_audio_state.clear();
-  m_video_infos.clear();
-  m_audio_infos.clear();
-  m_video_export_infos.clear();
-  m_audio_export_infos.clear();
-  m_video_export_packets.clear();
-  m_audio_export_packets.clear();
-  m_video_info_send_flag.clear();
-  m_audio_info_send_flag.clear();
-  while (!m_packet_queue.empty()) {
-    m_packet_queue.pop();
-  }
-  m_video_queue.clear();
-  m_audio_queue.clear();
-  m_video_map = 0;
-  m_audio_map = 0;
-  m_send_block = false;
-  m_video_send_block.second = false;
-  m_audio_send_block.second = false;
-  m_send_cond->signal();
-}
+AMMuxerExportUDS::AMMuxerExportUDS()
+{}
 
 AMMuxerExportUDS::~AMMuxerExportUDS()
 {
@@ -186,52 +91,8 @@ AM_STATE AMMuxerExportUDS::start()
 {
   AM_STATE ret_state = AM_STATE_OK;
 
-  do {
-    INFO("ExportUDS start!");
-    FD_ZERO(&m_all_set);
-    FD_ZERO(&m_read_set);
-    FD_SET(m_control_fd[0], &m_all_set);
+  m_running = true;
 
-    if ((m_socket_fd = socket(PF_UNIX, SOCK_SEQPACKET, 0)) < 0) {
-      ERROR("Failed to create socket!\n");
-      break;
-    }
-
-    FD_SET(m_socket_fd, &m_all_set);
-    m_max_fd = AM_MAX(m_socket_fd, m_control_fd[0]);
-
-    if (AMFile::exists(DEXPORT_PATH)) {
-      NOTICE("%s already exists! Remove it first!", DEXPORT_PATH);
-      if (unlink(DEXPORT_PATH) < 0) {
-        PERROR("unlink");
-        break;
-      }
-    }
-
-    if (!AMFile::create_path(AMFile::dirname(DEXPORT_PATH).c_str())) {
-      ERROR("Failed to create path %s", AMFile::dirname(DEXPORT_PATH).c_str());
-      break;
-    }
-
-    memset(&m_addr, 0, sizeof(sockaddr_un));
-    m_addr.sun_family = AF_UNIX;
-    snprintf(m_addr.sun_path, sizeof(m_addr.sun_path), "%s", DEXPORT_PATH);
-
-    if (bind(m_socket_fd, (sockaddr*)&m_addr, sizeof(sockaddr_un)) < 0) {
-      ERROR ("bind(%d) failed, ret %d", m_socket_fd);
-      break;
-    }
-
-    if (listen(m_socket_fd, 5) < 0) {
-      ERROR ("listen(%d) failed", m_socket_fd);
-      break;
-    }
-
-    m_running = true;
-    m_client_connected = false;
-    m_thread_wait->signal();
-    ret_state = AM_STATE_OK;
-  } while(0);
   return ret_state;
 }
 
@@ -240,26 +101,20 @@ AM_STATE AMMuxerExportUDS::stop()
   NOTICE("AMMuxerExportUDS stop is called!");
   if (m_socket_fd > 0) {
     m_running = false;
-    if (m_control_fd[1] > 0) {
-      write(m_control_fd[1], "q", 1);
-    }
-    shutdown(m_socket_fd, SHUT_RD);
-    reset_resource();
   }
 
   return AM_STATE_OK;
 }
 
-bool AMMuxerExportUDS::start_file_writing()
+const char* AMMuxerExportUDS::name()
 {
-  WARN("Should not call start file writing function in export muxer.");
-  return true;
+  return "muxer-export";
 }
 
-bool AMMuxerExportUDS::stop_file_writing()
+void* AMMuxerExportUDS::get_muxer_codec_interface(AM_REFIID refiid)
 {
-  WARN("Should not call stop file writing function in export muxer.");
-  return true;
+  return (refiid == IID_AMIMuxerCodec) ? ((AMIMuxerCodec*)this) :
+      ((void*)nullptr);
 }
 
 bool AMMuxerExportUDS::is_running()
@@ -283,180 +138,190 @@ AM_MUXER_ATTR AMMuxerExportUDS::get_muxer_attr()
   return AM_MUXER_EXPORT_NORMAL;
 }
 
-AM_MUXER_CODEC_STATE AMMuxerExportUDS::get_state()
+uint8_t AMMuxerExportUDS::get_muxer_codec_stream_id()
 {
-  if (m_running) {
-    return AM_MUXER_CODEC_RUNNING;
-  }
-
-  return AM_MUXER_CODEC_STOPPED;
+  return 0x0F;
 }
 
-void AMMuxerExportUDS::feed_data(AMPacket* packet)
+uint32_t AMMuxerExportUDS::get_muxer_id()
 {
+  return 18;// There is no config file in export muxer, so set 18 as default.
+}
+
+AM_MUXER_CODEC_STATE AMMuxerExportUDS::get_state()
+{
+  return m_running ? AM_MUXER_CODEC_RUNNING : AM_MUXER_CODEC_STOPPED;
+}
+
+void AMMuxerExportUDS::feed_data(AMPacket *packet)
+{
+  if (!packet) {return;}
   uint32_t stream_id = packet->get_stream_id();
   switch (packet->get_type()) {
     case AMPacket::AM_PAYLOAD_TYPE_INFO: {
       save_info(packet);
     } break;
-    case AMPacket::AM_PAYLOAD_TYPE_DATA:
-    case AMPacket::AM_PAYLOAD_TYPE_EOS: {
-      if (!m_client_connected) {
-        break;
+    case AMPacket::AM_PAYLOAD_TYPE_EOS:
+      if (packet->get_attr() == AMPacket::AM_PAYLOAD_ATTR_VIDEO) {
+        m_video_infos.erase(stream_id);
+        m_video_export_packets.erase(stream_id);
+        m_video_info_send_flag.erase(stream_id);
+      } else if (packet->get_attr() == AMPacket::AM_PAYLOAD_ATTR_AUDIO) {
+        m_audio_infos.erase(stream_id);
+        m_audio_export_packets.erase(stream_id);
+        m_audio_info_send_flag.erase(stream_id);
       }
-
-      if (!m_config.need_sort) {
+    case AMPacket::AM_PAYLOAD_TYPE_DATA: {
+      if (!m_client_connected) {break;}
+      if (!m_sort_mode.first) {
+        std::unique_lock<std::mutex> lk(m_send_mutex);
         if (m_packet_queue.size() < 32) {
           packet->add_ref();
           m_packet_queue.push(packet);
-          m_send_mutex->lock();
-          if (m_send_block) {
-            m_send_cond->signal();
-          }
-          m_send_mutex->unlock();
+          if (m_send_block) {m_send_cond.notify_one();}
+        } else {
+          NOTICE("Too much data in queue, drop data!");
         }
-        break;
+      } else {
+        switch(packet->get_attr()) {
+          case AMPacket::AM_PAYLOAD_ATTR_VIDEO: {
+            std::unique_lock<std::mutex> lk(m_send_mutex);
+            if ((m_video_queue.find(stream_id) == m_video_queue.end()) ||
+                (m_video_queue[stream_id].size() < 60)) {
+              packet->add_ref();
+              m_video_queue[stream_id].push(packet);
+              if (m_video_send_block.second &&
+                  (m_video_send_block.first == stream_id)) {
+                m_send_cond.notify_one();
+              }
+            } else {
+              ERROR("Too much data in Video[%u] queue, drop data!", stream_id);
+            }
+          }break;
+          case AMPacket::AM_PAYLOAD_ATTR_AUDIO: {
+            std::unique_lock<std::mutex> lk(m_send_mutex);
+            if ((m_audio_queue.find(stream_id) == m_audio_queue.end()) ||
+                (m_audio_queue[stream_id].size() < 20)) {
+              packet->add_ref();
+              m_audio_queue[stream_id].push(packet);
+              if (m_audio_send_block.second &&
+                  (m_audio_send_block.first == stream_id)) {
+                m_send_cond.notify_one();
+              }
+            } else {
+              ERROR("Too much data in Audio[%u] queue, drop data!", stream_id);
+            }
+          }break;
+          default: {
+            WARN("Current packet with attribute %d is not handled!",
+                 packet->get_attr());
+          }break;
+        }
       }
-
-      if (packet->get_attr() == AMPacket::AM_PAYLOAD_ATTR_VIDEO) {
-        if ((m_video_queue.find(stream_id) != m_video_queue.end()) &&
-            (m_video_queue[stream_id].size() > 32)) {
-          //TODO: if queue is full, do something...
-          ERROR("Drop Video[%d] data", stream_id);
-          break;
-        }
-        packet->add_ref();
-        m_video_queue[stream_id].push(packet);
-        m_send_mutex->lock();
-        if (m_video_send_block.second &&
-            m_video_send_block.first == stream_id) {
-          m_send_cond->signal();
-        }
-        m_send_mutex->unlock();
-      } else if (packet->get_attr() == AMPacket::AM_PAYLOAD_ATTR_AUDIO) {
-        if ((m_audio_queue.find(stream_id) != m_audio_queue.end()) &&
-            (m_audio_queue[stream_id].size() > 32)) {
-          //TODO: if queue is full, do something...
-          ERROR("Drop Audio[%d] data", stream_id);
-          break;
-        }
-        packet->add_ref();
-        m_audio_queue[stream_id].push(packet);
-        m_send_mutex->lock();
-        if (m_audio_send_block.second &&
-            m_audio_send_block.first == stream_id) {
-          m_send_cond->signal();
-        }
-        m_send_mutex->unlock();
-      }
-    } break;
-    default:
-      break;
+    }break;
+    default: break;
   }
   packet->release();
 }
 
-void AMMuxerExportUDS::thread_entry(void *arg)
+bool AMMuxerExportUDS::init()
+{
+  bool ret = false;
+  m_export_running = true;
+
+  do {
+    if (!(m_thread_export_wait = AMEvent::create())) {
+      ERROR("Failed to create m_thread_export_wait!");
+      break;
+    }
+
+    if (pipe(m_control_fd) < 0) {
+      ERROR("Failed to create control fd!");
+      break;
+    }
+
+    if (!(m_export_thread = AMThread::create("export_thread",
+                                             thread_export_entry, this))) {
+      ERROR("Failed to create export_thread");
+      break;
+    }
+    m_video_reader = AMIVideoReader::get_instance();
+    if ((m_epoll_fd = epoll_create1(0)) == -1) {
+      PERROR("create epoll error");
+      break;
+    }
+
+    epoll_event ev = {0};
+    ev.data.fd = m_control_fd[0];
+    ev.events = EPOLLIN;
+    if ((epoll_ctl(m_epoll_fd, EPOLL_CTL_ADD, m_control_fd[0], &ev)) == -1) {
+      PERROR("epoll_ctl error");
+      break;
+    }
+
+    INFO("ExportUDS start!");
+    if ((m_socket_fd = socket(AF_UNIX, SOCK_SEQPACKET, 0)) < 0) {
+      ERROR("Failed to create socket!\n");
+      break;
+    }
+
+    if (AMFile::exists(DEXPORT_PATH)) {
+      NOTICE("%s already exists! Remove it first!", DEXPORT_PATH);
+      if (unlink(DEXPORT_PATH) < 0) {
+        PERROR("unlink");
+        break;
+      }
+    }
+
+    if (!AMFile::create_path(AMFile::dirname(DEXPORT_PATH).c_str())) {
+      ERROR("Failed to create path %s", AMFile::dirname(DEXPORT_PATH).c_str());
+      break;
+    }
+
+    sockaddr_un addr;
+    memset(&addr, 0, sizeof(sockaddr_un));
+    addr.sun_family = AF_UNIX;
+    snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", DEXPORT_PATH);
+
+    if (bind(m_socket_fd, (sockaddr*)&addr, sizeof(sockaddr_un)) < 0) {
+      ERROR("bind(%d) failed!", m_socket_fd);
+      break;
+    }
+
+    if (listen(m_socket_fd, MAX_CLIENTS_NUM) < 0) {
+      ERROR("listen(%d) failed", m_socket_fd);
+      break;
+    }
+
+    epoll_event tem_ev = {0};
+    tem_ev.data.fd = m_socket_fd;
+    tem_ev.events = EPOLLIN;
+    if ((epoll_ctl(m_epoll_fd, EPOLL_CTL_ADD, m_socket_fd, &tem_ev)) == -1) {
+      PERROR("epoll_ctl error");
+      break;
+    }
+
+    m_running = true;
+    m_export_running = true;
+    m_client_connected = false;
+    m_thread_export_wait->signal();
+    ret = true;
+  } while (0);
+
+  return ret;
+}
+
+void AMMuxerExportUDS::thread_export_entry(void *arg)
 {
   if (!arg) {
-    ERROR("Thread argument is null!");
+    ERROR("Thread data export argument is null");
     return;
   }
   AMMuxerExportUDS *p = (AMMuxerExportUDS*)arg;
   do {
-    p->m_thread_wait->wait();
-    p->main_loop();
-  } while (!p->m_thread_exit);
-}
-
-void AMMuxerExportUDS::main_loop()
-{
-  int ret = 0;
-  m_export_state = EExportState_no_client_connected;
-
-  while (m_running) {
-    switch (m_export_state) {
-      case EExportState_no_client_connected:
-        m_read_set = m_all_set;
-        if ((ret = select(m_max_fd + 1, &m_read_set,
-                          nullptr, nullptr, nullptr)) < 0) {
-          m_export_state = EExportState_error;
-          FD_CLR(m_socket_fd, &m_all_set);
-          break;
-        } else if (ret == 0) {
-          break;
-        }
-
-        if (FD_ISSET(m_control_fd[0], &m_read_set)) {
-          char read_char;
-          read(m_control_fd[0], &read_char, 1);
-        }
-
-        if (FD_ISSET(m_socket_fd, &m_read_set)) {
-          socklen_t addr_len;
-          if (m_connect_fd > 0) {
-            close(m_connect_fd);
-            m_connect_fd = -1;
-          }
-          if ((m_connect_fd = accept(m_socket_fd,
-                                     (sockaddr*)&m_addr,
-                                     &addr_len)) < 0) {
-            NOTICE("muxer-export will exit!");
-            m_export_state = EExportState_halt;
-            break;
-          }
-          NOTICE("client connected, fd %d\n", m_connect_fd);
-          if (read(m_connect_fd, &m_config, sizeof(m_config)) !=
-              sizeof(m_config)) {
-            ERROR("Failed to read config from client!");
-            break;
-          }
-          m_client_connected = true;
-          m_export_state = EExportState_running;
-        }
-        break;
-
-      case EExportState_running:
-        if (!send_info(m_connect_fd) || !send_packet(m_connect_fd)) {
-          NOTICE("send failed, client exit!");
-          m_client_connected = false;
-          m_export_state = EExportState_no_client_connected;
-
-          for (auto &m : m_video_queue) {
-            while (!m.second.empty()) {
-              m.second.front()->release();
-              m.second.pop();
-            }
-          }
-
-          for (auto &m : m_audio_queue) {
-            while (!m.second.empty()) {
-              m.second.front()->release();
-              m.second.pop();
-            }
-          }
-
-          while (!m_packet_queue.empty()) {
-            m_packet_queue.front()->release();
-            m_packet_queue.pop();
-          }
-
-          for (auto &m : m_video_info_send_flag) {
-            m.second = false;
-          }
-          for (auto &m : m_audio_info_send_flag) {
-            m.second = false;
-          }
-        } break;
-
-      case EExportState_error:
-      case EExportState_halt:
-        break;
-      default:
-        break;
-    }
-  }
-  INFO("Export.Main exits mainloop!");
+    p->m_thread_export_wait->wait();
+    p->data_export_loop();
+  }while (!p->m_thread_export_exit);
 }
 
 void AMMuxerExportUDS::save_info(AMPacket *packet)
@@ -475,44 +340,159 @@ void AMMuxerExportUDS::save_info(AMPacket *packet)
       export_audio_info.channels = audio_info->channels;
       export_audio_info.sample_size = audio_info->sample_size;
       export_audio_info.pts_increment = audio_info->pkt_pts_increment;
-      m_audio_pts_increment = audio_info->pkt_pts_increment;
+      m_audio_pts_increment[stream_id] = audio_info->pkt_pts_increment;
       m_audio_export_infos[stream_id] = export_audio_info;
       export_packet.packet_type = AM_EXPORT_PACKET_TYPE_AUDIO_INFO;
       export_packet.data_size = sizeof(AMExportAudioInfo);
       switch (audio_info->type) {
-        case AM_AUDIO_AAC:
-          export_packet.packet_format = AM_EXPORT_PACKET_FORMAT_AAC;
-          break;
-        case AM_AUDIO_OPUS:
-          export_packet.packet_format = AM_EXPORT_PACKET_FORMAT_OPUS;
-          break;
-        case AM_AUDIO_G711A:
-          export_packet.packet_format = AM_EXPORT_PACKET_FORMAT_G711ALaw;
-          break;
-        case AM_AUDIO_G711U:
-          export_packet.packet_format = AM_EXPORT_PACKET_FORMAT_G711MuLaw;
-          break;
+        case AM_AUDIO_AAC: {
+          switch(audio_info->sample_rate) {
+            case 8000: {
+              export_packet.packet_format =
+                  AM_EXPORT_PACKET_FORMAT_AAC_8KHZ;
+            }break;
+            case 16000: {
+              export_packet.packet_format =
+                  AM_EXPORT_PACKET_FORMAT_AAC_16KHZ;
+            }break;
+            case 48000: {
+              export_packet.packet_format =
+                  AM_EXPORT_PACKET_FORMAT_AAC_48KHZ;
+            }break;
+            default: {
+              export_packet.packet_format = AM_EXPORT_PACKET_FORMAT_INVALID;
+              ERROR("Unsupported samplerate: %u", audio_info->sample_rate);
+            }break;
+          }
+        } break;
+        case AM_AUDIO_OPUS: {
+          switch(audio_info->sample_rate) {
+            case 8000: {
+              export_packet.packet_format =
+                  AM_EXPORT_PACKET_FORMAT_OPUS_8KHZ;
+            }break;
+            case 16000: {
+              export_packet.packet_format =
+                  AM_EXPORT_PACKET_FORMAT_OPUS_16KHZ;
+            }break;
+            case 48000: {
+              export_packet.packet_format =
+                  AM_EXPORT_PACKET_FORMAT_OPUS_48KHZ;
+            }break;
+            default: {
+              export_packet.packet_format = AM_EXPORT_PACKET_FORMAT_INVALID;
+              ERROR("Unsupported samplerate: %u", audio_info->sample_rate);
+            }break;
+          }
+        } break;
+        case AM_AUDIO_G711A: {
+          switch(audio_info->sample_rate) {
+            case 8000: {
+              export_packet.packet_format =
+                  AM_EXPORT_PACKET_FORMAT_G711ALaw_8KHZ;
+            }break;
+            case 16000: {
+              export_packet.packet_format =
+                  AM_EXPORT_PACKET_FORMAT_G711ALaw_16KHZ;
+            }break;
+            default: {
+              export_packet.packet_format = AM_EXPORT_PACKET_FORMAT_INVALID;
+              ERROR("Unsupported samplerate: %u", audio_info->sample_rate);
+            }break;
+          }
+        } break;
+        case AM_AUDIO_G711U: {
+          switch(audio_info->sample_rate) {
+            case 8000: {
+              export_packet.packet_format =
+                  AM_EXPORT_PACKET_FORMAT_G711MuLaw_8KHZ;
+            }break;
+            case 16000: {
+              export_packet.packet_format =
+                  AM_EXPORT_PACKET_FORMAT_G711MuLaw_16KHZ;
+            }break;
+            default: {
+              export_packet.packet_format = AM_EXPORT_PACKET_FORMAT_INVALID;
+              ERROR("Unsupported samplerate: %u", audio_info->sample_rate);
+            }break;
+          }
+        } break;
         case AM_AUDIO_G726_16:
-          export_packet.packet_format = AM_EXPORT_PACKET_FORMAT_G726_16;
+          export_packet.packet_format =
+              AM_EXPORT_PACKET_FORMAT_G726_16KBPS;
           break;
         case AM_AUDIO_G726_24:
-          export_packet.packet_format = AM_EXPORT_PACKET_FORMAT_G726_24;
+          export_packet.packet_format =
+              AM_EXPORT_PACKET_FORMAT_G726_24KBPS;
           break;
         case AM_AUDIO_G726_32:
-          export_packet.packet_format = AM_EXPORT_PACKET_FORMAT_G726_32;
+          export_packet.packet_format =
+              AM_EXPORT_PACKET_FORMAT_G726_32KBPS;
           break;
         case AM_AUDIO_G726_40:
-          export_packet.packet_format = AM_EXPORT_PACKET_FORMAT_G726_40;
+          export_packet.packet_format =
+              AM_EXPORT_PACKET_FORMAT_G726_40KBPS;
           break;
-        case AM_AUDIO_LPCM:
-          export_packet.packet_format = AM_EXPORT_PACKET_FORMAT_PCM;
-          break;
-        case AM_AUDIO_BPCM:
-          export_packet.packet_format = AM_EXPORT_PACKET_FORMAT_BPCM;
-          break;
-        case AM_AUDIO_SPEEX:
-          export_packet.packet_format = AM_EXPORT_PACKET_FORMAT_SPEEX;
-          break;
+        case AM_AUDIO_LPCM: {
+          switch(audio_info->sample_rate) {
+            case 8000: {
+              export_packet.packet_format =
+                  AM_EXPORT_PACKET_FORMAT_PCM_8KHZ;
+            }break;
+            case 16000: {
+              export_packet.packet_format =
+                  AM_EXPORT_PACKET_FORMAT_PCM_16KHZ;
+            }break;
+            case 48000: {
+              export_packet.packet_format =
+                  AM_EXPORT_PACKET_FORMAT_PCM_48KHZ;
+            }break;
+            default: {
+              export_packet.packet_format = AM_EXPORT_PACKET_FORMAT_INVALID;
+              ERROR("Unsupported samplerate: %u", audio_info->sample_rate);
+            }break;
+          }
+        } break;
+        case AM_AUDIO_BPCM: {
+          switch(audio_info->sample_rate) {
+            case 8000: {
+              export_packet.packet_format =
+                  AM_EXPORT_PACKET_FORMAT_BPCM_8KHZ;
+            }break;
+            case 16000: {
+              export_packet.packet_format =
+                  AM_EXPORT_PACKET_FORMAT_BPCM_16KHZ;
+            }break;
+            case 48000: {
+              export_packet.packet_format =
+                  AM_EXPORT_PACKET_FORMAT_BPCM_48KHZ;
+            }break;
+            default: {
+              export_packet.packet_format = AM_EXPORT_PACKET_FORMAT_INVALID;
+              ERROR("Unsupported samplerate: %u", audio_info->sample_rate);
+            }break;
+          }
+        } break;
+        case AM_AUDIO_SPEEX:{
+          switch(audio_info->sample_rate) {
+            case 8000: {
+              export_packet.packet_format =
+                  AM_EXPORT_PACKET_FORMAT_SPEEX_8KHZ;
+            }break;
+            case 16000: {
+              export_packet.packet_format =
+                  AM_EXPORT_PACKET_FORMAT_SPEEX_16KHZ;
+            }break;
+            case 48000: {
+              export_packet.packet_format =
+                  AM_EXPORT_PACKET_FORMAT_SPEEX_48KHZ;
+            }break;
+            default: {
+              export_packet.packet_format = AM_EXPORT_PACKET_FORMAT_INVALID;
+              ERROR("Unsupported samplerate: %u", audio_info->sample_rate);
+            }break;
+          }
+        } break;
         default:
           export_packet.packet_format = AM_EXPORT_PACKET_FORMAT_INVALID;
           break;
@@ -520,10 +500,10 @@ void AMMuxerExportUDS::save_info(AMPacket *packet)
       m_audio_export_packets[stream_id] = export_packet;
       m_audio_info_send_flag[stream_id] = false;
       m_audio_map |= 1 << stream_id;
-      m_audio_state[stream_id] = 0;
+      m_audio_state[stream_id] = EExportAudioState_Normal;
       INFO("Save Audio[%d] INFO: "
           "samplerate: %d, framesize: %d, "
-          "bitrate: %d, channels: %d, samplerate: d",
+          "bitrate: %d, channels: %d, samplerate: %d",
           stream_id,
           m_audio_export_infos[stream_id].samplerate,
           m_audio_export_infos[stream_id].frame_size,
@@ -567,9 +547,501 @@ void AMMuxerExportUDS::save_info(AMPacket *packet)
           m_video_export_infos[stream_id].framerate_num,
           m_video_export_infos[stream_id].framerate_den);
     } break;
+    default: break;
+  }
+}
+
+void AMMuxerExportUDS::data_export_loop()
+{
+  int connect_num = 0;
+  int export_index = 0;
+  AMPacket *hold_packet = nullptr;
+  epoll_event ev[MAX_EPOLL_FDS];
+  uint32_t check_err = EPOLLHUP | EPOLLRDHUP | EPOLLERR;
+  while (m_export_running) {
+
+    if ((connect_num = epoll_wait(m_epoll_fd, ev, MAX_EPOLL_FDS, -1)) > 0) {
+
+      if ((export_index = m_connect_num) > 0) {
+        hold_packet = get_export_packet();
+      }
+
+
+      for (int i = 0; i < connect_num; i++) {
+
+        if (ev[i].data.fd == m_socket_fd) {
+
+          if ((m_connect_fd = accept(m_socket_fd, nullptr, nullptr)) <= 0) {
+            PERROR("accept error");
+            continue;
+          } else {
+            AMExportConfig tem_config;
+            if (!read_config(m_connect_fd, &tem_config)) {
+              continue;
+            }
+            if (!m_sort_mode.second) {
+              m_sort_mode.first = tem_config.need_sort;
+              m_sort_mode.second = true;
+              char tem_buffer = 'R';
+              if ((am_write(m_connect_fd, &tem_buffer, sizeof(tem_buffer))) !=
+                  1) {
+                ERROR("write signal run to client failed ");
+              }
+            } else {
+              if (m_sort_mode.first != tem_config.need_sort) {
+                ERROR("The sort mode has been set to %u", m_sort_mode.first);
+                char tem_buffer = 'Q';
+                if ((am_write(m_connect_fd, &tem_buffer, sizeof(tem_buffer))) !=
+                    1) {
+                  ERROR("write signal quit to client failed ");
+                }
+              } else {
+                char tem_buffer = 'R';
+                if ((am_write(m_connect_fd, &tem_buffer, sizeof(tem_buffer))) !=
+                    1) {
+                  ERROR("write signal run to client failed ");
+                }
+              }
+            }
+            m_config_map[m_connect_fd] = tem_config;
+            epoll_event ev;
+            ev.data.fd = m_connect_fd;
+            ev.events = EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLRDHUP | EPOLLERR;
+            if (epoll_ctl(m_epoll_fd, EPOLL_CTL_ADD, m_connect_fd, &ev) == -1) {
+              PERROR("epoll_ctl error");
+              continue;
+            }
+            m_client_connected = true;
+            m_connect_num++;
+            m_client_info_send_flag[m_connect_fd] = false;
+            m_export_update_send_flag[m_connect_fd] = true;
+            NOTICE("Connect clients number is %d", m_connect_num.load());
+          }
+          continue;
+        } else if (ev[i].data.fd == m_control_fd[0]) {
+          m_export_running = false;
+        } else if((ev[i].events & check_err)) {
+
+          if (close(ev[i].data.fd) == -1) {
+            PERROR("close error");
+          }
+
+          m_config_map.erase(ev[i].data.fd);
+
+          if (m_connect_num > 0) {
+            m_connect_num--;
+          }
+
+          if (m_connect_num == 0){
+
+            m_sort_mode.second = false;
+
+            m_client_connected = false;
+            for (auto &m : m_video_queue) {
+              while (!m.second.empty()) {
+                m.second.front_pop()->release();
+              }
+            }
+            for (auto &m : m_audio_queue) {
+              while (!m.second.empty()) {
+                m.second.front_pop()->release();
+              }
+            }
+            while (!m_packet_queue.empty()) {
+              m_packet_queue.front_pop()->release();
+            }
+
+            for (auto &m : m_video_info_send_flag) {
+              m.second = false;
+            }
+            for (auto &m : m_audio_info_send_flag) {
+              m.second = false;
+            }
+          }
+          NOTICE("Connect clients number is %d", m_connect_num.load());
+          continue;
+        } else if ((ev[i].events & EPOLLIN)) {
+
+          AMExportConfig tem_config;
+          if (!(read_config(ev[i].data.fd, &tem_config))) {
+            continue;
+          }
+          m_config_map[ev[i].data.fd] = tem_config;
+
+          m_export_update_send_flag[ev[i].data.fd] = false;
+
+          for (auto &m : m_video_info_send_flag) {
+            m.second = false;
+          }
+
+          for (auto &m : m_audio_info_send_flag) {
+            m.second = false;
+          }
+
+          continue;
+        } else if ((ev[i].events & EPOLLOUT)) {
+
+          if (!m_export_update_send_flag[ev[i].data.fd]) {
+
+            if(!send_info(ev[i].data.fd)) {
+              NOTICE("send packet failed");
+            }
+            m_export_update_send_flag[ev[i].data.fd] = true;
+          }
+
+          if (!m_client_info_send_flag[ev[i].data.fd]) {
+            for (auto &m : m_video_info_send_flag) {
+              m.second = false;
+            }
+
+            for (auto &m : m_audio_info_send_flag) {
+              m.second = false;
+            }
+
+            if (!send_info(ev[i].data.fd)) {
+              NOTICE("send info failed");
+            }
+
+            m_client_info_send_flag[ev[i].data.fd] = true;
+
+          }
+          if(!send_packet(ev[i].data.fd, hold_packet)) {
+            NOTICE("send packet failed");
+          }
+
+          export_index --;
+          if (export_index == 0) {
+            if (m_sort_mode.first == 0) {
+              if (!m_packet_queue.empty()) {
+                m_packet_queue.pop();
+              }
+
+            } else {
+              if (hold_packet) {
+                if (hold_packet->get_attr() == AMPacket::AM_PAYLOAD_ATTR_VIDEO) {
+                  if (!m_video_queue[hold_packet->get_stream_id()].empty()) {
+                    m_video_queue[hold_packet->get_stream_id()].pop();
+                  }
+                } else if (hold_packet->get_attr() == AMPacket::AM_PAYLOAD_ATTR_AUDIO) {
+                  if (!m_audio_queue[hold_packet->get_stream_id()].empty()) {
+                    m_audio_queue[hold_packet->get_stream_id()].pop();
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+
+      if (export_index != 0) {
+
+        if (m_sort_mode.first == 0) {
+          WARN("Has %d clients didn't get packet, m_packet_queue need pop",
+               export_index);
+          if (!m_packet_queue.empty()) {
+            m_packet_queue.pop();
+          }
+        } else {
+          WARN("Has %d clients didn't get packet");
+          if (hold_packet) {
+            if (hold_packet->get_attr() == AMPacket::AM_PAYLOAD_ATTR_VIDEO) {
+              if (!m_video_queue[hold_packet->get_stream_id()].empty()) {
+                m_video_queue[hold_packet->get_stream_id()].pop();
+              }
+            } else if (hold_packet->get_attr() == AMPacket::AM_PAYLOAD_ATTR_AUDIO) {
+              if (!m_audio_queue[hold_packet->get_stream_id()].empty()) {
+                m_audio_queue[hold_packet->get_stream_id()].pop();
+              }
+            }
+          }
+        }
+      }
+
+      AM_RELEASE(hold_packet);
+    } else if (connect_num < 0) {
+      PERROR("epoll_wait error");
+    }
+  }
+}
+
+bool AMMuxerExportUDS::fill_export_packet(int client_fd, AMPacket *packet_fill,
+                                          AMExportPacket *export_packet)
+{
+  bool ret = true;
+  uint32_t t = 0;
+  uint32_t t_sample_rate = 0;
+  export_packet->data_ptr = nullptr;
+  export_packet->data_size = packet_fill->get_data_size();
+  export_packet->pts = packet_fill->get_pts();
+  export_packet->stream_index = packet_fill->get_stream_id();
+  export_packet->is_key_frame = 0;
+  export_packet->is_direct_mode = 1;
+  switch (packet_fill->get_attr()) {
+    case AMPacket::AM_PAYLOAD_ATTR_VIDEO:
+      if (!(m_config_map[client_fd].video_map &
+          (1 << (packet_fill->get_stream_id() )))) {
+        ret = false;
+        break;
+      }
+    case AMPacket::AM_PAYLOAD_ATTR_SEI: {
+      export_packet->packet_type = AM_EXPORT_PACKET_TYPE_VIDEO_DATA;
+      t = packet_fill->get_frame_type();
+      switch (t) {
+        case AM_VIDEO_FRAME_TYPE_IDR: {
+          export_packet->frame_type = AM_EXPORT_VIDEO_FRAME_TYPE_IDR;
+          switch(AM_VIDEO_TYPE(packet_fill->get_video_type())) {
+            case AM_VIDEO_H264:
+              export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_AVC;
+              break;
+            case AM_VIDEO_H265:
+              export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_HEVC;
+              break;
+            default:break;
+          }
+          export_packet->is_key_frame = 1;
+        } break;
+        case AM_VIDEO_FRAME_TYPE_I: {
+          export_packet->frame_type = AM_EXPORT_VIDEO_FRAME_TYPE_I;
+          switch(AM_VIDEO_TYPE(packet_fill->get_video_type())) {
+            case AM_VIDEO_H264:
+              export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_AVC;
+              break;
+            case AM_VIDEO_H265:
+              export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_HEVC;
+              break;
+            default:break;
+          }
+        } break;
+        case AM_VIDEO_FRAME_TYPE_P: {
+          export_packet->frame_type = AM_EXPORT_VIDEO_FRAME_TYPE_P;
+          switch(AM_VIDEO_TYPE(packet_fill->get_video_type())) {
+            case AM_VIDEO_H264:
+              export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_AVC;
+              break;
+            case AM_VIDEO_H265:
+              export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_HEVC;
+              break;
+            default:break;
+          }
+        } break;
+        case AM_VIDEO_FRAME_TYPE_B: {
+          export_packet->frame_type = AM_EXPORT_VIDEO_FRAME_TYPE_B;
+          switch(AM_VIDEO_TYPE(packet_fill->get_video_type())) {
+            case AM_VIDEO_H264:
+              export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_AVC;
+              break;
+            case AM_VIDEO_H265:
+              export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_HEVC;
+              break;
+            default:break;
+          }
+        } break;
+        case AM_VIDEO_FRAME_TYPE_MJPEG:
+        case AM_VIDEO_FRAME_TYPE_SJPEG:
+          export_packet->frame_type = AM_EXPORT_VIDEO_FRAME_TYPE_I;
+          export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_MJPEG;
+          export_packet->is_key_frame = 1;
+          break;
+        default:
+          ERROR("Not supported video frame type %d\n", t);
+          ret = false;
+          break;
+      }
+      export_packet->data_ptr = (uint8_t*)packet_fill->get_addr_offset();
+      export_packet->is_direct_mode = 1;
+    } break;
+
+    case AMPacket::AM_PAYLOAD_ATTR_AUDIO: {
+      export_packet->packet_type = AM_EXPORT_PACKET_TYPE_AUDIO_DATA;
+      t = packet_fill->get_frame_type();
+      t_sample_rate = packet_fill->get_frame_attr();
+      switch (t) {
+        case AM_AUDIO_G711A: {
+          export_packet->is_key_frame = 1;
+          export_packet->audio_sample_rate = t_sample_rate/1000;
+          switch(t_sample_rate) {
+            case 8000: {
+              export_packet->packet_format =
+                  AM_EXPORT_PACKET_FORMAT_G711ALaw_8KHZ;
+            }break;
+            case 16000: {
+              export_packet->packet_format =
+                  AM_EXPORT_PACKET_FORMAT_G711ALaw_16KHZ;
+            }break;
+            default: {
+              export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_INVALID;
+              ERROR("Unsupported samplerate: %u", t_sample_rate);
+            }break;
+          }
+        } break;
+        case AM_AUDIO_G711U:{
+          export_packet->is_key_frame = 1;
+          export_packet->audio_sample_rate = t_sample_rate/1000;
+          switch(t_sample_rate) {
+            case 8000: {
+              export_packet->packet_format =
+                  AM_EXPORT_PACKET_FORMAT_G711MuLaw_8KHZ;
+            }break;
+            case 16000: {
+              export_packet->packet_format =
+                  AM_EXPORT_PACKET_FORMAT_G711MuLaw_16KHZ;
+            }break;
+            default: {
+              export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_INVALID;
+              ERROR("Unsupported samplerate: %u", t_sample_rate);
+            }break;
+          }
+        } break;
+        case AM_AUDIO_G726_40:
+          export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_G726_40KBPS;
+          export_packet->audio_sample_rate = t_sample_rate/1000;
+          break;
+        case AM_AUDIO_G726_32:
+          export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_G726_32KBPS;
+          export_packet->audio_sample_rate = t_sample_rate/1000;
+          break;
+        case AM_AUDIO_G726_24:
+          export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_G726_24KBPS;
+          export_packet->audio_sample_rate = t_sample_rate/1000;
+          break;
+        case AM_AUDIO_G726_16:
+          export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_G726_16KBPS;
+          export_packet->audio_sample_rate = t_sample_rate/1000;
+          break;
+        case AM_AUDIO_AAC:{
+          export_packet->is_key_frame = 1;
+          export_packet->audio_sample_rate = t_sample_rate/1000;
+          switch(t_sample_rate) {
+            case 8000: {
+              export_packet->packet_format =
+                  AM_EXPORT_PACKET_FORMAT_AAC_8KHZ;
+            }break;
+            case 16000: {
+              export_packet->packet_format =
+                  AM_EXPORT_PACKET_FORMAT_AAC_16KHZ;
+            }break;
+            case 48000: {
+              export_packet->packet_format =
+                  AM_EXPORT_PACKET_FORMAT_AAC_48KHZ;
+            }break;
+            default: {
+              export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_INVALID;
+              ERROR("Unsupported samplerate: %u", t_sample_rate);
+            }break;
+          }
+        } break;
+        case AM_AUDIO_OPUS:{
+          export_packet->is_key_frame = 1;
+          export_packet->audio_sample_rate = t_sample_rate/1000;
+          switch(t_sample_rate) {
+            case 8000: {
+              export_packet->packet_format =
+                  AM_EXPORT_PACKET_FORMAT_OPUS_8KHZ;
+            }break;
+            case 16000: {
+              export_packet->packet_format =
+                  AM_EXPORT_PACKET_FORMAT_OPUS_16KHZ;
+            }break;
+            case 48000: {
+              export_packet->packet_format =
+                  AM_EXPORT_PACKET_FORMAT_OPUS_48KHZ;
+            }break;
+            default: {
+              export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_INVALID;
+              ERROR("Unsupported samplerate: %u", t_sample_rate);
+            }break;
+          }
+        } break;
+        case AM_AUDIO_LPCM:{
+          export_packet->is_key_frame = 1;
+          export_packet->audio_sample_rate = t_sample_rate/1000;
+          switch(t_sample_rate) {
+            case 8000: {
+              export_packet->packet_format =
+                  AM_EXPORT_PACKET_FORMAT_PCM_8KHZ;
+            }break;
+            case 16000: {
+              export_packet->packet_format =
+                  AM_EXPORT_PACKET_FORMAT_PCM_16KHZ;
+            }break;
+            case 48000: {
+              export_packet->packet_format =
+                  AM_EXPORT_PACKET_FORMAT_PCM_48KHZ;
+            }break;
+            default: {
+              export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_INVALID;
+              ERROR("Unsupported samplerate: %u", t_sample_rate);
+            }break;
+          }
+        } break;
+        case AM_AUDIO_BPCM:{
+          export_packet->is_key_frame = 1;
+          export_packet->audio_sample_rate = t_sample_rate/1000;
+          switch(t_sample_rate) {
+            case 8000: {
+              export_packet->packet_format =
+                  AM_EXPORT_PACKET_FORMAT_BPCM_8KHZ;
+            }break;
+            case 16000: {
+              export_packet->packet_format =
+                  AM_EXPORT_PACKET_FORMAT_BPCM_16KHZ;
+            }break;
+            case 48000: {
+              export_packet->packet_format =
+                  AM_EXPORT_PACKET_FORMAT_BPCM_48KHZ;
+            }break;
+            default: {
+              export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_INVALID;
+              ERROR("Unsupported samplerate: %u", t_sample_rate);
+            }break;
+          }
+        } break;
+        case AM_AUDIO_SPEEX:{
+          export_packet->is_key_frame = 1;
+          export_packet->audio_sample_rate = t_sample_rate/1000;
+          switch(t_sample_rate) {
+            case 8000: {
+              export_packet->packet_format =
+                  AM_EXPORT_PACKET_FORMAT_SPEEX_8KHZ;
+            }break;
+            case 16000: {
+              export_packet->packet_format =
+                  AM_EXPORT_PACKET_FORMAT_SPEEX_16KHZ;
+            }break;
+            case 48000: {
+              export_packet->packet_format =
+                  AM_EXPORT_PACKET_FORMAT_SPEEX_48KHZ;
+            }break;
+            default: {
+              export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_INVALID;
+              ERROR("Unsupported samplerate: %u", t_sample_rate);
+            }break;
+          }
+        } break;
+        break;
+        default:
+          ERROR("Not supported audio frame type %d\n", t);
+          ret = false;
+          break;
+      }
+      uint8_t tem_check = export_packet->packet_format;
+      if (!(m_config_map[client_fd].audio_map &
+          (1LL << tem_check))) {
+        ret = false;
+        break;
+      }
+
+      export_packet->is_direct_mode = 0;
+      export_packet->data_ptr = packet_fill->get_data_ptr();
+    } break;
     default:
+      ERROR("Not supported payload attr %d\n", packet_fill->get_attr());
+      ret = false;
       break;
   }
+
+  return ret;
 }
 
 bool AMMuxerExportUDS::send_info(int client_fd)
@@ -582,22 +1054,35 @@ bool AMMuxerExportUDS::send_info(int client_fd)
         continue;
       }
 
-      if (write(client_fd, &m_video_export_packets[m.first],
-                sizeof(AMExportPacket)) != sizeof(AMExportPacket)) {
-        ERROR("write header failed, close socket!");
-        ret = false;
-        break;
+      if ((m_config_map[client_fd].video_map) &
+          (1 << (m_video_export_packets[m.first].stream_index))) {
+
+        if (am_write(client_fd, &m_video_export_packets[m.first],
+                  sizeof(AMExportPacket)) != sizeof(AMExportPacket)) {
+          ret = false;
+          break;
+        }
+
+        /* update stream info because stream service may not update it
+         * when user dynamic reset some stream info parameters*/
+        AMStreamInfo stream_info;
+        stream_info.stream_id =
+            AM_STREAM_ID(m_video_export_packets[m.first].stream_index);
+        if (AM_LIKELY(AM_RESULT_OK
+            == m_video_reader->query_stream_info(stream_info))) {
+        }
+        m_video_export_infos[m.first].framerate_num = stream_info.mul;
+        m_video_export_infos[m.first].framerate_den = stream_info.div;
+        if (am_write(client_fd,
+                  &m_video_export_infos[m.first],
+                  sizeof(AMExportVideoInfo)) != sizeof(AMExportVideoInfo)) {
+          ERROR("Write video info[%d] failed, close socket!", m.first);
+          ret = false;
+          break;
+        }
+        m.second = true;
       }
-      if (write(client_fd, &m_video_export_infos[m.first],
-                sizeof(AMExportVideoInfo)) != sizeof(AMExportVideoInfo)) {
-        ERROR("write video info[%d] failed, close socket!", m.first);
-        ret = false;
-        break;
-      }
-      m.second = true;
-    }
-    if (!ret) {
-      break;
+      if (!ret) {break;}
     }
 
     for (auto &m: m_audio_info_send_flag) {
@@ -605,145 +1090,152 @@ bool AMMuxerExportUDS::send_info(int client_fd)
         continue;
       }
 
-      if (write(client_fd, &m_audio_export_packets[m.first],
-                sizeof(AMExportPacket)) != sizeof(AMExportPacket)) {
-        NOTICE("write header failed, close socket!");
-        ret = false;
-        break;
+      if (m_config_map[client_fd].audio_map &
+          (1LL << m_audio_export_packets[m.first].packet_format)) {
+
+        if (am_write(client_fd, &m_audio_export_packets[m.first],
+                  sizeof(AMExportPacket)) != sizeof(AMExportPacket)) {
+          ERROR("Write header failed, close socket!");
+          ret = false;
+          break;
+        }
+        if (am_write(client_fd, &m_audio_export_infos[m.first],
+                  sizeof(AMExportAudioInfo)) != sizeof(AMExportAudioInfo)) {
+          ERROR("Write audio info[%d] failed, close socket!", m.first);
+          ret = false;
+          break;
+        }
+        m.second = true;
       }
-      if (write(client_fd, &m_audio_export_infos[m.first],
-                sizeof(AMExportAudioInfo)) != sizeof(AMExportAudioInfo)) {
-        NOTICE("write audio info[%d] failed, close socket!", m.first);
-        ret = false;
-        break;
-      }
-      m.second = true;
     }
-    if (!ret) {
-      break;
-    }
+    if (!ret) {break;}
   } while (0);
 
   return ret;
 }
 
-bool AMMuxerExportUDS::send_packet(int client_fd)
+bool AMMuxerExportUDS::read_config(int fd, AMExportConfig *m_config)
 {
-  bool                ret             = true;
-  AM_PTS              min_pts         = INT64_MAX;
-  AMPacket           *am_packet       = nullptr;
-  AMExportPacket      export_packet;
+  bool result = true;
 
   do {
-    if (m_config.need_sort) {
+    int read_ret = 0;
+    int read_cnt = 0;
+    uint32_t received = 0;
+
+    do {
+      read_ret = read(fd, m_config + received,
+                      sizeof(*m_config) - received);
+      if (AM_LIKELY(read_ret > 0)) {
+        received += read_ret;
+      }
+    }while((++ read_cnt < 5) &&
+        (((read_ret >= 0) &&
+            (read_ret < (int)sizeof(*m_config))) || ((read_ret < 0) &&
+                ((errno == EINTR) ||
+                    (errno == EWOULDBLOCK ||
+                        (errno == EAGAIN))))));
+    if (received < sizeof(*m_config)) {
+      if (read_ret <= 0) {
+        PERROR("Read error");
+        result = false;
+        break;
+      }
+      if (read_cnt >= 5) {
+        ERROR("Read to much times");
+        result = false;
+        break;
+      }
+    }
+
+  } while (0);
+  return result;
+}
+
+AMPacket* AMMuxerExportUDS::get_export_packet()
+{
+  AM_PTS         min_pts       = INT64_MAX - 1;
+  bool empty_check = false;
+  AMPacket *packet = nullptr;
+
+
+  do {
+    if (m_sort_mode.first) {
+      std::unique_lock<std::mutex> lk(m_send_mutex);
       for (auto &m : m_audio_queue) {
-        if (!(m_audio_map & (1 << m.first))) {
+        if (!(m_audio_map & (1 << m.first))) {continue;}
+
+        while (m_running && m.second.empty()) {
+
+          if (min_pts > m_predict_pts) {
+            m_audio_send_block.first = m.first;
+            m_audio_send_block.second = true;
+            m_send_cond.wait(lk);
+            m_audio_send_block.second = false;
+          } else {
+
+            m_predict_pts = m_audio_last_pts[m.first]
+                                             + m_audio_pts_increment[m.first];
+            empty_check = true;
+            break;
+          }
+        }
+        if (empty_check) {
           continue;
         }
-        m_send_mutex->lock();
-        if ((m.second.empty()) || !m.second.front()) {
-          switch (m_audio_state[m.first]) {
-            case 0: //Normal
-              m_audio_state[m.first] = 1;
-              m_audio_last_pts[m.first] += m_audio_pts_increment - 100;
-              break;
-            case 1: //Try to get audio
-              break;
-            case 2: //Need block to wait audio packet
-              m_audio_send_block.first = m.first;
-              m_audio_send_block.second = true;
-              m_send_cond->wait(m_send_mutex);
-              m_audio_send_block.second = false;
-              m_audio_last_pts[m.first] = m.second.front()->get_pts();
-              m_audio_state[m.first] = 0;
-              break;
-            default:
-              break;
-          }
-        } else {
-          m_audio_last_pts[m.first] = m.second.front()->get_pts();
-          if (m_audio_state[m.first]) {
-            m_audio_state[m.first] = 0;
-          }
-        }
-        m_send_mutex->unlock();
-        if (!m_running) {
-          break;
-        }
-        if (m_audio_last_pts[m.first] < min_pts) {
-          min_pts = m_audio_last_pts[m.first];
-          am_packet = m.second.front();
+
+        if (!m_running) {break;}
+        if (m.second.front()->get_pts() < min_pts) {
+          packet = m.second.front();
+          min_pts = packet->get_pts();
         }
       }
+      lk.unlock();
 
+      lk.lock();
       for (auto &m : m_video_queue) {
         if (!(m_video_map & (1 << m.first))) {
           continue;
         }
-        m_send_mutex->lock();
-        if ((m.second.empty()) || !m.second.front()) {
+
+        while (m_running && m.second.empty()) {
           m_video_send_block.first = m.first;
           m_video_send_block.second = true;
-          m_send_cond->wait(m_send_mutex);
+          m_send_cond.wait(lk);
           m_video_send_block.second = false;
         }
-        m_send_mutex->unlock();
-        if (!m_running) {
-          break;
-        }
+
+        if (!m_running) {break;}
         if (m.second.front()->get_pts() < min_pts) {
-          min_pts = m.second.front()->get_pts();
-          am_packet = m.second.front();
+          packet = m.second.front();
+          min_pts = packet->get_pts();
         }
-      }
-
-      for (auto &m : m_audio_queue) {
-        if ((am_packet == m.second.front()) && (m_audio_state[m.first])) {
-          m_audio_state[m.first] = 2; //Need block to wait
-          return ret;
-        }
-      }
-
-      if (am_packet &&
-          (am_packet->get_attr() == AMPacket::AM_PAYLOAD_ATTR_VIDEO)) {
-        m_video_queue[am_packet->get_stream_id()].pop();
-      } else if (am_packet &&
-          (am_packet->get_attr() == AMPacket::AM_PAYLOAD_ATTR_AUDIO)) {
-        m_audio_queue[am_packet->get_stream_id()].pop();
       }
     } else {
-      m_send_mutex->lock();
-      if (m_packet_queue.empty() || !m_packet_queue.front()) {
+      std::unique_lock<std::mutex> lk(m_send_mutex);
+      while (m_running && m_packet_queue.empty()) {
         m_send_block = true;
-        m_send_cond->wait(m_send_mutex);
+        m_send_cond.wait(lk);
       }
       m_send_block = false;
-      m_send_mutex->unlock();
-      if (!m_running) {
-        break;
+      if (m_running && !m_packet_queue.empty()) {
+        packet = m_packet_queue.front();
+
       }
-      am_packet = m_packet_queue.front();
-      m_packet_queue.pop();
     }
 
-    if (!am_packet) {
-      //usleep(1000);
-      break;
-    }
+    if (!packet) {break;}
 
-    if (am_packet->get_type() == AMPacket::AM_PAYLOAD_TYPE_EOS) {
-      uint32_t stream_id = am_packet->get_stream_id();
-      switch (am_packet->get_attr()) {
+
+    if (packet->get_type() == AMPacket::AM_PAYLOAD_TYPE_EOS) {
+      uint32_t stream_id = packet->get_stream_id();
+      switch (packet->get_attr()) {
         case AMPacket::AM_PAYLOAD_ATTR_VIDEO:
           m_video_map &= ~(1 << stream_id);
-          m_video_infos.erase(stream_id);
-          m_video_export_packets.erase(stream_id);
-          m_video_info_send_flag.erase(stream_id);
-          if (m_config.need_sort) {
+          if (m_sort_mode.first) {
             for (auto &m : m_video_queue) {
               while (!m.second.empty()) {
-                m.second.front()->release();
-                m.second.pop();
+                m.second.front_pop()->release();
               }
               m_video_queue.erase(m.first);
             }
@@ -751,14 +1243,11 @@ bool AMMuxerExportUDS::send_packet(int client_fd)
           break;
         case AMPacket::AM_PAYLOAD_ATTR_AUDIO:
           m_audio_map &= ~(1 << stream_id);
-          m_audio_infos.erase(stream_id);
-          m_audio_export_packets.erase(stream_id);
-          m_audio_info_send_flag.erase(stream_id);
-          if (m_config.need_sort) {
+
+          if (m_sort_mode.first) {
             for (auto &m : m_audio_queue) {
               while (!m.second.empty()) {
-                m.second.front()->release();
-                m.second.pop();
+                m.second.front_pop()->release();
               }
               m_audio_queue.erase(m.first);
             }
@@ -767,135 +1256,114 @@ bool AMMuxerExportUDS::send_packet(int client_fd)
         default:
           break;
       }
+      packet = nullptr;
     }
 
-    fill_export_packet(am_packet, &export_packet);
-    if (write(client_fd, &export_packet, sizeof(AMExportPacket)) !=
-        sizeof(AMExportPacket)) {
+  } while (0);
+
+  return packet;
+}
+
+bool AMMuxerExportUDS::send_packet(int client_fd, AMPacket *packet_send)
+{
+  bool ret = true;
+  AMExportPacket export_packet = {0};
+  do {
+    if (!packet_send) {
       ret = false;
-      NOTICE("write header failed, close socket!");
+      break;
     }
 
-    if (!export_packet.is_direct_mode) {
-      if ((uint32_t)write(client_fd, export_packet.data_ptr,
-                          export_packet.data_size) != export_packet.data_size) {
+    if (fill_export_packet(client_fd, packet_send, &export_packet)) {
+      if (am_write(client_fd, &export_packet, sizeof(AMExportPacket)) !=
+          sizeof(AMExportPacket)) {
         ret = false;
-        NOTICE("write data(%d) failed, close socket!",
-               export_packet.data_size);
+        NOTICE("Write header failed, close socket!");
+        break;
+      }
+
+      if (!export_packet.is_direct_mode) {
+        if ((uint32_t)am_write(client_fd,
+                            export_packet.data_ptr,
+                            export_packet.data_size) !=
+                                export_packet.data_size) {
+          ret = false;
+          NOTICE("Write data(%d) failed, close socket!",
+                 export_packet.data_size);
+        }
       }
     }
-    am_packet->release();
   } while (0);
+
   return ret;
 }
 
-void AMMuxerExportUDS::fill_export_packet(AMPacket* packet,
-                                          AMExportPacket* export_packet)
+void AMMuxerExportUDS::clean_resource()
 {
-  uint32_t t = 0;
-  export_packet->data_ptr = nullptr;
-  export_packet->data_size = packet->get_data_size();
-  export_packet->pts = packet->get_pts();
-  export_packet->stream_index = packet->get_stream_id();
-  export_packet->is_key_frame = 0;
-  export_packet->is_direct_mode = 1;
-
-  switch (packet->get_attr()) {
-    case AMPacket::AM_PAYLOAD_ATTR_VIDEO:
-    case AMPacket::AM_PAYLOAD_ATTR_SEI: {
-      export_packet->packet_type = AM_EXPORT_PACKET_TYPE_VIDEO_DATA;
-      t = packet->get_frame_type();
-      switch (t) {
-        case AM_VIDEO_FRAME_TYPE_H264_IDR:
-          export_packet->frame_type = AM_EXPORT_VIDEO_FRAME_TYPE_IDR;
-          export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_AVC;
-          export_packet->is_key_frame = 1;
-          break;
-        case AM_VIDEO_FRAME_TYPE_H264_I:
-          export_packet->frame_type = AM_EXPORT_VIDEO_FRAME_TYPE_I;
-          export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_AVC;
-          break;
-        case AM_VIDEO_FRAME_TYPE_H264_P:
-          export_packet->frame_type = AM_EXPORT_VIDEO_FRAME_TYPE_P;
-          export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_AVC;
-          break;
-        case AM_VIDEO_FRAME_TYPE_H264_B:
-          export_packet->frame_type = AM_EXPORT_VIDEO_FRAME_TYPE_B;
-          export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_AVC;
-          break;
-        case AM_VIDEO_FRAME_TYPE_MJPEG:
-        case AM_VIDEO_FRAME_TYPE_SJPEG:
-          export_packet->frame_type = AM_EXPORT_VIDEO_FRAME_TYPE_I;
-          export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_MJPEG;
-          export_packet->is_key_frame = 1;
-          break;
-        default:
-          ERROR("not supported video frame type %d\n", t);
-          break;
-      }
-      export_packet->data_ptr = (uint8_t*)packet->get_addr_offset();
-      export_packet->is_direct_mode = 1;
-    } break;
-
-    case AMPacket::AM_PAYLOAD_ATTR_AUDIO: {
-      export_packet->packet_type = AM_EXPORT_PACKET_TYPE_AUDIO_DATA;
-      t = packet->get_frame_type();
-      switch (t) {
-        case AM_AUDIO_G711A:
-          export_packet->frame_type = AM_EXPORT_PACKET_FORMAT_G711ALaw;
-          export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_G711ALaw;
-          export_packet->is_key_frame = 1;
-          break;
-        case AM_AUDIO_G711U:
-          export_packet->frame_type = AM_EXPORT_PACKET_FORMAT_G711MuLaw;
-          export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_G711MuLaw;
-          break;
-        case AM_AUDIO_G726_40:
-          export_packet->frame_type = AM_EXPORT_PACKET_FORMAT_G726_40;
-          export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_G726_40;
-          break;
-        case AM_AUDIO_G726_32:
-          export_packet->frame_type = AM_EXPORT_PACKET_FORMAT_G726_32;
-          export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_G726_32;
-          break;
-        case AM_AUDIO_G726_24:
-          export_packet->frame_type = AM_EXPORT_PACKET_FORMAT_G726_24;
-          export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_G726_24;
-          break;
-        case AM_AUDIO_G726_16:
-          export_packet->frame_type = AM_EXPORT_PACKET_FORMAT_G726_16;
-          export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_G726_16;
-          break;
-        case AM_AUDIO_AAC:
-          export_packet->frame_type = AM_EXPORT_PACKET_FORMAT_AAC;
-          export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_AAC;
-          break;
-        case AM_AUDIO_OPUS:
-          export_packet->frame_type = AM_EXPORT_PACKET_FORMAT_OPUS;
-          export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_OPUS;
-          break;
-        case AM_AUDIO_LPCM:
-          export_packet->frame_type = AM_EXPORT_PACKET_FORMAT_PCM;
-          export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_PCM;
-          break;
-        case AM_AUDIO_BPCM:
-          export_packet->frame_type = AM_EXPORT_PACKET_FORMAT_BPCM;
-          export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_BPCM;
-          break;
-        case AM_AUDIO_SPEEX:
-          export_packet->frame_type = AM_EXPORT_PACKET_FORMAT_SPEEX;
-          export_packet->packet_format = AM_EXPORT_PACKET_FORMAT_SPEEX;
-          break;
-        default:
-          ERROR("not supported audio frame type %d\n", t);
-          break;
-      }
-      export_packet->is_direct_mode = 0;
-      export_packet->data_ptr = (uint8_t*)packet->get_data_ptr();
-    } break;
-
-    default:
-      ERROR("not supported payload attr %d\n", t);
-      break;
+  reset_resource();
+  if (m_control_fd[0] > 0) {
+    close(m_control_fd[0]);
+    m_control_fd[0] = -1;
   }
+  if (m_control_fd[1] > 0) {
+    close(m_control_fd[1]);
+    m_control_fd[1] = -1;
+  }
+  m_export_running = false;
+  m_thread_exit = true;
+  m_thread_export_exit = true;
+  m_thread_export_wait->signal();
+  AM_DESTROY(m_export_thread);
+  AM_DESTROY(m_thread_export_wait);
+  m_video_reader = nullptr;
+}
+
+void AMMuxerExportUDS::reset_resource()
+{
+  if (m_control_fd[1] > 0) {
+    am_write(m_control_fd[1], "q", 1);
+  }
+  if (m_socket_fd > 0) {
+    close(m_socket_fd);
+    m_socket_fd = -1;
+    unlink(DEXPORT_PATH);
+  }
+
+  if (m_epoll_fd > 0) {
+    close(m_epoll_fd);
+    m_epoll_fd = -1;
+  }
+
+  m_config_map.clear();
+  m_audio_last_pts.clear();
+  m_audio_state.clear();
+  m_video_infos.clear();
+  m_audio_infos.clear();
+  m_video_export_infos.clear();
+  m_audio_export_infos.clear();
+  m_video_export_packets.clear();
+  m_audio_export_packets.clear();
+  m_video_info_send_flag.clear();
+  m_audio_info_send_flag.clear();
+  while (!m_packet_queue.empty()) {
+    m_packet_queue.front_pop()->release();
+  }
+  for (auto &m : m_video_queue) {
+    while (!m.second.empty()) {
+      m.second.front_pop()->release();
+    }
+  }
+  m_video_queue.clear();
+  for (auto &m : m_audio_queue) {
+    while (!m.second.empty()) {
+      m.second.front_pop()->release();
+    }
+  }
+  m_audio_queue.clear();
+  m_video_map = 0;
+  m_audio_map = 0;
+  m_send_block = false;
+  m_video_send_block.second = false;
+  m_audio_send_block.second = false;
+  m_send_cond.notify_all();
 }

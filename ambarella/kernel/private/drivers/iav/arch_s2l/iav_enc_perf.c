@@ -3,14 +3,33 @@
  *
  * History:
  *	2012/04/13 - [Jian Tang] created file
- * Copyright (C) 2007-2016, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 #include <config.h>
 #include <linux/random.h>
 #include <linux/slab.h>
@@ -55,7 +74,7 @@ static struct iav_system_freq G_system_freq[IAV_CHIP_ID_S2L_NUM] = {
 		.core_MHz = 144,
 		.dram_MHz = 456,
 	},
-#ifndef CONFIG_BOARD_VERSION_S2LMKIWI_S2LMHC
+#if (!defined(CONFIG_BOARD_VERSION_S2LMKIWI_S2LMHC) && !defined(CONFIG_BOARD_VERSION_S2LMIRONMAN_S2L55MHC))
 	[IAV_CHIP_ID_S2L_33M] = {
 		.cortex_MHz = 600,
 		.idsp_MHz = 216,
@@ -77,19 +96,31 @@ static struct iav_system_freq G_system_freq[IAV_CHIP_ID_S2L_NUM] = {
 #else
 	[IAV_CHIP_ID_S2L_33M] = {
 		.cortex_MHz = 600,
+#ifndef CONFIG_AMBARELLA_IAV_DRAM_VOUT_ONLY
 		.idsp_MHz = 240,
+#else
+		.idsp_MHz = 312,
+#endif
 		.core_MHz = 288,
 		.dram_MHz = 564,
 	},
 	[IAV_CHIP_ID_S2L_55M] = {
 		.cortex_MHz = 600,
+#ifndef CONFIG_AMBARELLA_IAV_DRAM_VOUT_ONLY
 		.idsp_MHz = 240,
+#else
+		.idsp_MHz = 312,
+#endif
 		.core_MHz = 288,
 		.dram_MHz = 564,
 	},
 	[IAV_CHIP_ID_S2L_99M] = {
 		.cortex_MHz = 600,
+#ifndef CONFIG_AMBARELLA_IAV_DRAM_VOUT_ONLY
 		.idsp_MHz = 240,
+#else
+		.idsp_MHz = 312,
+#endif
 		.core_MHz = 288,
 		.dram_MHz = 564,
 	},
@@ -98,7 +129,7 @@ static struct iav_system_freq G_system_freq[IAV_CHIP_ID_S2L_NUM] = {
 		.cortex_MHz = 816,
 		.idsp_MHz = 336,
 		.core_MHz = 312,
-		.dram_MHz = 600,
+		.dram_MHz = 588,
 	},
 	[IAV_CHIP_ID_S2L_66] = {
 		.cortex_MHz = 1008,
@@ -118,7 +149,7 @@ static struct iav_system_freq G_system_freq[IAV_CHIP_ID_S2L_NUM] = {
 		.core_MHz = 432,
 		.dram_MHz = 660,
 	},
-#ifndef CONFIG_BOARD_VERSION_S2LMKIWI_S2LMHC
+#if (!defined(CONFIG_BOARD_VERSION_S2LMKIWI_S2LMHC) && !defined(CONFIG_BOARD_VERSION_S2LMIRONMAN_S2L55MHC))
 	[IAV_CHIP_ID_S2L_TEST] = {
 		.cortex_MHz = 600,
 		.idsp_MHz = 216,
@@ -128,11 +159,33 @@ static struct iav_system_freq G_system_freq[IAV_CHIP_ID_S2L_NUM] = {
 #else
 	[IAV_CHIP_ID_S2L_TEST] = {
 		.cortex_MHz = 600,
+#ifndef CONFIG_AMBARELLA_IAV_DRAM_VOUT_ONLY
 		.idsp_MHz = 240,
+#else
+		.idsp_MHz = 312,
+#endif
 		.core_MHz = 288,
 		.dram_MHz = 564,
 	},
 #endif
+	[IAV_CHIP_ID_S2L_22] = {
+		.cortex_MHz = 816,
+		.idsp_MHz = 240,
+		.core_MHz = 288,
+		.dram_MHz = 588,
+	},
+	[IAV_CHIP_ID_S2L_33MEX] = {
+		.cortex_MHz = 600,
+		.idsp_MHz = 144,
+		.core_MHz = 144,
+		.dram_MHz = 456,
+	},
+	[IAV_CHIP_ID_S2L_33EX] = {
+		.cortex_MHz = 816,
+		.idsp_MHz = 144,
+		.core_MHz = 144,
+		.dram_MHz = 456,
+	},
 };
 
 struct iav_dram_coeff G_dram_buf_coeffs[DSP_ENCODE_MODE_TOTAL_NUM] = {
@@ -514,7 +567,7 @@ static struct iav_dram_buf_num G_sz_buf_num[DSP_ENCODE_MODE_TOTAL_NUM] = {
 	[DSP_NORMAL_ISO_MODE] = {
 		1, 0, 1, 0,
 		{5, 5},
-		{8, 9, 9, 9, 0},
+		{5, 9, 9, 9, 0},
 		{15, 16, 16, 16, 0},
 		{0, 0, 0, 0, 0},
 		{1, 1, 1, 1},
@@ -778,6 +831,7 @@ static u32 get_dsp_mem_buffer_bandwidth(struct ambarella_iav *iav)
 	struct amba_video_info * video = NULL;
 	u32 bandwidth = 0;
 	u32 pixel_ps, fps, vout[2];
+	struct iav_window vout_win;
 	int i;
 
 	/* Dual VOUT */
@@ -794,6 +848,11 @@ static u32 get_dsp_mem_buffer_bandwidth(struct ambarella_iav *iav)
 			fps = Q9_TO_FPS(video->fps, DEFAULT_VOUT_FPS);
 			pixel_ps = ALIGN(video->width, PIXEL_IN_MB) *
 				ALIGN(video->height, PIXEL_IN_MB) * fps;
+
+			/* If vout mode is an interlaced mode, bandwidth will reduce half. */
+			if (video->format == AMBA_VIDEO_FORMAT_INTERLACE) {
+				pixel_ps >>= 1;
+			}
 			bandwidth += pixel_ps * dram_coeffs->vout[i].multi /
 				dram_coeffs->vout[i].div;
 		}
@@ -809,18 +868,25 @@ static u32 get_dsp_mem_buffer_bandwidth(struct ambarella_iav *iav)
 
 	/* Sub source buffers */
 	for (i = IAV_SUB_SRCBUF_FIRST; i < IAV_SUB_SRCBUF_LAST; ++i) {
-		pixel_ps = ALIGN(iav->srcbuf[i].win.width, PIXEL_IN_MB) *
-			ALIGN(iav->srcbuf[i].win.height, PIXEL_IN_MB) * fps;
 		switch (iav->srcbuf[i].type) {
 		case IAV_SRCBUF_TYPE_ENCODE:
+		case IAV_SRCBUF_TYPE_VCA:
+			pixel_ps = ALIGN(iav->srcbuf[i].win.width, PIXEL_IN_MB) *
+				ALIGN(iav->srcbuf[i].win.height, PIXEL_IN_MB) * fps;
 			bandwidth += pixel_ps * dram_coeffs->buf_yuv[i].multi /
 				dram_coeffs->buf_yuv[i].div;
 			bandwidth += (pixel_ps >> 4) * dram_coeffs->buf_me1[i].multi /
 				dram_coeffs->buf_me1[i].div;
 			break;
 		case IAV_SRCBUF_TYPE_PREVIEW:
+			if (get_vout_win(i, &vout_win) < 0) {
+				vout_win.width = vout_win.height = 0;
+			}
+			pixel_ps = ALIGN(vout_win.width, PIXEL_IN_MB) *
+				ALIGN(vout_win.height, PIXEL_IN_MB) * fps;
 			bandwidth += (pixel_ps << 1);
 			break;
+		case IAV_SRCBUF_TYPE_OFF:
 		default:
 			break;
 		}
@@ -913,10 +979,11 @@ static int get_dsp_mem_buffer_size(struct ambarella_iav *iav)
 	u32 vin_width, vin_height;
 	u32 dummy_width, dummy_height;
 	u32 main_width, main_height;
-	u32 buf_width, buf_height;
+	u32 buf_width, buf_height, buf_pixels;
 	u32 expo_num;
 	u32 enc_mode = iav->encode_mode;
 	u32 raw_flag;
+	u32 extra_top_row_flag;
 	int i;
 	struct iav_rect *vin_win;
 	struct iav_dram_coeff *dram_coeffs = &G_dram_buf_coeffs[enc_mode];
@@ -924,8 +991,10 @@ static int get_dsp_mem_buffer_size(struct ambarella_iav *iav)
 	struct iav_system_config *sys_config = &iav->system_config[enc_mode];
 	struct iav_buffer *main_buf = &iav->srcbuf[IAV_SRCBUF_MN];
 	struct iav_buffer *curr_buf;
+	struct iav_window vout_win;
 
 	raw_flag = sys_config->raw_capture;
+	extra_top_row_flag = sys_config->extra_top_row_buf_enable;
 	get_vin_win(iav, &vin_win, 1);
 	vin_width = ALIGN(vin_win->width, PIXEL_IN_MB);
 	vin_height = ALIGN(vin_win->height, PIXEL_IN_MB);
@@ -996,37 +1065,59 @@ static int get_dsp_mem_buffer_size(struct ambarella_iav *iav)
 	/* source buffer size */
 	for (i = IAV_SRCBUF_FIRST; i < IAV_SRCBUF_LAST_PMN; ++i) {
 		curr_buf = &iav->srcbuf[i];
-		if (curr_buf->type != IAV_SRCBUF_TYPE_OFF) {
+		switch (curr_buf->type) {
+		case IAV_SRCBUF_TYPE_ENCODE:
+		case IAV_SRCBUF_TYPE_VCA:
 			buf_width = ALIGN(curr_buf->max.width, PIXEL_IN_MB);
 			buf_height = ALIGN(curr_buf->max.height, PIXEL_IN_MB);
-			if (curr_buf->type == IAV_SRCBUF_TYPE_ENCODE) {
-				size += buf_width * buf_height * (buf_num->buf_yuv[i] +
-						curr_buf->extra_dram_buf) *
-						dram_coeffs->buf_yuv[i].multi /
-						dram_coeffs->buf_yuv[i].div;
-				buf_width = buf_width / 4;
-				buf_height = buf_height / 4;
-				size += buf_width * buf_height * (buf_num->buf_me1[i] +
+			buf_pixels = buf_width * buf_height;
+			size += buf_pixels * (buf_num->buf_yuv[i] +
+				curr_buf->extra_dram_buf) *
+				dram_coeffs->buf_yuv[i].multi /
+				dram_coeffs->buf_yuv[i].div;
+			buf_pixels = (buf_pixels >> 4);
+			size += buf_pixels * (buf_num->buf_me1[i] +
+				curr_buf->extra_dram_buf) *
+				dram_coeffs->buf_me1[i].multi /
+				dram_coeffs->buf_me1[i].div;
+			/* me0 shares the same size as me1 */
+			if (sys_config->me0_scale != ME0_SCALE_OFF) {
+				size += buf_pixels * buf_num->buf_me0[i] *
+					dram_coeffs->buf_me0[i].multi /
+					dram_coeffs->buf_me0[i].div;
+			}
+			if (extra_top_row_flag) {
+				buf_pixels = buf_width * PIXEL_IN_MB;
+				size += buf_pixels * (buf_num->buf_yuv[i] +
+					curr_buf->extra_dram_buf) *
+					dram_coeffs->buf_yuv[i].multi /
+					dram_coeffs->buf_yuv[i].div;
+				buf_pixels = (buf_pixels >> 4);
+				size += buf_pixels * (buf_num->buf_me1[i] +
 					curr_buf->extra_dram_buf) *
 					dram_coeffs->buf_me1[i].multi /
 					dram_coeffs->buf_me1[i].div;
-				/* me0 shares the same size as me1 */
-				if (sys_config->me0_scale != ME0_SCALE_OFF) {
-					size += buf_width * buf_height * buf_num->buf_me0[i] *
-						dram_coeffs->buf_me0[i].multi /
-						dram_coeffs->buf_me0[i].div;
-				}
-			} else {
-				if (i == IAV_SRCBUF_PA) {
-					size += buf_width * buf_height * buf_num->vout[0] *
-						dram_coeffs->vout[0].multi /
-						dram_coeffs->vout[0].div;
-				} else if (i == IAV_SRCBUF_PB){
-					size += buf_width * buf_height * buf_num->vout[1] *
-						dram_coeffs->vout[1].multi /
-						dram_coeffs->vout[1].div;
-				}
 			}
+			break;
+		case IAV_SRCBUF_TYPE_PREVIEW:
+			if (get_vout_win(i, &vout_win) < 0) {
+				vout_win.width = vout_win.height = 0;
+			}
+			buf_pixels = ALIGN(vout_win.width, PIXEL_IN_MB) * ALIGN(vout_win.height, PIXEL_IN_MB);
+
+			if (i == IAV_SRCBUF_PA) {
+				size += buf_pixels * buf_num->vout[0] *
+					dram_coeffs->vout[0].multi /
+					dram_coeffs->vout[0].div;
+			} else if (i == IAV_SRCBUF_PB){
+				size += buf_pixels * buf_num->vout[1] *
+					dram_coeffs->vout[1].multi /
+					dram_coeffs->vout[1].div;
+			}
+			break;
+		case IAV_SRCBUF_TYPE_OFF:
+		default:
+			break;
 		}
 	}
 

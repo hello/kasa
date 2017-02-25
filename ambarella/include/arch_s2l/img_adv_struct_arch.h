@@ -1,3 +1,36 @@
+/*
+ * include/arch_s2l/img_adv_struct_arch.h
+ *
+ * History:
+ *	2012/10/10 - [Cao Rongrong] created file
+ *	2013/12/12 - [Jian Tang] modified file
+ *
+ * Copyright (C) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
+
 #ifndef	IMG_ADV_STRUCT_ARCH_H
 #define	IMG_ADV_STRUCT_ARCH_H
 
@@ -24,7 +57,8 @@
 #define STEP57_GAIN_TABLE_SIZE 	(571)
 #define STEP60_GAIN_TABLE_SIZE		(601)
 #define STEP64_GAIN_TABLE_SIZE		(641)
-#define MAX_GAIN_TABLE_SIZE               STEP64_GAIN_TABLE_SIZE
+#define STEP72_GAIN_TABLE_SIZE			(721)
+#define MAX_GAIN_TABLE_SIZE				STEP72_GAIN_TABLE_SIZE
 #define	SHUTTER_TIME_TABLE_LENGTH	(2304)
 #define	SHUTTER_TIME_TABLE_LENGTH_1	(SHUTTER_TIME_TABLE_LENGTH-1)
 #define IK_MEM_SIZE		(4<<20)
@@ -32,8 +66,11 @@
 #define	MIN_HDR_EXPOSURE_NUM		(1)
 #define	MAX_SLICE_NUM					(2)
 #define	MAX_HDR_EXPOSURE_NUM		(4)
+#define	MIN_HDR_EXPOSURE_RATIO		(1)
+#define	HDR_EXPOSURE_RATIO_UNIT		(16)
 #define   MAX_AE_LINES_NUM				(32)
 #define	MAX_GENERAL_AEB_TBL_NUM		MAX_HDR_EXPOSURE_NUM
+#define	MAX_TONE_CURVE_DURATION		(30)
 
 #define	MAX_PRE_HDR_STAT_BLK_NUM 	(MAX_SLICE_NUM * (MAX_HDR_EXPOSURE_NUM - 1) * 2)
 
@@ -65,6 +102,8 @@
 #define SHUTTER_1BY480				1066667		//(512000000 / 480)
 #define SHUTTER_1BY960				533333		//(512000000 / 960)
 #define SHUTTER_1BY1024			500000		//(512000000 / 1024)
+#define SHUTTER_1BY2000			256000		//(512000000 / 2000)
+#define SHUTTER_1BY4000			128000		//(512000000 / 4000)
 #define SHUTTER_1BY8000			64000		//(512000000 / 8000)
 #define SHUTTER_1BY16000			32000		//(512000000 / 16000)
 #define SHUTTER_1BY32000			16000		//(512000000 /32000)
@@ -669,6 +708,11 @@ typedef struct lens_cali_s{
 	//add here
 }lens_cali_t;
 
+typedef struct piris_info_s{
+	int f_number; 	//revert piris FNO value is mul with 65536 (<<16)
+	int motor_step;	//revert piris motor step filled in xxx_piris_param.c
+}piris_info_t;
+
 typedef struct lens_dev_drv_s {
 	int (*set_IRCut)(u8 enable);
 	int (*set_shutter_speed)(u8 ex_mode, u16 ex_time);
@@ -1046,6 +1090,31 @@ typedef struct cali_badpix_setup_s {
 	u8 reserved[3];
 } cali_badpix_setup_t;
 
+#define MAX_AUTO_KNEE_ROI 16
+typedef struct auto_knee_roi_histo_level_s{
+	int min;
+	int mid;
+	int max;
+}auto_knee_roi_histo_level_t;
+
+typedef struct img_auto_knee_config_info_s{
+	int enable;
+	int src_mode;//0:cfa, 1: rgb
+	int roi_low;
+	int roi_high;
+	int histo_min_no;
+	int histo_mid_min_no;
+	int histo_mid_max_no;
+	int histo_max_no;
+	auto_knee_roi_histo_level_t level[MAX_AUTO_KNEE_ROI];
+}img_auto_knee_config_info_t;
+
+#define MAX_DIGIT_WDR_ENTRY	(16)
+typedef struct img_digit_wdr_config_info_s {
+	int enable;
+	int strength[MAX_DIGIT_WDR_ENTRY];
+}img_digit_wdr_config_info_t;
+
 typedef struct img_aeb_header_s{
 	int img_aeb_id;
 	int total_tbl_num;
@@ -1086,6 +1155,24 @@ typedef struct img_aeb_gain_table_s{
     u32  gain_table[MAX_GAIN_TABLE_SIZE];
 }img_aeb_gain_table_t;
 
+typedef struct img_aeb_auto_knee_param_s{
+    img_aeb_header_t header;
+    img_auto_knee_config_info_t auto_knee_config;
+}img_aeb_auto_knee_param_t;
+
+typedef struct img_aeb_digit_wdr_param_s {
+	img_aeb_header_t header;
+	img_digit_wdr_config_info_t digit_wdr_config;
+}img_aeb_digit_wdr_param_t;
+
+typedef struct wdr_luma_config_info_s{
+	u8 radius;
+	u8 luma_weight_red;
+	u8 luma_weight_green;
+	u8 luma_weight_blue;
+	u8 luma_weight_shift;
+}wdr_luma_config_info_t;
+
 typedef enum{
 	ISP_PIPELINE_LISO = 0,//liso
 	ISP_PIPELINE_MID_LISO,//liso+TA+CNF
@@ -1123,25 +1210,6 @@ typedef struct sharpen_property_s{
 	int sharpen_CoringidxScale_ratio;
 	int sharpen_fractionalBits;
 }sharpen_property_t;
-#define MAX_AUTO_KNEE_ROI 16
-typedef struct auto_knee_roi_histo_level_s{
-
-	int min;
-	int mid;
-	int max;
-}auto_knee_roi_histo_level_t;
-typedef struct img_auto_knee_config_info_s{
-	int enable;
-	int src_mode;//0:cfa, 1: rgb
-	int roi_low;
-	int roi_high;
-	int histo_min_no;
-	int histo_mid_min_no;
-	int histo_mid_max_no;
-	int histo_max_no;
-	auto_knee_roi_histo_level_t level[MAX_AUTO_KNEE_ROI];
-
-}img_auto_knee_config_info_t;
 typedef struct aaa_api_s{
 	int (*p_ae_flow_control_init)();
 	int (*p_ae_flow_control)(img_aaa_stat_t* p_aaa_data,ae_output_t *p_ae_output);
@@ -1158,6 +1226,13 @@ typedef struct ae_flow_func_s{
 	int  (*p_ae_flow_dc_iris_cntl)(int flag,int luma_diff,int* stat);
 }ae_flow_func_t;
 #define MAX_AE_SPEED_LEVEL (8)
+
+typedef struct adj_pre_config_s{
+	amba_img_dsp_tone_curve_t tone_curve;
+	amba_img_dsp_rgb_to_yuv_t r2y;
+	amba_img_dsp_local_exposure_t le;
+}adj_pre_config_t;
+
 #endif
 
 

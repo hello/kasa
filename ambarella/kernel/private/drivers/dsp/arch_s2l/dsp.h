@@ -4,14 +4,33 @@
  * History:
  *	2010/06/21 - [Zhenwu Xue] created file
  *
- * Copyright (C) 2007-2016, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 
 #ifndef __DSP_H__
 #define __DSP_H__
@@ -30,6 +49,7 @@
 #define MAX_DEFAULT_CMD			31
 #define MAX_NUM_ENC_CMD		16
 #define DSP_CMD_LIST_NUM	4
+#define MAX_NUM_VOUT_CMD	12
 
 #define MAX_CMD_SIZE			(MAX_NUM_CMD * DSP_CMD_SIZE)
 #define MAX_DEFAULT_CMD_SIZE		(MAX_DEFAULT_CMD * DSP_CMD_SIZE)
@@ -42,7 +62,7 @@ struct dsp_cmd_array {
 	u8			update_cmd_seq_num;
 	u8			num_cmds;
 	u8			num_enc_cmds;
-	u8			reserved;
+	u8			num_vout_cmds;
 };
 
 struct dsp_cmd_port {
@@ -116,10 +136,10 @@ extern int ucode_dev_init(struct ambarella_dsp *dsp);
 extern void ucode_dev_exit(void);
 extern void dsp_print_cmd(void * cmd);
 extern int dsp_update_log(void);
-extern int dsp_set_op_mode(struct dsp_device *dsp_dev,
-		u32 op_mode, struct amb_dsp_cmd *dsp_cmd);
-extern int dsp_set_enc_sub_mode(struct dsp_device *dsp_dev,
-		u32 enc_mode, struct amb_dsp_cmd *first, u8 force);
+extern int dsp_set_op_mode(struct dsp_device *dsp_dev, u32 op_mode,
+	struct amb_dsp_cmd *dsp_cmd, u32 no_wait);
+extern int dsp_set_enc_sub_mode(struct dsp_device *dsp_dev, u32 enc_mode,
+	struct amb_dsp_cmd *first, u32 no_wait, u8 force);
 extern void dsp_release_cmd(struct dsp_device *dsp_dev, struct amb_dsp_cmd *first);
 extern struct amb_dsp_cmd *dsp_get_cmd(struct dsp_device *dsp_dev, u32 flag);
 extern struct amb_dsp_cmd *dsp_get_multi_cmds(struct dsp_device *dsp_dev,
@@ -128,11 +148,16 @@ extern void dsp_put_cmd(struct dsp_device *dsp_dev, struct amb_dsp_cmd *dsp_cmd,
 extern int dsp_get_chip_id(struct dsp_device *dsp_dev, u32 *id, u32 *chip);
 extern int dsp_wait_vcap(struct dsp_device *dsp_dev, u32 count);
 extern dsp_init_data_t *dsp_get_init_data(struct dsp_device *dsp_dev);
-extern int dsp_set_audit(struct dsp_device *dsp_dev, u32 id, u32 audit_addr);
-extern int dsp_get_audit(struct dsp_device *dsp_dev, u32 id, u32 audit_addr);
+extern int dsp_set_audit(struct dsp_device *dsp_dev, u32 id, unsigned long audit_addr);
+extern int dsp_get_audit(struct dsp_device *dsp_dev, u32 id, unsigned long audit_addr);
 extern int bopt_sync(void *arg0, void *arg1, void *arg2, void *arg3);
 extern int dsp_suspend(struct dsp_device *dsp_dev);
 extern int dsp_resume(struct dsp_device *dsp_dev);
+extern int dsp_set_clock_state(u32 clk_type, u32 enable);
+
+#ifdef CONFIG_PM
+void dsp_halt(void);
+#endif
 
 #endif
 

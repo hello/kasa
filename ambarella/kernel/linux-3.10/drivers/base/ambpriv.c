@@ -13,6 +13,10 @@
 #include <linux/err.h>
 #include <linux/pm_runtime.h>
 #include <linux/ambpriv_device.h>
+#include <linux/of_address.h>
+#include <linux/of_device.h>
+#include <linux/of_irq.h>
+#include <linux/of_platform.h>
 #include "base.h"
 
 #define to_ambpriv_driver(drv)	(container_of((drv), struct ambpriv_driver, driver))
@@ -20,6 +24,202 @@
 struct device ambpriv_bus = {
 	.init_name	= "ambpriv",
 };
+
+static int of_ambpriv_match_device(struct device *dev, void *match)
+{
+	return !!of_match_device(match, dev);
+}
+
+struct ambpriv_device *of_find_ambpriv_device_by_match(struct of_device_id *match)
+{
+	struct device *dev;
+
+	dev = bus_find_device(&ambpriv_bus_type, NULL, match, of_ambpriv_match_device);
+	return dev ? to_ambpriv_device(dev) : NULL;
+}
+EXPORT_SYMBOL(of_find_ambpriv_device_by_match);
+
+static int of_ambpriv_node_device(struct device *dev, void *data)
+{
+	return dev->of_node == data;
+}
+
+struct ambpriv_device *of_find_ambpriv_device_by_node(struct device_node *np)
+{
+	struct device *dev;
+
+	dev = bus_find_device(&ambpriv_bus_type, NULL, np, of_ambpriv_node_device);
+	return dev ? to_ambpriv_device(dev) : NULL;
+}
+EXPORT_SYMBOL(of_find_ambpriv_device_by_node);
+
+int ambpriv_get_irq(struct ambpriv_device *dev, unsigned int num)
+{
+	struct resource *r = NULL;
+	int i;
+
+	if (dev == NULL)
+		return -ENODEV;
+
+	for (i = 0; i < dev->num_resources; i++) {
+		r = &dev->resource[i];
+		if ((resource_type(r) == IORESOURCE_IRQ) && num-- == 0)
+			break;
+	}
+
+	if (i == dev->num_resources)
+		return -ENXIO;
+
+	if (r && r->flags & IORESOURCE_BITS)
+		irqd_set_trigger_type(irq_get_irq_data(r->start),
+				      r->flags & IORESOURCE_BITS);
+
+	return r->start;
+}
+EXPORT_SYMBOL(ambpriv_get_irq);
+
+int ambpriv_get_irq_by_name(struct ambpriv_device *dev, const char *name)
+{
+	struct resource *r = NULL;
+	int i;
+
+	if (dev == NULL)
+		return -ENODEV;
+
+	for (i = 0; i < dev->num_resources; i++) {
+		r = &dev->resource[i];
+
+		if (unlikely(!r->name))
+			continue;
+
+		if ((resource_type(r) == IORESOURCE_IRQ) && !strcmp(r->name, name))
+			break;
+	}
+
+	if (i == dev->num_resources)
+		return -ENXIO;
+
+	return r->start;
+}
+EXPORT_SYMBOL(ambpriv_get_irq_by_name);
+
+static struct ambpriv_device *of_ambpriv_device_alloc(struct device_node *np,
+		struct device *parent)
+{
+	struct ambpriv_device *dev;
+	const __be32 *reg_prop;
+	struct resource *res;
+	int psize, i, num_reg = 0, num_irq;
+
+	dev = ambpriv_device_alloc("", -1);
+	if (!dev)
+		return NULL;
+
+	reg_prop = of_get_property(np, "reg", &psize);
+	if (reg_prop)
+		num_reg = psize / sizeof(u32) / 2;
+
+
+	num_irq = of_irq_count(np);
+
+	if (num_reg || num_irq) {
+		res = kzalloc(sizeof(*res) * (num_irq + num_reg), GFP_KERNEL);
+		if (!res) {
+			ambpriv_device_put(dev);
+			return NULL;
+		}
+
+		dev->resource = res;
+		dev->num_resources = num_reg + num_irq;
+
+		for (i = 0; i < num_reg; i++, res++, reg_prop += 2) {
+			res->start = be32_to_cpup(reg_prop);
+			res->end = res->start + be32_to_cpup(reg_prop + 1) - 1;
+			res->flags = IORESOURCE_MEM;
+		}
+
+		of_irq_to_resource_table(np, res, num_irq);
+	}
+
+	dev->dev.of_node = of_node_get(np);
+	dev->dev.parent = parent ? : &ambpriv_bus;
+	of_device_make_bus_id(&dev->dev);
+	dev->name = dev_name(&dev->dev);
+
+	return dev;
+}
+
+static struct ambpriv_device *of_ambpriv_device_create_pdata(
+		struct device_node *np, struct device *parent)
+{
+	struct ambpriv_device *dev;
+
+	dev = of_ambpriv_device_alloc(np, parent);
+	if (!dev)
+		return NULL;
+
+	if (ambpriv_device_add(dev) < 0) {
+		ambpriv_device_put(dev);
+		return NULL;
+	}
+
+	return dev;
+}
+
+static int of_ambpriv_bus_create(struct device_node *bus,
+		const struct of_device_id *matches, struct device *parent)
+{
+	struct device_node *child;
+	struct ambpriv_device *dev;
+	int rc = 0;
+
+	/* Make sure it has a compatible property */
+	if (!of_get_property(bus, "compatible", NULL))
+		return 0;
+
+	dev = of_ambpriv_device_create_pdata(bus, parent);
+	if (!dev || !of_match_node(matches, bus))
+		return 0;
+
+	for_each_child_of_node(bus, child) {
+		rc = of_ambpriv_bus_create(child, matches, &dev->dev);
+		if (rc) {
+			of_node_put(child);
+			break;
+		}
+	}
+
+	return rc;
+}
+
+static const struct of_device_id of_ambpriv_bus_match_table[] = {
+	{ .compatible = "ambpriv-bus", },
+	{} /* Empty terminated list */
+};
+
+static int __init of_ambpriv_populate(void)
+{
+	struct device_node *root, *child;
+	int rval;
+
+	root = of_find_node_by_path("/iav");
+	if (!root)
+		return -EINVAL;
+
+	for_each_child_of_node(root, child) {
+		rval = of_ambpriv_bus_create(child, of_ambpriv_bus_match_table, NULL);
+		if (rval) {
+			of_node_put(child);
+			break;
+		}
+	}
+
+	of_node_put(root);
+
+	return 0;
+}
+late_initcall(of_ambpriv_populate);
+
 
 int ambpriv_add_devices(struct ambpriv_device **devs, int num)
 {
@@ -256,6 +456,11 @@ struct ambpriv_device * __init_or_module ambpriv_create_bundle(
 	struct ambpriv_device *ambdev;
 	int error;
 
+	ambdev = of_find_ambpriv_device_by_match(
+			(struct of_device_id *)driver->driver.of_match_table);
+	if (ambdev)
+		goto register_drv;
+
 	ambdev = ambpriv_device_alloc(driver->driver.name, -1);
 	if (!ambdev) {
 		error = -ENOMEM;
@@ -274,6 +479,7 @@ struct ambpriv_device * __init_or_module ambpriv_create_bundle(
 	if (error)
 		goto err_pdev_put;
 
+register_drv:
 	error = ambpriv_driver_register(driver);
 	if (error)
 		goto err_pdev_del;
@@ -292,6 +498,10 @@ EXPORT_SYMBOL(ambpriv_create_bundle);
 static int ambpriv_match(struct device *dev, struct device_driver *drv)
 {
 	struct ambpriv_device *ambdev = to_ambpriv_device(dev);
+
+	if (of_driver_match_device(dev, drv))
+		return 1;
+
 	return (strcmp(ambdev->name, drv->name) == 0);
 }
 

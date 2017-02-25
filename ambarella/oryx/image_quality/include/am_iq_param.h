@@ -4,12 +4,29 @@
  * History:
  *   Dec 29, 2014 - [binwang] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 #ifndef AM_IQ_PARAM_H_
@@ -18,6 +35,18 @@
 #include "am_base_include.h"
 
 #define AE_METERING_TABLE_LEN 96
+
+enum AM_IQ_IAV_STATE {
+  IQ_IAV_STATE_IDLE = 0,
+  IQ_IAV_STATE_PREVIEW = 1,
+  IQ_IAV_STATE_ENCODING = 2,
+  IQ_IAV_STATE_STILL_CAPTURE = 3,
+  IQ_IAV_STATE_DECODING = 4,
+  IQ_IAV_STATE_TRANSCODING = 5,
+  IQ_IAV_STATE_DUPLEX = 6,
+  IQ_IAV_STATE_EXITING_PREVIEW = 7,
+  IQ_IAV_STATE_INIT = 0xFF,
+};
 
 enum AM_IQ_LOG_LEVEL
 {
@@ -69,16 +98,6 @@ enum AM_BACKLIGHT_COMP_MODE
   AM_BACKLIGHT_COMP_ON = 1
 };
 
-enum AM_LOCAL_EXPOSURE_MODE
-{
-  AM_LE_STOP = 0,
-  AM_LE_AUTO,
-  AM_LE_2X,
-  AM_LE_3X,
-  AM_LE_4X,
-  AM_LE_TOTAL_NUM,
-};
-
 enum AM_DC_IRIS_MODE
 {
   AM_DC_IRIS_DISABLE = 0,
@@ -120,16 +139,20 @@ struct AMAELuma
     uint16_t cfa_luma;
 };
 
+struct AMAEMeteringTable {
+    int32_t metering_weight[96];
+};
+
 struct AMAEParam
 {
     AM_AE_METERING_MODE ae_metering_mode;
-    uint8_t ae_metering_table[AE_METERING_TABLE_LEN];
+    AMAEMeteringTable ae_metering_table;
     AM_DAY_NIGHT_MODE day_night_mode;
     AM_SLOW_SHUTTER_MODE slow_shutter_mode;
     AM_ANTI_FLICK_MODE anti_flicker_mode;
     int32_t ae_target_ratio;
     AM_BACKLIGHT_COMP_MODE backlight_comp_enable;
-    AM_LOCAL_EXPOSURE_MODE local_exposure;
+    uint32_t local_exposure;
     AM_DC_IRIS_MODE dc_iris_enable;
     uint32_t sensor_gain_max;
     uint32_t sensor_shutter_min;
@@ -158,6 +181,7 @@ struct AMStyleParam
     int32_t hue;
     int32_t contrast;
     int32_t sharpness;
+    int32_t auto_contrast_mode;
 };
 
 struct AMIQParam
@@ -167,12 +191,13 @@ struct AMIQParam
     AMAWBParam awb;
     AMNFParam nf;
     AMStyleParam style;
+    bool notify_3A_to_media_svc;
 };
 
 struct AM_IQ_CONFIG
 {
-    uint32_t key;
     void *value;
+    uint32_t key;
 };
 
 enum AM_IQ_CONFIG_KEY
@@ -206,6 +231,9 @@ enum AM_IQ_CONFIG_KEY
   AM_IQ_STYLE_HUE,
   AM_IQ_STYLE_CONTRAST,
   AM_IQ_STYLE_SHARPNESS,
+  AM_IQ_STYLE_AUTO_CONTRAST_MODE,
+  /*AEB,ADJ load bin*/
+  AM_IQ_AEB_ADJ_BIN_LOAD,
   /*total config key number*/
   AM_MD_KEY_NUM
 };

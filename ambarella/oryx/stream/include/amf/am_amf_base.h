@@ -4,16 +4,35 @@
  * History:
  *   2014-7-23 - [ypchang] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 #ifndef AM_AMF_BASE_H_
 #define AM_AMF_BASE_H_
+
+#include "am_mutex.h"
 
 /*
  * AMObject
@@ -51,6 +70,7 @@ class AMWorkQueue
     AMQueue::QTYPE wait_data_msg(void *msg,
                                  uint32_t msgSize,
                                  AMQueue::WaitResult *result);
+    void put_msg(void *msg, uint32_t msgSize);
 
   private:
     AMWorkQueue(AMIActiveObject *activeObj);
@@ -72,7 +92,6 @@ class AMWorkQueue
  * AMBaseEngine
  */
 class AMMsgSys;
-class AMSpinLock;
 class AMEngineMsgProxy;
 class AMBaseEngine: public AMObject,
                     public AMIEngine,
@@ -106,14 +125,14 @@ class AMBaseEngine: public AMObject,
     void on_app_msg(AmMsg& msg);
 
   protected:
-    uint32_t          m_session_id;
-    AMSpinLock       *m_mutex;
     AMMsgSys         *m_msg_sys;
     AMIMsgSink       *m_app_msg_sink;
     AMIMsgPort       *m_filter_msg_port;
     AMEngineMsgProxy *m_msg_proxy;
     void             *m_app_msg_data;
     MsgProcType       m_app_msg_callback;
+    uint32_t          m_session_id;
+    AMMemLock         m_mutex;
 };
 
 /*

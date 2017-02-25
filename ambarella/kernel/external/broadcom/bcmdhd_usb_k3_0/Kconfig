@@ -4,13 +4,6 @@ config BCMDHD
 	  This module adds support for wireless adapters based on
 	  Broadcom FullMAC chipset.
 
-config BCMDHD_CONFIG_PATH
-	depends on BCMDHD
-	string "Config path"
-	default "/system/etc/firmware/config.txt"
-	---help---
-	  Path to the driver configuration file.
-
 config BCMDHD_WEXT
 	bool "Enable WEXT support"
 	depends on BCMDHD && CFG80211 = n

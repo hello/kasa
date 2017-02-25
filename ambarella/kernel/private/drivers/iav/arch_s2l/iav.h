@@ -4,14 +4,33 @@
  * History:
  *    2013/03/07 - [Cao Rongrong] Create
  *
- * Copyright (C) 2012 -2016, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 #ifndef __IAV_H__
 #define __IAV_H__
 
@@ -36,7 +55,7 @@
 struct iav_nl_request
 {
 	u32 request_id;
-	u32 condition;
+	u32 responded;
 	wait_queue_head_t wq_request;
 };
 
@@ -100,17 +119,20 @@ struct iav_enc_limitation
 	u32 me0_supported : 2;
 	u32 enc_from_mem_supported : 1;
 	u32 enc_raw_yuv_supported : 1;
-	u32 reserved : 9;
+	u32 long_ref_b_supported : 1;
+	u32 reserved : 8;
 };
 
 /* the limitation for each chip ID */
 struct iav_system_load
 {
 	#define	DESC_LENGTH		(32)
-	u32 system_load;
-	char desc[DESC_LENGTH];
+	u32	system_load;
+	u32	vin_pps;
+	char	desc[DESC_LENGTH];
 	u8	max_enc_num;
 	u8	reserved[3];
+	char	vin_pps_desc[DESC_LENGTH];
 };
 
 /* the limitation of each source buffer. */
@@ -132,8 +154,10 @@ struct iav_buffer {
 	struct iav_window max;
 	u32 ref_cnt;
 	int extra_dram_buf;
+	u32 dump_interval : 8;
+	u32 dump_duration : 16;
 	u32 unwarp : 1;
-	u32 reserved : 31;
+	u32 reserved : 7;
 };
 
 struct iav_h264_config {
@@ -151,10 +175,12 @@ struct iav_h264_config {
 	u32 cpb_cmp_idc :2;
 	u32 fast_rc_idc :4;
 	u32 zmv_threshold : 8;
-	u32 enc_improve : 1;
+	u32 flat_area_improve : 1;
 	u32 multi_ref_p : 1;
-	u32 reserved1 : 6;
-	u32 long_term_intvl : 8;
+	u32 statis : 1;
+	u32 pskip_repeat_enable : 1;
+	u32 reserved1 : 4;
+	u32 fast_seek_intvl : 8;
 
 	u32 average_bitrate;
 	u32 vbr_setting : 8;
@@ -164,17 +190,20 @@ struct iav_h264_config {
 	u32 qp_max_on_P : 8;
 	u32 qp_min_on_B : 8;
 	u32 qp_max_on_B : 8;
+	u32 qp_min_on_Q : 8;
+	u32 qp_max_on_Q : 8;
 	u32 i_qp_reduce : 8;
 	u32 p_qp_reduce : 8;
+	u32 q_qp_reduce : 8;
+	u32 log_q_num_plus_1 : 8;
 	u32 adapt_qp : 8;
 	u32 skip_flag : 8;
-	u32 reserved2 : 8;
+	u32 repeat_pskip_num : 8;
 	u32 intrabias_p : 16;
 	u32 intrabias_b : 16;
 
 	s8 qp_delta[3][4];
 	u8 qp_roi_enable;
-	u8 qp_type;
 	u8 drop_frames;
 	u8 user1_intra_bias;
 	u8 user1_direct_bias;
@@ -182,7 +211,20 @@ struct iav_h264_config {
 	u8 user2_direct_bias;
 	u8 user3_intra_bias;
 	u8 user3_direct_bias;
-	u8 reserved3[3];
+	s8 deblocking_filter_alpha; 	/* set alpha for loop filter between -6 and 6 */
+	s8 deblocking_filter_beta; 		/* set beta for loop filter between -6 and 6 */
+	/* 0- disable deblocking filter
+	 * 1- enable deblocking filter, use alpha & beta values specified above
+	 * 2- use internally computed alpha and beta.
+	 */
+	u8 deblocking_filter_enable;
+	u8 abs_br_flag : 1;
+	u8 reserved : 7;
+	u16 frame_crop_left_offset;
+	u16 frame_crop_right_offset;
+	u16 frame_crop_top_offset;
+	u16 frame_crop_bottom_offset;
+	u32 max_I_size_KB;
 };
 
 struct iav_mjpeg_config {
@@ -235,6 +277,17 @@ struct iav_raw_data_info {
 	u32 pitch;
 };
 
+struct iav_qp_hist_info
+{
+	u32 data_dsp_addr_base;
+	u32 data_virt_addr_base;
+	u32 base_addr_set_flag;
+	u32 data_dsp_addr_end;
+	u32 data_dsp_addr_cur;
+	u32 seq_num;
+	u32 stream_num;
+};
+
 struct iav_srcbuf_data_info {
 	u32 y_data_addr;
 	u32 uv_data_addr;
@@ -275,6 +328,11 @@ struct iav_bufcap_info {
 	struct iav_me_data_info me0_info[IAV_SRCBUF_NUM][MAX_BUFCAP_DATA_NUM];
 	wait_queue_head_t me0_wq;
 	u32 me0_data_valid;
+
+	/* QP histogram statistics */
+	struct iav_qp_hist_info qp_hist;
+	wait_queue_head_t qp_hist_wq;
+	u32 qp_hist_data_valid;
 };
 
 struct iav_efm_buf_pool {
@@ -302,11 +360,6 @@ struct iav_efm_info {
 	struct iav_window efm_size;
 	struct iav_efm_buf_pool buf_pool;
 	wait_queue_head_t wq;
-};
-
-struct iav_statis_desc {
-	struct iav_statisdesc desc;
-	struct list_head node;
 };
 
 struct iav_mem_block {
@@ -348,6 +401,23 @@ struct iav_raw_encode {
 	u32 raw_curr_addr;
 	struct iav_window raw_size;
 	wait_queue_head_t raw_wq;
+};
+
+struct iav_mv_dump {
+	u16 enable : 1;
+	u16 buf_num : 15;
+	u16 width;
+	u16 height;
+	u16 pitch;
+	u32 unit_size;
+};
+
+struct iav_cmd_sync {
+	u8 idx;
+	u8 qpm_idx;
+	u8 qpm_flag;
+	u8 reserved;
+	u32 apply_pts[IAV_STREAM_MAX_NUM_ALL];
 };
 
 struct iav_sync_frame_cnt {
@@ -392,7 +462,9 @@ struct iav_system_config {
 	u32	enc_from_mem : 1;
 	u32	enc_raw_yuv : 1;
 	u32	eis_delay_count : 2;
-	u32	reserved3 : 15;
+	u32	long_ref_b_frame : 1;
+	u32	extra_top_row_buf_enable : 1;
+	u32	reserved3 : 13;
 };
 
 struct iav_hwtimer_pts_info
@@ -508,13 +580,16 @@ struct ambarella_iav {
 	struct device_node *of_node;
 	struct dsp_device *dsp;
 	struct mutex iav_mutex;
+	struct mutex enc_mutex;
 	spinlock_t iav_lock;
 
-	u32 dsp_enc_state;	/* DSP encode state */
-	u32 state;			/* current IAV state */
+	u32 dsp_enc_state;		/* DSP encode state */
+	u32 state;				/* current IAV state */
 	u32 probe_state;		/* IAV state in module probe param */
-	u32 encode_mode;	/* current encode mode */
-	u32 cmd_read_delay;	/* cmd read latency in audio clock unit */
+	u32 encode_mode;		/* current encode mode */
+	u32 cmd_read_delay;		/* cmd read latency in audio clock unit */
+	u16 resume_flag;		/* resume from suspend */
+	u16 fast_resume;		/* fast resume from suspend */
 
 	struct iav_decode_context decode_context;
 
@@ -568,6 +643,7 @@ struct ambarella_iav {
 	u32 bsh_size;
 	BIT_STREAM_HDR *bsh;		/* current bit stream header */
 	wait_queue_head_t frame_wq;
+	wait_queue_head_t mv_wq;
 	struct list_head frame_queue;
 	struct list_head frame_free;
 	struct iav_frame_desc *frame_queue_virt;  /* frame queue header */
@@ -576,9 +652,9 @@ struct ambarella_iav {
 	u32 bsb_mmap_count;
 	default_enc_binary_data_t *dsp_enc_data_virt;
 	default_dec_binary_data_t *dsp_dec_data_virt;
-	u32 cmd_sync_idx;
-	u32 cmd_sync_qpm_idx;
-	u32 cmd_sync_qpm_flag;
+
+	/* cmd sync*/
+	struct iav_cmd_sync cmd_sync;
 
 	/* Encode from RAW (RGB/YUV)*/
 	struct iav_raw_encode raw_enc;
@@ -605,7 +681,8 @@ struct ambarella_iav {
 	u32 mixer_b_enable : 1;
 	u32 osd_from_mixer_a : 1;
 	u32 osd_from_mixer_b : 1;
-	u32 reserved1 : 27;
+	u32 vin_overflow_protection : 1;
+	u32 reserved1 : 26;
 
 	/* hash cmd */
 	struct mutex hash_mutex; // seperate mutex, not do impact to encoding
@@ -624,6 +701,9 @@ struct ambarella_iav {
 	/* Debug tool */
 	struct iav_debug_cfg *debug;
 	u32 dsp_used_dram;
+
+	/* dsplog setup */
+	struct iav_dsplog_setup dsplog_setup;
 };
 
 #define	get_next_cmd(cmd, first)			do {		\
@@ -670,6 +750,7 @@ extern struct iav_buffer_limitation G_buffer_limit[];
 extern struct iav_enc_limitation G_encode_limit[];
 extern struct iav_system_config G_system_config[];
 extern struct iav_system_load G_system_load[];
+extern struct ambpriv_device *iav_device;
 
 #endif
 

@@ -4,12 +4,29 @@
  * History:
  *   2014-7-23 - [ypchang] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -27,11 +44,11 @@
  * AMPacket
  */
 AMPacket::AMPacket() :
-  m_ref_count(0),
+  m_pool(nullptr),
+  m_next(nullptr),
+  m_payload(nullptr),
   m_packet_type(AM_PACKET_TYPE_NORMAL),
-  m_pool(NULL),
-  m_next(NULL),
-  m_payload(NULL)
+  m_ref_count(0)
 {}
 
 void AMPacket::add_ref()
@@ -122,8 +139,7 @@ AMPacket::AM_PAYLOAD_TYPE AMPacket::get_type()
 
 void AMPacket::set_type(AMPacket::AM_PAYLOAD_TYPE type)
 {
-  m_payload->m_header.m_payload_type =
-      static_cast<AMPacket::AM_PAYLOAD_TYPE>(type);
+  m_payload->m_header.m_payload_type = type;
 }
 
 AMPacket::AM_PAYLOAD_ATTR AMPacket::get_attr()
@@ -147,22 +163,42 @@ void AMPacket::set_pts(int64_t pts)
   m_payload->m_data.m_payload_pts = pts;
 }
 
-uint16_t AMPacket::get_stream_id()
+uint8_t AMPacket::get_event_id()
+{
+  return m_payload->m_data.m_event_id;
+}
+
+void AMPacket::set_event_id(uint8_t id)
+{
+  m_payload->m_data.m_event_id = id;
+}
+
+uint8_t AMPacket::get_stream_id()
 {
   return m_payload->m_data.m_stream_id;
 }
 
-void AMPacket::set_stream_id(uint16_t id)
+void AMPacket::set_stream_id(uint8_t id)
 {
   m_payload->m_data.m_stream_id = id;
 }
 
-uint16_t AMPacket::get_frame_type()
+uint8_t AMPacket::get_video_type()
+{
+  return m_payload->m_data.m_video_type;
+}
+
+void AMPacket::set_video_type(uint8_t type)
+{
+  m_payload->m_data.m_video_type = type;
+}
+
+uint8_t AMPacket::get_frame_type()
 {
   return m_payload->m_data.m_frame_type;
 }
 
-void AMPacket::set_frame_type(uint16_t type)
+void AMPacket::set_frame_type(uint8_t type)
 {
   m_payload->m_data.m_frame_type = type;
 }
@@ -175,6 +211,16 @@ uint32_t AMPacket::get_frame_attr()
 void AMPacket::set_frame_attr(uint32_t attr)
 {
   m_payload->m_data.m_frame_attr = attr;
+}
+
+uint32_t AMPacket::get_frame_number()
+{
+  return m_payload->m_data.m_frame_num;
+}
+
+void AMPacket::set_frame_number(uint32_t num)
+{
+  m_payload->m_data.m_frame_num = num;
 }
 
 uint32_t AMPacket::get_frame_count()

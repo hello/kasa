@@ -4,12 +4,29 @@
 ## History:
 ##    2012/05/29 - [Cao Rongrong] Created file
 ##
-## Copyright (C) 2012-2016, Ambarella, Inc.
+## Copyright (c) 2016 Ambarella, Inc.
 ##
-## All rights reserved. No Part of this file may be reproduced, stored
-## in a retrieval system, or transmitted, in any form, or by any means,
-## electronic, mechanical, photocopying, recording, or otherwise,
-## without the prior consent of Ambarella, Inc.
+## This file and its contents ("Software") are protected by intellectual
+## property rights including, without limitation, U.S. and/or foreign
+## copyrights. This Software is also the confidential and proprietary
+## information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+## disclose, distribute, modify, or otherwise prepare derivative works of this
+## Software or any portion thereof except pursuant to a signed license agreement
+## or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+## In the absence of such an agreement, you agree to promptly notify and return
+## this Software to Ambarella, Inc.
+##
+## THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+## INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+## MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+## IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+## INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+## (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+## LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+## INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+## CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+## ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+## POSSIBILITY OF SUCH DAMAGE.
 ##
 
 ifeq ($(CONFIG_AMBARELLA_MKFS), y)
@@ -17,6 +34,12 @@ ifeq ($(CONFIG_AMBARELLA_MKFS), y)
 ROOTFS_DIR		:= $(call my-dir)
 PRE_BUSYBOX_DIR		:= $(AMB_TOPDIR)/prebuild/third-party/$(AMBARELLA_CPU_ARCH)/busybox
 EXT_BUSYBOX_DIR		:= $(AMB_TOPDIR)/../external/busybox
+
+ifeq ($(CONFIG_CPU_CORTEXA53), y)
+ARM_ARCH		:= arm64
+else
+ARM_ARCH		:= arm
+endif
 
 ####### Basic Filesystem #######
 
@@ -46,6 +69,11 @@ else ifeq ($(CONFIG_CPU_CORTEXA9_HF), y)
 	@cp -dpRf $(shell find $(SYS_LIB_DIR_ARMV7)/ -name "*.so.*" | grep -v stdc++) $(FAKEROOT_DIR)/lib/
 	@cp -dpRf $(GCC_LIB_DIR_ARMV7)/libgcc*.so* $(FAKEROOT_DIR)/lib/
 	@cp -dpRf $(CPP_LIB_DIR_ARMV7)/libstdc++.so* $(FAKEROOT_DIR)/usr/lib/
+else ifeq ($(CONFIG_CPU_CORTEXA53), y)
+	@cp -dpRf $(shell find $(SYS_LIB_DIR_AARCH64)/ -name "*.so" | grep -v stdc++) $(FAKEROOT_DIR)/lib/
+	@cp -dpRf $(shell find $(SYS_LIB_DIR_AARCH64)/ -name "*.so.*" | grep -v stdc++) $(FAKEROOT_DIR)/lib/
+	@cp -dpRf $(GCC_LIB_DIR_AARCH64)/libgcc*.so* $(FAKEROOT_DIR)/lib/
+	@cp -dpRf $(CPP_LIB_DIR_AARCH64)/libstdc++.so* $(FAKEROOT_DIR)/usr/lib/
 endif
 	@find $(FAKEROOT_DIR) -name "libgcc_s.so" | xargs rm -f
 	@find $(FAKEROOT_DIR) -name "libstdc++.so.*.py" | xargs rm -f
@@ -249,8 +277,11 @@ configure_network: add_board_rootfs
 			fi \
 		fi \
 	fi; \
-	if [ "$(CONFIG_AMBARELLA_ETH0)" != "y" -a "$(CONFIG_AMBARELLA_ETH1)" != "y" -o "$(CONFIG_AMBARELLA_NETWORKMANAGER_SUPPORT)" = "y" ]; then \
+	if [ "$(CONFIG_AMBARELLA_ETH0)" != "y" -a "$(CONFIG_AMBARELLA_ETH1)" != "y" -o "$(CONFIG_AMBARELLA_NETWORKMANAGER_SUPPORT)" = "y" -o "$(CONFIG_AMBARELLA_CONNMAN_SUPPORT)" = "y" ]; then \
 		rm -rf $(FAKEROOT_DIR)/etc/init.d/S40network; \
+		if [ "$(CONFIG_AMBARELLA_CONNMAN_SUPPORT)" = "y" ]; then \
+			rm -rf $(FAKEROOT_DIR)/etc/network; \
+		fi \
 	fi
 	@echo "Configure network Done"
 
@@ -283,17 +314,34 @@ endif
 ifeq ($(CONFIG_AMBARELLA_PULSEAUDIO_SUPPORT), y)
 add_board_rootfs: prebuild_pulseaudio
 endif
-ifeq ($(CONFIG_BSP_BOARD_S2LM_IRONCAR), y)
-add_board_rootfs: audio_svc video_svc media_svc event_svc img_svc sys_svc
+
+ifeq ($(BUILD_AMBARELLA_ORYX_MW), y)
+ifeq ($(BUILD_AMBARELLA_ORYX_SERVICE_AUDIO), y)
+add_board_rootfs: audio_svc
 endif
-ifeq ($(CONFIG_BSP_BOARD_S2LM_KAR), y)
-add_board_rootfs: audio_svc video_svc media_svc event_svc img_svc sys_svc
+ifeq ($(BUILD_AMBARELLA_ORYX_SERVICE_VIDEO), y)
+add_board_rootfs: video_svc
+endif
+ifeq ($(BUILD_AMBARELLA_ORYX_SERVICE_MEDIA), y)
+add_board_rootfs: media_svc
+endif
+ifeq ($(BUILD_AMBARELLA_ORYX_SERVICE_EVENT), y)
+add_board_rootfs: event_svc
+endif
+ifeq ($(BUILD_AMBARELLA_ORYX_SERVICE_IMAGE), y)
+add_board_rootfs: img_svc
+endif
+ifeq ($(BUILD_AMBARELLA_ORYX_SERVICE_SYSTEM), y)
+add_board_rootfs: sys_svc
+endif
 endif
 
 add_board_rootfs:
 	@cp -dpRf $(BOARD_ROOTFS_DIR)/* $(FAKEROOT_DIR)/ && chmod +x $(FAKEROOT_DIR)/etc/init.d/S*
 ifeq ($(CONFIG_AMBARELLA_PULSEAUDIO_SUPPORT), y)
-	@chmod 644 $(FAKEROOT_DIR)/etc/pulse/*.conf
+	@[ -e $(FAKEROOT_DIR)/etc/pulse ] && chmod 644 $(FAKEROOT_DIR)/etc/pulse/*
+	@[ -e $(FAKEROOT_DIR)/usr/share/pulseaudio ] && find $(FAKEROOT_DIR)/usr/share/pulseaudio -name "*.conf" | xargs chmod 644
+	@echo "tmpfs              /var/lib/pulse  tmpfs      defaults                0      0" >> $(FAKEROOT_DIR)/etc/fstab
 endif
 ifeq ($(CONFIG_AMBARELLA_INIT_SYSTEMD), y)
 	@rm -rf $(FAKEROOT_DIR)/etc/init.d/S*
@@ -301,7 +349,9 @@ ifeq ($(CONFIG_AMBARELLA_INIT_SYSTEMD), y)
 endif
 ifeq ($(CONFIG_AMBARELLA_INIT_LINUXRC), y)
 	@rm -rf $(FAKEROOT_DIR)/usr/lib/systemd
+	@rm -rf $(FAKEROOT_DIR)/usr/lib/tmpfiles.d
 	@rm -rf $(FAKEROOT_DIR)/etc/systemd
+	@rm -rf $(FAKEROOT_DIR)/etc/tmpfiles.d
 endif
 ifeq ($(CONFIG_AMBARELLA_INIT_LINUXRC_FASTBOOT), y)
 	@rm -rf $(FAKEROOT_DIR)/usr/lib/systemd
@@ -314,9 +364,11 @@ ifeq ($(CONFIG_AMBARELLA_INIT_LINUXRC_FASTBOOT), y)
 	@cp -rf $(AMB_TOPDIR)/prebuild/third-party/$(AMBARELLA_CPU_ARCH)/libg7xx/usr/lib/libg7xx.* $(FAKEROOT_DIR)/usr/lib/
 ifeq ($(BUILD_AMBARELLA_PRIVATE_MODULES), y)
 ifeq ($(AMBOOT_BOOT_DSP), y)
+ifneq ($(AMBOOT_DSP_LOG_CAPTURE), y)
 	@rm -f $(FAKEROOT_DIR)/lib/firmware/default_binary.bin
 	@rm -f $(FAKEROOT_DIR)/lib/firmware/orccode.bin
 	@rm -f $(FAKEROOT_DIR)/lib/firmware/orcme.bin
+endif
 endif
 endif
 ifeq ($(BUILD_AMBARELLA_UNIT_TESTS_IAV), y)
@@ -326,6 +378,7 @@ ifeq ($(BUILD_AMBARELLA_UNIT_TESTS_IAV), y)
 endif
 	@echo "export IDSP_RAM_START=$(IDSP_RAM_START)" >> $(FAKEROOT_DIR)/etc/ambarella.conf
 	@echo "export DSP_BSB_SIZE=$(DSP_BSB_SIZE)" >> $(FAKEROOT_DIR)/etc/ambarella.conf
+
 ifeq ($(CONFIG_S2LMKIWI_SENSOR_OV9710), y)
 	@echo "export SYS_BOARD_SENSOR=ov9710" >> $(FAKEROOT_DIR)/etc/ambarella.conf
 else ifeq ($(CONFIG_S2LMKIWI_SENSOR_AR0230), y)
@@ -336,6 +389,16 @@ else ifeq ($(CONFIG_S2LMKIWI_SENSOR_AR0230_HDR_2X), y)
 	@echo "export SYS_BOARD_SENSOR=ar0230_hdr_2x" >> $(FAKEROOT_DIR)/etc/ambarella.conf
 else ifeq ($(CONFIG_S2LMKIWI_SENSOR_OV4689), y)
 	@echo "export SYS_BOARD_SENSOR=ov4689" >> $(FAKEROOT_DIR)/etc/ambarella.conf
+else ifeq ($(CONFIG_MANGO_SENSOR_OV4689), y)
+	@echo "export SYS_BOARD_SENSOR=ov4689" >> $(FAKEROOT_DIR)/etc/ambarella.conf
+else ifeq ($(CONFIG_MANGO_SENSOR_IMX322), y)
+	@echo "export SYS_BOARD_SENSOR=imx322" >> $(FAKEROOT_DIR)/etc/ambarella.conf
+else ifeq ($(CONFIG_OLIVE_SENSOR_OV4689), y)
+	@echo "export SYS_BOARD_SENSOR=ov4689" >> $(FAKEROOT_DIR)/etc/ambarella.conf
+else ifeq ($(CONFIG_OLIVE_SENSOR_IMX322), y)
+	@echo "export SYS_BOARD_SENSOR=imx322" >> $(FAKEROOT_DIR)/etc/ambarella.conf
+else ifeq ($(CONFIG_ELEKTRAS_SENSOR_IMX322), y)
+	@echo "export SYS_BOARD_SENSOR=imx322" >> $(FAKEROOT_DIR)/etc/ambarella.conf
 else ifeq ($(CONFIG_BOARD_VERSION_S2LMELEKTRA_OV4689_S2L22M), y)
 	@echo "export SYS_BOARD_SENSOR=ov4689" >> $(FAKEROOT_DIR)/etc/ambarella.conf
 else ifeq ($(CONFIG_BOARD_VERSION_S2LMELEKTRA_OV4689_S2L55M), y)
@@ -358,6 +421,18 @@ endif
 ifeq ($(CONFIG_S2LMELEKTRA_ENABLE_ADVANCED_ISO_MODE), y)
 	@echo "export S2LMELEKTRA_ENABLE_ADVANCED_ISO_MODE=1" >> $(FAKEROOT_DIR)/etc/ambarella.conf
 endif
+
+ifeq ($(CONFIG_BSP_BOARD_S2LM_ELEKTRA), y)
+ifeq ($(CONFIG_S2LMELEKTRA_VCA_IN_LINUX), y)
+	@echo "export VCA_MODE=enable" >> $(FAKEROOT_DIR)/etc/ambarella.conf
+endif
+ifeq ($(CONFIG_S2LMELEKTRA_BUILD_THAW_HIBERNATION), y)
+	@echo "export ELEKTRA_FASTBOOT_MODE=fastboot_hibernation" >> $(FAKEROOT_DIR)/etc/ambarella.conf
+else
+	@echo "export ELEKTRA_FASTBOOT_MODE=fastboot_normal" >> $(FAKEROOT_DIR)/etc/ambarella.conf
+endif
+endif
+
 endif
 ifneq ($(BUILD_AMBARELLA_ORYX_MW), y)
 	@rm -rf $(FAKEROOT_DIR)/etc/oryx
@@ -486,6 +561,12 @@ MTD_PEBSIZE		:= 0x0040
 UBI_LEBSIZE		:= 0x3ff80
 UBI_SUBPAGESIZE		:= 0x0001
 endif
+ifeq ($(CONFIG_SPINAND_P2K_E128K), y)
+MTD_PAGESIZE		:= 0x00800
+MTD_PEBSIZE		:= 0x20000
+UBI_LEBSIZE		:= 0x1F000
+UBI_SUBPAGESIZE		:= 0x0800
+endif
 
 # Build Image
 
@@ -516,6 +597,28 @@ build_fsimage_common: $(DOT_CONFIG)
 	@find $(FAKEROOT_DIR) -type d | xargs chmod 755
 	@find $(FAKEROOT_DIR) -type f -name *.so | xargs chmod 755
 	@find $(FAKEROOT_DIR) -type f -name *.so.* | xargs chmod 755
+	@for l in `find $(FAKEROOT_DIR)/usr/lib -type l -name "lib*.so*" | sort`; do \
+		if readlink -e $${l} > /dev/null; then \
+			lname=`basename $${l}`; \
+			lsoname=`$(CROSS_COMPILE)objdump -p $${l} | grep SONAME | awk '{print $$2}'`; \
+			if [ x"$${lsoname}" != x -a "$${lname}" != "$${lsoname}" ]; then \
+				rm -rf $${l}; \
+			fi; \
+		else \
+			rm -rf $${l}; \
+		fi; \
+	done
+	@for l in `find $(FAKEROOT_DIR)/lib -type l -name "lib*.so*" | sort`; do \
+		if readlink -e $${l} > /dev/null; then \
+			lname=`basename $${l}`; \
+			lsoname=`$(CROSS_COMPILE)objdump -p $${l} | grep SONAME | awk '{print $$2}'`; \
+			if [ x"$${lsoname}" != x -a "$${lname}" != "$${lsoname}" ]; then \
+				rm -rf $${l}; \
+			fi; \
+		else \
+			rm -rf $${l}; \
+		fi; \
+	done
 ifneq ($(BUILD_AMBARELLA_APP_DEBUG), y)
 	@find $(FAKEROOT_DIR) -type f -executable -exec sh -c "file -i '{}' | grep -q 'x-sharedlib; charset=binary'" \; -print | xargs $(CROSS_COMPILE)strip -s
 	@find $(FAKEROOT_DIR) -type f -executable -exec sh -c "file -i '{}' | grep -q 'x-executable; charset=binary'" \; -print | grep -v gdb | xargs $(CROSS_COMPILE)strip -s
@@ -552,7 +655,20 @@ build_squashfs: build_fsimage_common
 ifeq ($(CONFIG_AMBARELLA_ADD_PARTITION), y)
 	@echo "cp -dpRf $(ROOTFS_DIR)/ubicfg_fastboot.ini $(ROOTFS_OUT_DIR)/ubicfg_fastboot.ini " \
 		>> $(ROOTFS_OUT_DIR)/_fakeroot.sh
-	@echo "$(MKUBIFS) -r $(FAKEROOT_DIR)/tmp/ \
+	@mkdir -p $(FAKEROOT_DIR)/tmp/config
+	@touch $(FAKEROOT_DIR)/tmp/config/resolv.conf
+	@rm -fr $(FAKEROOT_DIR)/etc/resolv.conf
+	@ln -s /tmp/config/resolv.conf $(FAKEROOT_DIR)/etc/resolv.conf
+	@echo "CST-8" > $(FAKEROOT_DIR)/tmp/config/TZ
+	@rm -fr $(FAKEROOT_DIR)/etc/TZ
+	@ln -s /tmp/config/TZ $(FAKEROOT_DIR)/etc/TZ
+
+	@mkdir -p $(FAKEROOT_DIR)/tmp/config/calibration
+	@mkdir -p $(FAKEROOT_DIR)/ambarella
+	@rm -rf $(FAKEROOT_DIR)/ambarella/calibration
+	@ln -s /tmp/config/calibration $(FAKEROOT_DIR)/ambarella/calibration
+
+	@echo "$(MKUBIFS) -r $(FAKEROOT_DIR)/tmp/config \
 		-m $(MTD_PAGESIZE) -e $(UBI_LEBSIZE) -c 2047 $(UBIFSOUTFLAG) $(ROOTFS_OUT_DIR)/ubifs_fastboot.img" \
 		>> $(ROOTFS_OUT_DIR)/_fakeroot.sh
 	@echo "$(UBINIZE) -o $(ROOTFS_OUT_DIR)/ubifs \
@@ -650,12 +766,16 @@ ifeq ($(CONFIG_BOOT_MEDIA_NAND), y)
 	else \
 		mv $(ROOTFS_OUT_DIR)/rootfs.cpio $(ROOTFS_OUT_DIR)/rootfs.cpio.gz; \
 	fi
-	@$(MAKE) $(AMBA_MAKE_PARA) -C $(LINUX_SRC_DIR) O=$(LINUX_OUT_DIR) \
+	@$(MAKE) $(AMBA_MAKE_PARA) ARCH=$(CPU_ARCH) -C $(LINUX_SRC_DIR) O=$(LINUX_OUT_DIR) \
 		CONFIG_INITRAMFS_SOURCE="$(ROOTFS_OUT_DIR)/rootfs.cpio.gz" \
 		CONFIG_INITRAMFS_ROOT_UID=0 CONFIG_INITRAMFS_ROOT_GID=0 all
 endif
-	@cp -dpRf $(LINUX_OUT_DIR)/arch/arm/boot/zImage $(KERNEL_OUT_DIR)/zImage
-	@cp -dpRf $(LINUX_OUT_DIR)/arch/arm/boot/Image $(KERNEL_OUT_DIR)/Image
+ifeq ($(CONFIG_CPU_CORTEXA53), y)
+	@cp -dpRf $(LINUX_OUT_DIR)/arch/$(ARM_ARCH)/boot/Image.gz $(KERNEL_OUT_DIR)/zImage
+else
+	@cp -dpRf $(LINUX_OUT_DIR)/arch/$(ARM_ARCH)/boot/zImage $(KERNEL_OUT_DIR)/zImage
+endif
+	@cp -dpRf $(LINUX_OUT_DIR)/arch/$(ARM_ARCH)/boot/Image $(KERNEL_OUT_DIR)/Image
 
 build_fsimage: build_cpio
 endif
@@ -765,13 +885,35 @@ ifeq ($(CONFIG_BACKUP_CPIO),y)
 
 build_backup_cpio:
 	@echo "Build backup cpio"
+	@mkdir -p $(ROOTFS_OUT_DIR)
 	@rm -f $(ROOTFS_OUT_DIR)/backup_cpio.sh $(ROOTFS_OUT_DIR)/backup_cpio.gz && touch $(ROOTFS_OUT_DIR)/backup_cpio.sh
+ifeq ($(CONFIG_CPU_CORTEXA53), y)
+	@echo "tar Jxf $(ROOTFS_DIR)/mini_fake_s5.tar.xz -C $(ROOTFS_OUT_DIR)" >> $(ROOTFS_OUT_DIR)/backup_cpio.sh
+else
 	@echo "tar Jxf $(ROOTFS_DIR)/mini_fake.tar.xz -C $(ROOTFS_OUT_DIR)" >> $(ROOTFS_OUT_DIR)/backup_cpio.sh
-	@echo "cp -dp $(PRE_BUSYBOX_DIR)/usr/share/udhcpc/default.script $(ROOTFS_OUT_DIR)/mini_fake/usr/share/udhcpc/" >> $(ROOTFS_OUT_DIR)/backup_cpio.sh
-	@echo "cp -dp $(ORYX_BIN_DIR)/pba_upgrade $(ROOTFS_OUT_DIR)/mini_fake/usr/bin/" >> $(ROOTFS_OUT_DIR)/backup_cpio.sh
-	@echo "cp -dp $(FAKEROOT_DIR)/usr/local/bin/upgrade_partition $(ROOTFS_OUT_DIR)/mini_fake/usr/sbin/" >> $(ROOTFS_OUT_DIR)/backup_cpio.sh
-	@echo "cp -dpRf $(FAKEROOT_DIR)/usr/lib/libssl.so* $(ROOTFS_OUT_DIR)/mini_fake/lib/" >> $(ROOTFS_OUT_DIR)/backup_cpio.sh
-	@echo "cp -dpRf $(FAKEROOT_DIR)/usr/lib/libcrypto.so* $(ROOTFS_OUT_DIR)/mini_fake/lib/" >> $(ROOTFS_OUT_DIR)/backup_cpio.sh
+endif
+	@if [ -e $(PRE_BUSYBOX_DIR)/usr/share/udhcpc/default.script ];then \
+		echo "cp -dp $(PRE_BUSYBOX_DIR)/usr/share/udhcpc/default.script $(ROOTFS_OUT_DIR)/mini_fake/usr/share/udhcpc/" >> $(ROOTFS_OUT_DIR)/backup_cpio.sh; \
+	fi
+	@if [ -e $(ORYX_BIN_DIR)/pba_upgrade ];then \
+		echo "cp -dp $(ORYX_BIN_DIR)/pba_upgrade $(ROOTFS_OUT_DIR)/mini_fake/usr/bin/" >> $(ROOTFS_OUT_DIR)/backup_cpio.sh; \
+		echo "cp -dpRf $(FAKEROOT_DIR)/usr/lib/libstdc++.so* $(ROOTFS_OUT_DIR)/mini_fake/lib/" >> $(ROOTFS_OUT_DIR)/backup_cpio.sh; \
+		echo "cp -dpRf $(FAKEROOT_DIR)/usr/lib/libamconfig.so* $(ROOTFS_OUT_DIR)/mini_fake/lib/" >> $(ROOTFS_OUT_DIR)/backup_cpio.sh; \
+		echo "cp -dpRf $(FAKEROOT_DIR)/usr/lib/libamosal.so* $(ROOTFS_OUT_DIR)/mini_fake/lib/" >> $(ROOTFS_OUT_DIR)/backup_cpio.sh; \
+		echo "cp -dpRf $(FAKEROOT_DIR)/usr/lib/libamutil.so* $(ROOTFS_OUT_DIR)/mini_fake/lib/" >> $(ROOTFS_OUT_DIR)/backup_cpio.sh; \
+		echo "cp -dpRf $(FAKEROOT_DIR)/usr/lib/libamdec7z.so* $(ROOTFS_OUT_DIR)/mini_fake/lib/" >> $(ROOTFS_OUT_DIR)/backup_cpio.sh; \
+		echo "cp -dpRf $(FAKEROOT_DIR)/usr/lib/lib7zDec.so* $(ROOTFS_OUT_DIR)/mini_fake/lib/" >> $(ROOTFS_OUT_DIR)/backup_cpio.sh; \
+		echo "cp -dpRf $(FAKEROOT_DIR)/usr/lib/libarchive.so* $(ROOTFS_OUT_DIR)/mini_fake/lib/" >> $(ROOTFS_OUT_DIR)/backup_cpio.sh; \
+		echo "cp -dpRf $(FAKEROOT_DIR)/usr/lib/libamarchive.so* $(ROOTFS_OUT_DIR)/mini_fake/lib/" >> $(ROOTFS_OUT_DIR)/backup_cpio.sh; \
+		echo "cp -dpRf $(FAKEROOT_DIR)/usr/lib/liblua* $(ROOTFS_OUT_DIR)/mini_fake/lib/" >> $(ROOTFS_OUT_DIR)/backup_cpio.sh; \
+		echo "cp -dpRf $(FAKEROOT_DIR)/usr/lib/liblzma.so* $(ROOTFS_OUT_DIR)/mini_fake/lib/" >> $(ROOTFS_OUT_DIR)/backup_cpio.sh; \
+		echo "cp -dpRf $(FAKEROOT_DIR)/usr/lib/libz.so* $(ROOTFS_OUT_DIR)/mini_fake/lib/" >> $(ROOTFS_OUT_DIR)/backup_cpio.sh; \
+		echo "cp -dpRf $(FAKEROOT_DIR)/usr/lib/libbz2.so* $(ROOTFS_OUT_DIR)/mini_fake/lib/" >> $(ROOTFS_OUT_DIR)/backup_cpio.sh; \
+	fi
+	@echo "find $(ROOTFS_OUT_DIR)/mini_fake/lib/ -type f -executable -exec sh -c \"file -i '{}' | grep -q 'x-sharedlib; charset=binary'\" \; -print | xargs $(CROSS_COMPILE)strip -s">> $(ROOTFS_OUT_DIR)/backup_cpio.sh
+	@if [ -e $(FAKEROOT_DIR)/usr/local/bin/upgrade_partition ];then \
+		echo "cp -dp $(FAKEROOT_DIR)/usr/local/bin/upgrade_partition $(ROOTFS_OUT_DIR)/mini_fake/usr/sbin/" >> $(ROOTFS_OUT_DIR)/backup_cpio.sh; \
+	fi
 	@echo "chown -R 0:0 $(ROOTFS_OUT_DIR)/mini_fake" >> $(ROOTFS_OUT_DIR)/backup_cpio.sh
 	@echo "$(MAKEDEVS) -d $(ROOTFS_DIR)/initramfs_table.txt $(ROOTFS_OUT_DIR)/mini_fake" >> $(ROOTFS_OUT_DIR)/backup_cpio.sh
 	@echo "cd $(ROOTFS_OUT_DIR)/mini_fake && find . | cpio --quiet -o -H newc > $(ROOTFS_OUT_DIR)/backup.cpio" >> $(ROOTFS_OUT_DIR)/backup_cpio.sh
@@ -779,15 +921,29 @@ build_backup_cpio:
 	@chmod u+x $(ROOTFS_OUT_DIR)/backup_cpio.sh
 	@cd $(ROOTFS_OUT_DIR); fakeroot -- $(ROOTFS_OUT_DIR)/backup_cpio.sh
 	@if [ -e $(KERNEL_OUT_DIR)/pba_zImage ];then rm -rf $(KERNEL_OUT_DIR)/pba_zImage; fi
-	@mv $(LINUX_OUT_DIR)/arch/arm/boot/Image $(LINUX_OUT_DIR)/arch/arm/boot/Image_ori
-	@mv $(LINUX_OUT_DIR)/arch/arm/boot/zImage $(LINUX_OUT_DIR)/arch/arm/boot/zImage_ori
-	@$(MAKE) -C $(LINUX_SRC_DIR) O=$(LINUX_OUT_DIR) \
+	@mv $(LINUX_OUT_DIR)/arch/$(ARM_ARCH)/boot/Image $(LINUX_OUT_DIR)/arch/$(ARM_ARCH)/boot/Image_ori
+ifeq ($(CONFIG_CPU_CORTEXA53), y)
+	@mv $(LINUX_OUT_DIR)/arch/$(ARM_ARCH)/boot/Image.gz $(LINUX_OUT_DIR)/arch/$(ARM_ARCH)/boot/zImage_ori
+else
+	@mv $(LINUX_OUT_DIR)/arch/$(ARM_ARCH)/boot/zImage $(LINUX_OUT_DIR)/arch/$(ARM_ARCH)/boot/zImage_ori
+endif
+	@echo $(LINUX_SRC_DIR)
+	@$(MAKE) $(AMBA_MAKE_PARA) ARCH=$(CPU_ARCH) -C $(LINUX_SRC_DIR) O=$(LINUX_OUT_DIR) \
 			CONFIG_INITRAMFS_SOURCE="$(ROOTFS_OUT_DIR)/backup.cpio.gz" \
 			CONFIG_INITRAMFS_ROOT_UID=0 CONFIG_INITRAMFS_ROOT_GID=0 \
-			CONFIG_MMC=y CONFIG_MMC_AMBARELLA=y CONFIG_MMC_BLOCK=y all
-	@cp -dpRf $(LINUX_OUT_DIR)/arch/arm/boot/zImage $(KERNEL_OUT_DIR)/pba_zImage
-	@mv $(LINUX_OUT_DIR)/arch/arm/boot/Image_ori $(LINUX_OUT_DIR)/arch/arm/boot/Image
-	@mv $(LINUX_OUT_DIR)/arch/arm/boot/zImage_ori $(LINUX_OUT_DIR)/arch/arm/boot/zImage
+			CONFIG_MMC=y CONFIG_MMC_AMBARELLA=y CONFIG_MMC_BLOCK=y \
+			CONFIG_FUSE_FS=y CONFIG_FAT_FS=y CONFIG_VFAT_FS=y \
+			CONFIG_FAT_DEFAULT_CODEPAGE=437 \
+			CONFIG_FAT_DEFAULT_IOCHARSET="iso8859-1" all
+ifeq ($(CONFIG_CPU_CORTEXA53), y)
+	@cp -dpRf $(LINUX_OUT_DIR)/arch/$(ARM_ARCH)/boot/Image $(KERNEL_OUT_DIR)/pba_zImage
+	@mv $(LINUX_OUT_DIR)/arch/$(ARM_ARCH)/boot/zImage_ori $(LINUX_OUT_DIR)/arch/$(ARM_ARCH)/boot/Image.gz
+else
+	@cp -dpRf $(LINUX_OUT_DIR)/arch/$(ARM_ARCH)/boot/zImage $(KERNEL_OUT_DIR)/pba_zImage
+	@mv $(LINUX_OUT_DIR)/arch/$(ARM_ARCH)/boot/zImage_ori $(LINUX_OUT_DIR)/arch/$(ARM_ARCH)/boot/zImage
+endif
+	@mv $(LINUX_OUT_DIR)/arch/$(ARM_ARCH)/boot/Image_ori $(LINUX_OUT_DIR)/arch/$(ARM_ARCH)/boot/Image
+
 
 build_fsimage: build_backup_cpio
 endif

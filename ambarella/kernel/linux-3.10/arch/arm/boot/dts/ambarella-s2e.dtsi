@@ -19,6 +19,8 @@
 		serial2 = &uart2;
 		serial3 = &uart3;
 		nand = &nand0;
+		sd0 = &sdmmc0;
+		sd1 = &sdmmc1;
 		i2c0 = &i2c0;
 		i2c1 = &i2c1;
 		i2c2 = &i2c2;
@@ -41,6 +43,7 @@
 	cpus {
 		#address-cells = <1>;
 		#size-cells = <0>;
+		amb,core-div = <1>;
 		clock-latency = <100000>;
 		/* the highest frequency is gotten in runtime */
 		cpufreq_tbl = < /*core_clk	cortex_clk*/
@@ -182,18 +185,6 @@
 			amb,msb-first-only;
 		};
 
-		spi1: spi@7000f000 {
-			compatible = "ambarella,spi";
-			#address-cells = <1>;
-			#size-cells = <0>;
-			reg = <0x7000f000 0x1000>;
-			interrupts = <53 0x4>;
-			pinctrl-names = "default";
-			pinctrl-0 = <&spi1_pins>;
-			amb,clk-freq = <54000000>;
-			status = "disabled";
-		};
-
 		spi_slave@7001e000 {
 			compatible = "ambarella,spi-slave";
 			reg = <0x7001e000 0x1000>;
@@ -228,6 +219,7 @@
 		rtc@7000d000 {
 			compatible = "ambarella,rtc";
 			reg = <0x7000d000 0x1000>;
+			rtc,wakeup;
 		};
 
 		pwm: pwm@70004000 {
@@ -431,10 +423,14 @@
 			      <0x6001c000 0x1000>;
 		};
 
-		dma@60005000 {
+		dma: dma@60005000 {
 			compatible = "ambarella,dma";
 			reg = <0x60005000 0x1000>;
 			interrupts = <15 0x4>;
+			#dma-cells = <2>;
+			dma-channels = <8>;
+			dma-requests = <8>;
+			dma-trans-type = <1 1 1 1 1 1 1 1>; /* 0-memcpy ,1-slave*/
 			amb,copy-align = <0>;
 			/* support pause/resume/stop */
 			amb,support-prs;
@@ -464,14 +460,28 @@
 			status = "disabled";
 		};
 
+		spi1: spi@6001f000 {
+			compatible = "ambarella,spi";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x6001f000 0x1000>;
+			interrupts = <53 0x4>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&spi1_pins>;
+			amb,clk-freq = <54000000>;
+			status = "disabled";
+		};
+
 		i2s0: i2s@6000a000 {
 			compatible = "ambarella,i2s";
 			reg = <0x6000a000 0x1000>;
 			pinctrl-names = "default";
 			pinctrl-0 = <&i2s0_pins>;
-			bclk_reverse = <0>;
 			amb,i2s-channels = <2>;
 			amb,default-mclk = <12288000>;
+			dmas = <&dma 2 1>,
+				   <&dma 1 1>;
+			dma-names = "tx", "rx";
 		};
 
 		udc@60006000 {
@@ -495,7 +505,7 @@
 			amb,usbphy = <&usbphy>;
 		};
 
-		sdmmc0@60002000 {
+		sdmmc0: sdmmc0@60002000 {
 			compatible = "ambarella,sdmmc";
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -504,11 +514,13 @@
 			      <0x70170340 0x8>;
 			interrupts = <18 0x4>;
 			amb,clk-name = "gclk_sd";
-			amb,wait-tmo = <2500>; /* in millisecond */
+			amb,wait-tmo = <10000>; /* in millisecond */
+			amb,switch_vol_tmo = <20>;
 			amb,max-blk-size = <524288>; /* valid value: 4K<<n */
-			amb,soft-phy;
+			amb,auto-tuning;
+			amb,phy-type = <0>;/*0:rct phy, 1: sd controller phy, 2: for s2e*/
 			amb,phy-timing = <0x00000001 0x04070000 0x00000000>,
-					 <0x000000a0 0x00000005 0x00001111>,
+					 <0x000000a4 0x00000005 0x00001111>,
 					 <0x00000040 0x00000001 0x00001111>;
 			pinctrl-names = "default";
 			pinctrl-0 = <&sdmmc0_pins>;
@@ -519,12 +531,11 @@
 				max-frequency = <50000000>;
 				bus-width = <8>;
 				amb,caps-adma;
-				amb,caps-ddr;
 				cap-sdio-irq;
 			};
 		};
 
-		sdmmc1@6000c000 {
+		sdmmc1: sdmmc1@6000c000 {
 			compatible = "ambarella,sdmmc";
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -533,8 +544,11 @@
 			      <0x701701d0 0x4>;
 			interrupts = <52 0x4>;
 			amb,clk-name = "gclk_sdio";
-			amb,wait-tmo = <2500>; /* in millisecond */
+			amb,wait-tmo = <10000>; /* in millisecond */
+			amb,switch_vol_tmo = <20>;
 			amb,max-blk-size = <524288>; /* valid value: 4K<<n */
+			amb,auto-tuning;
+			amb,phy-type = <2>;/*0:rct phy, 1: sd controller phy, 2: for s2e*/
 			amb,phy-timing = <0x00000001 0x1c1f1c1f 0x00000000>,
 					 <0x00000080 0x1c1f1c1f 0x00e0e000>;
 			pinctrl-names = "default";
@@ -546,7 +560,6 @@
 				max-frequency = <50000000>;
 				bus-width = <4>;
 				amb,caps-adma;
-				amb,caps-ddr;
 				cap-sdio-irq;
 			};
 		};
@@ -594,8 +607,12 @@
 		usbphy: usbphy@70170050 {
 			compatible = "ambarella,usbphy";
 			reg = <0x70170050 0x4 0x6001b00c 0x4 0x70170088 0x4>;
-			amb,host-phy-num = <2>;
+			amb,host-phy-num = <1>;
 		};
+	};
+
+	iav {
+		compatible = "ambarella,iav";
 	};
 
 	bogus_bus {

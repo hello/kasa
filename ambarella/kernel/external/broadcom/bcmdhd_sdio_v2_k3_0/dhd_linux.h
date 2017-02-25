@@ -43,7 +43,29 @@ typedef struct wifi_adapter_info {
 	uint		bus_type;
 	uint		bus_num;
 	uint		slot_num;
+#ifdef BUS_POWER_RESTORE
+#if defined(BCMSDIO)
+	struct sdio_func *sdio_func;
+#endif /* BCMSDIO */
+#if defined(BCMPCIE)
+	struct pci_dev *pci_dev;
+	struct pci_saved_state *pci_saved_state;
+#endif /* BCMPCIE */
+#endif
 } wifi_adapter_info_t;
+
+struct wifi_platform_data {
+#ifdef BUS_POWER_RESTORE
+	int (*set_power)(bool val, wifi_adapter_info_t *adapter);
+#else
+	int (*set_power)(bool val);
+#endif
+	int (*set_reset)(int val);
+	int (*set_carddetect)(bool val);
+	void *(*mem_prealloc)(int section, unsigned long size);
+	int (*get_mac_addr)(unsigned char *buf);
+	void *(*get_country_code)(char *ccode);
+};
 
 typedef struct bcmdhd_wifi_platdata {
 	uint				num_adapters;

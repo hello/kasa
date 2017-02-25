@@ -18,7 +18,7 @@
 # Rather a new file in the console.perms.d directory should be created.
 
 # file classes -- these are regular expressions
-<console>=tty[0-9][0-9]* ttyS[0-9][0-9]* vc/[0-9][0-9]* :[0-9]+\.[0-9]+ :[0-9]+
+<console>=tty[0-9][0-9]* vc/[0-9][0-9]* :[0-9]+\.[0-9]+ :[0-9]+
 <xconsole>=:[0-9]+\.[0-9]+ :[0-9]+
 
 # device classes -- see console.perms.d/50-default.perms

@@ -4,14 +4,33 @@
  * History:
  *    2015/02/05 - [Hao Zeng] Create
  *
- * Copyright (C) 2004-2015, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 
 static struct vin_video_pll mn34210pl_plls[] = {
 	/* for linear 30fps */
@@ -24,7 +43,7 @@ static struct vin_video_format mn34210pl_formats[] = {
 	{
 		.video_mode	= AMBA_VIDEO_MODE_1296_1032,
 		.def_start_x	= 4,
-		.def_start_y	= 18,
+		.def_start_y	= 2+11+5,
 		.def_width	= 1296,
 		.def_height	= 1032,
 		/* sensor mode */
@@ -46,7 +65,7 @@ static struct vin_video_format mn34210pl_formats[] = {
 	{
 		.video_mode	= AMBA_VIDEO_MODE_720P,
 		.def_start_x	= 4,
-		.def_start_y	= 18,
+		.def_start_y	= 2+11+5,
 		.def_width	= 1280,
 		.def_height	= 720,
 		/* sensor mode */
@@ -69,9 +88,9 @@ static struct vin_video_format mn34210pl_formats[] = {
 	{
 		.video_mode	= AMBA_VIDEO_MODE_720P,
 		.def_start_x	= 4,
-		.def_start_y	= 1,
-		.def_width	= 1296,
-		.def_height	= 3000 - 6,
+		.def_start_y	= (2+11+5)*2+(1032-728),
+		.def_width	= 1280,
+		.def_height	= 3000 - (2+11+5)*2, /* VMAX*2 - def_start_y*2 */
 		.act_start_x	= 0,
 		.act_start_y	= 0,
 		.act_width	= 1280,
@@ -98,9 +117,9 @@ static struct vin_video_format mn34210pl_formats[] = {
 	{
 		.video_mode	= AMBA_VIDEO_MODE_720P,
 		.def_start_x	= 4,
-		.def_start_y	= 2,
-		.def_width	= 1296,
-		.def_height	= 4500 - 3,
+		.def_start_y	= (2+11+5)*3+(1032-728)/2*3,
+		.def_width	= 1280,
+		.def_height	= 4500 - (2+11+5)*3, /* VMAX*3 - def_start_y*3 */
 		.act_start_x	= 0,
 		.act_start_y	= 0,
 		.act_width	= 1280,
@@ -127,9 +146,9 @@ static struct vin_video_format mn34210pl_formats[] = {
 	{
 		.video_mode	= AMBA_VIDEO_MODE_720P,
 		.def_start_x	= 4,
-		.def_start_y	= 3,
-		.def_width	= 1296,
-		.def_height	= 4500 - 8,
+		.def_start_y	= (2+11+5)*4+(1032-728)/2*4,
+		.def_width	= 1280,
+		.def_height	= 4500 - (2+11+5)*4, /* VMAX*4 - def_start_y*4 */
 		.act_start_x	= 0,
 		.act_start_y	= 0,
 		.act_width	= 1280,

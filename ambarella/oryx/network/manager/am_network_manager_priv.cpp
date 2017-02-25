@@ -3,12 +3,29 @@
  *
  * History:
  *   2015-1-12 - [Tao Wu] created file
- * Copyright (C) 2008-2015, Ambarella ShangHai Co,Ltd
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 #include <net/if.h>
@@ -57,22 +74,22 @@
 #include "am_network_manager_priv.h"
 
 APInfo::APInfo() :
-    index(0),
-    active_bssid(NULL),
-    device(NULL),
-    bssid(NULL),
-    ap_name(NULL),
-    ssid_str(NULL),
-    mode(NULL),
-    freq_str(NULL),
-    bitrate_str(NULL),
-    strength_str(NULL),
-    security_str(NULL),
-    wpa_flags_str(NULL),
-    rsn_flags_str(NULL),
-    active(NULL),
-    path(NULL),
-    info_next(NULL)
+    active_bssid(nullptr),
+    device(nullptr),
+    bssid(nullptr),
+    ap_name(nullptr),
+    ssid_str(nullptr),
+    mode(nullptr),
+    freq_str(nullptr),
+    bitrate_str(nullptr),
+    strength_str(nullptr),
+    security_str(nullptr),
+    wpa_flags_str(nullptr),
+    rsn_flags_str(nullptr),
+    active(nullptr),
+    path(nullptr),
+    info_next(nullptr),
+    index(0)
 {
 }
 
@@ -114,11 +131,11 @@ void APInfo::print_ap_info()
 }
 
 AMNetworkManager_priv::AMNetworkManager_priv() :
-mIsInited(false),
-mNmClient(NULL),
-mSysConnections(NULL),
-mSysSettings(NULL),
-mLoop(NULL)
+mNmClient(nullptr),
+mSysConnections(nullptr),
+mSysSettings(nullptr),
+mLoop(nullptr),
+mIsInited(false)
 {
 }
 
@@ -268,8 +285,8 @@ bool AMNetworkManager_priv::init()
 #if GLIB_VERSION_MIN_REQUIRED < GLIB_VERSION_2_36
     g_type_init();
 #endif
-    if (AM_LIKELY(NULL != (mNmClient = nm_client_new()))) {
-      mLoop = g_main_loop_new(NULL, FALSE);
+    if (AM_LIKELY(nullptr != (mNmClient = nm_client_new()))) {
+      mLoop = g_main_loop_new(nullptr, FALSE);
       mIsInited = get_all_connections();
     } else {
       ERROR("Failed to create NetworkManager client!");
@@ -286,7 +303,7 @@ void AMNetworkManager_priv::fini()
     g_slist_free(mSysConnections);
     g_object_unref(mSysSettings);
     g_main_loop_unref(mLoop);
-    mNmClient = NULL;
+    mNmClient = nullptr;
     mIsInited = false;
   }
 }
@@ -300,7 +317,7 @@ static void get_connections_cb(NMRemoteSettings *settings, gpointer data)
 
 bool AMNetworkManager_priv::get_all_connections()
 {
-  GError *error = NULL;
+  GError *error = nullptr;
   bool ret = false;
   DBusGConnection *bus = dbus_g_bus_get(DBUS_BUS_SYSTEM, &error);
   if (AM_UNLIKELY(error || !bus)) {
@@ -313,7 +330,7 @@ bool AMNetworkManager_priv::get_all_connections()
     } else {
       gboolean systemSettingRunning = false;
       g_object_get(mSysSettings, NM_REMOTE_SETTINGS_SERVICE_RUNNING,
-                   &systemSettingRunning, NULL);
+                   &systemSettingRunning, nullptr);
       if (AM_UNLIKELY(!systemSettingRunning)) {
         ERROR("Settings service is not running!");
       } else {
@@ -337,7 +354,7 @@ bool AMNetworkManager_priv::get_all_connections()
 
 NMDevice* AMNetworkManager_priv::find_device_by_name(const char *iface)
 {
-  NMDevice *nmDevice = NULL;
+  NMDevice *nmDevice = nullptr;
   if (AM_LIKELY(init() && iface)) {
     const GPtrArray *devices = nm_client_get_devices(mNmClient);
     if (AM_LIKELY(devices)) {
@@ -369,8 +386,8 @@ NMDevice* AMNetworkManager_priv::find_device_by_name(const char *iface)
 int AMNetworkManager_priv::show_access_point_info(NMDevice *device,
                                                  APInfo **infos)
 {
-  NMAccessPoint *active_ap = NULL;
-  const char *active_bssid = NULL;
+  NMAccessPoint *active_ap = nullptr;
+  const char *active_bssid = nullptr;
   const GPtrArray *aps;
   APInfo **info = infos;
   unsigned j;
@@ -378,18 +395,18 @@ int AMNetworkManager_priv::show_access_point_info(NMDevice *device,
   if (nm_device_get_state(device) == NM_DEVICE_STATE_ACTIVATED) {
     active_ap =
         nm_device_wifi_get_active_access_point(NM_DEVICE_WIFI (device));
-    active_bssid = active_ap ? nm_access_point_get_bssid(active_ap) : NULL;
+    active_bssid = active_ap ? nm_access_point_get_bssid(active_ap) : nullptr;
   }
   aps = nm_device_wifi_get_access_points(NM_DEVICE_WIFI (device) );
   for (j = 0; aps && (j < aps->len); j ++) {
     NMAccessPoint *ap = NM_ACCESS_POINT(g_ptr_array_index (aps, j));
-    if (*info != NULL) {
+    if (*info != nullptr) {
       info = &((*info)->info_next);
     }
 
     *info = new APInfo();
     (*info)->index = j;
-    (*info)->active_bssid = active_bssid ? g_strdup(active_bssid) : NULL;
+    (*info)->active_bssid = active_bssid ? g_strdup(active_bssid) : nullptr;
     (*info)->device = g_strdup(nm_device_get_iface(device));
     detail_access_point(ap, *info);
   }
@@ -402,16 +419,16 @@ void AMNetworkManager_priv::detail_access_point(NMAccessPoint *ap,
   NM80211ApFlags flags = NM_802_11_AP_FLAGS_NONE;
   NM80211ApSecurityFlags wpa_flags = NM_802_11_AP_SEC_NONE;
   NM80211ApSecurityFlags rsn_flags = NM_802_11_AP_SEC_NONE;
-  const GByteArray *ssid = NULL;
+  const GByteArray *ssid = nullptr;
   NM80211Mode mode = NM_802_11_MODE_UNKNOWN;
   bool active = false;
-  char *freq_str = NULL;
-  char *ssid_str = NULL;
-  char *bitrate_str = NULL;
-  char *strength_str = NULL;
-  char *wpa_flags_str = NULL;
-  char *rsn_flags_str = NULL;
-  GString *security_str = NULL;
+  char *freq_str = nullptr;
+  char *ssid_str = nullptr;
+  char *bitrate_str = nullptr;
+  char *strength_str = nullptr;
+  char *wpa_flags_str = nullptr;
+  char *rsn_flags_str = nullptr;
+  GString *security_str = nullptr;
 
   if (info->active_bssid) {
     const char *current_bssid = nm_access_point_get_bssid(ap);
@@ -432,7 +449,7 @@ void AMNetworkManager_priv::detail_access_point(NMAccessPoint *ap,
   wpa_flags_str = ap_wpa_rsn_flags_to_string(wpa_flags);
   rsn_flags_str = ap_wpa_rsn_flags_to_string(rsn_flags);
 
-  security_str = g_string_new(NULL);
+  security_str = g_string_new(nullptr);
 
   if (!(flags & NM_802_11_AP_FLAGS_PRIVACY)
       && (wpa_flags != NM_802_11_AP_SEC_NONE)
@@ -521,7 +538,7 @@ char *AMNetworkManager_priv::ap_wpa_rsn_flags_to_string(
     flags_str[i ++] = g_strdup(_("(none)"));
   }
 
-  flags_str[i] = NULL;
+  flags_str[i] = nullptr;
 
   ret_str = g_strjoinv(" ", flags_str);
 
@@ -538,15 +555,15 @@ char *AMNetworkManager_priv::ssid_to_printable(const char *str, gsize len)
   GString *printable;
   char *printable_str;
 
-  if ((str == NULL) || (len == 0)) {
-    return NULL;
+  if ((str == nullptr) || (len == 0)) {
+    return nullptr;
   }
 
-  if (g_utf8_validate(str, len, NULL)) {
+  if (g_utf8_validate(str, len, nullptr)) {
     return g_strdup_printf("%.*s", (int) len, str);
   }
 
-  printable = g_string_new(NULL);
+  printable = g_string_new(nullptr);
   for (uint32_t i = 0; i < len; i ++) {
     g_string_append_printf(printable, "%02X", (unsigned char) str[i]);
   }
@@ -559,7 +576,7 @@ AMNetworkManager_priv::find_wifi_device_by_iface(const GPtrArray *devices,
                                                  const char *iface,
                                                  int *idx)
 {
-  NMDevice *device = NULL;
+  NMDevice *device = nullptr;
   unsigned int i;
 
   for (i = *idx; devices && (i < devices->len); i ++) {
@@ -575,7 +592,7 @@ AMNetworkManager_priv::find_wifi_device_by_iface(const GPtrArray *devices,
         break;
       }
     } else {
-      device = NULL;
+      device = nullptr;
     }
   }
 
@@ -586,7 +603,7 @@ AMNetworkManager_priv::find_wifi_device_by_iface(const GPtrArray *devices,
 NMAccessPoint * AMNetworkManager_priv::find_ap_on_device(NMDevice   *device,
                                                          const char *ssid)
 {
-  NMAccessPoint   *ap = NULL;
+  NMAccessPoint   *ap = nullptr;
   if (AM_LIKELY(NM_IS_DEVICE_WIFI(device) && ssid)) {
     const GPtrArray *aps =
         nm_device_wifi_get_access_points(NM_DEVICE_WIFI(device));
@@ -599,14 +616,14 @@ NMAccessPoint * AMNetworkManager_priv::find_ap_on_device(NMDevice   *device,
                          nm_access_point_get_bssid(ap))) {
           break;
         } else {
-          ap = NULL;
+          ap = nullptr;
         }
       } else {
         const GByteArray *id = nm_access_point_get_ssid(ap);
         if (id) {
           char *ssidstr = nm_utils_ssid_to_utf8(id);
           if (ssidstr && !is_str_same(ssidstr, ssid)) {
-            ap = NULL;
+            ap = nullptr;
           }
           g_free(ssidstr);
           if (ap) {
@@ -713,7 +730,7 @@ static void activate_cb(NMClient *client,
                         GError *error,
                         gpointer user_data)
 {
-  add_and_activate_cb(client, active, NULL, error, user_data);
+  add_and_activate_cb(client, active, nullptr, error, user_data);
 }
 
 static void disconnect_device_cb(NMDevice *device,
@@ -798,7 +815,7 @@ int AMNetworkManager_priv::wifi_connect_ap(const char  *ap_name,
 {
   NmCbData info;
 
-  info.device = NULL;
+  info.device = nullptr;
   info.retval = -1;
   info.isdone = false;
   info.timeout = timeout;
@@ -806,24 +823,24 @@ int AMNetworkManager_priv::wifi_connect_ap(const char  *ap_name,
   if (AM_LIKELY(init())) {
     if (AM_LIKELY(ap_name)) {
       const GPtrArray *devList = nm_client_get_devices(mNmClient);
-      NMDevice        *wifiDev = NULL;
-      NMAccessPoint        *ap = NULL;
+      NMDevice        *wifiDev = nullptr;
+      NMAccessPoint        *ap = nullptr;
 
       DEBUG("AP=%s, Password=%s\n", ap_name, password);
 
       for (guint i = 0; devList && (i < devList->len); ++ i) {
         wifiDev = (NMDevice*)g_ptr_array_index(devList, i);
         if (wifiDev && NM_IS_DEVICE_WIFI(wifiDev)){
-          if ( NULL != (ap = find_ap_on_device(wifiDev, ap_name))) {
+          if ( nullptr != (ap = find_ap_on_device(wifiDev, ap_name))) {
             break;
           } else {
-            wifiDev = NULL;
+            wifiDev = nullptr;
           }
         }
       }
 
       if (wifiDev && ap ) {
-        NMConnection *connection = NULL;
+        NMConnection *connection = nullptr;
         bool needCreateNew = true;
         for (guint i = 0; i < g_slist_length(mSysConnections); ++ i) {
           connection = (NMConnection*)g_slist_nth_data(mSysConnections, i);
@@ -856,12 +873,12 @@ int AMNetworkManager_priv::wifi_connect_ap(const char  *ap_name,
               g_object_set(G_OBJECT (s_wsec),
                            NM_SETTING_WIRELESS_SECURITY_WEP_KEY_TYPE,
                            wepKeyType,
-                           NULL);
+                           nullptr);
             } else if (!(wpa_flags & NM_802_11_AP_SEC_KEY_MGMT_802_1X)
                 && !(rsn_flags & NM_802_11_AP_SEC_KEY_MGMT_802_1X)) {
               /* WPA PSK */
               g_object_set(s_wsec, NM_SETTING_WIRELESS_SECURITY_PSK,
-                           password, NULL);
+                           password, nullptr);
             }
           }
         } else {
@@ -876,7 +893,7 @@ int AMNetworkManager_priv::wifi_connect_ap(const char  *ap_name,
           g_object_set (G_OBJECT (ip4),
                     NM_SETTING_IP4_CONFIG_METHOD,
                     NM_SETTING_IP4_CONFIG_METHOD_MANUAL,
-                    NULL);
+                    nullptr);
           nm_ip4_address_set_address(addr, ipv4->get_address());
           if (ipv4->get_prefix()) {
             nm_ip4_address_set_prefix(addr, ipv4->get_prefix());
@@ -892,7 +909,7 @@ int AMNetworkManager_priv::wifi_connect_ap(const char  *ap_name,
               if (!nm_setting_ip4_config_add_dns(ip4, dns->get_dns())) {
                 ERROR("Failed to add DNS setting!");
                 g_object_unref(ip4);
-                ip4 = NULL;
+                ip4 = nullptr;
                 break;
               }
             }
@@ -913,7 +930,7 @@ int AMNetworkManager_priv::wifi_connect_ap(const char  *ap_name,
           g_object_set (G_OBJECT (ip6),
                     NM_SETTING_IP6_CONFIG_METHOD,
                     NM_SETTING_IP6_CONFIG_METHOD_MANUAL,
-                    NULL);
+                    nullptr);
           nm_ip6_address_set_address(addr, ipv6->get_address());
           if (ipv6->get_prefix()) {
             nm_ip6_address_set_prefix(addr, ipv6->get_prefix());
@@ -929,7 +946,7 @@ int AMNetworkManager_priv::wifi_connect_ap(const char  *ap_name,
               if (!nm_setting_ip6_config_add_dns(ip6, dns->get_dns())) {
                 ERROR("Failed to add DNS setting!");
                 g_object_unref(ip6);
-                ip6 = NULL;
+                ip6 = nullptr;
                 break;
               }
             }
@@ -954,7 +971,7 @@ int AMNetworkManager_priv::wifi_connect_ap(const char  *ap_name,
               &info);
         } else {
           nm_remote_connection_commit_changes(NM_REMOTE_CONNECTION(connection),
-                                              connection_commit_cb, NULL);
+                                              connection_commit_cb, nullptr);
           nm_client_activate_connection(mNmClient,
                                         connection,
                                         wifiDev,
@@ -1001,9 +1018,9 @@ int AMNetworkManager_priv::wifi_connect_hidden_ap(
   NmCbData info;
   if (AM_LIKELY(init())) {
     if (AM_LIKELY(ap_name)) {
-      NMConnection *connection = NULL;
-      NMSettingConnection *s_con = NULL;
-      NMSettingWireless *s_wifi = NULL;
+      NMConnection *connection = nullptr;
+      NMSettingConnection *s_con = nullptr;
+      NMSettingWireless *s_wifi = nullptr;
 
       DEBUG("Hidden AP=%s, Password=%s\n", ap_name, password);
 
@@ -1025,7 +1042,7 @@ int AMNetworkManager_priv::wifi_connect_hidden_ap(
                 NM_SETTING_CONNECTION_UUID, uuid,
                 NM_SETTING_CONNECTION_ID, ap_name,
                 NM_SETTING_CONNECTION_TYPE, NM_SETTING_WIRELESS_SETTING_NAME,
-                NULL);
+                nullptr);
         g_free (uuid);
         nm_connection_add_setting (connection, NM_SETTING (s_con));
 
@@ -1038,13 +1055,13 @@ int AMNetworkManager_priv::wifi_connect_hidden_ap(
                 NM_SETTING_WIRELESS_SSID, ssid_ba,
                 NM_SETTING_WIRELESS_SEC,
                 NM_SETTING_WIRELESS_SECURITY_SETTING_NAME,
-                NULL);
+                nullptr);
         g_byte_array_free(ssid_ba, TRUE);
         nm_connection_add_setting (connection, NM_SETTING (s_wifi));
 
         switch (security) {
         case NM_802_11_AP_SEC_NONE : {
-          g_object_set (s_wifi, NM_SETTING_WIRELESS_SEC, NULL, NULL);
+          g_object_set (s_wifi, NM_SETTING_WIRELESS_SEC, nullptr, nullptr);
         }break;
         case NM_802_11_AP_SEC_PAIR_WEP40 : {
           if ( password ) {
@@ -1056,25 +1073,25 @@ int AMNetworkManager_priv::wifi_connect_hidden_ap(
                             NM_SETTING_WIRELESS_SECURITY_KEY_MGMT, "none",
                             NM_SETTING_WIRELESS_SECURITY_WEP_KEY1, password,
                             NM_SETTING_WIRELESS_SECURITY_WEP_KEY_TYPE, 1,
-                            NULL);
+                            nullptr);
             }else if (wep_index == 2) {
               g_object_set(s_wsec,
                             NM_SETTING_WIRELESS_SECURITY_KEY_MGMT, "none",
                             NM_SETTING_WIRELESS_SECURITY_WEP_KEY2, password,
                             NM_SETTING_WIRELESS_SECURITY_WEP_KEY_TYPE, 1,
-                            NULL);
+                            nullptr);
             }else if (wep_index == 3) {
               g_object_set(s_wsec,
                             NM_SETTING_WIRELESS_SECURITY_KEY_MGMT, "none",
                             NM_SETTING_WIRELESS_SECURITY_WEP_KEY3, password,
                             NM_SETTING_WIRELESS_SECURITY_WEP_KEY_TYPE, 1,
-                            NULL);
+                            nullptr);
             }else {
               g_object_set(s_wsec,
                             NM_SETTING_WIRELESS_SECURITY_KEY_MGMT, "none",
                             NM_SETTING_WIRELESS_SECURITY_WEP_KEY0, password,
                             NM_SETTING_WIRELESS_SECURITY_WEP_KEY_TYPE, 1,
-                            NULL);
+                            nullptr);
             }
           }
         }break;
@@ -1088,25 +1105,25 @@ int AMNetworkManager_priv::wifi_connect_hidden_ap(
                             NM_SETTING_WIRELESS_SECURITY_KEY_MGMT, "none",
                             NM_SETTING_WIRELESS_SECURITY_WEP_KEY1, password,
                             NM_SETTING_WIRELESS_SECURITY_WEP_KEY_TYPE, 2,
-                            NULL);
+                            nullptr);
             }else if (wep_index == 2) {
               g_object_set(s_wsec,
                             NM_SETTING_WIRELESS_SECURITY_KEY_MGMT, "none",
                             NM_SETTING_WIRELESS_SECURITY_WEP_KEY2, password,
                             NM_SETTING_WIRELESS_SECURITY_WEP_KEY_TYPE, 2,
-                            NULL);
+                            nullptr);
             }else if (wep_index == 3) {
               g_object_set(s_wsec,
                             NM_SETTING_WIRELESS_SECURITY_KEY_MGMT, "none",
                             NM_SETTING_WIRELESS_SECURITY_WEP_KEY3, password,
                             NM_SETTING_WIRELESS_SECURITY_WEP_KEY_TYPE, 2,
-                            NULL);
+                            nullptr);
             }else{
               g_object_set(s_wsec,
                             NM_SETTING_WIRELESS_SECURITY_KEY_MGMT, "none",
                             NM_SETTING_WIRELESS_SECURITY_WEP_KEY0, password,
                             NM_SETTING_WIRELESS_SECURITY_WEP_KEY_TYPE, 2,
-                            NULL);
+                            nullptr);
             }
           }
         }break;
@@ -1119,7 +1136,7 @@ int AMNetworkManager_priv::wifi_connect_hidden_ap(
             g_object_set(s_wsec,
                         NM_SETTING_WIRELESS_SECURITY_KEY_MGMT,"wpa-psk",
                         NM_SETTING_WIRELESS_SECURITY_PSK, password,
-                        NULL);
+                        nullptr);
           }
         }break;
         default:
@@ -1134,7 +1151,7 @@ int AMNetworkManager_priv::wifi_connect_hidden_ap(
           g_object_set (G_OBJECT (ip4),
                     NM_SETTING_IP4_CONFIG_METHOD,
                     NM_SETTING_IP4_CONFIG_METHOD_MANUAL,
-                    NULL);
+                    nullptr);
           nm_ip4_address_set_address(addr, ipv4->get_address());
           if (ipv4->get_gateway()) {
             nm_ip4_address_set_gateway(addr, ipv4->get_gateway());
@@ -1147,7 +1164,7 @@ int AMNetworkManager_priv::wifi_connect_hidden_ap(
               if (!nm_setting_ip4_config_add_dns(ip4, dns->get_dns())) {
                 ERROR("Failed to add DNS setting!");
                 g_object_unref(ip4);
-                ip4 = NULL;
+                ip4 = nullptr;
                 break;
               }
             }
@@ -1162,7 +1179,7 @@ int AMNetworkManager_priv::wifi_connect_hidden_ap(
           g_object_set (G_OBJECT (s_ip4),
                     NM_SETTING_IP4_CONFIG_METHOD,
                     NM_SETTING_IP4_CONFIG_METHOD_AUTO,
-                    NULL);
+                    nullptr);
           nm_connection_add_setting (connection, NM_SETTING (s_ip4));
         }
 
@@ -1173,7 +1190,7 @@ int AMNetworkManager_priv::wifi_connect_hidden_ap(
           g_object_set (G_OBJECT (ip6),
                     NM_SETTING_IP6_CONFIG_METHOD,
                     NM_SETTING_IP6_CONFIG_METHOD_MANUAL,
-                    NULL);
+                    nullptr);
           nm_ip6_address_set_address(addr, ipv6->get_address());
           if (ipv6->get_prefix()) {
             nm_ip6_address_set_prefix(addr, ipv6->get_prefix());
@@ -1189,7 +1206,7 @@ int AMNetworkManager_priv::wifi_connect_hidden_ap(
           if (!nm_setting_ip6_config_add_dns(ip6, dns->get_dns())) {
             ERROR("Failed to add DNS setting!");
                   g_object_unref(ip6);
-            ip6 = NULL;
+            ip6 = nullptr;
             break;
             }
           }
@@ -1204,12 +1221,12 @@ int AMNetworkManager_priv::wifi_connect_hidden_ap(
           g_object_set (G_OBJECT (s_ip6),
                     NM_SETTING_IP6_CONFIG_METHOD,
                     NM_SETTING_IP6_CONFIG_METHOD_AUTO,
-                    NULL);
+                    nullptr);
           nm_connection_add_setting (connection, NM_SETTING (s_ip6));
         }
       }
-      NMDevice        *wifiDev = NULL;
-      NMAccessPoint *ap = NULL;
+      NMDevice        *wifiDev = nullptr;
+      NMAccessPoint *ap = nullptr;
 
       const GPtrArray *devList = nm_client_get_devices(mNmClient);
       for (guint i = 0; devList && (i < devList->len); ++ i) {
@@ -1231,7 +1248,7 @@ int AMNetworkManager_priv::wifi_connect_hidden_ap(
            nm_client_add_and_activate_connection (mNmClient,
                       connection,
                       wifiDev,
-                      NULL,
+                      nullptr,
                       add_and_activate_cb,
                       &info);
            while (!info.isdone) {
@@ -1246,7 +1263,7 @@ int AMNetworkManager_priv::wifi_connect_hidden_ap(
            nm_client_activate_connection (mNmClient,
                       connection,
                       wifiDev,
-                      ap ? nm_object_get_path (NM_OBJECT (ap)) : NULL,
+                      ap ? nm_object_get_path (NM_OBJECT (ap)) : nullptr,
                       activate_cb,
                       &info);
              while (!info.isdone) {
@@ -1281,7 +1298,7 @@ int AMNetworkManager_priv::wifi_setup_adhoc(
   NmCbData info;
   if (AM_LIKELY(init())) {
     if (AM_LIKELY(name)) {
-      NMConnection *connection = NULL;
+      NMConnection *connection = nullptr;
 
       DEBUG("Adhoc=%s, Password=%s\n", name, password);
 
@@ -1296,10 +1313,10 @@ int AMNetworkManager_priv::wifi_setup_adhoc(
         }
       }
       if (needCreateNew) {
-        NMSettingConnection *s_con = NULL;
-        NMSettingWireless *s_wifi = NULL;
-        NMSettingIP4Config *s_ip4 = NULL;
-        NMSettingIP6Config *s_ip6 = NULL;
+        NMSettingConnection *s_con = nullptr;
+        NMSettingWireless *s_wifi = nullptr;
+        NMSettingIP4Config *s_ip4 = nullptr;
+        NMSettingIP6Config *s_ip6 = nullptr;
 
         connection = nm_connection_new();
         s_con = (NMSettingConnection *) nm_setting_connection_new ();
@@ -1308,7 +1325,7 @@ int AMNetworkManager_priv::wifi_setup_adhoc(
                 NM_SETTING_CONNECTION_UUID, uuid,
                 NM_SETTING_CONNECTION_ID, name,
                 NM_SETTING_CONNECTION_TYPE, NM_SETTING_WIRELESS_SETTING_NAME,
-                NULL);
+                nullptr);
         g_free (uuid);
         nm_connection_add_setting (connection, NM_SETTING (s_con));
 
@@ -1321,12 +1338,12 @@ int AMNetworkManager_priv::wifi_setup_adhoc(
                 NM_SETTING_WIRELESS_SEC,
                 NM_SETTING_WIRELESS_SECURITY_SETTING_NAME,
                 NM_SETTING_WIRELESS_MODE, NM_SETTING_WIRELESS_MODE_ADHOC,
-                NULL);
+                nullptr);
         g_byte_array_free(ssid_ba, TRUE);
         nm_connection_add_setting (connection, NM_SETTING (s_wifi));
         switch (security) {
           case NM_802_11_AP_SEC_NONE : {
-            g_object_set (s_wifi, NM_SETTING_WIRELESS_SEC, NULL, NULL);
+            g_object_set (s_wifi, NM_SETTING_WIRELESS_SEC, nullptr, nullptr);
           }break;
           case NM_802_11_AP_SEC_PAIR_WEP40 : {
             if (password) {
@@ -1337,7 +1354,7 @@ int AMNetworkManager_priv::wifi_setup_adhoc(
                             NM_SETTING_WIRELESS_SECURITY_KEY_MGMT, "none",
                             NM_SETTING_WIRELESS_SECURITY_AUTH_ALG, "open",
                             NM_SETTING_WIRELESS_SECURITY_WEP_KEY_TYPE, 1,
-                            NULL);
+                            nullptr);
               nm_setting_wireless_security_set_wep_key (s_wsec, 0, password);
             }
           }break;
@@ -1350,7 +1367,7 @@ int AMNetworkManager_priv::wifi_setup_adhoc(
                             NM_SETTING_WIRELESS_SECURITY_KEY_MGMT, "none",
                             NM_SETTING_WIRELESS_SECURITY_AUTH_ALG, "open",
                             NM_SETTING_WIRELESS_SECURITY_WEP_KEY_TYPE, 2,
-                            NULL);
+                            nullptr);
               nm_setting_wireless_security_set_wep_key (s_wsec, 0, password);
             }
           }break;
@@ -1362,7 +1379,7 @@ int AMNetworkManager_priv::wifi_setup_adhoc(
               g_object_set(s_wsec,
                             NM_SETTING_WIRELESS_SECURITY_KEY_MGMT,"wpa-psk",
                             NM_SETTING_WIRELESS_SECURITY_PSK, password,
-                            NULL);
+                            nullptr);
             }
           }break;
           default: {
@@ -1375,7 +1392,7 @@ int AMNetworkManager_priv::wifi_setup_adhoc(
         g_object_set (G_OBJECT (s_ip4),
                 NM_SETTING_IP4_CONFIG_METHOD,
                 NM_SETTING_IP4_CONFIG_METHOD_SHARED,
-                NULL);
+                nullptr);
         nm_connection_add_setting (connection, NM_SETTING (s_ip4));
 
         s_ip6 = (NMSettingIP6Config *) nm_setting_ip6_config_new ();
@@ -1383,7 +1400,7 @@ int AMNetworkManager_priv::wifi_setup_adhoc(
                 NM_SETTING_IP6_CONFIG_METHOD,
                 NM_SETTING_IP6_CONFIG_METHOD_IGNORE,
                 NM_SETTING_IP6_CONFIG_MAY_FAIL, TRUE,
-                NULL);
+                nullptr);
         nm_connection_add_setting (connection, NM_SETTING (s_ip6));
 
         if (nm_remote_settings_add_connection (mSysSettings, connection,
@@ -1411,7 +1428,7 @@ int AMNetworkManager_priv::wifi_setup_ap(const char *name, const char*password,
   NmCbData info;
   if (AM_LIKELY(init())) {
     if (AM_LIKELY(name)) {
-      NMConnection *connection = NULL;
+      NMConnection *connection = nullptr;
 
       DEBUG("AP=%s, Password=%s\n", name, password);
 
@@ -1426,10 +1443,10 @@ int AMNetworkManager_priv::wifi_setup_ap(const char *name, const char*password,
         }
       }
       if (needCreateNew) {
-        NMSettingConnection *s_con = NULL;
-        NMSettingWireless *s_wifi = NULL;
-        NMSettingIP4Config *s_ip4 = NULL;
-        NMSettingIP6Config *s_ip6 = NULL;
+        NMSettingConnection *s_con = nullptr;
+        NMSettingWireless *s_wifi = nullptr;
+        NMSettingIP4Config *s_ip4 = nullptr;
+        NMSettingIP6Config *s_ip6 = nullptr;
 
         connection = nm_connection_new();
         s_con = (NMSettingConnection *) nm_setting_connection_new ();
@@ -1438,7 +1455,7 @@ int AMNetworkManager_priv::wifi_setup_ap(const char *name, const char*password,
                 NM_SETTING_CONNECTION_UUID, uuid,
                 NM_SETTING_CONNECTION_ID, name,
                 NM_SETTING_CONNECTION_TYPE, NM_SETTING_WIRELESS_SETTING_NAME,
-                NULL);
+                nullptr);
         g_free (uuid);
         nm_connection_add_setting (connection, NM_SETTING (s_con));
 
@@ -1451,19 +1468,19 @@ int AMNetworkManager_priv::wifi_setup_ap(const char *name, const char*password,
                 NM_SETTING_WIRELESS_SEC,
                 NM_SETTING_WIRELESS_SECURITY_SETTING_NAME,
                 NM_SETTING_WIRELESS_MODE, NM_SETTING_WIRELESS_MODE_AP,
-                NULL);
+                nullptr);
         if ((channel > 0) && (channel < 15)) {
           g_object_set(s_wifi,
                 NM_SETTING_WIRELESS_BAND, "bg",
                 NM_SETTING_WIRELESS_CHANNEL, channel,
-                NULL);
+                nullptr);
         }
         g_byte_array_free(ssid_ba, TRUE);
         nm_connection_add_setting (connection, NM_SETTING (s_wifi));
 
         switch (security) {
           case NM_802_11_AP_SEC_NONE : {
-            g_object_set (s_wifi, NM_SETTING_WIRELESS_SEC, NULL, NULL);
+            g_object_set (s_wifi, NM_SETTING_WIRELESS_SEC, nullptr, nullptr);
           }break;
           case NM_802_11_AP_SEC_PAIR_WEP40 : {
             if (password) {
@@ -1474,7 +1491,7 @@ int AMNetworkManager_priv::wifi_setup_ap(const char *name, const char*password,
                             NM_SETTING_WIRELESS_SECURITY_KEY_MGMT, "none",
                             NM_SETTING_WIRELESS_SECURITY_AUTH_ALG, "open",
                             NM_SETTING_WIRELESS_SECURITY_WEP_KEY_TYPE, 1,
-                            NULL);
+                            nullptr);
               nm_setting_wireless_security_set_wep_key (s_wsec, 0, password);
             }
           }break;
@@ -1487,7 +1504,7 @@ int AMNetworkManager_priv::wifi_setup_ap(const char *name, const char*password,
                             NM_SETTING_WIRELESS_SECURITY_KEY_MGMT, "none",
                             NM_SETTING_WIRELESS_SECURITY_AUTH_ALG, "open",
                             NM_SETTING_WIRELESS_SECURITY_WEP_KEY_TYPE, 2,
-                            NULL);
+                            nullptr);
               nm_setting_wireless_security_set_wep_key (s_wsec, 0, password);
             }
           }break;
@@ -1499,7 +1516,7 @@ int AMNetworkManager_priv::wifi_setup_ap(const char *name, const char*password,
               g_object_set(s_wsec,
                             NM_SETTING_WIRELESS_SECURITY_KEY_MGMT,"wpa-psk",
                             NM_SETTING_WIRELESS_SECURITY_PSK, password,
-                            NULL);
+                            nullptr);
             }
           }break;
           default: {
@@ -1512,7 +1529,7 @@ int AMNetworkManager_priv::wifi_setup_ap(const char *name, const char*password,
         g_object_set (G_OBJECT (s_ip4),
                 NM_SETTING_IP4_CONFIG_METHOD,
                 NM_SETTING_IP4_CONFIG_METHOD_SHARED,
-                NULL);
+                nullptr);
         nm_connection_add_setting (connection, NM_SETTING (s_ip4));
 
         s_ip6 = (NMSettingIP6Config *) nm_setting_ip6_config_new ();
@@ -1520,7 +1537,7 @@ int AMNetworkManager_priv::wifi_setup_ap(const char *name, const char*password,
                 NM_SETTING_IP6_CONFIG_METHOD,
                 NM_SETTING_IP6_CONFIG_METHOD_IGNORE,
                 NM_SETTING_IP6_CONFIG_MAY_FAIL, TRUE,
-                NULL);
+                nullptr);
         nm_connection_add_setting (connection, NM_SETTING (s_ip6));
 
         if (nm_remote_settings_add_connection (mSysSettings, connection,
@@ -1549,9 +1566,9 @@ int AMNetworkManager_priv::wifi_connection_up(const char* ap_name,
 
   if (AM_LIKELY(init())) {
     if (AM_LIKELY(ap_name)) {
-      NMConnection *connection = NULL;
-      NMDevice        *wifiDev = NULL;
-      NMAccessPoint        *ap = NULL;
+      NMConnection *connection = nullptr;
+      NMDevice        *wifiDev = nullptr;
+      NMAccessPoint        *ap = nullptr;
 
       for (guint i = 0; i < g_slist_length(mSysConnections); ++ i) {
         NMConnection *conn =
@@ -1584,7 +1601,7 @@ int AMNetworkManager_priv::wifi_connection_up(const char* ap_name,
           nm_client_activate_connection(mNmClient,
                     connection,
                     wifiDev,
-                    ap ? nm_object_get_path(NM_OBJECT(ap)) : NULL,
+                    ap ? nm_object_get_path(NM_OBJECT(ap)) : nullptr,
                     activate_cb,
                     &info);
 
@@ -1607,7 +1624,7 @@ int AMNetworkManager_priv::wifi_connection_delete(const char* ap_name)
 
   if (AM_LIKELY(init())) {
     if ( AM_LIKELY(ap_name)) {
-      NMConnection *connection = NULL;
+      NMConnection *connection = nullptr;
 
       for (guint i = 0; i < g_slist_length(mSysConnections); ++ i) {
         NMConnection *conn =
@@ -1624,7 +1641,7 @@ int AMNetworkManager_priv::wifi_connection_delete(const char* ap_name)
 
       if (connection) {
         g_signal_connect (connection, NM_REMOTE_CONNECTION_REMOVED,
-                          G_CALLBACK (connection_removed_cb), NULL);
+                          G_CALLBACK (connection_removed_cb), nullptr);
         nm_remote_connection_delete (NM_REMOTE_CONNECTION (connection),
                                      delete_cb, &info);
         while (!info.isdone) {
@@ -1652,10 +1669,10 @@ bool AMNetworkManager_priv::wifi_get_active_ap(APInfo **infos)
           const char *active_bssid = nm_access_point_get_bssid(active_ap);
           if (AM_LIKELY(active_ap)) {
             *info = new APInfo();
-            (*info)->info_next=NULL;
+            (*info)->info_next= nullptr;
             (*info)->index = num++;
             (*info)->active_bssid = active_bssid ?
-                g_strdup(active_bssid) : NULL;
+                g_strdup(active_bssid) : nullptr;
             (*info)->device = g_strdup(nm_device_get_iface(dev));
             detail_access_point(active_ap, *info);
             info = &((*info)->info_next);
@@ -1664,12 +1681,12 @@ bool AMNetworkManager_priv::wifi_get_active_ap(APInfo **infos)
       }
     }
   }
-  return (infos != NULL);
+  return (infos != nullptr);
 }
 
 int AMNetworkManager_priv::disconnect_device(const char *iface)
 {
-  NMDevice *device = NULL;
+  NMDevice *device = nullptr;
   const GPtrArray *devices;
   NmCbData info;
 

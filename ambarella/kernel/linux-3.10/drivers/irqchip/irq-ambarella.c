@@ -329,7 +329,7 @@ static void ambvic_raise_softirq(const struct cpumask *mask, unsigned int irq)
 	ambvic_sw_set(ambvic_data.ipi_reg_base, softirq);
 }
 
-static void ambvic_smp_softirq_init(void)
+void ambvic_smp_softirq_init(void)
 {
 	void __iomem *reg_base = ambvic_data.ipi_reg_base;
 	u32 val;
@@ -381,36 +381,35 @@ static inline int ambvic_handle_ipi(struct pt_regs *regs,
 static int ambvic_handle_scratchpad_vic(struct pt_regs *regs,
 	struct irq_domain *domain)
 {
-	u32 scratchpad;
-	u32 bank;
-	u32 irq, hwirq;
+	u32 scratchpad, irq_sta, irq, hwirq;
 	int handled = 0;
 
-	if (smp_processor_id()) {
-		scratchpad = AHB_SCRATCHPAD_REG(0x40);
-	} else {
-		scratchpad = AHB_SCRATCHPAD_REG(0x3C);
-	}
+	if (smp_processor_id())
+		scratchpad = AHBSP_PRI_IRQ_C1_REG;
+	else
+		scratchpad = AHBSP_PRI_IRQ_C0_REG;
+
 	do {
 		hwirq = amba_readl(scratchpad);
 		if (hwirq == VIC_NULL_PRI_IRQ_VAL) {
 #if (VIC_NULL_PRI_IRQ_FIX == 1)
-			void __iomem *reg_base = ambvic_data.reg_base[2];
-			if ((amba_readl(reg_base + VIC_IRQ_STA_OFFSET) & 0x1) == 0)
+			irq_sta = amba_readl(ambvic_data.reg_base[2] + VIC_IRQ_STA_OFFSET);
+			if ((irq_sta & 0x1) == 0)
 				break;
 #else
 			break;
 #endif
+		} else if (hwirq == 0) {
+			irq_sta = amba_readl(ambvic_data.reg_base[0] + VIC_IRQ_STA_OFFSET);
+			if ((irq_sta & 0x1) == 0)
+				break;
 		}
-		bank = (hwirq >> 5) & 0x3;
-		hwirq &= 0x1F;
+
 #if 0
 		printk("CPU%d_%s: %d_%d\n",
 			smp_processor_id(), __func__,
-			bank, hwirq);
+			(hwirq >> 5) & 0x3, hwirq & 0x1F);
 #endif
-		hwirq += bank * NR_VIC_IRQ_SIZE;
-
 		if (ambvic_handle_ipi(regs, domain, hwirq)) {
 			handled = 1;
 			continue;
@@ -428,9 +427,7 @@ static int ambvic_handle_one(struct pt_regs *regs,
 	struct irq_domain *domain, u32 bank)
 {
 	void __iomem *reg_base = ambvic_data.reg_base[bank];
-	u32 irq;
-	u32 hwirq;
-	u32 irq_sta;
+	u32 hwirq, irq, irq_sta;
 	int handled = 0;
 
 	do {
@@ -438,7 +435,7 @@ static int ambvic_handle_one(struct pt_regs *regs,
 		hwirq = amba_readl(reg_base + VIC_INT_PENDING_OFFSET);
 		if (hwirq == 0) {
 			irq_sta = amba_readl(reg_base + VIC_IRQ_STA_OFFSET);
-			if ((irq_sta & 0x00000001) == 0) {
+			if ((irq_sta & 0x1) == 0) {
 				break;
 			}
 		}
@@ -603,8 +600,8 @@ int __init ambvic_of_init(struct device_node *np, struct device_node *parent)
 			NR_VIC_IRQS, &amb_irq_domain_ops, NULL);
 	BUG_ON(!ambvic_data.domain);
 
-	// WORKAROUND only, will be removed finally
-	for (i = 1; i < NR_VIC_IRQS; i++) {
+	/* create mapping to make hwirq == irq to make life easier */
+	for (i = NR_VIC_IRQS - 1; i >= 0; i--) {
 		irq = irq_create_mapping(ambvic_data.domain, i);
 		irq_set_chip_and_handler(irq, &ambvic_chip, handle_level_irq);
 		irq_set_chip_data(irq, ambvic_data.reg_base[HWIRQ_TO_BANK(i)]);

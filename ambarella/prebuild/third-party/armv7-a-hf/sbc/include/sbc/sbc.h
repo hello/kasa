@@ -3,6 +3,7 @@
  *  Bluetooth low-complexity, subband codec (SBC) library
  *
  *  Copyright (C) 2008-2010  Nokia Corporation
+ *  Copyright (C) 2012-2014  Intel Corporation
  *  Copyright (C) 2004-2010  Marcel Holtmann <marcel@holtmann.org>
  *  Copyright (C) 2004-2005  Henryk Ploetz <henryk@ploetzli.ch>
  *  Copyright (C) 2005-2006  Brad Midgley <bmidgley@xmission.com>
@@ -84,6 +85,10 @@ typedef struct sbc_struct sbc_t;
 int sbc_init(sbc_t *sbc, unsigned long flags);
 int sbc_reinit(sbc_t *sbc, unsigned long flags);
 int sbc_init_msbc(sbc_t *sbc, unsigned long flags);
+int sbc_init_a2dp(sbc_t *sbc, unsigned long flags,
+					const void *conf, size_t conf_len);
+int sbc_reinit_a2dp(sbc_t *sbc, unsigned long flags,
+					const void *conf, size_t conf_len);
 
 ssize_t sbc_parse(sbc_t *sbc, const void *input, size_t input_len);
 

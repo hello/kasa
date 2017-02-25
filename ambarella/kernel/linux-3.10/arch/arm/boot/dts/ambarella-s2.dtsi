@@ -19,6 +19,8 @@
 		serial2 = &uart2;
 		serial3 = &uart3;
 		nand = &nand0;
+		sd0 = &sdmmc0;
+		sd1 = &sdmmc1;
 		i2c0 = &i2c0;
 		i2c1 = &i2c1;
 		i2c2 = &i2c2;
@@ -398,10 +400,14 @@
 		reg = <0x60000000 0x01000000>;
 		ranges;
 
-		dma@60005000 {
+		dma: dma@60005000 {
 			compatible = "ambarella,dma";
 			reg = <0x60005000 0x1000>;
 			interrupts = <0 15 0x4>;
+			#dma-cells = <2>;
+			dma-channels = <5>;
+			dma-requests = <5>;
+			dma-trans-type = <0 1 1 1 1>; /* 0-memcpy ,1-slave*/
 			amb,copy-align = <3>;
 		};
 
@@ -426,9 +432,11 @@
 			reg = <0x6000a000 0x1000>;
 			pinctrl-names = "default";
 			pinctrl-0 = <&i2s0_pins>;
-			bclk_reverse = <0>;
 			amb,i2s-channels = <2>;
 			amb,default-mclk = <12288000>;
+			dmas = <&dma 1 1>,
+				   <&dma 0 1>;
+			dma-names = "tx", "rx";
 		};
 
 		udc@60006000 {
@@ -454,7 +462,7 @@
 			status = "disabled";
 		};
 
-		sdmmc0@60002000 {
+		sdmmc0: sdmmc0@60002000 {
 			compatible = "ambarella,sdmmc";
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -463,7 +471,8 @@
 			      <0x701701d0 0x4>;
 			interrupts = <0 18 0x4>;
 			amb,clk-name = "gclk_sd";
-			amb,wait-tmo = <2500>; /* in millisecond */
+			amb,wait-tmo = <10000>; /* in millisecond */
+			amb,switch_vol_tmo = <20>;
 			amb,max-blk-size = <524288>; /* valid value: 4K<<n */
 			amb,phy-timing = <0x00000001 0xe3e0e3e0 0x00000000>,
 					 <0x00000080 0xe3e0e3e0 0x00071c00>;
@@ -480,7 +489,7 @@
 			};
 		};
 
-		sdmmc1@6000c000 {
+		sdmmc1: sdmmc1@6000c000 {
 			compatible = "ambarella,sdmmc";
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -490,7 +499,8 @@
 			interrupts = <0 52 0x4>;
 			amb,dma-addr-fix;
 			amb,clk-name = "gclk_sdio";
-			amb,wait-tmo = <2500>; /* in millisecond */
+			amb,wait-tmo = <10000>; /* in millisecond */
+			amb,switch_vol_tmo = <20>;
 			amb,max-blk-size = <524288>; /* valid value: 4K<<n */
 			amb,phy-timing = <0x00000001 0x1c1f1c1f 0x00000000>,
 					 <0x00000080 0x1c1f1c1f 0x00e0e000>;
@@ -552,6 +562,10 @@
 			reg = <0x70170050 0x4 0x6001b00c 0x4 0x70170088 0x4>;
 			amb,host-phy-num = <1>;
 		};
+	};
+
+	iav {
+		compatible = "ambarella,iav";
 	};
 
 	bogus_bus {

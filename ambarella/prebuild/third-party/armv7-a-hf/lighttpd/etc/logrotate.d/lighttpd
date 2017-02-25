@@ -3,6 +3,6 @@
     notifempty
     sharedscripts
     postrotate
-        /bin/killall -HUP lighttpd &>/dev/null || :
+        /usr/bin/killall -HUP lighttpd &>/dev/null || :
     endscript
 }

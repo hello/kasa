@@ -4,14 +4,33 @@
  * History:
  *  Mar 4, 2014 - [qianshen] created file
  *
- * Copyright (C) 2012-2016, Ambarella ShangHai Co,Ltd
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * Copyright (c) 2015 Ambarella, Inc.
  *
- ******************************************************************************/
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
+
 #include <config.h>
 #include <linux/random.h>
 #include <linux/slab.h>
@@ -93,21 +112,6 @@ inline u32 get_pm_domain(struct ambarella_iav *iav)
 	return domain;
 }
 
-inline int get_pm_vin_win(struct ambarella_iav *iav, struct iav_rect **vin)
-{
-	if (iav->system_config[iav->encode_mode].expo_num >= MAX_HDR_2X) {
-		if (!iav->vinc[0]->vin_format.max_act_win.width ||
-			!iav->vinc[0]->vin_format.max_act_win.height) {
-			iav_error("Sensor should export max_act_win in HDR mode!\n");
-			return -1;
-		}
-		*vin = (struct iav_rect *)&iav->vinc[0]->vin_format.max_act_win;
-		return 0;
-	} else {
-		return get_vin_win(iav, vin, 0);
-	}
-}
-
 int get_iso_type(struct ambarella_iav *iav, u32 debug_enable_map)
 {
 	u32 chip_id;
@@ -125,6 +129,7 @@ int get_iso_type(struct ambarella_iav *iav, u32 debug_enable_map)
 			case IAV_CHIP_ID_S2L_55M:
 			case IAV_CHIP_ID_S2L_99M:
 			case IAV_CHIP_ID_S2L_TEST:
+			case IAV_CHIP_ID_S2L_33MEX:
 				/* Run Middle ISO for S2LM */
 				iso_type = ISO_TYPE_MIDDLE;
 				break;
@@ -132,6 +137,8 @@ int get_iso_type(struct ambarella_iav *iav, u32 debug_enable_map)
 			case IAV_CHIP_ID_S2L_66:
 			case IAV_CHIP_ID_S2L_88:
 			case IAV_CHIP_ID_S2L_99:
+			case IAV_CHIP_ID_S2L_22:
+			case IAV_CHIP_ID_S2L_33EX:
 				/* Run Advanced ISO for S2L */
 				iso_type = ISO_TYPE_ADVANCED;
 				break;
@@ -217,6 +224,19 @@ inline int get_vout_win(u32 buf_id, struct iav_window *vout)
 	return 0;
 }
 
+inline int get_stream_win_MB(struct iav_stream_format *stream_format, struct iav_window *win)
+{
+	if (stream_format->rotate_cw == 0) {
+		win->width = ALIGN(stream_format->enc_win.width, PIXEL_IN_MB) / PIXEL_IN_MB;
+		win->height = ALIGN(stream_format->enc_win.height, PIXEL_IN_MB) / PIXEL_IN_MB;
+	} else {
+		win->width = ALIGN(stream_format->enc_win.height, PIXEL_IN_MB) / PIXEL_IN_MB;
+		win->height = ALIGN(stream_format->enc_win.width, PIXEL_IN_MB) / PIXEL_IN_MB;
+	}
+
+	return 0;
+}
+
 /* Need to add "mutex_lock / mutex_unlock" in the upper layer before
  * calling this function. */
 inline int wait_vcap_count(struct ambarella_iav *iav, u32 count)
@@ -281,5 +301,20 @@ int iav_mem_copy(struct ambarella_iav *iav, u32 buff_id,
 	// End of GDMA copy
 
 	return rval;
+}
+
+u32 get_dsp_encode_bitrate(struct iav_stream *stream)
+{
+	u32 ff_multi = stream->fps.fps_multi;
+	u32 ff_division = stream->fps.fps_div;
+	u32 full_bitrate = stream->h264_config.average_bitrate;
+	u32 bitrate = 0;
+
+	if (ff_division) {
+		bitrate =  (stream->h264_config.abs_br_flag ?
+			full_bitrate : (full_bitrate * ff_multi / ff_division));
+	}
+
+	return bitrate;
 }
 

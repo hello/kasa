@@ -9,12 +9,29 @@
  *	2010/12/31 - [Louis Sun] create this file base on test2.c
  *	2011/10/31 - [Jian Tang] modified this file.
  *
- * Copyright (C) 2007-2012, Ambarella, Inc.
+ * Copyright (C) 2015 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
 #include <unistd.h>
@@ -35,6 +52,7 @@
 #include <assert.h>
 #include <basetypes.h>
 #include <iav_ioctl.h>
+#include <iav_ucode_ioctl.h>
 
 #include <signal.h>
 
@@ -122,6 +140,7 @@ typedef enum {
 	IAV_SHOW_DRAM_LAYOUT = 0x08,
 	IAV_SHOW_FEATURE_SET = 0x09,
 	IAV_SHOW_CMD_EXAMPPLES = 0x0A,
+	IAV_SHOW_QP_HIST = 0x0B,
 	IAV_SHOW_INFO_TOTAL_NUM,
 	IAV_SHOW_INFO_FIRST = 0,
 	IAV_SHOW_INFO_LAST = IAV_SHOW_INFO_TOTAL_NUM,
@@ -186,9 +205,6 @@ typedef struct encode_format_s {
 
 	u16 duration;
 	u16 duration_flag;
-
-	u16 snapshot_enable;
-	u16 snapshot_enable_flag;
 } encode_format_t;
 
 //source buffer type
@@ -213,6 +229,12 @@ typedef struct source_buffer_format_s {
 
 	int unwarp;
 	int unwarp_flag;
+
+	int dump_interval;
+	int dump_interval_flag;
+
+	int dump_duration;
+	int dump_duration_flag;
 }  source_buffer_format_t;
 
 //resolution
@@ -230,18 +252,28 @@ typedef struct qp_limit_params_s {
 	u8	qp_max_p;
 	u8	qp_min_b;
 	u8	qp_max_b;
+	u8	qp_min_q;
+	u8	qp_max_q;
 	u8	adapt_qp;
 	u8	i_qp_reduce;
 	u8	p_qp_reduce;
+	u8	q_qp_reduce;
+	u8	log_q_num_plus_1;
 	u8	skip_frame;
+	u16	max_i_size_KB;
 
 	u8	qp_i_flag;
 	u8	qp_p_flag;
 	u8	qp_b_flag;
+	u8	qp_q_flag;
 	u8	adapt_qp_flag;
 	u8	i_qp_reduce_flag;
 	u8	p_qp_reduce_flag;
+	u8	q_qp_reduce_flag;
+	u8	log_q_num_plus_1_flag;
 	u8	skip_frame_flag;
+	u8	max_i_size_KB_flag;
+	u8	reserved1;
 } qp_limit_params_t;
 
 // qp matrix delta value
@@ -289,11 +321,11 @@ typedef struct h264_param_s {
 	int h264_mv_threshold;
 	int h264_mv_threshold_flag;
 
-	int h264_enc_improve;
-	int h264_enc_improve_flag;
+	int h264_flat_area_improve;
+	int h264_flat_area_improve_flag;
 
-	int h264_long_term_intvl;
-	int h264_long_term_intvl_flag;
+	int h264_fast_seek_intvl;
+	int h264_fast_seek_intvl_flag;
 
 	int h264_multi_ref_p;
 	int h264_multi_ref_p_flag;
@@ -332,6 +364,23 @@ typedef struct h264_param_s {
 	u8 fast_rc_idc;
 	u32 cpb_user_size;
 	int panic_mode_flag;
+
+	u16 h264_frame_crop_left_offset;
+	u16 h264_frame_crop_right_offset;
+	u16 h264_frame_crop_top_offset;
+	u16 h264_frame_crop_bottom_offset;
+
+	u16 h264_frame_crop_left_offset_flag;
+	u16 h264_frame_crop_right_offset_flag;
+	u16 h264_frame_crop_top_offset_flag;
+	u16 h264_frame_crop_bottom_offset_flag;
+
+	int h264_abs_br;
+	int h264_abs_br_flag;
+
+	int force_pskip_repeat_enable;
+	int force_pskip_repeat_num;
+	int force_pskip_flag;
 } h264_param_t;
 
 typedef struct jpeg_param_s{
@@ -367,6 +416,8 @@ typedef struct system_resource_setup_s {
 	int extra_dram_buf_changed_id;
 	int lens_warp;
 	int lens_warp_flag;
+	int max_enc_num;
+	int max_enc_num_flag;
 	int max_warp_input_width;
 	int max_warp_input_width_flag;
 	int max_warp_input_height;
@@ -393,6 +444,8 @@ typedef struct system_resource_setup_s {
 	int efm_buf_num_flag;
 	int enc_raw_yuv;
 	int enc_raw_yuv_flag;
+	int vin_overflow_protection;
+	int vin_overflow_protection_flag;
 
 	/* Intermediate buffer*/
 	int v_warped_main_max_width;
@@ -408,6 +461,9 @@ typedef struct system_resource_setup_s {
 	int dsp_partition_map;
 	int dsp_partition_map_flag;
 
+	int long_ref_b_frame;
+	int long_ref_b_frame_flag;
+
 	int stream_long_ref_enable[MAX_ENCODE_STREAM_NUM];
 	int stream_long_ref_enable_flag[MAX_ENCODE_STREAM_NUM];
 	int max_gop_M[MAX_ENCODE_STREAM_NUM];
@@ -419,6 +475,9 @@ typedef struct system_resource_setup_s {
 	int debug_iso_type_flag;
 	int debug_chip_id;
 	int debug_chip_id_flag;
+
+	int extra_top_row_buf;
+	int extra_top_row_buf_flag;
 }system_resource_setup_t;
 
 typedef struct debug_setup_s {
@@ -444,6 +503,7 @@ static int current_buffer = -1;	// -1 is a invalid buffer, for initialize data o
 //encode start/stop/format control variables
 static u32 start_stream_id = 0;
 static u32 stop_stream_id = 0;
+static u32 abort_stream_id = 0;
 
 //encoding settings
 static encode_format_t encode_format[MAX_ENCODE_STREAM_NUM];
@@ -470,6 +530,9 @@ static int system_resource_limit_changed_flag = 0;
 
 //force idr generation
 static u32 force_idr_id = 0;
+
+//long ref p generation
+static u32 long_ref_p_id = 0;
 
 //force fast seek frame
 static u32 force_fast_seek_id = 0;
@@ -503,6 +566,9 @@ static int dump_idsp_bin_flag = 0;
 //debug settings
 static debug_setup_t debug_setup;
 static int debug_setup_flag = 0;
+
+static int dsp_clock_state_disable = 0;
+static int dsp_clock_state_disable_flag = 0;
 
 struct encode_resolution_s {
 	const char 	*name;
@@ -598,8 +664,7 @@ struct hint_s {
 
 #define	STREAM_NUMVERIC_SHORT_OPTIONS				\
 	ENCODING_OFFSET_X_Y	=	STREAM_OPTIONS_BASE,	\
-	ENCODING_MAX_SIZE,		\
-	SPECIFY_STREAM_SNAPSHOT
+	ENCODING_MAX_SIZE
 
 #define	ENCODE_CONTROL_NUMVERIC_SHORT_OPTIONS				\
 	SPECIFY_MULTISTREAMS_START	=	ENCODE_CONTROL_OPTIONS_BASE,	\
@@ -609,7 +674,9 @@ struct hint_s {
 	FRAME_FACTOR,				\
 	FRAME_FACTOR_SYNC,			\
 	STREAM_ABS_FPS,			\
-	SPECIFY_STREAM_ABS_FPS
+	SPECIFY_STREAM_ABS_FPS,	\
+	SPECIFY_LONG_REF_P,		\
+	SPECIFY_STREAM_ABORT
 
 #define	H264ENC_NUMVERIC_SHORT_OPTIONS					\
 	SPECIFY_GOP_IDR				=	H264ENC_OPTIONS_BASE,	\
@@ -620,21 +687,29 @@ struct hint_s {
 	CHANGE_QP_LIMIT_I,			\
 	CHANGE_QP_LIMIT_P,			\
 	CHANGE_QP_LIMIT_B,			\
+	CHANGE_QP_LIMIT_Q,			\
 	CHANGE_ADAPT_QP,			\
 	CHANGE_I_QP_REDUCE,		\
 	CHANGE_P_QP_REDUCE,		\
+	CHANGE_Q_QP_REDUCE,		\
+	CHANGE_LOG_Q_NUM_PLUS_1,	\
 	CHANGE_SKIP_FRAME_MODE,	\
+	CHANGE_MAX_I_SIZE_KB,	\
 	CHANGE_INTRA_MB_ROWS,		\
 	CHANGE_QP_MATRIX_DELTA,	\
 	CHANGE_QP_MATRIX_MODE,		\
 	DEBLOCKING_ALPHA,			\
 	DEBLOCKING_BETA,			\
 	DEBLOCKING_ENABLE,			\
+	LEFT_FRAME_CROP,			\
+	RIGHT_FRAME_CROP,			\
+	TOP_FRAME_CROP,				\
+	BOTTOM_FRAME_CROP,			\
 	SPECIFY_PROFILE_LEVEL,		\
 	INTLC_IFRAME,				\
 	SPECIFY_MV_THRESHOLD,		\
-	SPECIFY_ENC_IMPROVE,		\
-	SPECIFY_LONG_TERM_INTVL,	\
+	SPECIFY_FLAT_AREA_IMPROVE,		\
+	SPECIFY_FAST_SEEK_INTVL,	\
 	SPECIFY_MULTI_REF_P,			\
 	SPECIFY_MAX_GOP_M,			\
 	SPECIFY_FORCE_FAST_SEEK,		\
@@ -647,7 +722,11 @@ struct hint_s {
 	SPECIFY_USER2_DIRECTBIAS,	\
 	SPECIFY_USER3_INTRABIAS,		\
 	SPECIFY_USER3_DIRECTBIAS,	\
-	SPECIFY_AU_TYPE
+	SPECIFY_AU_TYPE,			\
+	SPECIFY_ABS_BR_FLAG,		\
+	SPECIFY_FORCE_PSKIP_REPEAT,	\
+	SPECIFY_REPEAT_PSKIP_NUM
+
 
 #define	PANIC_NUMVERIC_SHORT_OPTIONS		\
 	CPB_BUF_IDC			=	PANIC_OPTIONS_BASE,	\
@@ -670,11 +749,13 @@ struct hint_s {
 	SPECIFY_RAW_CAPTURE,		\
 	SPECIFY_HDR_EXPOSURE_NUM,	\
 	SPECIFY_LENS_WARP,			\
+	SPECIFY_MAX_ENC_NUM,		\
 	SPECIFY_MAX_WARP_INPUT_HEIGHT,	\
 	SPECIFY_MAX_PADDING_WIDTH,		\
 	SPECIFY_INTERMEDIATE_BUF_SIZE,	\
 	SPECIFY_ENC_DUMMY_LATENCY,		\
 	SPECIFY_LONG_REF_ENABLE,		\
+	SPECIFY_LONG_REF_B_FRAME,		\
 	SPECIFY_DSP_PARTITION_MAP,		\
 	SPECIFY_IDSP_UPSAMPLE_TYPE,		\
 	SPECIFY_MCTF_PM,				\
@@ -688,7 +769,10 @@ struct hint_s {
 	SPECIFY_EFM_BUF_NUM,		\
 	SPECIFY_EFM_SIZE,			\
 	DUMP_IDSP_CONFIG,			\
-	SPECIFY_OSD_MIXER
+	SPECIFY_OSD_MIXER,			\
+	SPECIFY_OVERFLOW_PROTECTION,\
+	SPECIFY_DSP_CLCOK_STATE,	\
+	SPECIFY_EXTRA_TOP_RAW_BUF
 
 #define	SOURCE_BUFFER_NUMVERIC_SHORT_OPTIONS		\
 	SPECIFY_BUFFER_TYPE = SOURCE_BUFFER_OPTIONS_BASE,	\
@@ -697,7 +781,9 @@ struct hint_s {
 	SPECIFY_BUFFER_INPUT_SIZE,	\
 	SPECIFY_BUFFER_INPUT_OFFSET,	\
 	SPECIFY_BUFFER_PREWARP,		\
-	SPECIFY_EXTRA_DRAM_BUF
+	SPECIFY_EXTRA_DRAM_BUF,		\
+	SPECIFY_VCA_DUMP_INTERVAL,	\
+	SPECIFY_VCA_DUMP_DURATION
 
 #define	SHOW_NUMVERIC_SHORT_OPTIONS		\
 	SHOW_SYSTEM_STATE = MISC_OPTIONS_BASE,		\
@@ -711,6 +797,7 @@ struct hint_s {
 	SHOW_DRAM_LAYOUT,		\
 	SHOW_FEATURE_SET,		\
 	SHOW_CMD_EXAMPLES,		\
+	SHOW_QP_HIST,		\
 	SHOW_ALL_INFO
 
 #define	DEBUG_NUMVERIC_SHORT_OPTIONS		\
@@ -772,7 +859,7 @@ enum numeric_short_options {
 #define	STREAM_C_HINTS			{"",			"\t\tconfig for stream C"},
 
 #define	STREAM_D_OPTIONS			{"stream_D",	NO_ARG,		0,	'D'},
-#define	STREAM_D_HINTS			{"",			"\t\tconfig for stream D"},
+#define	STREAM_D_HINTS			{"",			"\t\tconfig for stream D\n"},
 
 #define	STREAM_H264_OPTIONS		{"h264", 		HAS_ARG,	0,	'h'},
 #define	STREAM_H264_HINTS			{"resolution",	"\tenter H.264 encoding resolution"},
@@ -785,7 +872,7 @@ enum numeric_short_options {
 
 // encode source buffer
 #define	STREAM_SRCBUF_OPTIONS	{"src-buf",	HAS_ARG,	0,	'b'},
-#define	STREAM_SRCBUF_HINTS		{"0|1|2|3|5","\tsource buffers 0~3, and efm buffer 5" },
+#define	STREAM_SRCBUF_HINTS		{"0|1|2|3|5","source buffers 0~3, and efm buffer 5" },
 
 #define	STREAM_DURATION_OPTIONS		\
 	{"duration",	HAS_ARG,	0,	'd'},
@@ -804,11 +891,6 @@ enum numeric_short_options {
 #define	STREAM_SMAXSIZE_HINTS		\
 	{"resolution",	"specify stream max size for system resouce limit"},
 
-//stream snap shot
-#define	STREAM_SNAPSHOT_OPTIONS	\
-	{"snap-shot",	HAS_ARG,	0,	SPECIFY_STREAM_SNAPSHOT},
-#define	STREAM_SNAPSHOT_HINTS		\
-			{"0|1",	"Disable/Enable stream snap shot\n"},
 
 
 #define	STREAM_LONG_OPTIONS()	\
@@ -823,7 +905,6 @@ enum numeric_short_options {
 	STREAM_DURATION_OPTIONS	\
 	STREAM_OFFSET_OPTIONS		\
 	STREAM_SMAXSIZE_OPTIONS	\
-	STREAM_SNAPSHOT_OPTIONS
 
 #define STREAM_PARAMETER_HINTS()	\
 	STREAM_A_HINTS	\
@@ -837,7 +918,6 @@ enum numeric_short_options {
 	STREAM_DURATION_HINTS	\
 	STREAM_OFFSET_HINTS		\
 	STREAM_SMAXSIZE_HINTS	\
-	STREAM_SNAPSHOT_HINTS
 
 #define	STREAM_INIT_PARAMETERS()		\
 	case 'A':\
@@ -913,17 +993,6 @@ enum numeric_short_options {
 			system_resource_setup.stream_max_size_changed_id |= (1 << current_stream);\
 			system_resource_limit_changed_flag = 1;\
 			break;\
-	case SPECIFY_STREAM_SNAPSHOT:	\
-			VERIFY_STREAMID(current_stream);\
-			min_value = atoi(optarg);\
-			if (min_value != 0 && min_value != 1) {\
-				printf("Invalid snap shot flag [%d], should be [0|1].\n", min_value);\
-				return -1;\
-			}\
-			encode_format[current_stream].snapshot_enable = min_value;\
-			encode_format[current_stream].snapshot_enable_flag = 1;\
-			encode_format_changed_id |= (1 << current_stream);\
-			break;
 
 /***************************************************************
 	ENCODE CONTROL command line options
@@ -934,6 +1003,11 @@ enum numeric_short_options {
 //stop encoding
 #define	ENCODE_STOP_OPTIONS		{"stop",		NO_ARG,		0,	's'},
 #define	ENCODE_STOP_HINTS		{"", 			"\t\tstop encoding for current stream"},
+//clear stream state
+#define	ENCODE_ABORT_OPTIONS			\
+	{"abort-encode",NO_ARG,	0,	SPECIFY_STREAM_ABORT},
+#define	ENCODE_ABORT_HINTS				\
+	{"",			"\tabort encoding for current stream."},
 
 #define	ENCODE_START_MULTI_OPTIONS			\
 	{"start-multi",	HAS_ARG,	0,	SPECIFY_MULTISTREAMS_START},
@@ -970,16 +1044,22 @@ enum numeric_short_options {
 #define	STREAM_ABS_FPS_OPTIONS	\
 	{"stream-abs-fps",	HAS_ARG,	0,	STREAM_ABS_FPS},
 #define	STREAM_ABS_FPS_HINTS	\
-	{"1~60",	"set abs frame rate for streams.\n"},
+	{"1~60",	"set abs frame rate for streams"},
 
 #define	SPECIFY_STREAM_ABS_FPS_OPTIONS	\
 	{"stream-abs-fps-enable",	HAS_ARG,	0,	SPECIFY_STREAM_ABS_FPS},
 #define	SPECIFY_STREAM_ABS_FPS_HINTS	\
-	{"0|1",	"Enable setting abs frame rate. Default is 0.\n"},
+	{"0|1",	"Enable setting abs frame rate. Default is 0\n"},
+
+#define	ENCODE_LONG_REF_P_OPTIONS			\
+	{"long-ref-p",		NO_ARG,		0,	SPECIFY_LONG_REF_P},
+#define	ENCODE_LONG_REF_P_HINTS				\
+	{"",				"\t\tInserted long term P frame will replace IDR and be referenced by later frames."},
 
 #define	ENCODE_CONTROL_LONG_OPTIONS()		\
 	ENCODE_START_OPTIONS			\
 	ENCODE_STOP_OPTIONS			\
+	ENCODE_ABORT_OPTIONS		\
 	ENCODE_START_MULTI_OPTIONS		\
 	ENCODE_STOP_MULTI_OPTIONS		\
 	ENCODE_FORCE_IDR_OPTIONS		\
@@ -987,11 +1067,13 @@ enum numeric_short_options {
 	ENCODE_FRAME_FACTOR_OPTIONS	\
 	ENCODE_FRAME_FACTOR_SYNC_OPTIONS	\
 	STREAM_ABS_FPS_OPTIONS	\
-	SPECIFY_STREAM_ABS_FPS_OPTIONS
+	SPECIFY_STREAM_ABS_FPS_OPTIONS	\
+	ENCODE_LONG_REF_P_OPTIONS
 
 #define	ENCODE_CONTROL_PARAMETER_HINTS()		\
 	ENCODE_START_HINTS		\
 	ENCODE_STOP_HINTS			\
+	ENCODE_ABORT_HINTS			\
 	ENCODE_START_MULTI_HINTS	\
 	ENCODE_STOP_MULTI_HINTS	\
 	ENCODE_FORCE_IDR_HINTS		\
@@ -999,7 +1081,8 @@ enum numeric_short_options {
 	ENCODE_FRAME_FACTOR_HINTS	\
 	ENCODE_FRAME_FACTOR_SYNC_HINTS	\
 	STREAM_ABS_FPS_HINTS	\
-	SPECIFY_STREAM_ABS_FPS_HINTS
+	SPECIFY_STREAM_ABS_FPS_HINTS	\
+	ENCODE_LONG_REF_P_HINTS
 
 #define	ENCODE_CONTROL_INIT_PARAMETERS()		\
 	case 'e':\
@@ -1009,6 +1092,10 @@ enum numeric_short_options {
 	case 's':\
 			VERIFY_STREAMID(current_stream);\
 			stop_stream_id |= (1 << current_stream);\
+			break;\
+	case SPECIFY_STREAM_ABORT:\
+			VERIFY_STREAMID(current_stream);\
+			abort_stream_id |= (1 << current_stream);\
 			break;\
 	case SPECIFY_MULTISTREAMS_START:\
 			if (get_two_unsigned_int(optarg, &min_value, &max_value, '~') < 0) {\
@@ -1079,7 +1166,12 @@ enum numeric_short_options {
 			}\
 			stream_abs_fps_enable[current_stream] = min_value;\
 			stream_abs_fps_enabled_id |= (1 << current_stream);\
+			break;\
+	case SPECIFY_LONG_REF_P:\
+			VERIFY_STREAMID(current_stream);\
+			long_ref_p_id |= (1 << current_stream);\
 			break;
+
 /***************************************************************
 	H264 ENCODE command line options
 ****************************************************************/
@@ -1128,6 +1220,11 @@ enum numeric_short_options {
 #define	H264ENC_QP_LIMIT_B_HINTS			\
 	{"0~51",		"\tset B-frame qp limit range, 0:auto 1~51:qp limit range"},
 
+#define	H264ENC_QP_LIMIT_Q_OPTIONS		\
+	{"qp-limit-q", HAS_ARG, 	0, 	CHANGE_QP_LIMIT_Q},
+#define	H264ENC_QP_LIMIT_Q_HINTS			\
+	{"0~51",		"\tset Q-frame qp limit range, 0:auto 1~51:qp limit range"},
+
 #define	H264ENC_ADAPT_QP_OPTIONS		\
 	{"adapt-qp",	HAS_ARG, 	0, 	CHANGE_ADAPT_QP},
 #define	H264ENC_ADAPT_QP_HINTS			\
@@ -1143,10 +1240,26 @@ enum numeric_short_options {
 #define	H264ENC_P_QP_REDUCE_HINTS		\
 	{"1~5", "\tset diff of P QP less than B QP"},
 
+#define	H264ENC_Q_QP_REDUCE_OPTIONS		\
+	{"q-qp-reduce",	HAS_ARG, 	0, 	CHANGE_Q_QP_REDUCE},
+#define	H264ENC_Q_QP_REDUCE_HINTS		\
+	{"1~10",			"\tset diff of Q QP less than P QP"},
+
+#define	H264ENC_LOG_Q_NUM_PLUS_1_OPTIONS		\
+	{"log-q-num-plus-1",	HAS_ARG, 	0, 	CHANGE_LOG_Q_NUM_PLUS_1},
+#define	H264ENC_LOG_Q_NUM_PLUS_1_HINTS		\
+		{"0~4", 		"set Q frame number for one GOP, 0: no Q frame, 1: 1 Q frame, 2: 3 Q frames,"\
+		"\n\t\t\t\t3: 7 Q frames, 4: 15 Q frames"},
+
 #define	H264ENC_SKIP_FRAME_OPTIONS		\
 	{"skip-frame-mode",	HAS_ARG, 	0, 	CHANGE_SKIP_FRAME_MODE},
 #define	H264ENC_SKIP_FRAME_HINTS			\
 	{"0|1|2",			"0: disable, 1: skip based on CPB size, 2: skip based on target bitrate and max QP"},
+
+#define	H264ENC_MAX_I_SIZE_KB_OPTIONS		\
+	{"max-i-size-KB",	HAS_ARG, 	0, 	CHANGE_MAX_I_SIZE_KB},
+#define	H264ENC_MAX_I_SIZE_KB_HINTS		\
+	{"0~8192",			"set max size for I frame in KB, 0: disable max I size, > 0: max size for I frame in KB"},
 
 #define	H264ENC_MB_ROWS_OPTIONS		\
 	{"intra-mb-rows",	HAS_ARG, 	0, 	CHANGE_INTRA_MB_ROWS},
@@ -1161,7 +1274,7 @@ enum numeric_short_options {
 #define	H264ENC_QM_MODE_OPTIONS		\
 	{"qm-mode",	HAS_ARG,	0,	CHANGE_QP_MATRIX_MODE},
 #define	H264ENC_QM_MODE_HINTS			\
-	{"0~4",		"\tset QP Matrix mode, 0: default; 1: skip left region; 2: skip right; 3: skip top; 4: skip bottom\n"},
+	{"0~4",		"\tset QP Matrix mode, 0: default; 1: skip left region; 2: skip right; 3: skip top; 4: skip bottom"},
 
 #define	H264ENC_DEBLOCKING_ALPHA_OPTIONS		\
 	{"deblocking-alpha",	HAS_ARG,	0,	DEBLOCKING_ALPHA},
@@ -1178,6 +1291,26 @@ enum numeric_short_options {
 #define	H264ENC_DEBLOCKING_ENABLE_HINTS			\
 	{"0|1|2", 			"deblocking-enable, 2 is auto and default value"},
 
+#define	H264ENC_FRAME_CORP_LEFT_OPTIONS		\
+	{"left-frame-crop",	HAS_ARG,	0,	LEFT_FRAME_CROP},
+#define	H264ENC_FRAME_CORP_LEFT_HINTS			\
+	{"offset", 			"left offset of frame crop"},
+
+#define	H264ENC_FRAME_CORP_RIGHT_OPTIONS		\
+	{"right-frame-crop",	HAS_ARG,	0,	RIGHT_FRAME_CROP},
+#define	H264ENC_FRAME_CORP_RIGHT_HINTS			\
+	{"offset", 			"right offset of frame crop"},
+
+#define	H264ENC_FRAME_CORP_TOP_OPTIONS		\
+	{"top-frame-crop",	HAS_ARG,	0,	TOP_FRAME_CROP},
+#define	H264ENC_FRAME_CORP_TOP_HINTS			\
+	{"offset", 			"top offset of frame crop"},
+
+#define	H264ENC_FRAME_CORP_BOTTOM_OPTIONS		\
+	{"bottom-frame-crop",	HAS_ARG,	0,	BOTTOM_FRAME_CROP},
+#define	H264ENC_FRAME_CORP_BOTTOM_HINTS			\
+	{"offset", 			"bottom offset of frame crop"},
+
 #define	H264ENC_PROFILE_OPTIONS					\
 	{"profile",	HAS_ARG,	0,	SPECIFY_PROFILE_LEVEL},
 #define	H264ENC_PROFILE_HINTS						\
@@ -1191,17 +1324,17 @@ enum numeric_short_options {
 #define	H264ENC_MV_IMPROVE_OPTIONS				\
 	{"mv-threshold",	HAS_ARG, 	0, 	SPECIFY_MV_THRESHOLD},
 #define	H264ENC_MV_IMPROVE_HINTS				\
-	{"0~255",		"Set mv threshold of current stream, value 0 means disable this"},
+	{"0|1",		"\tdisable/enable zmv threshold roi for current stream, 0: disable, 1: enable, default 0"},
 
-#define	H264ENC_IMPROVE_OPTIONS					\
-	{"enc-improve",	HAS_ARG, 	0, 	SPECIFY_ENC_IMPROVE},
-#define	H264ENC_IMPROVE_HINTS					\
-	{"0|1",			"\tdisable/enable h264 encode improvement for flat area, default is 0, which means disable"},
+#define	H264ENC_FLAT_AREA_IMPROVE_OPTIONS					\
+	{"flat-area-improve",	HAS_ARG, 	0, 	SPECIFY_FLAT_AREA_IMPROVE},
+#define	H264ENC_FLAT_AREA_IMPROVE_HINTS					\
+	{"0|1",			"disable/enable h264 encode improvement for flat area, default is 0, which means disable"},
 
-#define	H264ENC_LTERM_INTVL_OPTIONS				\
-	{"long-term-intvl",	HAS_ARG, 	0, 	SPECIFY_LONG_TERM_INTVL},
-#define	H264ENC_LTERM_INTVL_HINTS				\
-	{"0~63",			"Specify long term reference P frame interval"},
+#define	H264ENC_FAST_SEEK_INTVL_OPTIONS				\
+	{"fast-seek-intvl",	HAS_ARG, 	0, 	SPECIFY_FAST_SEEK_INTVL},
+#define	H264ENC_FAST_SEEK_INTVL_HINTS				\
+	{"0~63",			"Specify fast seek P frame interval"},
 
 #define	H264ENC_MULTI_REFP_OPTIONS				\
 	{"multi-ref-p",	HAS_ARG, 	0, 	SPECIFY_MULTI_REF_P},
@@ -1270,6 +1403,21 @@ enum numeric_short_options {
 	{"0~3",		"\t0: No AUD, No SEI; 1: AUD before SPS, PPS, with SEI; 2: AUD after SPS, "\
 	"PPS, with SEI; 3: No AUD, with SEI.\n"},
 
+#define	H264ENC_ABS_BR_OPTIONS				\
+	{"abs-br",			HAS_ARG,	0,	SPECIFY_ABS_BR_FLAG},
+#define	H264ENC_ABS_BR_HINTS				\
+	{"0|1",		"Enable absolute bitrate, 0: disable, 1: enable\n"},
+
+#define	H264ENC_REPEAT_PSKIP_OPTIONS			\
+	{"force-pskip-repeat",		HAS_ARG,	0,	SPECIFY_FORCE_PSKIP_REPEAT},
+#define	H264ENC_REPEAT_PSKIP_HINTS				\
+	{"0|1", 	"Repeatly generate P-skip or force pskip at once for current stream. 0: no-repeat, 1: repeat."},
+
+#define	H264ENC_REPEAT_PSKIP_NUM_OPTIONS			\
+	{"repeat-pskip-num",		HAS_ARG,	0,	SPECIFY_REPEAT_PSKIP_NUM},
+#define	H264ENC_REPEAT_PSKIP_NUM_HINTS				\
+	{"0~254",	"P-skip number when repeat pattern is ON."},
+
 #define	H264_ENCODE_LONG_OPTIONS()		\
 	H264ENC_M_OPTIONS				\
 	H264ENC_N_OPTIONS				\
@@ -1281,21 +1429,29 @@ enum numeric_short_options {
 	H264ENC_QP_LIMIT_I_OPTIONS		\
 	H264ENC_QP_LIMIT_P_OPTIONS		\
 	H264ENC_QP_LIMIT_B_OPTIONS		\
+	H264ENC_QP_LIMIT_Q_OPTIONS		\
 	H264ENC_ADAPT_QP_OPTIONS		\
 	H264ENC_I_QP_REDUCE_OPTIONS	\
 	H264ENC_P_QP_REDUCE_OPTIONS	\
+	H264ENC_Q_QP_REDUCE_OPTIONS	\
+	H264ENC_LOG_Q_NUM_PLUS_1_OPTIONS	\
 	H264ENC_SKIP_FRAME_OPTIONS		\
+	H264ENC_MAX_I_SIZE_KB_OPTIONS	\
 	H264ENC_MB_ROWS_OPTIONS		\
 	H264ENC_QM_DELTA_OPTIONS		\
 	H264ENC_QM_MODE_OPTIONS		\
 	H264ENC_DEBLOCKING_ALPHA_OPTIONS		\
 	H264ENC_DEBLOCKING_BETA_OPTIONS		\
 	H264ENC_DEBLOCKING_ENABLE_OPTIONS		\
+	H264ENC_FRAME_CORP_LEFT_OPTIONS		\
+	H264ENC_FRAME_CORP_RIGHT_OPTIONS		\
+	H264ENC_FRAME_CORP_TOP_OPTIONS		\
+	H264ENC_FRAME_CORP_BOTTOM_OPTIONS		\
 	H264ENC_PROFILE_OPTIONS					\
 	H264ENC_INTLC_IFRAME_OPTIONS			\
 	H264ENC_MV_IMPROVE_OPTIONS				\
-	H264ENC_IMPROVE_OPTIONS				\
-	H264ENC_LTERM_INTVL_OPTIONS			\
+	H264ENC_FLAT_AREA_IMPROVE_OPTIONS				\
+	H264ENC_FAST_SEEK_INTVL_OPTIONS			\
 	H264ENC_MULTI_REFP_OPTIONS				\
 	H264ENC_MAX_GOPM_OPTIONS				\
 	H264ENC_FORCE_SEEK_OPTIONS				\
@@ -1308,7 +1464,10 @@ enum numeric_short_options {
 	H264ENC_USER2_DIRECTBIAS_OPTIONS		\
 	H264ENC_USER3_INTRABIAS_OPTIONS		\
 	H264ENC_USER3_DIRECTBIAS_OPTIONS		\
-	H264ENC_AU_TYPE_OPTIONS
+	H264ENC_AU_TYPE_OPTIONS				\
+	H264ENC_ABS_BR_OPTIONS				\
+	H264ENC_REPEAT_PSKIP_OPTIONS		\
+	H264ENC_REPEAT_PSKIP_NUM_OPTIONS
 
 #define	H264_ENCODE_PARAMETER_HINTS()		\
 	H264ENC_M_HINTS		\
@@ -1321,21 +1480,29 @@ enum numeric_short_options {
 	H264ENC_QP_LIMIT_I_HINTS	\
 	H264ENC_QP_LIMIT_P_HINTS	\
 	H264ENC_QP_LIMIT_B_HINTS	\
+	H264ENC_QP_LIMIT_Q_HINTS	\
 	H264ENC_ADAPT_QP_HINTS		\
 	H264ENC_I_QP_REDUCE_HINTS	\
 	H264ENC_P_QP_REDUCE_HINTS	\
+	H264ENC_Q_QP_REDUCE_HINTS	\
+	H264ENC_LOG_Q_NUM_PLUS_1_HINTS \
 	H264ENC_SKIP_FRAME_HINTS	\
+	H264ENC_MAX_I_SIZE_KB_HINTS	\
 	H264ENC_MB_ROWS_HINTS		\
 	H264ENC_QM_DELTA_HINTS		\
 	H264ENC_QM_MODE_HINTS		\
 	H264ENC_DEBLOCKING_ALPHA_HINTS		\
 	H264ENC_DEBLOCKING_BETA_HINTS		\
 	H264ENC_DEBLOCKING_ENABLE_HINTS	\
+	H264ENC_FRAME_CORP_LEFT_HINTS		\
+	H264ENC_FRAME_CORP_RIGHT_HINTS		\
+	H264ENC_FRAME_CORP_TOP_HINTS		\
+	H264ENC_FRAME_CORP_BOTTOM_HINTS		\
 	H264ENC_PROFILE_HINTS		\
 	H264ENC_INTLC_IFRAME_HINTS	\
 	H264ENC_MV_IMPROVE_HINTS	\
-	H264ENC_IMPROVE_HINTS		\
-	H264ENC_LTERM_INTVL_HINTS	\
+	H264ENC_FLAT_AREA_IMPROVE_HINTS		\
+	H264ENC_FAST_SEEK_INTVL_HINTS	\
 	H264ENC_MULTI_REFP_HINTS	\
 	H264ENC_MAX_GOPM_HINTS		\
 	H264ENC_FORCE_SEEK_HINTS	\
@@ -1348,7 +1515,10 @@ enum numeric_short_options {
 	H264ENC_USER2_DIRECTBIAS_HINTS	\
 	H264ENC_USER3_INTRABIAS_HINTS	\
 	H264ENC_USER3_DIRECTBIAS_HINTS	\
-	H264ENC_AU_TYPE_HINTS
+	H264ENC_AU_TYPE_HINTS			\
+	H264ENC_ABS_BR_HINTS			\
+	H264ENC_REPEAT_PSKIP_HINTS		\
+	H264ENC_REPEAT_PSKIP_NUM_HINTS
 
 #define	H264_ENCODE_INIT_PARAMETERS()		\
 	case 'M':\
@@ -1430,6 +1600,16 @@ enum numeric_short_options {
 			qp_limit_param[current_stream].qp_max_b = max_value;\
 			qp_limit_param[current_stream].qp_b_flag = 1;\
 			break;\
+	case CHANGE_QP_LIMIT_Q:\
+			VERIFY_STREAMID(current_stream);\
+			if (get_two_unsigned_int(optarg, &min_value, &max_value, '~') < 0) {\
+				return -1;\
+			}\
+			qp_limit_changed_id |= (1 << current_stream);\
+			qp_limit_param[current_stream].qp_min_q = min_value;\
+			qp_limit_param[current_stream].qp_max_q = max_value;\
+			qp_limit_param[current_stream].qp_q_flag = 1;\
+			break;\
 	case CHANGE_ADAPT_QP:\
 			VERIFY_STREAMID(current_stream);\
 			qp_limit_changed_id |= (1 << current_stream);\
@@ -1448,11 +1628,29 @@ enum numeric_short_options {
 			qp_limit_param[current_stream].p_qp_reduce = atoi(optarg);\
 			qp_limit_param[current_stream].p_qp_reduce_flag = 1;\
 			break;\
+	case CHANGE_Q_QP_REDUCE:\
+			VERIFY_STREAMID(current_stream);\
+			qp_limit_changed_id |= (1 << current_stream);\
+			qp_limit_param[current_stream].q_qp_reduce = atoi(optarg);\
+			qp_limit_param[current_stream].q_qp_reduce_flag = 1;\
+			break;\
+	case CHANGE_LOG_Q_NUM_PLUS_1:\
+			VERIFY_STREAMID(current_stream);\
+			qp_limit_changed_id |= (1 << current_stream);\
+			qp_limit_param[current_stream].log_q_num_plus_1 = atoi(optarg);\
+			qp_limit_param[current_stream].log_q_num_plus_1_flag = 1;\
+			break;\
 	case CHANGE_SKIP_FRAME_MODE:\
 			VERIFY_STREAMID(current_stream);\
 			qp_limit_changed_id |= (1 << current_stream);\
 			qp_limit_param[current_stream].skip_frame = atoi(optarg);\
 			qp_limit_param[current_stream].skip_frame_flag = 1;\
+			break;\
+	case CHANGE_MAX_I_SIZE_KB:\
+			VERIFY_STREAMID(current_stream);\
+			qp_limit_changed_id |= (1 << current_stream);\
+			qp_limit_param[current_stream].max_i_size_KB = atoi(optarg);\
+			qp_limit_param[current_stream].max_i_size_KB_flag = 1;\
 			break;\
 	case CHANGE_INTRA_MB_ROWS:\
 			VERIFY_STREAMID(current_stream);\
@@ -1482,20 +1680,61 @@ enum numeric_short_options {
 			break;\
 	case DEBLOCKING_ALPHA:\
 			VERIFY_STREAMID(current_stream);\
+			if (atoi(optarg) > 6 || atoi(optarg) < -6) {\
+				printf("Invalid param for alpha, range [-6~6].\n");\
+				return -1;\
+			}\
 			encode_param[current_stream].h264_param.h264_deblocking_filter_alpha = atoi(optarg);\
 			encode_param[current_stream].h264_param.h264_deblocking_filter_alpha_flag = 1;\
 			encode_param_changed_id |= (1 << current_stream);\
 			break;\
 	case DEBLOCKING_BETA:\
 			VERIFY_STREAMID(current_stream);\
+			if (atoi(optarg) > 6 || atoi(optarg) < -6) {\
+				printf("Invalid param for beta, range [-6~6].\n");\
+				return -1;\
+			}\
 			encode_param[current_stream].h264_param.h264_deblocking_filter_beta = atoi(optarg);\
 			encode_param[current_stream].h264_param.h264_deblocking_filter_beta_flag = 1;\
 			encode_param_changed_id |= (1 << current_stream);\
 			break;\
 	case DEBLOCKING_ENABLE:\
 			VERIFY_STREAMID(current_stream);\
-			encode_param[current_stream].h264_param.h264_deblocking_filter_enable = atoi(optarg);\
+			min_value = atoi(optarg);\
+			if (min_value > 2) {\
+				printf("Invalid param for loop filter, range [0|1|2].\n");\
+				return -1;\
+			}\
+			encode_param[current_stream].h264_param.h264_deblocking_filter_enable = min_value;\
 			encode_param[current_stream].h264_param.h264_deblocking_filter_enable_flag = 1;\
+			encode_param_changed_id |= (1 << current_stream);\
+			break;\
+	case LEFT_FRAME_CROP:\
+			VERIFY_STREAMID(current_stream);\
+			min_value = atoi(optarg);\
+			encode_param[current_stream].h264_param.h264_frame_crop_left_offset = min_value;\
+			encode_param[current_stream].h264_param.h264_frame_crop_left_offset_flag = 1;\
+			encode_param_changed_id |= (1 << current_stream);\
+			break;\
+	case RIGHT_FRAME_CROP:\
+			VERIFY_STREAMID(current_stream);\
+			min_value = atoi(optarg);\
+			encode_param[current_stream].h264_param.h264_frame_crop_right_offset = min_value;\
+			encode_param[current_stream].h264_param.h264_frame_crop_right_offset_flag = 1;\
+			encode_param_changed_id |= (1 << current_stream);\
+			break;\
+	case TOP_FRAME_CROP:\
+			VERIFY_STREAMID(current_stream);\
+			min_value = atoi(optarg);\
+			encode_param[current_stream].h264_param.h264_frame_crop_top_offset = min_value;\
+			encode_param[current_stream].h264_param.h264_frame_crop_top_offset_flag = 1;\
+			encode_param_changed_id |= (1 << current_stream);\
+			break;\
+	case BOTTOM_FRAME_CROP:\
+			VERIFY_STREAMID(current_stream);\
+			min_value = atoi(optarg);\
+			encode_param[current_stream].h264_param.h264_frame_crop_bottom_offset = min_value;\
+			encode_param[current_stream].h264_param.h264_frame_crop_bottom_offset_flag = 1;\
 			encode_param_changed_id |= (1 << current_stream);\
 			break;\
 	case SPECIFY_PROFILE_LEVEL:\
@@ -1514,25 +1753,25 @@ enum numeric_short_options {
 			break;\
 	case SPECIFY_MV_THRESHOLD:\
 			VERIFY_STREAMID(current_stream);\
-			encode_param[current_stream].h264_param.h264_mv_threshold = atoi(optarg);\
+			encode_param[current_stream].h264_param.h264_mv_threshold = !!(atoi(optarg));\
 			encode_param[current_stream].h264_param.h264_mv_threshold_flag = 1;\
 			encode_param_changed_id |= (1 << current_stream);\
 			break;\
-	case SPECIFY_ENC_IMPROVE:\
+	case SPECIFY_FLAT_AREA_IMPROVE:\
 			VERIFY_STREAMID(current_stream);\
 			min_value = atoi(optarg);\
 			if (min_value > 1) {\
 				printf("Invalid param for encode improve option [0|1].\n");\
 				return -1;\
 			}\
-			encode_param[current_stream].h264_param.h264_enc_improve = min_value;\
-			encode_param[current_stream].h264_param.h264_enc_improve_flag = 1;\
+			encode_param[current_stream].h264_param.h264_flat_area_improve = min_value;\
+			encode_param[current_stream].h264_param.h264_flat_area_improve_flag = 1;\
 			encode_param_changed_id |= (1 << current_stream);\
 			break;\
-	case SPECIFY_LONG_TERM_INTVL:\
+	case SPECIFY_FAST_SEEK_INTVL:\
 			VERIFY_STREAMID(current_stream);\
-			encode_param[current_stream].h264_param.h264_long_term_intvl = atoi(optarg);\
-			encode_param[current_stream].h264_param.h264_long_term_intvl_flag = 1;\
+			encode_param[current_stream].h264_param.h264_fast_seek_intvl = atoi(optarg);\
+			encode_param[current_stream].h264_param.h264_fast_seek_intvl_flag = 1;\
 			encode_param_changed_id |= (1 << current_stream);\
 			break;\
 	case SPECIFY_MULTI_REF_P:\
@@ -1620,8 +1859,33 @@ enum numeric_short_options {
 			encode_param[current_stream].h264_param.au_type = atoi(optarg);\
 			encode_param[current_stream].h264_param.au_type_flag = 1;\
 			encode_param_changed_id |= (1 << current_stream);\
+			break;\
+	case SPECIFY_ABS_BR_FLAG:\
+			VERIFY_STREAMID(current_stream);\
+			min_value = atoi(optarg);\
+			if (min_value != 0 && min_value != 1) {\
+				printf("Invalid value [%d], must be in [0|1].\n", min_value);\
+				return -1;\
+			}\
+			encode_param[current_stream].h264_param.h264_abs_br = min_value;\
+			encode_param[current_stream].h264_param.h264_abs_br_flag = 1;\
+			encode_param_changed_id |= (1 << current_stream);\
+			break;\
+	case SPECIFY_FORCE_PSKIP_REPEAT:\
+			VERIFY_STREAMID(current_stream);\
+			encode_param[current_stream].h264_param.force_pskip_repeat_enable = !!(atoi(optarg));\
+			encode_param[current_stream].h264_param.force_pskip_flag = 1;\
+			encode_param_changed_id |= (1 << current_stream);\
+			break;\
+	case SPECIFY_REPEAT_PSKIP_NUM:\
+			VERIFY_STREAMID(current_stream);\
+			min_value = atoi(optarg);\
+			if (min_value < 0 || min_value > 254) {\
+				printf("Invalid value [%d], must be [0~254].\n", min_value);\
+				return -1;\
+			}\
+			encode_param[current_stream].h264_param.force_pskip_repeat_num = min_value;\
 			break;
-
 
 /***************************************************************
 	PANIC command line options
@@ -1789,7 +2053,7 @@ enum numeric_short_options {
 #define	SYSTEM_NOPREVIEW_OPTIONS	\
 	{"nopreview",	NO_ARG,		0,	NO_PREVIEW},
 #define	SYSTEM_NOPREVIEW_HINTS		\
-	{"",			"\t\tdo not enter preview\n"},
+	{"",			"\t\tdo not enter preview"},
 
 //put system to IDLE  (turn off all encoding )
 #define	SYSTEM_IDLE_OPTIONS			\
@@ -1805,7 +2069,7 @@ enum numeric_short_options {
 			"\n\t\t\t\t3: Single region warp mode, 4: Advanced ISO mode,"	\
 		"\n\t\t\t\t5: HDR line interleaved mode, 6: High MP (low delay) mode,"	\
 		"\n\t\t\t\t7: Full FPS (low delay) mode, 8: Multiple VIN mode,"			\
-			"\n\t\t\t\t9: HISO video mode\n"},
+			"\n\t\t\t\t9: HISO video mode"},
 
 #define	SYSTEM_ENC_ROTATE_OPTIONS	\
 	{"enc-rotate-possible",		HAS_ARG,	0,	SPECIFY_ROTATE_POSSIBLE},
@@ -1827,6 +2091,11 @@ enum numeric_short_options {
 #define	SYSTEM_LENS_WARP_HINTS		\
 	{"0|1",		"\tEnable Lens warp"},
 
+#define	SYSTEM_MAX_ENC_NUM_OPTIONS		\
+	{"max-enc-num",		HAS_ARG,	0,	SPECIFY_MAX_ENC_NUM},
+#define	SYSTEM_MAX_ENC_NUM_HINTS		\
+	{"2~4",		"\tSpecify max encode stream num for current mode"},
+
 #define	SYSTEM_WARP_IN_MAXWIDTH_OPTIONS		\
 	{"max-warp-in-width",		HAS_ARG,	0,	'w'},
 #define	SYSTEM_WARP_IN_MAXWIDTH_HINTS			\
@@ -1840,12 +2109,12 @@ enum numeric_short_options {
 #define	SYSTEM_WARP_OUT_MAXWIDTH_OPTIONS		\
 	{"max-warp-out-width",	HAS_ARG,	0,	'W'},
 #define	SYSTEM_WARP_OUT_MAXWIDTH_HINTS		\
-	{">0",					"Max warp output width\n"},
+	{">0",					"Max warp output width"},
 
 #define	SYSTEM_PADDING_MAXWIDTH_OPTIONS		\
 	{"max-padding-width",		HAS_ARG,	0,	SPECIFY_MAX_PADDING_WIDTH},
 #define	SYSTEM_PADDING_MAXWIDTH_HINTS			\
-	{">0",					"Max padding width\n"},
+	{">0",					"Max padding width"},
 
 #define	SYSTEM_INTERMEDIATE_OPTIONS				\
 	{"intermediate",	HAS_ARG,	0,	SPECIFY_INTERMEDIATE_BUF_SIZE},
@@ -1861,6 +2130,11 @@ enum numeric_short_options {
 	{"long-ref-enable", 		HAS_ARG,	0,	SPECIFY_LONG_REF_ENABLE},
 #define	SYSTEM_LONG_REF_ENABLE_HINTS			\
 	{"0|1",					"Disable/Enable stream long term reference frame"},
+
+#define	SYSTEM_LONG_REF_B_FRAME_OPTIONS			\
+	{"long-ref-B-frame", 		HAS_ARG,	0,	SPECIFY_LONG_REF_B_FRAME},
+#define	SYSTEM_LONG_REF_B_FRAME_HINTS			\
+	{"0|1", 				"Disable/Enable B frame in long term reference case for all streams"},
 
 #define	SYSTEM_DSP_PARTITION_MAP_OPTIONS		\
 	{"dsp-partition-map", 		HAS_ARG,	0,	SPECIFY_DSP_PARTITION_MAP},
@@ -1889,7 +2163,7 @@ enum numeric_short_options {
 #define	SYSTEM_EIS_DELAY_COUNT_OPTIONS		\
 	{"eis-delay-count",HAS_ARG,	0,	SPECIFY_EIS_DELAY_COUNT},
 #define	SYSTEM_EIS_DELAY_COUNT_HINTS		\
-	{"0~2", 			"\tEIS delay count"},
+	{"0~2", 			"EIS delay count"},
 
 #define	SYSTEM_ME0_SCALE_OPTIONS	\
 	{"me0-scale", HAS_ARG,	0,	SPECIFY_ME0_SCALE},
@@ -1929,12 +2203,28 @@ enum numeric_short_options {
 #define	SYSTEM_IDSP_DUMP_CFG_OPTIONS	\
 	{"dump-idsp-cfg",	NO_ARG,		0,	DUMP_IDSP_CONFIG},
 #define	SYSTEM_IDSP_DUMP_CFG_HINTS		\
-	{"",				"\tdump iDSP config for debug purpose\n"},
+	{"",				"\tdump iDSP config for debug purpose"},
 
 #define	SYSTEM_OSD_MIXER_OPTIONS		\
 	{"osd-mixer",		HAS_ARG,	0,	SPECIFY_OSD_MIXER},
 #define	SYSTEM_OSD_MIXER_HINTS				\
-	{"off|a|b",		"OSD blending mixer, off: disable, a: select from VOUTA, b: select from VOUTB\n"},
+	{"off|a|b",		"OSD blending mixer, off: disable, a: select from VOUTA, b: select from VOUTB"},
+
+#define	SYSTEM_OVERFLOW_PROTECTION_OPTIONS	\
+	{"overflow-protection",		HAS_ARG,	0,	SPECIFY_OVERFLOW_PROTECTION},
+#define	SYSTEM_OVERFLOW_PROTECTION_HINTS		\
+	{"0|1",			"Disable/Enable vin overflow protection\n"},
+
+#define	SYSTEM_DSP_CLOCK_STATE_OPTIONS	\
+	{"disable-dsp-clock",		HAS_ARG,	0,	SPECIFY_DSP_CLCOK_STATE},
+#define	SYSTEM_DSP_CLOCK_STATE_HINTS		\
+	{"0|1",			"set DSP clock state. 0: Normal, 1: Off, Default is 0."},
+
+#define	SYSTEM_EXTRA_TOP_ROW_BUF_OPTIONS	\
+	{"top-row-buf",			HAS_ARG,	0,	SPECIFY_EXTRA_TOP_RAW_BUF},
+#define	SYSTEM_EXTRA_TOP_ROW_BUF_HINTS	\
+	{"0|1",	"\tAdd extra 16 lines buf in source buffer to improve encode efficiency for rotate case."	\
+	"\n\t\t\t\tDefault is 0. 0: disable, 1: enable."},
 
 #define	SYSTEM_LONG_OPTIONS()		\
 	SYSTEM_NOPREVIEW_OPTIONS			\
@@ -1944,6 +2234,7 @@ enum numeric_short_options {
 	SYSTEM_RAW_CAPTURE_OPTIONS			\
 	SYSTEM_HDR_EXPO_OPTIONS				\
 	SYSTEM_LENS_WARP_OPTIONS				\
+	SYSTEM_MAX_ENC_NUM_OPTIONS			\
 	SYSTEM_WARP_IN_MAXWIDTH_OPTIONS		\
 	SYSTEM_WARP_IN_MAXHEIGHT_OPTIONS		\
 	SYSTEM_WARP_OUT_MAXWIDTH_OPTIONS		\
@@ -1951,6 +2242,7 @@ enum numeric_short_options {
 	SYSTEM_INTERMEDIATE_OPTIONS			\
 	SYSTEM_ENC_DUMMY_LATENCY_OPTIONS		\
 	SYSTEM_LONG_REF_ENABLE_OPTIONS			\
+	SYSTEM_LONG_REF_B_FRAME_OPTIONS			\
 	SYSTEM_DSP_PARTITION_MAP_OPTIONS		\
 	SYSTEM_IDSP_UPSAMPLE_TYPE_OPTIONS		\
 	SYSTEM_MCTF_PM_OPTIONS					\
@@ -1964,7 +2256,10 @@ enum numeric_short_options {
 	SYSTEM_EFM_BUG_NUM_OPTIONS			\
 	SYSTEM_EFM_SIZE_OPTIONS					\
 	SYSTEM_IDSP_DUMP_CFG_OPTIONS			\
-	SYSTEM_OSD_MIXER_OPTIONS
+	SYSTEM_OSD_MIXER_OPTIONS				\
+	SYSTEM_OVERFLOW_PROTECTION_OPTIONS		\
+	SYSTEM_DSP_CLOCK_STATE_OPTIONS			\
+	SYSTEM_EXTRA_TOP_ROW_BUF_OPTIONS
 
 #define	SYSTEM_PARAMETER_HINTS()		\
 	SYSTEM_NOPREVIEW_HINTS		\
@@ -1974,6 +2269,7 @@ enum numeric_short_options {
 	SYSTEM_RAW_CAPTURE_HINTS	\
 	SYSTEM_HDR_EXPO_HINTS		\
 	SYSTEM_LENS_WARP_HINTS		\
+	SYSTEM_MAX_ENC_NUM_HINTS	\
 	SYSTEM_WARP_IN_MAXWIDTH_HINTS		\
 	SYSTEM_WARP_IN_MAXHEIGHT_HINTS	\
 	SYSTEM_WARP_OUT_MAXWIDTH_HINTS	\
@@ -1981,6 +2277,7 @@ enum numeric_short_options {
 	SYSTEM_INTERMEDIATE_HINTS			\
 	SYSTEM_ENC_DUMMY_LATENCY_HINTS	\
 	SYSTEM_LONG_REF_ENABLE_HINTS		\
+	SYSTEM_LONG_REF_B_FRAME_HINTS		\
 	SYSTEM_DSP_PARTITION_MAP_HINTS		\
 	SYSTEM_IDSP_UPSAMPLE_TYPE_HINTS	\
 	SYSTEM_MCTF_PM_HINTS		\
@@ -1994,7 +2291,10 @@ enum numeric_short_options {
 	SYSTEM_EFM_BUG_NUM_HINTS	\
 	SYSTEM_EFM_SIZE_HINTS		\
 	SYSTEM_IDSP_DUMP_CFG_HINTS	\
-	SYSTEM_OSD_MIXER_HINTS
+	SYSTEM_OSD_MIXER_HINTS		\
+	SYSTEM_OVERFLOW_PROTECTION_HINTS	\
+	SYSTEM_DSP_CLOCK_STATE_HINTS		\
+	SYSTEM_EXTRA_TOP_ROW_BUF_HINTS
 
 #define	SYSTEM_INIT_PARAMETERS()		\
 	case NO_PREVIEW:\
@@ -2055,6 +2355,16 @@ enum numeric_short_options {
 			system_resource_setup.lens_warp_flag = 1;\
 			system_resource_limit_changed_flag = 1;\
 			break;\
+	case SPECIFY_MAX_ENC_NUM:\
+			min_value = atoi(optarg);\
+			if (min_value > MAX_ENCODE_STREAM_NUM) {\
+				printf("Invalid param for max-enc-num option [2~4].\n");\
+				return -1;\
+			}\
+			system_resource_setup.max_enc_num = min_value;\
+			system_resource_setup.max_enc_num_flag = 1;\
+			system_resource_limit_changed_flag = 1;\
+			break;\
 	case 'w':\
 			min_value = atoi(optarg);\
 			system_resource_setup.max_warp_input_width = min_value;\
@@ -2103,6 +2413,17 @@ enum numeric_short_options {
 			system_resource_setup.stream_long_ref_enable[current_stream]\
 				= min_value;\
 			system_resource_setup.stream_long_ref_enable_flag[current_stream] = 1;\
+			system_resource_limit_changed_flag = 1;\
+			break;\
+	case SPECIFY_LONG_REF_B_FRAME:\
+			min_value = atoi(optarg);\
+			if (min_value > 1) {\
+				printf("Invalid param for long ref B frame option [0|1].\n");\
+				return -1;\
+			}\
+			system_resource_setup.long_ref_b_frame\
+				= min_value;\
+			system_resource_setup.long_ref_b_frame_flag = 1;\
 			system_resource_limit_changed_flag = 1;\
 			break;\
 	case SPECIFY_DSP_PARTITION_MAP:\
@@ -2227,6 +2548,36 @@ enum numeric_short_options {
 			if (system_resource_setup.osd_mixer < 0)\
 				return -1;\
 			system_resource_setup.osd_mixer_changed_flag = 1;\
+			system_resource_limit_changed_flag = 1;\
+			break;\
+	case SPECIFY_OVERFLOW_PROTECTION:\
+			min_value = atoi(optarg);\
+			if (min_value > 1) {\
+				printf("Invalid param for vin overflow protection [0|1].\n");\
+				return -1;\
+			}\
+			system_resource_setup.vin_overflow_protection= min_value;\
+			system_resource_setup.vin_overflow_protection_flag= 1;\
+			system_resource_limit_changed_flag = 1;\
+			break;\
+	case SPECIFY_DSP_CLCOK_STATE:\
+			min_value = atoi(optarg);\
+			if (min_value > 1) {\
+				printf("Invalid value [%d] for 'disable-dsp-clock' option.\n", min_value);\
+				return -1;\
+			}\
+			dsp_clock_state_disable = min_value;\
+			dsp_clock_state_disable_flag = 1;\
+			break;\
+	case SPECIFY_EXTRA_TOP_RAW_BUF:\
+			min_value = atoi(optarg);\
+			if (min_value > 1) {\
+				printf("Invalid param for extra top row buf option [0|1].\n");\
+				return -1;\
+			}\
+			system_resource_setup.extra_top_row_buf = min_value;\
+			system_resource_setup.extra_top_row_buf_flag = 1;\
+			system_resource_limit_changed_flag = 1;\
 			break;
 
 /***************************************************************
@@ -2293,6 +2644,16 @@ enum numeric_short_options {
 	{"extra-buf",		HAS_ARG,	0,	SPECIFY_EXTRA_DRAM_BUF},
 #define	SOURCE_EXTRABUF_HINTS	{"0~3", "\tSet extra DRAM buffer number for extremely heavy load cases."},
 
+#define	SOURCE_DUMP_INTERVAL_OPTIONS		\
+	{"vca-dump-interval",		HAS_ARG,	0,	SPECIFY_VCA_DUMP_INTERVAL},
+#define	SOURCE_DUMP_INTERVAL_HINTS	{"0~N", "Capture one frame every N frame in VCA buffer. "	\
+	"0: off, 1: every frame, 2: half frame, N < VIN_FPS."},
+
+#define	SOURCE_DUMP_DURATION_OPTIONS		\
+	{"vca-dump-duration",		HAS_ARG,	0,	SPECIFY_VCA_DUMP_DURATION},
+#define	SOURCE_DUMP_DURATION_HINTS	{"0~32", "Set the duration of vca dump frames, "	\
+	"DSP will stop dumping after 'duration' frames. "},
+
 #define	SOURCE_BUFFER_LONG_OPTIONS()		\
 	SOURCE_PREMAIN_OPTIONS		\
 	SOURCE_MAINBUF_OPTIONS		\
@@ -2305,7 +2666,9 @@ enum numeric_short_options {
 	SOURCE_BINSIZE_OPTIONS		\
 	SOURCE_BINOFFSET_OPTIONS	\
 	SOURCE_PREWARP_OPTIONS	\
-	SOURCE_EXTRABUF_OPTIONS
+	SOURCE_EXTRABUF_OPTIONS	\
+	SOURCE_DUMP_INTERVAL_OPTIONS	\
+	SOURCE_DUMP_DURATION_OPTIONS
 
 #define	SOURCE_BUFFER_PARAMETER_HINTS()		\
 	SOURCE_PREMAIN_HINTS		\
@@ -2319,7 +2682,9 @@ enum numeric_short_options {
 	SOURCE_BINSIZE_HINTS		\
 	SOURCE_BINOFFSET_HINTS		\
 	SOURCE_PREWARP_HINTS		\
-	SOURCE_EXTRABUF_HINTS
+	SOURCE_EXTRABUF_HINTS		\
+	SOURCE_DUMP_INTERVAL_HINTS	\
+	SOURCE_DUMP_DURATION_HINTS
 
 #define	SOURCE_BUFFER_INIT_PARAMETERS()		\
 	case 'P':\
@@ -2400,6 +2765,25 @@ enum numeric_short_options {
 			system_resource_setup.extra_dram_buf[current_buffer] = min_value;\
 			system_resource_setup.extra_dram_buf_changed_id |= (1 << current_buffer);\
 			system_resource_limit_changed_flag = 1;\
+			break;\
+	case SPECIFY_VCA_DUMP_INTERVAL:\
+			VERIFY_BUFFERID(current_buffer);\
+			min_value = atoi(optarg);\
+			source_buffer_format[current_buffer].dump_interval = min_value;\
+			source_buffer_format[current_buffer].dump_interval_flag = 1;\
+			source_buffer_format_changed_id |= (1 << current_buffer);\
+			break;\
+	case SPECIFY_VCA_DUMP_DURATION:\
+			VERIFY_BUFFERID(current_buffer);\
+			min_value = atoi(optarg);\
+			if (min_value < 0 || min_value > MAX_NUM_VCA_DUMP_DURATION) {\
+				printf("Invalid value [%d], valid range [0~32].\n",\
+					min_value);\
+				return -1;\
+			}\
+			source_buffer_format[current_buffer].dump_duration = min_value;\
+			source_buffer_format[current_buffer].dump_duration_flag = 1;\
+			source_buffer_format_changed_id |= (1 << current_buffer);\
 			break;
 
 /***************************************************************
@@ -2461,6 +2845,11 @@ enum numeric_short_options {
 #define	SHOW_CMD_EXAM_HINTS				\
 	{"",						"\tShow example command info"},
 
+#define	SHOW_QP_HIST_OPTIONS			\
+	{"show-qp-hist",		NO_ARG,		0,	SHOW_QP_HIST},
+#define	SHOW_QP_HIST_HINTS				\
+	{"",						"\tShow QP histogram\n"},
+
 #define	SHOW_ALL_INFO_OPTIONS			\
 	{"show-all-info",			NO_ARG,		0,	SHOW_ALL_INFO},
 #define	SHOW_ALL_INFO_HINTS				\
@@ -2478,6 +2867,7 @@ enum numeric_short_options {
 	SHOW_DRAM_LAYOUT_OPTIONS		\
 	SHOW_FEATURE_SET_OPTIONS		\
 	SHOW_CMD_EXAM_OPTIONS			\
+	SHOW_QP_HIST_OPTIONS			\
 	SHOW_ALL_INFO_OPTIONS
 
 #define	SHOW_PARAMETER_HINTS()		\
@@ -2492,6 +2882,7 @@ enum numeric_short_options {
 	SHOW_DRAM_LAYOUT_HINTS		\
 	SHOW_FEATURE_SET_HINTS			\
 	SHOW_CMD_EXAM_HINTS			\
+	SHOW_QP_HIST_HINTS			\
 	SHOW_ALL_INFO_HINTS
 
 #define	SHOW_INIT_PARAMETERS()		\
@@ -2506,6 +2897,7 @@ enum numeric_short_options {
 	case SHOW_DRAM_LAYOUT:\
 	case SHOW_FEATURE_SET:\
 	case SHOW_CMD_EXAMPLES:\
+	case SHOW_QP_HIST:\
 			show_info_flag |= (1 << (ch - SHOW_SYSTEM_STATE));\
 			break;\
 	case SHOW_ALL_INFO:\
@@ -2534,8 +2926,8 @@ enum numeric_short_options {
 #define	DEBUG_CHIP_ID_OPTIONS		\
 	{"debug-chip-id",	HAS_ARG, 0,	SPECIFY_DEBUG_CHIP_ID},
 #define	DEBUG_CHIP_ID_HINTS			\
-	{"-1~8",			"Specify Chip ID in debug mode. 0: S2L22M, 1: S2L33M, 2: S2L55M, 3: S2L99M,"\
-	"\n\t\t\t\t4: S2L63, 5: S2L66, 6: S2L88, 7: S2L99, 8: Test, -1: disable this debug option"},
+	{"-1~11",			"Specify Chip ID in debug mode. 0: S2L22M, 1: S2L33M, 2: S2L55M, 3: S2L99M,"\
+	"\n\t\t\t\t4: S2L63, 5: S2L66, 6: S2L88, 7: S2L99, 8: Test, 9: S2L22, 10: S2L33MEX, 11: S2L33EX, -1: disable this debug option"},
 
 #define	DEBUG_WAIT_OPTIONS			\
 	{"wait",	NO_ARG, 0,	SPECIFY_DEBUG_WAIT_FRAME},
@@ -2715,13 +3107,13 @@ static const struct hint_s hint[] = {
 	DEBUG_PARAMETER_HINTS()
 };
 
-int get_arbitrary_resolution(const char *name, int *width, int *height)
+static int get_arbitrary_resolution(const char *name, int *width, int *height)
 {
 	sscanf(name, "%dx%d", width, height);
 	return 0;
 }
 
-int get_encode_resolution(const char *name, int *width, int *height)
+static int get_encode_resolution(const char *name, int *width, int *height)
 {
 	int i;
 
@@ -2814,7 +3206,7 @@ int get_gop_model(const char *name)
 	return -1;
 }
 
-int get_bitrate_control(const char *name)
+static int get_bitrate_control(const char *name)
 {
 	if (strcmp(name, "cbr") == 0)
 		return IAV_CBR;
@@ -2830,7 +3222,7 @@ int get_bitrate_control(const char *name)
 		return -1;
 }
 
-int get_chrome_format(const char *format, int encode_type)
+static int get_chrome_format(const char *format, int encode_type)
 {
 	int chrome = atoi(format);
 	if (chrome == 0) {
@@ -2847,10 +3239,12 @@ int get_chrome_format(const char *format, int encode_type)
 	}
 }
 
-int get_buffer_type(const char *name)
+static int get_buffer_type(const char *name)
 {
 	if (strcmp(name, "enc") == 0)
 		return IAV_SRCBUF_TYPE_ENCODE;
+	if (strcmp(name, "vca") == 0)
+		return IAV_SRCBUF_TYPE_VCA;
 	if (strcmp(name, "prev") == 0)
 		return IAV_SRCBUF_TYPE_PREVIEW;
 	if (strcmp(name, "off") == 0)
@@ -2860,7 +3254,7 @@ int get_buffer_type(const char *name)
 	return -1;
 }
 
-int get_osd_mixer_selection(const char *name)
+static int get_osd_mixer_selection(const char *name)
 {
 	if (strcmp(name, "off") == 0)
 		return OSD_BLENDING_OFF;
@@ -2873,7 +3267,7 @@ int get_osd_mixer_selection(const char *name)
 	return -1;
 }
 
-u32 get_dsp_partition_map(u32 in_map)
+static u32 get_dsp_partition_map(u32 in_map)
 {
 	u32 out_map = 0;
 
@@ -2915,7 +3309,7 @@ u32 get_dsp_partition_map(u32 in_map)
 	return out_map;
 }
 
-int check_encode_profile(int stream)
+static int check_encode_profile(int stream)
 {
 	int profile = encode_param[stream].h264_param.h264_profile_level;
 	if (profile < 0 || profile > H264_PROFILE_HIGH) {
@@ -2926,7 +3320,7 @@ int check_encode_profile(int stream)
 	return 0;
 }
 
-void usage(void)
+static void usage(void)
 {
 	int i;
 
@@ -3041,39 +3435,63 @@ static int init_param(int argc, char **argv)
 static void get_chip_id_str(u32 chip_id, char *chip_str)
 {
 	switch (chip_id) {
-		case IAV_CHIP_ID_S2L_22M:
-			strcpy(chip_str, "S2L22M");
-			break;
-		case IAV_CHIP_ID_S2L_33M:
-			strcpy(chip_str, "S2L33M");
-			break;
-		case IAV_CHIP_ID_S2L_55M:
-			strcpy(chip_str, "S2L55M");
-			break;
-		case IAV_CHIP_ID_S2L_99M:
-			strcpy(chip_str, "S2L99M");
-			break;
-		case IAV_CHIP_ID_S2L_63:
-			strcpy(chip_str, "S2L63");
-			break;
-		case IAV_CHIP_ID_S2L_66:
-			strcpy(chip_str, "S2L66");
-			break;
-		case IAV_CHIP_ID_S2L_88:
-			strcpy(chip_str, "S2L88");
-			break;
-		case IAV_CHIP_ID_S2L_99:
-			strcpy(chip_str, "S2L99");
-			break;
-		case IAV_CHIP_ID_S2L_TEST:
-			strcpy(chip_str, "S2LM_test");
-			break;
-		default:
-			strcpy(chip_str, "Unknown");
-			break;
+	case IAV_CHIP_ID_S2L_22M:
+		strcpy(chip_str, "S2L22M");
+		break;
+	case IAV_CHIP_ID_S2L_33M:
+		strcpy(chip_str, "S2L33M");
+		break;
+	case IAV_CHIP_ID_S2L_55M:
+		strcpy(chip_str, "S2L55M");
+		break;
+	case IAV_CHIP_ID_S2L_99M:
+		strcpy(chip_str, "S2L99M");
+		break;
+	case IAV_CHIP_ID_S2L_63:
+		strcpy(chip_str, "S2L63");
+		break;
+	case IAV_CHIP_ID_S2L_66:
+		strcpy(chip_str, "S2L66");
+		break;
+	case IAV_CHIP_ID_S2L_88:
+		strcpy(chip_str, "S2L88");
+		break;
+	case IAV_CHIP_ID_S2L_99:
+		strcpy(chip_str, "S2L99");
+		break;
+	case IAV_CHIP_ID_S2L_TEST:
+		strcpy(chip_str, "S2LM_test");
+		break;
+	case IAV_CHIP_ID_S2L_22:
+		strcpy(chip_str, "S2L22");
+		break;
+	case IAV_CHIP_ID_S2L_33MEX:
+		strcpy(chip_str, "S2L33MEX");
+		break;
+	case IAV_CHIP_ID_S2L_33EX:
+		strcpy(chip_str, "S2L33EX");
+		break;
+	default:
+		strcpy(chip_str, "Unknown");
+		break;
 	}
 
 	return ;
+}
+
+static void get_chip_arch_str(u32 chip_arch, char *chip_str)
+{
+	switch (chip_arch) {
+	case UCODE_ARCH_S2L:
+		strcpy(chip_str, "S2L");
+		break;
+	case UCODE_ARCH_S3L:
+		strcpy(chip_str, "S3L");
+		break;
+	default:
+		sprintf(chip_str, "Unknown(%d)", chip_arch);
+		break;
+	}
 }
 
 static int show_encode_stream_info(void)
@@ -3173,7 +3591,6 @@ static int show_encode_stream_info(void)
 				cfg.arg.fps.fps_multi, cfg.arg.fps.fps_div);
 			printf("\tAbs FPS enable : %d\n", cfg.arg.fps.abs_fps_enable);
 			printf("\t       Abs FPS : %d\n", cfg.arg.fps.abs_fps);
-			printf("\t     Snap Shot : %d\n", format.snapshot_enable);
 		}
 		printf("\n");
 	}
@@ -3192,10 +3609,11 @@ static int show_source_buffer_info(void)
 	char fps[32];
 	u32 fps_hz;
 	u32 input_width, input_height, input_offset_x, input_offset_y;
-	u32 width, height, buffer_type, i;
+	u32 width, height, buffer_type, i, dump_duration, dump_interval;
 	char state_str[16];
 	char *buffer_type_str[3] = {"off", "encode", "preview"};
 	char *buffer_name[] = {"Main", "Second", "Third", "Fourth", "Pre-main"};
+	u32 state;
 
 	memset(&resource, 0, sizeof(resource));
 	resource.encode_mode = DSP_CURRENT_MODE;
@@ -3203,24 +3621,28 @@ static int show_source_buffer_info(void)
 	memset(&srcbuf_setup, 0, sizeof(srcbuf_setup));
 	AM_IOCTL(fd_iav, IAV_IOC_GET_SOURCE_BUFFER_SETUP, &srcbuf_setup);
 
-	memset(&video_info, 0, sizeof(video_info));
-	video_info.vsrc_id = 0;
-	video_info.info.mode = AMBA_VIDEO_MODE_CURRENT;
-	AM_IOCTL(fd_iav, IAV_IOC_VIN_GET_VIDEOINFO, &video_info);
+	AM_IOCTL(fd_iav, IAV_IOC_GET_IAV_STATE, &state);
+	if (state != IAV_STATE_INIT) {
+		memset(&video_info, 0, sizeof(video_info));
+		video_info.vsrc_id = 0;
+		video_info.info.mode = AMBA_VIDEO_MODE_CURRENT;
+		AM_IOCTL(fd_iav, IAV_IOC_VIN_GET_VIDEOINFO, &video_info);
 
-	printf("\n[VIN Capture info]:\n");
-	printf("  VIN Capture window : %dx%d\n", video_info.info.width, video_info.info.height);
-	vsrc_fps.vsrc_id = 0;
-	AM_IOCTL(fd_iav, IAV_IOC_VIN_GET_FPS, &vsrc_fps);
-	change_fps_to_hz(vsrc_fps.fps, &fps_hz, fps);
-	printf("  VIN Frame Rate : %s\n", fps);
+		printf("\n[VIN Capture info]:\n");
+		printf("  VIN Capture window : %dx%d\n", video_info.info.width, video_info.info.height);
 
-	vsrc_mode.vsrc_id = 0;
-	AM_IOCTL(fd_iav, IAV_IOC_VIN_GET_MODE, &vsrc_mode);
-	printf("  VIN Mode : %s\n", (vsrc_mode.hdr_mode == 0 ? "Linear mode" : "HDR Mode"));
-	if (vsrc_mode.hdr_mode > 0) {
-		printf("  VIN Max_act window : %dx%d\n",
-			video_info.info.max_act_width, video_info.info.max_act_height);
+		vsrc_fps.vsrc_id = 0;
+		AM_IOCTL(fd_iav, IAV_IOC_VIN_GET_FPS, &vsrc_fps);
+		change_fps_to_hz(vsrc_fps.fps, &fps_hz, fps);
+		printf("  VIN Frame Rate : %s\n", fps);
+
+		vsrc_mode.vsrc_id = 0;
+		AM_IOCTL(fd_iav, IAV_IOC_VIN_GET_MODE, &vsrc_mode);
+		printf("  VIN Mode : %s\n", (vsrc_mode.hdr_mode == 0 ? "Linear mode" : "HDR Mode"));
+		if (vsrc_mode.hdr_mode > 0) {
+			printf("  VIN Max_act window : %dx%d\n",
+				video_info.info.max_act_width, video_info.info.max_act_height);
+		}
 	}
 
 	printf("\n[Source buffer info]:\n");
@@ -3272,6 +3694,8 @@ static int show_source_buffer_info(void)
 		input_offset_y = srcbuf_setup.input[i].y;
 
 		buffer_type = srcbuf_setup.type[i];
+		dump_duration = srcbuf_setup.dump_duration[i];
+		dump_interval = srcbuf_setup.dump_interval[i];
 
 		COLOR_PRINT("%s source buffer: \n", buffer_name[i]);
 		printf("\ttype : %s \n", buffer_type_str[buffer_type]);
@@ -3280,6 +3704,11 @@ static int show_source_buffer_info(void)
 			printf("\tinput_format : %dx%d\n", input_width, input_height);
 			printf("\tinput_offset : %dx%d\n", input_offset_x, input_offset_y);
 			printf("\tstate        : %s\n", state_str);
+		} else if (buffer_type == IAV_SRCBUF_TYPE_VCA) {
+			printf("\tinput_format : %dx%d\n", input_width, input_height);
+			printf("\tinput_offset : %dx%d\n", input_offset_x, input_offset_y);
+			printf("\tvca_dump_duration : %d\n", dump_duration);
+			printf("\tvca_dump_interval : %d\n", dump_interval);
 		}
 		printf("\n");
 	}
@@ -3385,6 +3814,7 @@ static int show_resource_limit_info(void)
 			flag[resource.stream_long_ref_enable[i]]);
 	}
 
+	printf("      Long Ref B frame : %s\n", flag[resource.long_ref_b_frame]);
 	printf("             Sharpen-B : %s\n", flag[sharpen]);
 	printf("               Mixer-A : %s\n", flag[resource.mixer_a_enable]);
 	printf("               Mixer-B : %s\n", flag[resource.mixer_b_enable]);
@@ -3401,6 +3831,7 @@ static int show_resource_limit_info(void)
 	printf("        Encode RAW YUV : %s\n", flag[enc_raw_yuv]);
 	printf("             ME0 scale : %s\n", me0[resource.me0_scale]);
 	printf("     High MP stitching : %s\n", flag[resource.is_stitched]);
+	printf("   Overflow Protection : %s\n", flag[resource.vin_overflow_protection]);
 	if (enc_raw_rgb) {
 		printf("              RAW size : %dx%d\n",
 			resource.raw_size.width, resource.raw_size.height);
@@ -3434,6 +3865,7 @@ static int show_resource_limit_info(void)
 		printf("         Debug Chip ID : %s\n", chip_str);
 	}
 
+	printf("     extra top row buf : %s\n", flag[resource.extra_top_row_buf_enable]);
 	return 0;
 }
 
@@ -3441,17 +3873,35 @@ static int show_h264_encode_config(int stream_id)
 {
 	struct iav_h264_cfg h264cfg;
 	struct iav_stream_cfg streamcfg;
+	struct iav_bitrate h264_rc;
+	struct iav_h264_pskip h264_pskip;
 	char tmp[32];
+	int tmp_abs_br_flag;
 
 	memset(tmp, 0, sizeof(tmp));
 
 	memset(&h264cfg, 0, sizeof(h264cfg));
 	h264cfg.id = stream_id;
-	AM_IOCTL(fd_iav, IAV_IOC_GET_H264_CONFIG, &h264cfg);
 	memset(&streamcfg, 0, sizeof(streamcfg));
 	streamcfg.id = stream_id;
+
+	strcpy(tmp, "H.264");
+	AM_IOCTL(fd_iav, IAV_IOC_GET_H264_CONFIG, &h264cfg);
+
+	streamcfg.cid = IAV_H264_CFG_RC_STRATEGY;
+	AM_IOCTL(fd_iav, IAV_IOC_GET_STREAM_CONFIG, &streamcfg);
+	tmp_abs_br_flag = streamcfg.arg.h264_rc_strategy.abs_br_flag;
+
 	streamcfg.cid = IAV_H264_CFG_BITRATE;
 	AM_IOCTL(fd_iav, IAV_IOC_GET_STREAM_CONFIG, &streamcfg);
+	h264_rc = streamcfg.arg.h264_rc;
+
+	streamcfg.cid = IAV_H264_CFG_FORCE_PSKIP;
+	AM_IOCTL(fd_iav, IAV_IOC_GET_STREAM_CONFIG, &streamcfg);
+	h264_pskip = streamcfg.arg.h264_pskip;
+
+	BOLD_PRINT("\t%s\n", tmp);
+	memset(tmp, 0, sizeof(tmp));
 
 	switch (h264cfg.profile) {
 	case H264_PROFILE_BASELINE:
@@ -3467,31 +3917,51 @@ static int show_h264_encode_config(int stream_id)
 		strcpy(tmp, "Unknown");
 		break;
 	}
-	BOLD_PRINT0("\tH.264\n");
-	printf("\t         profile = %s\n", tmp);
-	printf("\t               M = %d\n", h264cfg.M);
-	printf("\t               N = %d\n", h264cfg.N);
-	printf("\t    idr interval = %d\n", h264cfg.idr_interval);
-	printf("\t       gop model = %s\n", (h264cfg.gop_structure == 0)? "simple":"advanced");
-	printf("\t   chrome format = %s\n", (h264cfg.chroma_format == H264_CHROMA_YUV420)?"YUV420":"MONO");
-	printf("\t    mv threshold = %d\n", h264cfg.mv_threshold);
-	printf("\t     enc improve = %d\n", h264cfg.enc_improve);
-	printf("\t long_term_intvl = %d\n", h264cfg.long_term_intvl);
-	printf("\t     multi_ref_p = %d\n", h264cfg.multi_ref_p);
-	printf("\t     intrabias_p = %d\n", h264cfg.intrabias_p);
-	printf("\t     intrabias_b = %d\n", h264cfg.intrabias_b);
-	printf("\t     vbr_setting = %d\n", streamcfg.arg.h264_rc.vbr_setting);
-	printf("\t average_bitrate = %d\n", streamcfg.arg.h264_rc.average_bitrate);
-	printf("\t        adapt_qp = %d\n", streamcfg.arg.h264_rc.adapt_qp);
-	printf("\t     i_qp_reduce = %d\n", streamcfg.arg.h264_rc.i_qp_reduce);
-	printf("\t     p_qp_reduce = %d\n", streamcfg.arg.h264_rc.p_qp_reduce);
-	printf("\t     qp_max_on_I = %d\n", streamcfg.arg.h264_rc.qp_max_on_I);
-	printf("\t     qp_min_on_I = %d\n", streamcfg.arg.h264_rc.qp_min_on_I);
-	printf("\t     qp_max_on_B = %d\n", streamcfg.arg.h264_rc.qp_max_on_B);
-	printf("\t     qp_min_on_B = %d\n", streamcfg.arg.h264_rc.qp_min_on_B);
-	printf("\t     qp_max_on_P = %d\n", streamcfg.arg.h264_rc.qp_max_on_P);
-	printf("\t     qp_min_on_P = %d\n", streamcfg.arg.h264_rc.qp_min_on_P);
-	printf("\t       skip_flag = %d\n", streamcfg.arg.h264_rc.skip_flag);
+	printf("\t             profile = %s\n", tmp);
+	printf("\t                   M = %d\n", h264cfg.M);
+	printf("\t                   N = %d\n", h264cfg.N);
+	printf("\t        idr interval = %d\n", h264cfg.idr_interval);
+	printf("\t           gop model = %s\n",
+		(h264cfg.gop_structure == 0) ? "simple":"advanced");
+	printf("\t       chrome format = %s\n",
+		(h264cfg.chroma_format == H264_CHROMA_YUV420) ? "YUV420" : "MONO");
+	printf("\t        mv threshold = %s\n", h264cfg.mv_threshold ? "Enable" : "Disable");
+	printf("\t   flat_area_improve = %d\n", h264cfg.flat_area_improve);
+	printf("\t     fast_seek_intvl = %d\n", h264cfg.fast_seek_intvl);
+	printf("\t         multi_ref_p = %d\n", h264cfg.multi_ref_p);
+	printf("\t         intrabias_p = %d\n", h264cfg.intrabias_p);
+	printf("\t         intrabias_b = %d\n", h264cfg.intrabias_b);
+	printf("\t               alpha = %d\n", h264cfg.deblocking_filter_alpha);
+	printf("\t                beta = %d\n", h264cfg.deblocking_filter_beta);
+	printf("\t         loop_filter = %d\n", h264cfg.deblocking_filter_enable);
+	printf("\t     left frame crop = %d\n", h264cfg.frame_crop_left_offset);
+	printf("\t    right frame crop = %d\n", h264cfg.frame_crop_right_offset);
+	printf("\t      top frame crop = %d\n", h264cfg.frame_crop_top_offset);
+	printf("\t   bottom frame crop = %d\n", h264cfg.frame_crop_bottom_offset);
+	printf("\t         vbr_setting = %d\n", h264_rc.vbr_setting);
+	printf("\t     average_bitrate = %d\n", h264_rc.average_bitrate);
+	printf("\t            adapt_qp = %d\n", h264_rc.adapt_qp);
+	printf("\t         i_qp_reduce = %d\n", h264_rc.i_qp_reduce);
+	printf("\t         p_qp_reduce = %d\n", h264_rc.p_qp_reduce);
+	printf("\t         q_qp_reduce = %d\n", h264_rc.q_qp_reduce);
+	printf("\t    log_q_num_plus_1 = %d\n", h264_rc.log_q_num_plus_1);
+	printf("\t         qp_max_on_I = %d\n", h264_rc.qp_max_on_I);
+	printf("\t         qp_min_on_I = %d\n", h264_rc.qp_min_on_I);
+	printf("\t         qp_max_on_B = %d\n", h264_rc.qp_max_on_B);
+	printf("\t         qp_min_on_B = %d\n", h264_rc.qp_min_on_B);
+	printf("\t         qp_max_on_P = %d\n", h264_rc.qp_max_on_P);
+	printf("\t         qp_min_on_P = %d\n", h264_rc.qp_min_on_P);
+	printf("\t         qp_max_on_Q = %d\n", h264_rc.qp_max_on_Q);
+	printf("\t         qp_min_on_Q = %d\n", h264_rc.qp_min_on_Q);
+	printf("\t           skip_flag = %d\n", h264_rc.skip_flag);
+	if (h264_rc.max_i_size_KB) {
+		printf("\t       max_i_size_KB = %d\n", h264_rc.max_i_size_KB);
+	} else {
+		printf("\t       max_i_size_KB = Disable\n");
+	}
+	printf("\t         abs_br_flag = %s\n", tmp_abs_br_flag ? "Enable" : "Disable");
+	printf("\t          pskip type = %s\n", h264_pskip.repeat_enable ? "Repeat Pskip" : "Force Pskip");
+	printf("\t    repeat pskip num = %d\n", h264_pskip.repeat_num);
 
 	return 0;
 }
@@ -3672,18 +4142,37 @@ static int show_iav_state(void)
 
 static int show_driver_info(void)
 {
+	int fd_ucode = -1;
+	ucode_version_t ucode_ver;
 	struct iav_driver_version iav_driver_info;
+	char chip_arch[16];
 
+	if ((fd_ucode = open("/dev/ucode", O_RDWR, 0)) < 0) {
+		perror("/dev/ucode");
+		return -1;
+	}
+
+	memset(&ucode_ver, 0, sizeof(ucode_ver));
+	AM_IOCTL(fd_ucode, IAV_IOC_GET_UCODE_VERSION, &ucode_ver);
 	AM_IOCTL(fd_iav, IAV_IOC_GET_DRIVER_INFO, &iav_driver_info);
+
+	get_chip_arch_str(ucode_ver.chip_arch, chip_arch);
 
 	printf("\n[IAV driver info]:\n");
 	printf("   IAV Driver Version : %s-%d.%d.%d (Last updated: %x)\n"
-		"   DSP Driver version : %d-%d\n",
+		"   DSP Driver version : %d-%d\n"
+		"        Ucode version : %s %d-%d (Last updated: %d%02d%02d)\n",
 		iav_driver_info.description, iav_driver_info.major,
 		iav_driver_info.minor, iav_driver_info.patch,
 		iav_driver_info.mod_time,
-		iav_driver_info.api_version, iav_driver_info.idsp_version);
+		iav_driver_info.api_version, iav_driver_info.idsp_version,
+		chip_arch, ucode_ver.edition_num, ucode_ver.edition_ver,
+		ucode_ver.year, ucode_ver.month, ucode_ver.day);
 
+	if (fd_ucode >= 0) {
+		close(fd_ucode);
+		fd_ucode = -1;
+	}
 
 	return 0;
 }
@@ -3724,6 +4213,12 @@ static int show_dram_layout(void)
 		buf.offset, (buf.length >> 10));
 
 	memset(&buf, 0, sizeof(buf));
+	buf.buf = IAV_BUFFER_MV;
+	AM_IOCTL(fd_iav, IAV_IOC_QUERY_BUF, &buf);
+	printf("         [MV] Base Address: [0x%08X], Size [%8d KB].\n",
+		buf.offset, (buf.length >> 10));
+
+	memset(&buf, 0, sizeof(buf));
 	buf.buf = IAV_BUFFER_OVERLAY;
 	AM_IOCTL(fd_iav, IAV_IOC_QUERY_BUF, &buf);
 	printf("    [OVERLAY] Base Address: [0x%08X], Size [%8d KB].\n",
@@ -3754,6 +4249,12 @@ static int show_dram_layout(void)
 		buf.offset, (buf.length >> 10));
 
 	memset(&buf, 0, sizeof(buf));
+	buf.buf = IAV_BUFFER_PM_MCTF;
+	AM_IOCTL(fd_iav, IAV_IOC_QUERY_BUF, &buf);
+	printf("    [PM_MCTF] Base Address: [0x%08X], Size [%8d KB].\n",
+		buf.offset, (buf.length >> 10));
+
+	memset(&buf, 0, sizeof(buf));
 	buf.buf = IAV_BUFFER_PM_BPC;
 	AM_IOCTL(fd_iav, IAV_IOC_QUERY_BUF, &buf);
 	printf("     [PM_BPC] Base Address: [0x%08X], Size [%8d KB].\n",
@@ -3772,9 +4273,9 @@ static int show_dram_layout(void)
 		buf.offset, (buf.length >> 10));
 
 	memset(&buf, 0, sizeof(buf));
-	buf.buf = IAV_BUFFER_PM_MCTF;
+	buf.buf = IAV_BUFFER_VCA;
 	AM_IOCTL(fd_iav, IAV_IOC_QUERY_BUF, &buf);
-	printf("    [PM_MCTF] Base Address: [0x%08X], Size [%8d KB].\n",
+	printf("        [VCA] Base Address: [0x%08X], Size [%8d KB].\n",
 		buf.offset, (buf.length >> 10));
 
 	memset(&buf, 0, sizeof(buf));
@@ -3870,6 +4371,14 @@ static int show_cmd_examples(void)
 		"--btype off -Y --btype enc --bsize 480p -K --btype enc --bsize 480p "
 		"-D --smaxsize 1080p --intermediate 2176x1088 ;\n\n");
 
+	COLOR_PRINT0("\nMode 2:\n");
+	printf("  (1) Basic 1080p30:\n");
+	printf("    # test_encode -i 1080p --hdr-mode 0 -V 480p --hdmi "
+		"--enc-mode 2 --hdr-expo 1 --mixer 0 -X --bsize 1080p --bmax 1080p ;\n\n");
+	printf("  (2) Advanced 1080p30 2X HDR\n");
+	printf("    # test_encode -i 1080p --hdr-mode 1 -V 480p --hdmi "
+		"--enc-mode 2 --hdr-expo 2 --mixer 0 -X --bsize 1080p --bmax 1080p ;\n\n");
+
 	COLOR_PRINT0("\nMode 4:\n");
 	printf("  (1) Advanced ISO 1080p30\n");
 	printf("    # test_encode -i 1080p --hdr-mode 0 -V 1080p --hdmi "
@@ -3898,7 +4407,49 @@ static int show_cmd_examples(void)
 	printf("  (1) Switching between HDR mode (basic HDR or advanced HDR) and "
 		"linear mode, sensor needs to do HW GPIO reset.\n");
 
-	printf("\n");
+	return 0;
+}
+
+static int print_qp_histogram(struct iav_qp_histogram *hist)
+{
+	const int entry_num = 4;
+	int i, j, index;
+	int mb_sum, qp_sum, mb_entry;
+
+	printf("====== stream [%d], PTS [%d].",
+		hist->id, hist->PTS);
+	printf("\n====== QP:MB \n");
+	mb_sum = qp_sum = 0;
+	for (i = 0; i < IAV_QP_HIST_BIN_MAX_NUM / entry_num; ++i) {
+		mb_entry = 0;
+		printf(" [Set %d] ", i);
+		for (j = 0; j < entry_num; ++j) {
+			index = i * entry_num + j;
+			printf("%2d:%-4d ", hist->qp[index], hist->mb[index]);
+			mb_entry += hist->mb[index];
+			mb_sum += hist->mb[index];
+			qp_sum += hist->qp[index] * hist->mb[index];
+		}
+		printf("[MBs: %d].\n", mb_entry);
+	}
+	printf("\n====== Total MB : %d.", mb_sum);
+	printf("\n====== Average QP : %d.\n\n", qp_sum / mb_sum);
+	return 0;
+}
+
+static int show_qp_hist(void)
+{
+	struct iav_querydesc query_desc;
+	int i;
+
+	memset(&query_desc, 0, sizeof(query_desc));
+	query_desc.qid = IAV_DESC_QP_HIST;
+
+	AM_IOCTL(fd_iav, IAV_IOC_QUERY_DESC, &query_desc);
+	printf("\nQP histogram for [%d] streams.\n\n", query_desc.arg.qphist.stream_num);
+	for (i = 0; i < query_desc.arg.qphist.stream_num; ++i) {
+		print_qp_histogram(&query_desc.arg.qphist.stream_qp_hist[i]);
+	}
 	return 0;
 }
 
@@ -3932,7 +4483,7 @@ static u32 rc_qp_for_vbr_lut[11][11] =
 	{21, 18, 17, 16, 15, 13, 12, 11, 10, 1,  1},	/* 10 Mbps */
 };
 
-int h264_calc_target_qp(u32 bitrate, u32 resolution)
+static int h264_calc_target_qp(u32 bitrate, u32 resolution)
 {
 	int i, j;
 
@@ -3959,7 +4510,7 @@ int h264_calc_target_qp(u32 bitrate, u32 resolution)
 	return rc_qp_for_vbr_lut[i][j];
 }
 
-int set_h264_encode_param(int stream)
+static int set_h264_encode_param(int stream)
 {
 	struct iav_h264_cfg h264cfg;
 	struct iav_stream_cfg cfg;
@@ -3994,11 +4545,11 @@ int set_h264_encode_param(int stream)
 	if (param->h264_mv_threshold_flag)
 		h264cfg.mv_threshold = param->h264_mv_threshold;
 
-	if (param->h264_enc_improve_flag)
-		h264cfg.enc_improve = param->h264_enc_improve;
+	if (param->h264_flat_area_improve_flag)
+		h264cfg.flat_area_improve = param->h264_flat_area_improve;
 
-	if (param->h264_long_term_intvl_flag)
-		h264cfg.long_term_intvl= param->h264_long_term_intvl;
+	if (param->h264_fast_seek_intvl_flag)
+		h264cfg.fast_seek_intvl= param->h264_fast_seek_intvl;
 
 	if (param->h264_multi_ref_p_flag)
 		h264cfg.multi_ref_p = param->h264_multi_ref_p;
@@ -4040,8 +4591,46 @@ int set_h264_encode_param(int stream)
 	if (param->au_type_flag)
 		h264cfg.au_type = param->au_type;
 
+	if (param->h264_deblocking_filter_alpha_flag) {
+		h264cfg.deblocking_filter_alpha = param->h264_deblocking_filter_alpha;
+	}
+
+	if (param->h264_deblocking_filter_beta_flag) {
+		h264cfg.deblocking_filter_beta = param->h264_deblocking_filter_beta;
+	}
+
+	if (param->h264_deblocking_filter_enable_flag) {
+		h264cfg.deblocking_filter_enable = param->h264_deblocking_filter_enable;
+	}
+
+	if (param->h264_frame_crop_left_offset_flag) {
+		h264cfg.frame_crop_left_offset = param->h264_frame_crop_left_offset;
+	}
+
+	if (param->h264_frame_crop_right_offset_flag) {
+		h264cfg.frame_crop_right_offset = param->h264_frame_crop_right_offset;
+	}
+
+	if (param->h264_frame_crop_top_offset_flag) {
+		h264cfg.frame_crop_top_offset = param->h264_frame_crop_top_offset;
+	}
+
+	if (param->h264_frame_crop_bottom_offset_flag) {
+		h264cfg.frame_crop_bottom_offset = param->h264_frame_crop_bottom_offset;
+	}
+
 	AM_IOCTL(fd_iav, IAV_IOC_SET_H264_CONFIG, &h264cfg);
 
+	// bitrate auto sync settings
+	if (param->h264_abs_br_flag) {
+		memset(&cfg, 0, sizeof(cfg));
+		cfg.id = stream;
+		cfg.cid = IAV_H264_CFG_RC_STRATEGY;
+		AM_IOCTL(fd_iav, IAV_IOC_GET_STREAM_CONFIG, &cfg);
+
+		cfg.arg.h264_rc_strategy.abs_br_flag = param->h264_abs_br;
+		AM_IOCTL(fd_iav, IAV_IOC_SET_STREAM_CONFIG, &cfg);
+	}
 	// bitrate control settings
 	memset(&cfg, 0, sizeof(cfg));
 	cfg.id = stream;
@@ -4063,6 +4652,8 @@ int set_h264_encode_param(int stream)
 		bitrate.qp_max_on_P = 51;
 		bitrate.qp_min_on_B = 1;
 		bitrate.qp_max_on_B = 51;
+		bitrate.qp_min_on_Q = 15;
+		bitrate.qp_max_on_Q = 51;
 		bitrate.skip_flag = 0;
 		break;
 
@@ -4078,6 +4669,8 @@ int set_h264_encode_param(int stream)
 		bitrate.qp_max_on_P = qp * 6 / 5;
 		bitrate.qp_min_on_B = 1;
 		bitrate.qp_max_on_B = qp * 6 / 5;
+		bitrate.qp_min_on_Q = 1;
+		bitrate.qp_max_on_Q = qp * 6 / 5;
 		bitrate.skip_flag = H264_WITH_FRAME_DROP; // enable frame dropping
 		break;
 
@@ -4093,6 +4686,8 @@ int set_h264_encode_param(int stream)
 		bitrate.qp_max_on_P = 51;
 		bitrate.qp_min_on_B = qp;
 		bitrate.qp_max_on_B = 51;
+		bitrate.qp_min_on_Q = qp;
+		bitrate.qp_max_on_Q = 51;
 		bitrate.skip_flag = 0;
 		break;
 
@@ -4108,6 +4703,8 @@ int set_h264_encode_param(int stream)
 		bitrate.qp_max_on_P = qp;
 		bitrate.qp_min_on_B = qp;
 		bitrate.qp_max_on_B = qp;
+		bitrate.qp_min_on_Q = qp;
+		bitrate.qp_max_on_Q = qp;
 		bitrate.skip_flag = H264_WITH_FRAME_DROP; // enable frame dropping
 		break;
 
@@ -4153,9 +4750,9 @@ int set_h264_encode_param(int stream)
 
 	memset(&cfg, 0, sizeof(cfg));
 	cfg.id = stream;
-	cfg.cid = IAV_H264_CFG_ENC_IMPROVE;
-	if (param->h264_enc_improve_flag) {
-		cfg.arg.h264_enc_improve = h264cfg.enc_improve;
+	cfg.cid = IAV_H264_CFG_FLAT_AREA_IMPROVE;
+	if (param->h264_flat_area_improve_flag) {
+		cfg.arg.h264_flat_area_improve = h264cfg.flat_area_improve;
 		AM_IOCTL(fd_iav, IAV_IOC_SET_STREAM_CONFIG, &cfg);
 	}
 
@@ -4201,10 +4798,21 @@ int set_h264_encode_param(int stream)
 		AM_IOCTL(fd_iav, IAV_IOC_SET_STREAM_CONFIG, &cfg);
 	}
 
+	memset(&cfg, 0, sizeof(cfg));
+	cfg.id = stream;
+	cfg.cid = IAV_H264_CFG_FORCE_PSKIP;
+	if (param->force_pskip_flag) {
+		AM_IOCTL(fd_iav, IAV_IOC_SET_STREAM_CONFIG, &cfg);
+		cfg.arg.h264_pskip.repeat_enable = param->force_pskip_repeat_enable;
+		cfg.arg.h264_pskip.repeat_num =
+			(param->force_pskip_repeat_enable ? param->force_pskip_repeat_num : 0);
+		AM_IOCTL(fd_iav, IAV_IOC_SET_STREAM_CONFIG, &cfg);
+	}
+
 	return 0;
 }
 
-int set_mjpeg_encode_param(int stream)
+static int set_mjpeg_encode_param(int stream)
 {
 	struct iav_mjpeg_cfg mjpeg_cfg;
 	struct iav_stream_info info;
@@ -4245,7 +4853,7 @@ int set_mjpeg_encode_param(int stream)
 	return 0;
 }
 
-int set_encode_param(void)
+static int set_encode_param(void)
 {
 	struct iav_stream_format format;
 	int i;
@@ -4270,7 +4878,7 @@ int set_encode_param(void)
 	return 0;
 }
 
-int set_encode_format(void)
+static int set_encode_format(void)
 {
 	struct iav_stream_format format;
 	int i;
@@ -4309,29 +4917,26 @@ int set_encode_format(void)
 		if (encode_format[i].rotate_flag) {
 			format.rotate_cw = encode_format[i].rotate;
 		}
-		if (encode_format[i].snapshot_enable_flag) {
-			format.snapshot_enable = encode_format[i].snapshot_enable;
-		}
 		AM_IOCTL(fd_iav, IAV_IOC_SET_STREAM_FORMAT, &format);
 	}
 	return 0;
 }
 
-int goto_idle(void)
+static int goto_idle(void)
 {
 	AM_IOCTL(fd_iav, IAV_IOC_ENTER_IDLE, 0);
 	printf("IAVIOC_S_IDLE done\n");
 	return 0;
 }
 
-int enable_preview(void)
+static int enable_preview(void)
 {
 	AM_IOCTL(fd_iav, IAV_IOC_ENABLE_PREVIEW, 31);
 	printf("enable_preview done\n");
 	return 0;
 }
 
-int start_encode(u32 streamid)
+static int start_encode(u32 streamid)
 {
 	struct iav_stream_info streaminfo;
 	int i;
@@ -4357,7 +4962,7 @@ int start_encode(u32 streamid)
 }
 
 //this function will get encode state, if it's encoding, then stop it, otherwise, return 0 and do nothing
-int stop_encode(u32 streamid)
+static int stop_encode(u32 streamid)
 {
 	struct iav_stream_info streaminfo;
 	int i;
@@ -4377,6 +4982,14 @@ int stop_encode(u32 streamid)
 	if (streamid == 0)
 		return 0;
 	AM_IOCTL(fd_iav, IAV_IOC_STOP_ENCODE, streamid);
+
+	return 0;
+}
+
+static int abort_encode(u32 streamid)
+{
+	printf("abort encoding for stream 0x%x \n", streamid);
+	AM_IOCTL(fd_iav, IAV_IOC_ABORT_ENCODE, streamid);
 
 	return 0;
 }
@@ -4418,7 +5031,7 @@ int dump_idsp_bin(void)
 	return 0;
 }
 
-int change_frame_rate(void)
+static int change_frame_rate(void)
 {
 	struct iav_stream_cfg streamcfg;
 	struct vindev_fps vsrc_fps;
@@ -4478,7 +5091,7 @@ int change_frame_rate(void)
 	return 0;
 }
 
-int sync_frame_rate(void)
+static int sync_frame_rate(void)
 {
 	struct iav_stream_fps_sync fps_sync;
 	int i;
@@ -4505,7 +5118,7 @@ int sync_frame_rate(void)
 	return 0;
 }
 
-int setup_resource_limit(u32 source_buffer_id, u32 stream_id)
+static int setup_resource_limit(u32 source_buffer_id, u32 stream_id)
 {
 	int i;
 	struct iav_system_resource resource;
@@ -4547,6 +5160,10 @@ int setup_resource_limit(u32 source_buffer_id, u32 stream_id)
 		}
 	}
 
+	if (system_resource_setup.long_ref_b_frame_flag == 1) {
+		resource.long_ref_b_frame = system_resource_setup.long_ref_b_frame;
+	}
+
 	if (system_resource_setup.rotate_possible_flag) {
 		resource.rotate_enable = system_resource_setup.rotate_possible;
 	}
@@ -4561,6 +5178,10 @@ int setup_resource_limit(u32 source_buffer_id, u32 stream_id)
 
 	if (system_resource_setup.lens_warp_flag) {
 		resource.lens_warp_enable = system_resource_setup.lens_warp;
+	}
+
+	if (system_resource_setup.max_enc_num_flag) {
+		resource.max_num_encode = system_resource_setup.max_enc_num;
 	}
 
 	if (system_resource_setup.enc_raw_rgb_flag) {
@@ -4656,6 +5277,10 @@ int setup_resource_limit(u32 source_buffer_id, u32 stream_id)
 		}
 	}
 
+	if (system_resource_setup.vin_overflow_protection_flag) {
+		resource.vin_overflow_protection= system_resource_setup.vin_overflow_protection;
+	}
+
 	/* Debug */
 	if (system_resource_setup.debug_iso_type_flag) {
 		if (system_resource_setup.debug_iso_type != -1) {
@@ -4680,6 +5305,10 @@ int setup_resource_limit(u32 source_buffer_id, u32 stream_id)
 		} else {
 			resource.debug_enable_map &= ~DEBUG_TYPE_CHIP_ID;
 		}
+	}
+
+	if (system_resource_setup.extra_top_row_buf_flag) {
+		resource.extra_top_row_buf_enable = system_resource_setup.extra_top_row_buf;
 	}
 
 	AM_IOCTL(fd_iav, IAV_IOC_SET_SYSTEM_RESOURCE, &resource);
@@ -4720,7 +5349,7 @@ int setup_resource_limit_if_necessary(void)
 	return 0;
 }
 
-int setup_source_buffer()
+static int setup_source_buffer()
 {
 	struct iav_srcbuf_setup buf_setup;
 	int i;
@@ -4754,6 +5383,12 @@ int setup_source_buffer()
 				buf_setup.input[i].x = source_buffer_format[i].input_x;
 				buf_setup.input[i].y = source_buffer_format[i].input_y;
 			}
+			if (source_buffer_format[i].dump_interval_flag) {
+				buf_setup.dump_interval[i] = source_buffer_format[i].dump_interval;
+			}
+			if (source_buffer_format[i].dump_duration_flag) {
+				buf_setup.dump_duration[i] = source_buffer_format[i].dump_duration;
+			}
 			updated = 1;
 		}
 	}
@@ -4765,7 +5400,7 @@ int setup_source_buffer()
 	return 0;
 }
 
-int source_buffer_format_config()
+static int source_buffer_format_config()
 {
 	struct iav_srcbuf_format format;
 	int i;
@@ -4812,13 +5447,42 @@ static int force_idr_insertion(int stream)
 	return 0;
 }
 
+static int long_ref_p_insertion(int stream)
+{
+	struct iav_stream_cfg stream_cfg;
+
+	memset(&stream_cfg, 0, sizeof(stream_cfg));
+	stream_cfg.id = stream;
+	stream_cfg.cid = IAV_H264_CFG_LONG_REF_P;
+	AM_IOCTL(fd_iav, IAV_IOC_SET_STREAM_CONFIG, &stream_cfg);
+
+	return 0;
+}
+
 static int set_force_idr(void)
 {
 	int i;
 
 	for (i = 0; i < MAX_ENCODE_STREAM_NUM; i++) {
 		if (force_idr_id & (1 << i)) {
-			force_idr_insertion(i);
+			if (force_idr_insertion(i) < 0) {
+				return -1;
+			}
+		}
+	}
+
+	return 0;
+}
+
+static int set_long_ref_p(void)
+{
+	int i;
+
+	for (i = 0; i < MAX_ENCODE_STREAM_NUM; i++) {
+		if (long_ref_p_id & (1 << i)) {
+			if (long_ref_p_insertion(i) < 0) {
+				return -1;
+			}
 		}
 	}
 
@@ -4877,6 +5541,11 @@ static int change_qp_limit(int stream)
 		bitrate->qp_max_on_B = param->qp_max_b;
 	}
 
+	if (param->qp_q_flag) {
+		bitrate->qp_min_on_Q = param->qp_min_q;
+		bitrate->qp_max_on_Q = param->qp_max_q;
+	}
+
 	if (param->adapt_qp_flag)
 		bitrate->adapt_qp = param->adapt_qp;
 
@@ -4886,8 +5555,17 @@ static int change_qp_limit(int stream)
 	if (param->p_qp_reduce_flag)
 		bitrate->p_qp_reduce = param->p_qp_reduce;
 
+	if (param->q_qp_reduce_flag)
+		bitrate->q_qp_reduce = param->q_qp_reduce;
+
+	if (param->log_q_num_plus_1_flag)
+		bitrate->log_q_num_plus_1 = param->log_q_num_plus_1;
+
 	if (param->skip_frame_flag)
 		bitrate->skip_flag = param->skip_frame;
+
+	if (param->max_i_size_KB_flag)
+		bitrate->max_i_size_KB = param->max_i_size_KB;
 
 	stream_cfg.cid = IAV_H264_CFG_BITRATE;
 	AM_IOCTL(fd_iav, IAV_IOC_SET_STREAM_CONFIG, &stream_cfg);
@@ -5115,6 +5793,10 @@ static int do_show_status(void)
 		show_cmd_examples();
 	}
 
+	if (show_info_flag & (1 << IAV_SHOW_QP_HIST)) {
+		show_qp_hist();
+	}
+
 	return 0;
 }
 
@@ -5134,6 +5816,13 @@ static int do_debug_dump(void)
 static int do_stop_encoding(void)
 {
 	if (stop_encode(stop_stream_id) < 0)
+		return -1;
+	return 0;
+}
+
+static int do_abort_encoding(void)
+{
+	if (abort_encode(abort_stream_id) < 0)
 		return -1;
 	return 0;
 }
@@ -5271,6 +5960,11 @@ static int do_real_time_change(void)
 			return -1;
 	}
 
+	if (long_ref_p_id) {
+		if (set_long_ref_p() < 0)
+			return -1;
+	}
+
 	return 0;
 }
 
@@ -5316,11 +6010,18 @@ static int do_debug_setup(void)
 	return 0;
 }
 
+static int do_dsp_clcok_set(void)
+{
+	AM_IOCTL(fd_iav, IAV_IOC_SET_DSP_CLOCK_STATE, dsp_clock_state_disable);
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	int do_show_status_flag = 0;
 	int do_debug_dump_flag = 0;
 	int do_stop_encoding_flag = 0;
+	int do_abort_encoding_flag = 0;
 	int do_goto_idle_flag = 0;
 	int do_vout_setup_flag = 0;
 	int do_vin_setup_flag = 0;
@@ -5374,6 +6075,9 @@ int main(int argc, char **argv)
 	}
 	if (stop_stream_id)  {
 		do_stop_encoding_flag = 1;
+	}
+	if (abort_stream_id)  {
+		do_abort_encoding_flag = 1;
 	}
 
 	//go to idle (disable preview) flag
@@ -5435,7 +6139,8 @@ int main(int argc, char **argv)
 		force_fast_seek_id ||
 		qp_limit_changed_id ||
 		intra_mb_rows_changed_id ||
-		qp_matrix_changed_id) {
+		qp_matrix_changed_id ||
+		long_ref_p_id) {
 		do_real_time_change_flag = 1;
 	}
 
@@ -5473,6 +6178,11 @@ int main(int argc, char **argv)
 	//stop encoding
 	if (do_stop_encoding_flag) {
 		if (do_stop_encoding() < 0)
+			return -1;
+	}
+	//abort encoding
+	if (do_abort_encoding_flag) {
+		if (do_abort_encoding() < 0)
 			return -1;
 	}
 
@@ -5526,6 +6236,11 @@ int main(int argc, char **argv)
 
 	if (do_debug_setup_flag) {
 		if (do_debug_setup() < 0)
+			return -1;
+	}
+
+	if (dsp_clock_state_disable_flag) {
+		if (do_dsp_clcok_set() < 0)
 			return -1;
 	}
 

@@ -1,24 +1,119 @@
 --[[
-/S2l/oryx/stream/record/muxers/muxer-rtp/muxer-rtp.acs
+ambarella/oryx/stream/record/muxers/muxer-rtp/muxer-rtp.acs
 
 History:
   2015-1-4 - [ypchang] created file
 
-Copyright (C) 2008-2015, Ambarella Co, Ltd.
+Copyright (c) 2016 Ambarella, Inc.
 
-All rights reserved. No Part of this file may be reproduced, stored
-in a retrieval system, or transmitted, in any form, or by any means,
-electronic, mechanical, photocopying, recording, or otherwise,
-without the prior consent of Ambarella.
+This file and its contents ("Software") are protected by intellectual
+property rights including, without limitation, U.S. and/or foreign
+copyrights. This Software is also the confidential and proprietary
+information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+disclose, distribute, modify, or otherwise prepare derivative works of this
+Software or any portion thereof except pursuant to a signed license agreement
+or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+In the absence of such an agreement, you agree to promptly notify and return
+this Software to Ambarella, Inc.
+
+THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+
 --]]
 
 _muxer_rtp_ = {
+  muxer_id               = 6,   -- do not modify
   max_send_queue_size    = 15,
   max_tcp_payload_size   = 1448,
   max_proto_client       = 2,     -- RTSP/SIP
+  max_alloc_wait_count   = 20,
+  alloc_wait_interval    = 10,    -- Millisecond
+  kill_session_timeout   = 4000,  -- Millisecond
   sock_timeout           = 10,    -- seconds
+  del_buffer_on_release  = true,  -- Delete buffer when release RtpData
   dynamic_audio_pts_diff = false,
   ntp_use_hw_timer       = false, -- Use HW timer to calculate fake NTP time
+  session_type           = {
+    {
+      type  = 0, -- index 0 equals AM_VIDEO_H264
+      codec = "h264",
+      name  = "H.264",
+    },
+    {
+      type  = 1, -- index 1 equals AM_VIDEO_H265
+      codec = "h265",
+      name  = "H.265",
+    },
+    {
+      type  = 2, -- index 2 equals AM_VIDEO_MJPEG
+      codec = "mjpeg",
+      name  = "MJPEG",
+    },
+    {
+      type  = 3, -- index 3 equals AM_AUDIO_LPCM
+      codec = "lpcm",
+      name  = "PCM",
+    },
+    {
+      type  = 4, -- index 4 equals AM_AUDIO_BPCM
+      codec = "bpcm",
+      name  = "BPCM",
+    },
+    {
+      type  = 5, -- index 5 equals AM_AUDIO_G711A
+      codec = "g711",
+      name  = "G.711 Alaw",
+    },
+    {
+      type  = 6, -- index 6 equals AM_AUDIO_G711U
+      codec = "g711",
+      name  = "G.711 Ulaw",
+    },
+    {
+      type  = 7, -- index 7 equals AM_AUDIO_G726_40
+      codec = "g726",
+      name  = "G.726 40",
+    },
+    {
+      type  = 8, -- index 8 equals AM_AUDIO_G726_32
+      codec = "g726",
+      name  = "G.726 32",
+    },
+    {
+      type  = 9, -- index 9 equals AM_AUDIO_G726_24
+      codec = "g726",
+      name  = "G.726 24",
+    },
+    {
+      type  = 10, -- index 10 equals AM_AUDIO_G726_16
+      codec = "g726",
+      name  = "G.726 16",
+    },
+    {
+      type  = 11, -- index 11 equals AM_AUDIO_AAC
+      codec = "aac",
+      name  = "AAC",
+    },
+    {
+      type  = 12, -- index 12 equals AM_AUDIO_OPUS
+      codec = "opus",
+      name  = "OPUS",
+    },
+    {
+      type  = 13, -- index 13 equals AM_AUDIO_SPEEX
+      codec = "speex",
+      name  = "SPEEX",
+    },
+  },
 }
 
 return _muxer_rtp_

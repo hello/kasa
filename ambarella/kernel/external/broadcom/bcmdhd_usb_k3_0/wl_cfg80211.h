@@ -1006,8 +1006,8 @@ extern s32 wl_cfg80211_get_best_channels(struct net_device *dev, char* command,
 #endif /* WL_SUPPORT_AUTO_CHANNEL */
 extern int wl_cfg80211_hang(struct net_device *dev, u16 reason);
 extern s32 wl_mode_to_nl80211_iftype(s32 mode);
-int wl_cfg80211_do_driver_init(struct net_device *net);
-void wl_cfg80211_enable_trace(bool set, u32 level);
+int wl_cfg80211_do_driver_init(struct net_device *net);;
+void wl_cfg80211_enable_trace(u32 level);
 extern s32 wl_update_wiphybands(struct wl_priv *wl, bool notify);
 extern s32 wl_cfg80211_if_is_group_owner(void);
 extern chanspec_t wl_ch_host_to_driver(u16 channel);

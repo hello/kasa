@@ -1,15 +1,32 @@
 ##
-## prebuild/third-party/python/make.inc
+## prebuild/third-party/armv7-a-hf/python/make.inc
 ##
 ## History:
 ##    2012/05/30 - [Cao Rongrong] Created file
 ##
-## Copyright (C) 2012-2016, Ambarella, Inc.
+## Copyright (c) 2015 Ambarella, Inc.
 ##
-## All rights reserved. No Part of this file may be reproduced, stored
-## in a retrieval system, or transmitted, in any form, or by any means,
-## electronic, mechanical, photocopying, recording, or otherwise,
-## without the prior consent of Ambarella, Inc.
+## This file and its contents ("Software") are protected by intellectual
+## property rights including, without limitation, U.S. and/or foreign
+## copyrights. This Software is also the confidential and proprietary
+## information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+## disclose, distribute, modify, or otherwise prepare derivative works of this
+## Software or any portion thereof except pursuant to a signed license agreement
+## or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+## In the absence of such an agreement, you agree to promptly notify and return
+## this Software to Ambarella, Inc.
+##
+## THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+## INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+## MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+## IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+## INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+## (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+## LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+## INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+## CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+## ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+## POSSIBILITY OF SUCH DAMAGE.
 ##
 
 ifeq ($(CONFIG_AMBARELLA_PYTHON_SUPPORT), y)
@@ -28,102 +45,29 @@ include $(BUILD_PREBUILD)
 
 $(LOCAL_TARGET): $(LOCAL_MODULE)
 	$(call prebuild-links)
-	@mkdir -p $(FAKEROOT_DIR)/usr/lib/python2.7/site-packages
-ifneq ($(CONFIG_AMBARELLA_PYTHON_FUTURE_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/__future__.py
+ifneq ($(CONFIG_AMBARELLA_PYTHON_BZIP2_SUPPORT), y)
+	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/lib-dynload/bz2.so
 endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_BASE64_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/base64.py
+ifneq ($(CONFIG_AMBARELLA_PYTHON_CTYPES_SUPPORT), y)
+	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/lib-dynload/_ctypes*.so
+	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/ctypes
 endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_BASEHTTPSERVER_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/BaseHTTPServer.py
+ifneq ($(CONFIG_AMBARELLA_PYTHON_EXPAT_SUPPORT), y)
+	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/lib-dynload/pyexpat.so
+	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/xml
 endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_BISECT_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/bisect.py
+ifneq ($(CONFIG_AMBARELLA_PYTHON_SQLITE_SUPPORT), y)
+	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/lib-dynload/_sqlite3.so
+	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/sqlite3
 endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_COLLECTIONS_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/collections.py
+ifneq ($(CONFIG_AMBARELLA_PYTHON_SSL_SUPPORT), y)
+	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/lib-dynload/_ssl.so
+	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/lib-dynload/crypt.so
+	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/ssl.py*
 endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_DISTUTILS_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/distutils
-endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_DIS_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/dis.py
-endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_DUMMY_THREAD_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/dummy_thread.py
-endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_DUMMY_THREADING_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/dummy_threading.py
-endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_FUNCTOOLS_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/functools.py
-endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_HASHLIB_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/hashlib.py
-endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_HEAPQ_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/heapq.py
-endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_HTTPLIB_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/httplib.py
-endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_INSPECT_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/inspect.py
-endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_KEYWORD_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/keyword.py
-endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_MIMETOOLS_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/mimetools.py
-endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_OPCODE_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/opcode.py
-endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_RANDOM_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/random.py
-endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_RFC822_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/rfc822.py
-endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_SCHED_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/sched.py
-endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_SIMPLEXMLRPCSERVER_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/SimpleXMLRPCServer.py
-endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_SOCKET_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/socket.py
-endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_SOCKETSERVER_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/SocketServer.py
-endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_STRINGIO_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/StringIO.py
-endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_TELNETLIB_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/telnetlib.py
-endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_TEMPFILE_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/tempfile.py
-endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_THREADING_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/threading.py
-endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_TOKENIZE_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/tokenize.py
-endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_TOKEN_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/token.py
-endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_URLPARSE_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/urlparse.py
-endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_XMLLIB_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/xmllib.py
-endif
-ifneq ($(CONFIG_AMBARELLA_PYTHON_XMLRPCLIB_SUPPORT), y)
-	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/xmlrpclib.py
+ifneq ($(CONFIG_AMBARELLA_PYTHON_ZLIB_SUPPORT), y)
+	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/lib-dynload/zlib.so
+	@rm -rf $(FAKEROOT_DIR)/usr/lib/python2.7/zipfile.py*
 endif
 	@echo "Copy $@ Done"
 

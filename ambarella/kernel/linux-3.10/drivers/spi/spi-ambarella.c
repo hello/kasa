@@ -39,39 +39,40 @@
 #include <asm/io.h>
 #include <mach/io.h>
 #include <plat/spi.h>
-#include <plat/ambcache.h>
 #include <plat/dma.h>
 #include <plat/rct.h>
 
-#define	AMBARELLA_SPI_MAX_LEN			4096
+#define	AMBARELLA_SPI_BUF_MAX_LEN			4096
 #define	AMBARELLA_SPI_MAX_XFER_PER_MSG		32
+#define	AMBARELLA_SPI_MAX_CS_NUM			8
 
 struct ambarella_spi {
-	u8					txb[AMBARELLA_SPI_MAX_LEN];
-	u8					rxb[AMBARELLA_SPI_MAX_LEN];
-
-	u32					phys;
-	u32					virt;
-
-	struct clk			*clk;
-	u32					clk_freq;
-	int					cs_pins[8];
-
-	struct dma_chan		*txc;
-	struct dma_chan		*rxc;
-
+	struct device			*dev;
+	struct dma_chan		*tx_dma_chan;
+	struct dma_chan		*rx_dma_chan;
 	struct spi_message	*msg;
 	struct spi_transfer		*transfers[AMBARELLA_SPI_MAX_XFER_PER_MSG];
-	int					xfer_id, n_xfer;
+	struct clk			*clk;
+	struct tasklet_struct	tasklet;
+	void __iomem			*virt;
 
-	int					cs_active;
-	int					rw ;
-	int					irq;
+	u8 					*tx_dma_buf;
+	u8 					*rx_dma_buf;
+	dma_addr_t 			tx_dma_phys;
+	dma_addr_t 			rx_dma_phys;
+
+	u32					dma_buf_size;
+	u32					phys;
+	u32					clk_freq;
 	u32					dma_used:1;
 	u32					msb_first_only:1;
 	u32					ridx, widx;
-
-	struct tasklet_struct	tasklet;
+	u32					cspol;
+	int					cs_pins[AMBARELLA_SPI_MAX_CS_NUM];
+	int					xfer_id, n_xfer;
+	int					cs_active;
+	int					rw;
+	int					irq;
 };
 
 static void ambarella_spi_next_transfer(void *args);
@@ -98,39 +99,10 @@ static int ambarella_spi_of_parse(struct platform_device *pdev,
 	return 0;
 }
 
-static int of_dev_node_match(struct device *dev, void *data)
-{
-	return dev->of_node == data;
-}
-
-static struct spi_device *ambarella_spi_of_find_device(struct device_node *np)
-{
-	struct device *dev;
-
-	dev = bus_find_device(&spi_bus_type, NULL, np,
-					 of_dev_node_match);
-	if (!dev)
-		return NULL;
-
-	return to_spi_device(dev);
-}
-
-static bool ambarella_spi_dma_filter(struct dma_chan *chan, void *fparam)
-{
-	if (ambarella_dma_channel_id(chan) == *(int *)fparam) {
-		return true;
-	} else {
-		return false;
-	}
-}
-
 static void ambarella_spi_setup(struct ambarella_spi *bus, struct spi_device *spi)
 {
-	u32			virt;
 	spi_ctrl0_reg_t		cr0;
 	u32 			ssi_clk, sckdv;
-
-	virt		= bus->virt;
 
 	cr0.w		= 0;
 	cr0.s.dfs	= spi->bits_per_word - 1;
@@ -161,26 +133,22 @@ static void ambarella_spi_setup(struct ambarella_spi *bus, struct spi_device *sp
 	cr0.s.byte_ws		= 0;
 	cr0.s.fc_en		= 0;
 	cr0.s.residue		= 1;
-	amba_writel(virt + SPI_CTRLR0_OFFSET, cr0.w);
+	amba_writel(bus->virt + SPI_CTRLR0_OFFSET, cr0.w);
 
 	ssi_clk = bus->clk_freq;
 	if(spi->max_speed_hz > ssi_clk / 2) {
 	    spi->max_speed_hz = ssi_clk / 2;
 	}
 	sckdv = (ssi_clk / spi->max_speed_hz + 1) & 0xfffe;
-	amba_writel(virt + SPI_BAUDR_OFFSET, sckdv);
+	amba_writel(bus->virt + SPI_BAUDR_OFFSET, sckdv);
 
-	if (spi->cs_gpio) {
-		gpio_set_value(spi->cs_gpio, 0);
-		bus->cs_active = 1;
-	}
+	bus->cspol = (spi->mode & SPI_CS_HIGH) ? 1 : 0;
+	gpio_set_value(spi->cs_gpio, bus->cspol);
+	bus->cs_active = 1;
 }
 
 static void ambarella_spi_stop(struct ambarella_spi *bus)
 {
-	gpio_set_value(bus->msg->spi->cs_gpio, 1);
-	bus->cs_active = 0;
-
 	amba_readl(bus->virt + SPI_ICR_OFFSET);
 	amba_readl(bus->virt + SPI_ISR_OFFSET);
 
@@ -188,21 +156,18 @@ static void ambarella_spi_stop(struct ambarella_spi *bus)
 	amba_writel(bus->virt + SPI_SER_OFFSET, 0);
 
 	if (bus->dma_used)
-		amba_writel(bus->virt + 0x4c, 0);
+		amba_writel(bus->virt + SPI_DMAC_OFFSET, 0);
 }
 
 static void ambarella_spi_prepare_transfer(struct ambarella_spi *bus)
 {
 	struct spi_message		*msg;
-	struct spi_transfer		*xfer;
-	u32				virt;
-	const void			*wbuf, *rbuf;
+	struct spi_transfer			*xfer;
+	const void				*wbuf, *rbuf;
 	spi_ctrl0_reg_t			cr0;
 
 	bus->widx = 0;
 	bus->ridx = 0;
-
-	virt		= bus->virt;
 
 	msg		= bus->msg;
 	xfer		= bus->transfers[bus->xfer_id];
@@ -220,52 +185,46 @@ static void ambarella_spi_prepare_transfer(struct ambarella_spi *bus)
 	}
 	msg->actual_length += xfer->len;
 
-	cr0.w		= amba_readl(virt + SPI_CTRLR0_OFFSET);
+	cr0.w		= amba_readl(bus->virt + SPI_CTRLR0_OFFSET);
 	cr0.s.tmod	= SPI_WRITE_READ;
-	amba_writel(virt + SPI_CTRLR0_OFFSET, cr0.w);
+	amba_writel(bus->virt + SPI_CTRLR0_OFFSET, cr0.w);
 
 	if (!bus->cs_active) {
-		gpio_set_value(msg->spi->cs_gpio, 0);
+		gpio_set_value(msg->spi->cs_gpio, bus->cspol);
 		bus->cs_active = 1;
 	}
 
-	amba_writel(virt + SPI_SSIENR_OFFSET, 0);
-	amba_writel(virt + SPI_SER_OFFSET, 0);
+	amba_writel(bus->virt + SPI_SSIENR_OFFSET, 0);
+	amba_writel(bus->virt + SPI_SER_OFFSET, 0);
 	if (bus->dma_used) {
 		if (bus->msg->spi->bits_per_word <= 8) {
-			amba_writel(virt + SPI_RXFTLR_OFFSET, 8 - 1);
+			amba_writel(bus->virt + SPI_RXFTLR_OFFSET, 8 - 1);
 		} else {
-			amba_writel(virt + SPI_RXFTLR_OFFSET, 4 - 1);
+			amba_writel(bus->virt + SPI_RXFTLR_OFFSET, 4 - 1);
 		}
-		amba_writel(virt + 0x4c, 0x03);
+		amba_writel(bus->virt + SPI_DMAC_OFFSET, 0x3);
 	} else {
 		disable_irq_nosync(bus->irq);
-		amba_writel(virt + SPI_IMR_OFFSET, SPI_TXEIS_MASK);
-		amba_writel(virt + SPI_TXFTLR_OFFSET, 0);
-		amba_writel(virt + SPI_RXFTLR_OFFSET, 1);
+		amba_writel(bus->virt + SPI_IMR_OFFSET, SPI_TXEIS_MASK);
+		amba_writel(bus->virt + SPI_TXFTLR_OFFSET, 0);
+		amba_writel(bus->virt + SPI_RXFTLR_OFFSET, 1);
 	}
-	amba_writel(virt + SPI_SSIENR_OFFSET, 1);
+	amba_writel(bus->virt + SPI_SSIENR_OFFSET, 1);
 }
 
 static void ambarella_spi_start_transfer(struct ambarella_spi *bus)
 {
-	struct spi_device		*spi;
-	struct spi_transfer		*xfer;
-	struct dma_slave_config		tx_cfg, rx_cfg;
-	struct dma_async_tx_descriptor	*txd, *rxd;
-	int				ret;
-	int				cs_id;
-	u32				virt;
-	u32				len, txa, rxa, widx, ridx, xfer_len, i;
+	struct spi_device *spi;
+	struct spi_transfer *xfer;
+	struct dma_slave_config tx_cfg, rx_cfg;
+	struct dma_async_tx_descriptor *txd, *rxd;
+	u32 len, widx, ridx, xfer_len, i;
 	void *wbuf, *rbuf;
 	u16 tmp;
 
-	xfer	= bus->transfers[bus->xfer_id];
-	spi	= bus->msg->spi;
-	virt	= bus->virt;
-	cs_id = spi->chip_select;
-	txa	= virt_to_phys(bus->txb);
-	rxa	= virt_to_phys(bus->rxb);
+	xfer = bus->transfers[bus->xfer_id];
+	spi = bus->msg->spi;
+
 	wbuf = (void *)xfer->tx_buf;
 	rbuf = (void *)xfer->rx_buf;
 	widx	= bus->widx;
@@ -277,6 +236,8 @@ static void ambarella_spi_start_transfer(struct ambarella_spi *bus)
 			len >>= 1;
 	}
 
+	dma_sync_single_for_cpu(bus->dev, bus->tx_dma_phys, len, DMA_TO_DEVICE);
+
 	switch (bus->rw) {
 	case SPI_WRITE_ONLY:
 	case SPI_WRITE_READ:
@@ -287,19 +248,19 @@ static void ambarella_spi_start_transfer(struct ambarella_spi *bus)
 					tmp = ((u8 *)wbuf)[widx++];
 				else
 					tmp = ((u16 *)wbuf)[widx++];
-				amba_writel(virt + SPI_DR_OFFSET, tmp);
+				amba_writel(bus->virt + SPI_DR_OFFSET, tmp);
 			}
 		} else {
-			memcpy(bus->txb, xfer->tx_buf, len);
+			memcpy(bus->tx_dma_buf, xfer->tx_buf, len);
 		}
 		break;
 	case SPI_READ_ONLY:
 		if (!bus->dma_used) {
 			xfer_len = min_t(int, len - ridx, SPI_DATA_FIFO_SIZE_16);
 			for(i = 0; i < xfer_len; i++)
-				amba_writel(virt + SPI_DR_OFFSET, SPI_DUMMY_DATA);
+				amba_writel(bus->virt + SPI_DR_OFFSET, SPI_DUMMY_DATA);
 		} else {
-			memset(bus->txb, 0xff, len);
+			memset(bus->tx_dma_buf, 0xFF, len);
 		}
 
 		break;
@@ -308,7 +269,7 @@ static void ambarella_spi_start_transfer(struct ambarella_spi *bus)
 	}
 
 	if (bus->dma_used) {
-		ambcache_clean_range(bus->txb, len);
+		/* TX DMA */
 		tx_cfg.dst_addr			= bus->phys + SPI_DR_OFFSET;
 		if (spi->bits_per_word <= 8) {
 			tx_cfg.dst_addr_width	= DMA_SLAVE_BUSWIDTH_1_BYTE;
@@ -318,12 +279,11 @@ static void ambarella_spi_start_transfer(struct ambarella_spi *bus)
 		tx_cfg.dst_maxburst		= 8;
 		tx_cfg.direction		= DMA_MEM_TO_DEV;
 
-		ret = dmaengine_slave_config(bus->txc, &tx_cfg);
-		BUG_ON(ret < 0);
+		BUG_ON(dmaengine_slave_config(bus->tx_dma_chan, &tx_cfg) < 0);
 
-		dma_sync_single_for_device(NULL, txa, len, DMA_TO_DEVICE);
+		dma_sync_single_for_device(bus->dev, bus->tx_dma_phys, len, DMA_TO_DEVICE);
 
-		txd = dmaengine_prep_slave_single(bus->txc, txa, len,
+		txd = dmaengine_prep_slave_single(bus->tx_dma_chan, bus->tx_dma_phys, len,
 			DMA_MEM_TO_DEV, DMA_PREP_INTERRUPT |
 			DMA_COMPL_SKIP_SRC_UNMAP | DMA_COMPL_SKIP_DEST_UNMAP | DMA_CTRL_ACK);
 		BUG_ON (!txd);
@@ -332,8 +292,9 @@ static void ambarella_spi_start_transfer(struct ambarella_spi *bus)
 		txd->callback_param	= NULL;
 		dmaengine_submit(txd);
 
-		dma_async_issue_pending(bus->txc);
+		dma_async_issue_pending(bus->tx_dma_chan);
 
+		/* RX DMA */
 		rx_cfg.src_addr			= bus->phys + SPI_DR_OFFSET;
 		if (spi->bits_per_word <= 8) {
 			rx_cfg.src_addr_width	= DMA_SLAVE_BUSWIDTH_1_BYTE;
@@ -342,26 +303,27 @@ static void ambarella_spi_start_transfer(struct ambarella_spi *bus)
 		}
 		rx_cfg.src_maxburst		= 8;
 		rx_cfg.direction		= DMA_DEV_TO_MEM;
-		ret = dmaengine_slave_config(bus->rxc, &rx_cfg);
-		BUG_ON(ret < 0);
 
-		rxd = dmaengine_prep_slave_single(bus->rxc, rxa, len,
-			DMA_DEV_TO_MEM,	DMA_PREP_INTERRUPT | DMA_CTRL_ACK |
+		BUG_ON(dmaengine_slave_config(bus->rx_dma_chan, &rx_cfg) < 0);
+
+		rxd = dmaengine_prep_slave_single(bus->rx_dma_chan, bus->rx_dma_phys, len,
+			DMA_DEV_TO_MEM, DMA_PREP_INTERRUPT | DMA_CTRL_ACK |
 			DMA_COMPL_SKIP_SRC_UNMAP | DMA_COMPL_SKIP_DEST_UNMAP);
 		BUG_ON(!rxd);
 
 		rxd->callback		= ambarella_spi_next_transfer;
 		rxd->callback_param	= bus;
-		dma_sync_single_for_device(NULL, rxa, len, DMA_FROM_DEVICE);
+
+		dma_sync_single_for_device(bus->dev, bus->rx_dma_phys, len, DMA_FROM_DEVICE);
 
 		dmaengine_submit(rxd);
-		dma_async_issue_pending(bus->rxc);
+		dma_async_issue_pending(bus->rx_dma_chan);
 	} else {
 		bus->widx = widx;
 		enable_irq(bus->irq);
 	}
 
-	amba_writel(virt + SPI_SER_OFFSET, 1 << cs_id);
+	amba_writel(bus->virt + SPI_SER_OFFSET, 1 << spi->chip_select);
 }
 
 static void ambarella_spi_next_transfer(void *args)
@@ -375,8 +337,8 @@ static void ambarella_spi_next_transfer(void *args)
 		switch (bus->rw) {
 		case SPI_WRITE_READ:
 		case SPI_READ_ONLY:
-			ambcache_inv_range(bus->rxb, xfer->len);
-			memcpy(xfer->rx_buf, bus->rxb, xfer->len);
+			dma_sync_single_for_cpu(bus->dev, bus->rx_dma_phys, xfer->len, DMA_FROM_DEVICE);
+			memcpy(xfer->rx_buf, bus->rx_dma_buf, xfer->len);
 			break;
 		default:
 			break;
@@ -384,11 +346,14 @@ static void ambarella_spi_next_transfer(void *args)
 	}
 
 	if (xfer->cs_change) {
-		gpio_set_value(bus->msg->spi->cs_gpio, 1);
+		gpio_set_value(bus->msg->spi->cs_gpio, bus->cspol^1);
 		bus->cs_active = 0;
 	}
 
 	if (bus->xfer_id >= bus->n_xfer) {
+		gpio_set_value(bus->msg->spi->cs_gpio, bus->cspol^1);
+		bus->cs_active = 0;
+
 		ambarella_spi_stop(bus);
 		spi_finalize_current_message(bus->msg->spi->master);
 	} else {
@@ -401,21 +366,19 @@ static void ambarella_spi_tasklet(unsigned long data)
 {
 	struct ambarella_spi *bus = (struct ambarella_spi *)data;
 	struct spi_transfer *xfer;
-	u32 virt;
 	void *rbuf;
 	u32 widx, ridx, len, rxflr, xfer_len;
 	u32 status, finish_transfer = 0;
 	u16 i, tmp;
 
-	virt = bus->virt;
 	xfer = bus->transfers[bus->xfer_id];
 
 	/* Wait until SPI idle */
-	status = amba_readl(virt + SPI_SR_OFFSET);
+	status = amba_readl(bus->virt + SPI_SR_OFFSET);
 	if (status & 0x1) {
 		/* Transfer is still in progress */
 		for (i = 0; i < MAX_QUERY_TIMES; i++) {
-			status = amba_readl(virt + SPI_SR_OFFSET);
+			status = amba_readl(bus->virt + SPI_SR_OFFSET);
 			if (!(status & 0x1))
 				break;
 		}
@@ -430,21 +393,19 @@ static void ambarella_spi_tasklet(unsigned long data)
 	ridx	= bus->ridx;
 	len	= xfer->len;
 
-	if (!bus->dma_used) {
-		if (bus->msg->spi->bits_per_word > 8)
-			len >>= 1;
-	}
+	if (bus->msg->spi->bits_per_word > 8)
+		len >>= 1;
 
 	/* Fetch data from FIFO */
 	switch (bus->rw) {
 	case SPI_READ_ONLY:
 	case SPI_WRITE_READ:
 		xfer_len = len - ridx;
-		rxflr = amba_readl(virt + SPI_RXFLR_OFFSET);
+		rxflr = amba_readl(bus->virt + SPI_RXFLR_OFFSET);
 		if (xfer_len > rxflr)
 			xfer_len = rxflr;
 		for(i = 0; i < xfer_len; i++) {
-			tmp	= amba_readl(virt + SPI_DR_OFFSET);
+			tmp	= amba_readl(bus->virt + SPI_DR_OFFSET);
 			if (bus->msg->spi->bits_per_word <= 8)
 				((u8 *)rbuf)[ridx++] = tmp & 0xff;
 			else
@@ -502,6 +463,12 @@ static int ambarella_spi_one_message(struct spi_master *master, struct spi_messa
 		goto ambarella_spi_transfer_exit;
 	}
 
+	if (!gpio_is_valid(spi->cs_gpio)) {
+		dev_err(&master->dev, "cs %d is invalid!\n", spi->cs_gpio);
+		err = -EINVAL;
+		goto ambarella_spi_transfer_exit;
+	}
+
 	if (spi->bits_per_word < 4 || spi->bits_per_word > 16) {
 		err = -EINVAL;
 		goto ambarella_spi_transfer_exit;
@@ -530,7 +497,7 @@ static int ambarella_spi_one_message(struct spi_master *master, struct spi_messa
 	bus->n_xfer	= 0;
 	bus->xfer_id	= 0;
 	list_for_each_entry(xfer, &msg->transfers, transfer_list) {
-		if (xfer->len > AMBARELLA_SPI_MAX_LEN) {
+		if (xfer->len > AMBARELLA_SPI_BUF_MAX_LEN) {
 			err = -EINVAL;
 			goto ambarella_spi_transfer_exit;
 		}
@@ -559,40 +526,86 @@ static irqreturn_t ambarella_spi_isr(int irq, void *dev_data)
 	return IRQ_HANDLED;
 }
 
-static int ambarella_spi_dma_channel_allocate(struct spi_master *master)
+static int ambarella_spi_dma_channel_allocate(struct ambarella_spi *bus,
+			bool dma_to_memory)
 {
-	struct ambarella_spi *bus;
-	dma_cap_mask_t	mask;
-	int chan_id;
-	u32 val;
+	struct dma_chan *dma_chan;
+	dma_addr_t dma_phys;
+	u8 *dma_buf;
+	int ret = 0;
 
-	bus = spi_master_get_devdata(master);
-
-	amba_writel(bus->virt + 0x4c, 0);
-	if (bus->dma_used) {
-		/* Enable DMA Channel 0/1 as SSI0 Tx and Rx */
-		val	 = amba_readl(AHB_SCRATCHPAD_REG(0x0c));
-		val	&= 0xff9fffff;
-		val	|= 0x00200000;
-		amba_writel(AHB_SCRATCHPAD_REG(0x0c), val);
+	dma_chan = dma_request_slave_channel(bus->dev,
+					dma_to_memory ? "rx" : "tx");
+	if (IS_ERR(dma_chan)) {
+		ret = PTR_ERR(dma_chan);
+		if (ret != -EPROBE_DEFER)
+			dev_err(bus->dev,
+				"Dma channel is not available: %d\n", ret);
+		return ret;
 	}
 
-	chan_id = 2 * master->bus_num;
-	dma_cap_zero(mask);
-	dma_cap_set(DMA_SLAVE, mask);
-	bus->txc = dma_request_channel(mask, ambarella_spi_dma_filter, &chan_id);
-	if (!bus->txc) {
-		dev_err(&master->dev, "can't request DMA channel %d\n", chan_id);
-		return -EPERM;
+	dma_buf = dma_alloc_coherent(bus->dev, bus->dma_buf_size,
+				&dma_phys, GFP_KERNEL);
+	if (!dma_buf) {
+		dev_err(bus->dev, " Not able to allocate the dma buffer\n");
+		dma_release_channel(dma_chan);
+		return -ENOMEM;
 	}
 
-	chan_id = 2 * master->bus_num + 1;
-	dma_cap_zero(mask);
-	dma_cap_set(DMA_SLAVE, mask);
-	bus->rxc = dma_request_channel(mask, ambarella_spi_dma_filter, &chan_id);
-	if (!bus->rxc) {
-		dev_err(&master->dev, "can't request DMA channel %d\n", chan_id);
-		return -EPERM;
+	if (dma_to_memory) {
+		bus->rx_dma_chan = dma_chan;
+		bus->rx_dma_buf = dma_buf;
+		bus->rx_dma_phys = dma_phys;
+	} else {
+		bus->tx_dma_chan = dma_chan;
+		bus->tx_dma_buf = dma_buf;
+		bus->tx_dma_phys = dma_phys;
+	}
+
+	return ret;
+}
+
+static void ambarella_spi_dma_channel_free(struct ambarella_spi *bus,
+	bool dma_to_memory)
+{
+	u8 *dma_buf;
+	dma_addr_t dma_phys;
+	struct dma_chan *dma_chan;
+
+	if (dma_to_memory) {
+		dma_buf = bus->rx_dma_buf;
+		dma_chan = bus->rx_dma_chan;
+		dma_phys = bus->rx_dma_phys;
+		bus->rx_dma_chan = NULL;
+		bus->rx_dma_buf = NULL;
+	} else {
+		dma_buf = bus->tx_dma_buf;
+		dma_chan = bus->tx_dma_chan;
+		dma_phys = bus->tx_dma_phys;
+		bus->tx_dma_buf = NULL;
+		bus->tx_dma_chan = NULL;
+	}
+	if (!dma_chan)
+		return;
+
+	dma_free_coherent(bus->dev, bus->dma_buf_size, dma_buf, dma_phys);
+	dma_release_channel(dma_chan);
+}
+
+static int ambarella_spi_hw_setup(struct spi_device *spi)
+{
+	struct ambarella_spi *bus = spi_master_get_devdata(spi->master);
+	int err = 0;
+
+	if (gpio_is_valid(spi->cs_gpio) &&
+		(bus->cs_pins[spi->chip_select] != spi->cs_gpio)) {
+		err = gpio_request(spi->cs_gpio, dev_name(&spi->dev));
+		if (err < 0) {
+			dev_err(&spi->dev, "can't get CS: %d\n", err);
+			return -EINVAL;
+		}
+		gpio_direction_output(spi->cs_gpio, (spi->mode & SPI_CS_HIGH) ? 0 : 1);
+		bus->cs_pins[spi->chip_select] = spi->cs_gpio;
 	}
 
 	return 0;
@@ -604,42 +617,48 @@ static int ambarella_spi_probe(struct platform_device *pdev)
 	void __iomem				*reg;
 	struct ambarella_spi			*bus;
 	struct spi_master			*master;
-	struct device_node			*nc;
+	int					i;
 	int					err = 0;
 	int					irq;
+	u32					val;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
 		err = -EINVAL;
-		goto ambarella_spi_probe_exit;
+		goto exit_spi_probe;
 	}
 
 	reg = devm_ioremap(&pdev->dev, res->start, resource_size(res));
 	if (!reg) {
 		err = -ENOMEM;
-		goto ambarella_spi_probe_exit;
+		goto exit_spi_probe;
 	}
 
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0) {
 		dev_err(&pdev->dev, "no irq resource!\n");
-		return -ENODEV;
+		err = -ENODEV;
+		goto exit_spi_probe;
 	}
 
 	master = spi_alloc_master(&pdev->dev, sizeof(*bus));
 	if (!master) {
 		err = -ENOMEM;
-		goto ambarella_spi_probe_exit;
+		goto exit_spi_probe;
 	}
 
-	bus				= spi_master_get_devdata(master);
-	bus->phys		= res->start;
-	bus->virt			= (u32)reg;
-	bus->irq			= irq;
+	bus = spi_master_get_devdata(master);
+	bus->phys = res->start;
+	bus->virt = reg;
+	bus->irq = irq;
+	bus->dev = &pdev->dev;
+
+	for (i = 0; i < AMBARELLA_SPI_MAX_CS_NUM; i++)
+		bus->cs_pins[i] = -1;
 
 	err = ambarella_spi_of_parse(pdev, master);
 	if (err < 0) {
-		goto ambarella_spi_probe_exit;
+		goto exit_free_master;
 	}
 
 	clk_set_rate(bus->clk, bus->clk_freq);
@@ -647,70 +666,68 @@ static int ambarella_spi_probe(struct platform_device *pdev)
 	amba_writel(reg + SPI_IMR_OFFSET, 0);
 
 	master->dev.of_node		= pdev->dev.of_node;
-	master->mode_bits		= SPI_CPHA | SPI_CPOL;
+	master->mode_bits		= SPI_CPHA | SPI_CPOL | SPI_CS_HIGH;
 	master->transfer_one_message	= ambarella_spi_one_message;
+	master->setup = ambarella_spi_hw_setup;
 	platform_set_drvdata(pdev, master);
-
-	err = spi_register_master(master);
-	if (err) {
-		goto ambarella_spi_probe_exit;
-	}
 
 	/* check if hw only supports msb first tx/rx */
 	if (of_find_property(pdev->dev.of_node, "amb,msb-first-only", NULL)) {
 		bus->msb_first_only = 1;
-		dev_info(&pdev->dev,"SPI[%d] only supports msb first tx-rx\n", master->bus_num);
+		dev_info(&pdev->dev,"Only supports msb first tx-rx\n");
 	} else {
 		bus->msb_first_only = 0;
+		master->mode_bits |= SPI_LSB_FIRST;
 	}
 
 	/* check if using dma */
 	if (of_find_property(pdev->dev.of_node, "amb,dma-used", NULL)) {
 		bus->dma_used = 1;
-		dev_info(&pdev->dev,"SPI[%d] uses DMA\n", master->bus_num);
+		dev_info(&pdev->dev,"DMA is used\n");
+
+		/* Enable DMA Channel 0/1 as SSI0 Tx and Rx */
+		val	 = amba_readl(AHB_SCRATCHPAD_REG(0x0c));
+		val	&= 0xff9fffff;
+		val	|= 0x00200000;
+		amba_writel(AHB_SCRATCHPAD_REG(0x0c), val);
+
+		bus->dma_buf_size = AMBARELLA_SPI_BUF_MAX_LEN;
+		err = ambarella_spi_dma_channel_allocate(bus, false);
+		if (err < 0)
+			goto exit_free_master;
+		err = ambarella_spi_dma_channel_allocate(bus, true);
+		if (err < 0)
+			goto exit_tx_dma_irq_free;
 	} else {
 		bus->dma_used = 0;
-	}
-
-	for_each_available_child_of_node(master->dev.of_node, nc) {
-		struct spi_device	*spi;
-
-		spi = ambarella_spi_of_find_device(nc);
-		if (!spi) {
-			continue;
-		}
-
-		if (gpio_is_valid(spi->cs_gpio)) {
-			err = devm_gpio_request(&pdev->dev,
-					spi->cs_gpio, dev_name(&spi->dev));
-			if (err < 0) {
-				dev_err(&pdev->dev, "can't get CS: %d\n", err);
-				goto ambarella_spi_probe_exit;
-			}
-			gpio_direction_output(spi->cs_gpio, 1);
-			bus->cs_pins[spi->chip_select] = spi->cs_gpio;
-		} else {
-			bus->cs_pins[spi->chip_select] = -1;
-		}
-	}
-
-	if (bus->dma_used) {
-		err = ambarella_spi_dma_channel_allocate(master);
-		if (err < 0)
-			goto ambarella_spi_probe_exit;
-	} else {
 		/* request IRQ */
 		err = devm_request_irq(&pdev->dev, irq, ambarella_spi_isr,
 				IRQF_TRIGGER_HIGH, dev_name(&pdev->dev), bus);
 		if (err)
-			goto ambarella_spi_probe_exit;
+			goto exit_free_master;
 
 		tasklet_init(&bus->tasklet, ambarella_spi_tasklet, (unsigned long)bus);
 	}
 
+	err = spi_register_master(master);
+	if (err)
+		goto exit_rx_dma_free;
+
 	dev_info(&pdev->dev, "Ambarella spi controller %d created.\r\n", master->bus_num);
 
-ambarella_spi_probe_exit:
+	return err;
+
+exit_rx_dma_free:
+	if (bus->dma_used)
+		ambarella_spi_dma_channel_free(bus, true);
+exit_tx_dma_irq_free:
+	if (bus->dma_used)
+		ambarella_spi_dma_channel_free(bus, false);
+	else
+		free_irq(irq, bus);
+exit_free_master:
+	spi_master_put(master);
+exit_spi_probe:
 	return err;
 }
 
@@ -718,14 +735,28 @@ static int ambarella_spi_remove(struct platform_device *pdev)
 {
 	struct spi_master		*master;
 	struct ambarella_spi		*bus;
+	int i;
 
 	master	= platform_get_drvdata(pdev);
 	bus	= spi_master_get_devdata(master);
 
 	if (!bus->dma_used)
 		tasklet_kill(&bus->tasklet);
+	else {
+		if (bus->tx_dma_chan)
+			ambarella_spi_dma_channel_free(bus, false);
+
+		if (bus->rx_dma_chan)
+			ambarella_spi_dma_channel_free(bus, true);
+	}
 
 	ambarella_spi_stop(bus);
+
+	for (i = 0; i < AMBARELLA_SPI_MAX_CS_NUM; i++) {
+		if (gpio_is_valid(bus->cs_pins[i]))
+			gpio_free(bus->cs_pins[i]);
+	}
+
 	spi_unregister_master(master);
 
 	return 0;

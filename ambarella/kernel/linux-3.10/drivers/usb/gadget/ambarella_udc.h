@@ -36,7 +36,6 @@ USB device controller on Ambarella processors
 
 #define CTRL_OUT_UDC_IDX	11
 
-#define ISO_FRAME_ADVANCE	2
 #define ISO_MAX_PACKET		3
 
 #define IS_EP0(ep)		(ep->id == CTRL_IN || ep->id == CTRL_OUT)
@@ -127,6 +126,7 @@ struct ambarella_ep {
 					ctrl_sts_phase : 1,
 					dma_going : 1;
 
+	unsigned int frame_offset;  /* iso frame num offset */
 };
 
 struct ambarella_udc {
@@ -175,7 +175,7 @@ static void ambarella_udc_done(struct ambarella_ep *ep,
 		struct ambarella_request *req, int status);
 
 static void ambarella_set_tx_dma(struct ambarella_ep *ep,
-	struct ambarella_request * req);
+	struct ambarella_request * req, int fix);
 
 static void ambarella_set_rx_dma(struct ambarella_ep *ep,
 	struct ambarella_request * req);

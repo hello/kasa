@@ -1,3 +1,36 @@
+/*
+ * include/arch_s2l/img_api_adv_arch.h
+ *
+ * History:
+ *	2012/10/10 - [Cao Rongrong] created file
+ *	2013/12/12 - [Jian Tang] modified file
+ *
+ * Copyright (C) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
+
 #ifndef	IMG_API_ADV_ARCH_H
 #define	IMG_API_ADV_ARCH_H
 
@@ -66,9 +99,9 @@ int img_get_ae_stable(u8* ae_stable_flag);//return 0: AE adjusting; 1: AE stable
 int img_get_ae_cursor(u8* ae_cursor);
 int img_get_ae_target_ratio(u16* ae_target_ratio);
 int img_get_ae_target(u16* ae_target);
-
+int img_get_ae_piris_info(piris_info_t* piris_info); //success: return 0, failed: return -1
 int img_format_ae_line(int fd_iav, line_t* ae_lines,int line_num, u32 db_step);//shutter_index to shutter_row used in ae algo
-int img_config_auto_knee_info(img_auto_knee_config_info_t* config);
+int img_config_auto_knee_info(img_aeb_auto_knee_param_t* config);
 
 //awb
 int img_get_awb_manual_gain(wb_gain_t* p_wb_gain);
@@ -83,6 +116,9 @@ int img_get_awb_method(awb_work_method_t *p_awb_method);
 int img_set_awb_method(awb_work_method_t *p_awb_method);
 int img_get_awb_env(awb_environment_t *p_awb_env);
 int img_set_awb_env(awb_environment_t *p_awb_env);
+int img_set_awb_manual_meter_roi(int* roi);
+
+
 //af
 int img_register_lens_drv(lens_dev_drv_t custom_lens_drv);
 int img_lens_init(void);
@@ -125,6 +161,9 @@ int img_set_wdr_enable(int enable);
 int img_get_wdr_enable(void);
 int img_set_wdr_strength(int strength);
 int img_get_wdr_strength(void);
+int img_set_wdr_luma_config(wdr_luma_config_info_t *p_config);
+int img_get_wdr_luma_config(wdr_luma_config_info_t *p_config);
+int img_config_digit_wdr_info(img_aeb_digit_wdr_param_t * config);
 
 //calibartion
 int img_cal_vignette(vignette_cal_t *vig_detect_setup);
@@ -139,6 +178,7 @@ int img_set_auto_color_contrast(int enable); //0 : disable, 1 : enable
 int img_set_auto_color_contrast_strength(int strength); // strength: 0 ~ 128
 int img_set_color_saturation(int saturation);	//unit = 64
 int img_set_bw_mode(u8 mode);// 0: diable, 1: enable
+int img_get_bw_mode();
 int img_set_sharpening_strength(u8 str_level);//default =6, 0-11
 int img_get_img_property(image_property_t *p_img_prop);
 int img_set_mctf_strength(u8 str_level);//default = 6 ,0 ~11

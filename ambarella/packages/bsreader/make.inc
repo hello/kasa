@@ -37,9 +37,18 @@ endif
 ifeq ($(CONFIG_ARCH_S2L),y)
 LOCAL_SRCS	+= $(LOCAL_PATH)/bsreader_s2l.c
 endif
+ifeq ($(CONFIG_ARCH_S3L),y)
+LOCAL_SRCS	+= $(LOCAL_PATH)/bsreader_s3l.c
+endif
+ifeq ($(CONFIG_ARCH_S5),y)
+LOCAL_SRCS	+= $(LOCAL_PATH)/bsreader_s5.c
+endif
 ifeq ($(CONFIG_ARCH_A7L),y)
 LOCAL_SRCS	+= $(LOCAL_PATH)/bsreader_a7l.c
 LOCAL_CFLAGS	+= -I$(AMB_TOPDIR)/build/include
+endif
+ifeq ($(CONFIG_ARCH_S5L),y)
+LOCAL_SRCS	+= $(LOCAL_PATH)/bsreader_s5l.c
 endif
 endif
 

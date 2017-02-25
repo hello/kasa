@@ -78,6 +78,7 @@ typedef struct _GAppLaunchContextPrivate GAppLaunchContextPrivate;
  * @get_commandline: Gets the commandline for the #GAppInfo. Since 2.20
  * @get_display_name: Gets the display name for the #GAppInfo. Since 2.24
  * @set_as_last_used_for_type: Sets the application as the last used. See g_app_info_set_as_last_used_for_type().
+ * @get_supported_types: Retrieves the list of content types that @app_info claims to support.
  *
  * Application Information interface, for operating system portability.
  */
@@ -228,6 +229,17 @@ GLIB_AVAILABLE_IN_ALL
 gboolean  g_app_info_launch_default_for_uri      (const char              *uri,
                                                   GAppLaunchContext       *launch_context,
                                                   GError                 **error);
+
+GLIB_AVAILABLE_IN_2_50
+void      g_app_info_launch_default_for_uri_async  (const char           *uri,
+                                                    GAppLaunchContext    *launch_context,
+                                                    GCancellable         *cancellable,
+                                                    GAsyncReadyCallback   callback,
+                                                    gpointer              user_data);
+GLIB_AVAILABLE_IN_2_50
+gboolean  g_app_info_launch_default_for_uri_finish (GAsyncResult         *result,
+                                                    GError              **error);
+
 
 /**
  * GAppLaunchContext:

@@ -1,7 +1,7 @@
 #ifndef PROC_SYSINFO_H
 #define PROC_SYSINFO_H
 #include <sys/types.h>
-#include <sys/dir.h>
+#include <dirent.h>
 #include "procps.h"
 
 EXTERN_C_BEGIN
@@ -9,6 +9,7 @@ EXTERN_C_BEGIN
 extern unsigned long long Hertz;   /* clock tick frequency */
 extern long smp_num_cpus;          /* number of CPUs */
 extern int have_privs;             /* boolean, true if setuid or similar */
+extern long page_bytes;            /* this architecture's bytes per page */
 
 #if 0
 #define JT double
@@ -20,8 +21,7 @@ extern int        uptime (double *uptime_secs, double *idle_secs);
 extern unsigned long getbtime(void);
 extern void       loadavg(double *av1, double *av5, double *av15);
 
-
-/* obsolete */
+/* Shmem in 2.6.32+ */
 extern unsigned long kb_main_shared;
 /* old but still kicking -- the important stuff */
 extern unsigned long kb_main_buffers;
@@ -35,6 +35,7 @@ extern unsigned long kb_high_free;
 extern unsigned long kb_high_total;
 extern unsigned long kb_low_free;
 extern unsigned long kb_low_total;
+extern unsigned long kb_main_available;
 /* 2.4.xx era */
 extern unsigned long kb_active;
 extern unsigned long kb_inact_laundry;  // grrr...
@@ -73,6 +74,11 @@ extern unsigned long vm_nr_page_table_pages;
 extern unsigned long vm_nr_reverse_maps;
 extern unsigned long vm_nr_mapped;
 extern unsigned long vm_nr_slab;
+extern unsigned long vm_nr_slab_reclaimable;
+extern unsigned long vm_nr_slab_unreclaimable;
+extern unsigned long vm_nr_active_file;
+extern unsigned long vm_nr_inactive_file;
+extern unsigned long vm_nr_free_pages;
 extern unsigned long vm_pgpgin;
 extern unsigned long vm_pgpgout;
 extern unsigned long vm_pswpin;

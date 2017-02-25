@@ -4,12 +4,29 @@
  * History:
  *   2015-1-20 - [ccjing] created file
  *
- * Copyright (C) 2008-2015, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -22,9 +39,18 @@
 #include "am_record_if.h"
 #include "am_playback_if.h"
 #include "am_media_service_msg.h"
+#include "am_mutex.h"
+#include "am_record_msg.h"
+
+enum AM_PLAYER_INSTANCE_ID
+{
+  PLAYER_NULL = -1,
+  PLAYER_1    = 0,
+  PLAYER_2,
+  PLAYER_NUM,
+};
 
 class AMThread;
-class AMSpinLock;
 
 /*! @class AMMediaService
  *  @brief AMMediaService class provides two functions :
@@ -60,9 +86,10 @@ class AMMediaService
      */
     bool stop_media();
     /*! @Send event for start event recording.
+     *  @event_id which channel you want to send event
      *  @return true if success, otherwise return false.
      */
-    bool send_event();
+    bool send_event(AMEventStruct& event);
 
   public:
     /*! @Destroy the object of AMMediaService.
@@ -70,15 +97,26 @@ class AMMediaService
     void destroy();
 
   public:
+    /*! @Get valid playback id.
+     *  @return playback id.
+     *  @sa get_playback_instance()
+     */
+    AM_PLAYER_INSTANCE_ID get_valid_playback_id();
     /*! @Get the smart point of AMIPlayback instance.
+     *  @param playback instance id which is got by get_valid_playback_id() function.
      *  @return smart point of AMIPlayback instance.
      */
-    AMIPlaybackPtr& get_playback_instance();
+    AMIPlaybackPtr get_playback_instance(AM_PLAYER_INSTANCE_ID id);
+    /*! @Release playback instance which is specified by id when you finish using it.
+     *  @param  playback id.
+     *  @return true if success, otherwise return false.
+     *  @sa get_playback_instance()
+     */
+    bool release_playback_instance(AM_PLAYER_INSTANCE_ID id);
     /*! @Get the smart point of AMIRecord instance.
      *  @return smart point of AMIPlayback instance.
      */
     AMIRecordPtr& get_record_instance();
-
   private:
     /*! @Constuctor function.
      */
@@ -141,6 +179,12 @@ class AMMediaService
      *  @return true if success, otherwise return false.
      */
     bool send_ack(AM_MEDIA_SERVICE_CLIENT_PROTO proto);
+    /*! @This function is used to send playback id to other client.
+     *  @param proto indicators which client send message to.
+     *  @param id indicators which playback will play.
+     *  @return true if success, otherwise return false.
+     */
+    bool send_playback_id(AM_MEDIA_SERVICE_CLIENT_PROTO proto, int32_t id);
     /*! @This function is used to get prototol name by file descriptor.
      *  @param file descriptor.
      *  @return return protocol name if success, otherwise return "Unkonwn"
@@ -161,16 +205,18 @@ class AMMediaService
     static void playback_engine_callback(AMPlaybackMsg& msg);
 
   private:
-    media_callback m_media_callback;
-    AMIPlaybackPtr m_playback;
-    AMIRecordPtr   m_record;
-    int            m_unix_socket_fd;
-    int            m_client_proto_fd[AM_MEDIA_SERVICE_CLIENT_PROTO_NUM];
-    int            m_service_ctrl[2];
-    bool           m_run;
-    bool           m_is_started;
-    AMThread      *m_socket_thread;
-    AMSpinLock    *m_lock;
+    AMThread             *m_socket_thread            = nullptr;
+    AMIPlaybackPtr       *m_playback                 = nullptr;
+    media_callback        m_media_callback           = nullptr;
+    AMIRecordPtr          m_record                   = nullptr;
+    int32_t               m_playback_ref[PLAYER_NUM] = { 0 };
+    int                   m_client_proto_fd[AM_MEDIA_SERVICE_CLIENT_PROTO_NUM] = {-1};
+    int                   m_service_ctrl[2]          = {-1};
+    int                   m_unix_socket_fd           = -1;
+    std::atomic<bool>     m_run                      = {false};
+    std::atomic<bool>     m_is_started               = {false};
+    AMMemLock             m_lock;
+    AMMemLock             m_playback_lock;
 };
 
 #endif /* AM_MEDIA_SERVICE_INSTANCE_H_ */

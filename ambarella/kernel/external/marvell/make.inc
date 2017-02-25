@@ -24,6 +24,8 @@ include $(MRVL_DRV_PATH)/sd8688/wlan/make.inc
 endif
 endif ##BUILD_MARVELL_WIFI_BT_SD8688
 
+#############################
+
 ifeq ($(BUILD_MARVELL_WIFI_BT_SD8787), y)
 ifeq ($(BUILD_MARVELL_WIFI_BT_SD8787_WLAN), y)
 include $(MRVL_DRV_PATH)/sd8787/wlan/make.inc
@@ -34,3 +36,18 @@ include $(MRVL_DRV_PATH)/sd8787/bt/make.inc
 endif
 endif ##BUILD_MARVELL_WIFI_BT_SD8787
 
+#############################
+
+ifeq ($(BUILD_MARVELL_WIFI_BT_SD8977), y)
+ifeq ($(BUILD_MARVELL_WIFI_BT_SD8977_WLAN), y)
+include $(MRVL_DRV_PATH)/sd8977/wlan_src/make.inc
+endif
+
+ifeq ($(BUILD_MARVELL_WIFI_BT_SD8977_BT), y)
+include $(MRVL_DRV_PATH)/sd8977/mbt_src/make.inc
+endif
+
+ifeq ($(BUILD_MARVELL_WIFI_BT_SD8977_BTC), y)
+include $(MRVL_DRV_PATH)/sd8977/mbtc_src/make.inc
+endif
+endif ##BUILD_MARVELL_WIFI_BT_SD8977

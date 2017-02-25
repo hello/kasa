@@ -110,6 +110,25 @@ $(call add-target-into-build, $(LOCAL_TARGET))
 ###
 include $(CLEAR_VARS)
 
+LOCAL_TARGET	:= simplest_init
+LOCAL_SRCS	:= $(LOCAL_PATH)/simplest_init.c
+LOCAL_LDFLAGS	:= -static
+
+include $(BUILD_APP)
+
+.PHONY: $(LOCAL_TARGET)
+
+$(LOCAL_TARGET): $(LOCAL_MODULE)
+	@mkdir -p $(UNIT_TEST_PATH)/
+	@cp -dpRf $< $(UNIT_TEST_PATH)/
+	@echo "Build $@ Done."
+
+$(call add-target-into-build, $(LOCAL_TARGET))
+
+
+###
+include $(CLEAR_VARS)
+
 LOCAL_TARGET	:= test_spi
 LOCAL_SRCS	:= $(LOCAL_PATH)/test_spi.c
 

@@ -4,12 +4,29 @@
  * History:
  *   2014-8-27 - [ypchang] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -54,7 +71,8 @@ static const char *demuxer_type_to_str[] =
   "MP4",
   "TS",
   "ES",
-  "RTP"
+  "RTP",
+  "UNIX_DOMAIN"
 };
 
 AMIInterface* create_filter(AMIEngine *engine, const char *config,
@@ -98,6 +116,15 @@ void AMFileDemuxer::get_info(INFO& info)
   info.name = m_name;
 }
 
+void AMFileDemuxer::purge()
+{
+  if (AM_LIKELY(m_demuxer)) {
+    m_demuxer->enable(false);
+    m_demuxer = nullptr;
+  }
+  inherited::purge();
+}
+
 AMIPacketPin* AMFileDemuxer::get_input_pin(uint32_t index)
 {
   ERROR("%s doesn't have input pin!", m_name);
@@ -116,9 +143,242 @@ AMIPacketPin* AMFileDemuxer::get_output_pin(uint32_t index)
 
 AM_STATE AMFileDemuxer::add_media(const AMPlaybackUri& uri)
 {
-  AUTO_SPIN_LOCK(m_demuxer_lock);
+  AUTO_MEM_LOCK(m_demuxer_lock);
+  AM_STATE         ret = AM_STATE_ERROR;
   AM_DEMUXER_TYPE type = check_media_type(uri);
-  AM_STATE ret = AM_STATE_ERROR;
+  if (AM_LIKELY((AM_DEMUXER_INVALID != type) &&
+                (AM_DEMUXER_UNKNOWN != type))) {
+    switch(m_demuxer_mode) {
+      case AM_DEMUXER_MODE_UNKNOWN: {
+        switch(uri.type) {
+          case AM_PLAYBACK_URI_FILE: {
+            m_file_uri_q.push(uri);
+            m_demuxer_mode = AM_DEMUXER_MODE_FILE;
+            ret = AM_STATE_OK;
+          }break;
+          case AM_PLAYBACK_URI_RTP: {
+            m_rtp_uri_q.push(uri);
+            m_demuxer_mode = AM_DEMUXER_MODE_RTP;
+            m_demuxer = get_demuxer_codec(type, 0);
+            if (AM_UNLIKELY(!m_demuxer)) {
+              ERROR("Failed to load demuxer for type %d", type);
+            } else {
+              m_demuxer->enable(true);
+              if (AM_UNLIKELY(!m_demuxer->add_uri(m_rtp_uri_q.front_pop()))) {
+                ERROR("Failed to add RTP media!");
+                m_demuxer->enable(false);
+                m_demuxer = nullptr;
+              } else {
+                ret = AM_STATE_OK;
+              }
+            }
+          }break;
+          case AM_PLAYBACK_URI_UNIX_DOMAIN: {
+            m_uds_uri_q.push(uri);
+            m_demuxer_mode = AM_DEMUXER_MODE_UDS;
+            m_demuxer = get_demuxer_codec(type, 0);
+            if (AM_UNLIKELY(!m_demuxer)) {
+              ERROR("Failed to load demuxer for type %d", type);
+            } else {
+              m_demuxer->enable(true);
+              if (AM_UNLIKELY(!m_demuxer->add_uri(m_uds_uri_q.front_pop()))) {
+                ERROR("Failed to add UNIX domain media!");
+                m_demuxer->enable(false);
+                m_demuxer = nullptr;
+              } else {
+                ret = AM_STATE_OK;
+              }
+            }
+          }break;
+          default: {
+            ERROR("Unknown URI type: %d", uri.type);
+          }break;
+        }
+      }break;
+      case AM_DEMUXER_MODE_FILE: {
+        switch(uri.type) {
+          case AM_PLAYBACK_URI_FILE: {
+            m_file_uri_q.push(uri);
+            m_demuxer_mode = AM_DEMUXER_MODE_FILE;
+            ret = AM_STATE_OK;
+          }break;
+          case AM_PLAYBACK_URI_RTP: {
+            if (AM_LIKELY(!m_demuxer && (m_file_uri_q.size() == 0))) {
+              m_rtp_uri_q.push(uri);
+              m_demuxer_mode = AM_DEMUXER_MODE_RTP;
+              ret = AM_STATE_OK;
+              m_demuxer = get_demuxer_codec(type, 0);
+              if (AM_UNLIKELY(!m_demuxer)) {
+                ERROR("Failed to load demuxer for type %d", type);
+                ret = AM_STATE_ERROR;
+              } else {
+                m_demuxer->enable(true);
+                if (AM_UNLIKELY(!m_demuxer->add_uri(m_rtp_uri_q.front_pop()))) {
+                  ERROR("Failed to add RTP media!");
+                  m_demuxer->enable(false);
+                  m_demuxer = nullptr;
+                  ret = AM_STATE_ERROR;
+                }
+              }
+            } else {
+              ERROR("Demuxer currently is playing files, "
+                    "RTP URI be added!");
+            }
+          }break;
+          case AM_PLAYBACK_URI_UNIX_DOMAIN: {
+            if (AM_LIKELY(!m_demuxer && (m_file_uri_q.size() == 0))) {
+              m_uds_uri_q.push(uri);
+              m_demuxer_mode = AM_DEMUXER_MODE_UDS;
+              ret = AM_STATE_OK;
+              m_demuxer = get_demuxer_codec(type, 0);
+              if (AM_UNLIKELY(!m_demuxer)) {
+                ERROR("Failed to load demuxer for type %d", type);
+                ret = AM_STATE_ERROR;
+              } else {
+                m_demuxer->enable(true);
+                if (AM_UNLIKELY(!m_demuxer->add_uri(m_uds_uri_q.front_pop()))) {
+                  ERROR("Failed to add UNIX domain media!");
+                  m_demuxer->enable(false);
+                  m_demuxer = nullptr;
+                  ret = AM_STATE_ERROR;
+                }
+              }
+            } else {
+              ERROR("Demuxer currently is playing files, "
+                    "UNIX domain URI cannot be added!");
+            }
+          }break;
+          default: {
+            ERROR("Unknown URI type: %d", uri.type);
+          }break;
+        }
+      }break;
+      case AM_DEMUXER_MODE_RTP: {
+        switch(uri.type) {
+          case AM_PLAYBACK_URI_FILE: {
+            if (AM_LIKELY(!m_demuxer)) {
+              m_file_uri_q.push(uri);
+              m_demuxer_mode = AM_DEMUXER_MODE_FILE;
+              ret = AM_STATE_OK;
+            } else {
+              ERROR("Demuxer currently is playing RTP media, "
+                    "files cannot be added!");
+            }
+          }break;
+          case AM_PLAYBACK_URI_RTP: {
+            m_rtp_uri_q.push(uri);
+            m_demuxer_mode = AM_DEMUXER_MODE_RTP;
+            ret = AM_STATE_OK;
+            if (AM_LIKELY(!m_demuxer)) {
+              m_demuxer = get_demuxer_codec(type, 0);
+              if (AM_UNLIKELY(!m_demuxer)) {
+                ERROR("Failed to load demuxer for type %d", type);
+              } else {
+                m_demuxer->enable(true);
+                if (AM_UNLIKELY(!m_demuxer->add_uri(m_rtp_uri_q.front_pop()))) {
+                  ERROR("Failed to add RTP media!");
+                  m_demuxer->enable(false);
+                  m_demuxer = nullptr;
+                  ret = AM_STATE_ERROR;
+                }
+              }
+            }
+          }break;
+          case AM_PLAYBACK_URI_UNIX_DOMAIN: {
+            if (AM_LIKELY(!m_demuxer)) {
+              m_uds_uri_q.push(uri);
+              m_demuxer_mode = AM_DEMUXER_MODE_UDS;
+              ret = AM_STATE_OK;
+              m_demuxer = get_demuxer_codec(type, 0);
+              if (AM_UNLIKELY(!m_demuxer)) {
+                ERROR("Failed to load demuxer for type %d", type);
+                ret = AM_STATE_ERROR;
+              } else {
+                m_demuxer->enable(true);
+                if (AM_UNLIKELY(!m_demuxer->add_uri(m_uds_uri_q.front_pop()))) {
+                  ERROR("Failed to add UNIX domain media!");
+                  m_demuxer->enable(false);
+                  m_demuxer = nullptr;
+                  ret = AM_STATE_ERROR;
+                }
+              }
+            } else {
+              ERROR("Demuxer currently is playing RTP media, "
+                    "UNIX domain URI cannot be added!");
+            }
+          }break;
+          default: {
+            ERROR("Unknown URI type: %d", uri.type);
+          }break;
+        }
+      }break;
+      case AM_DEMUXER_MODE_UDS: {
+        switch(uri.type) {
+          case AM_PLAYBACK_URI_FILE: {
+            if (AM_LIKELY(!m_demuxer)) {
+              m_file_uri_q.push(uri);
+              m_demuxer_mode = AM_DEMUXER_MODE_FILE;
+              ret = AM_STATE_OK;
+            } else {
+              ERROR("Demuxer currently is playing UNIX domain URI, "
+                    "files cannot be added!");
+            }
+          }break;
+          case AM_PLAYBACK_URI_RTP: {
+            if (AM_LIKELY(!m_demuxer)) {
+              m_rtp_uri_q.push(uri);
+              m_demuxer_mode = AM_DEMUXER_MODE_RTP;
+              ret = AM_STATE_OK;
+              m_demuxer = get_demuxer_codec(type, 0);
+              if (AM_UNLIKELY(!m_demuxer)) {
+                ERROR("Failed to load demuxer for type %d", type);
+                ret = AM_STATE_ERROR;
+              } else {
+                m_demuxer->enable(true);
+                if (AM_UNLIKELY(!m_demuxer->add_uri(m_rtp_uri_q.front_pop()))) {
+                  ERROR("Failed to add RTP media!");
+                  m_demuxer->enable(false);
+                  m_demuxer = nullptr;
+                  ret = AM_STATE_ERROR;
+                }
+              }
+            } else {
+              ERROR("Demuxer currently is playing UNIX domain URI, "
+                    "RTP URI cannot be added!");
+            }
+          }break;
+          case AM_PLAYBACK_URI_UNIX_DOMAIN: {
+            if (AM_LIKELY(!m_demuxer)) {
+              m_demuxer = get_demuxer_codec(type, 0);
+              if (AM_UNLIKELY(!m_demuxer)) {
+                ERROR("Failed to load demuxer for type %d", type);
+              } else {
+                m_uds_uri_q.push(uri);
+                m_demuxer_mode = AM_DEMUXER_MODE_UDS;
+                m_demuxer->enable(true);
+                if (AM_UNLIKELY(!m_demuxer->add_uri(m_uds_uri_q.front_pop()))) {
+                  ERROR("Failed to add UNIX domain media!");
+                  m_demuxer->enable(false);
+                  m_demuxer = nullptr;
+                } else {
+                  ret = AM_STATE_OK;
+                }
+              }
+            } else {
+              ERROR("Last UNIX domain media is not finished! "
+                    "Please stop it before adding new media!");
+            }
+          }break;
+          default: {
+            ERROR("Unknown URI type: %d", uri.type);
+          }break;
+        }
+      }break;
+    }
+  } else {
+    ERROR("Unsupported media type!");
+  }
+#if 0
   if (AM_LIKELY((AM_DEMUXER_INVALID != type) &&
                 (AM_DEMUXER_UNKNOWN != type))) {
     if (AM_LIKELY(!m_demuxer)) {
@@ -153,14 +413,15 @@ AM_STATE AMFileDemuxer::add_media(const AMPlaybackUri& uri)
   } else {
     ERROR("Unsupportted media type!");
   }
+#endif
   return ret;
 }
 
 AM_STATE AMFileDemuxer::play(AMPlaybackUri* uri)
 {
   AM_STATE ret = (uri == NULL) ? AM_STATE_OK : add_media(*uri);
-  AUTO_SPIN_LOCK(m_demuxer_lock);
-  if (AM_LIKELY((AM_STATE_OK == ret) && !m_run)) {
+  AUTO_MEM_LOCK(m_demuxer_lock);
+  if (AM_LIKELY((AM_STATE_OK == ret) && !m_run.load())) {
     ret = start();
   }
 
@@ -177,13 +438,13 @@ AM_STATE AMFileDemuxer::start()
 AM_STATE AMFileDemuxer::stop()
 {
   AM_STATE ret = AM_STATE_OK;
-  if (AM_UNLIKELY(!m_started)) {
+  if (AM_UNLIKELY(!m_started.load())) {
     m_demuxer_event->signal();
   }
-  if (AM_LIKELY(m_run)) {
-    m_demuxer_lock->lock();
+  if (AM_LIKELY(m_run.load())) {
+    m_demuxer_lock.lock();
     m_run = false;
-    m_demuxer_lock->unlock();
+    m_demuxer_lock.unlock();
     ret = inherited::stop();
   }
   return ret;
@@ -204,20 +465,83 @@ void AMFileDemuxer::on_run()
   m_demuxer_event->wait();
   m_started = true;
   INFO("%s starts to run!", m_name);
-  while (m_run) {
-    AMPacket *packet = NULL;
-    m_demuxer_lock->lock();
+  while (m_run.load()) {
+    AMPacket *packet = nullptr;
+    PlaybackUriQ *uri_list = nullptr;
+
+    switch(m_demuxer_mode) {
+      case AM_DEMUXER_MODE_FILE: {
+        uri_list = &m_file_uri_q;
+      }break;
+      case AM_DEMUXER_MODE_RTP: {
+        uri_list = &m_rtp_uri_q;
+      }break;
+      case AM_DEMUXER_MODE_UDS: {
+        uri_list = &m_uds_uri_q;
+      }break;
+      case AM_DEMUXER_MODE_UNKNOWN: {
+        usleep(m_demuxer_config->file_empty_timeout);
+      }break;
+    }
+    if (AM_LIKELY(!uri_list)) {
+      continue;
+    }
+
+    if (AM_LIKELY(!uri_list->empty() &&
+                  (m_demuxer_mode == AM_DEMUXER_MODE_FILE))) {
+      AUTO_MEM_LOCK(m_demuxer_lock);
+      AMPlaybackUri uri = uri_list->front();
+      AM_DEMUXER_TYPE type = check_media_type(uri);
+      if (AM_LIKELY(m_demuxer && (state == AM_DEMUXER_NONE) &&
+                    (type != m_demuxer->get_demuxer_type()) &&
+                    (m_demuxer_mode == AM_DEMUXER_MODE_FILE))) {
+        m_demuxer = nullptr;
+      }
+      if (AM_UNLIKELY(!m_demuxer)) {
+        m_demuxer = get_demuxer_codec(type, 0);
+        if (AM_UNLIKELY(!m_demuxer)) {
+          ERROR("Failed to load demuxer for type %d", type);
+        }
+      }
+      if (AM_LIKELY(m_demuxer && (type == m_demuxer->get_demuxer_type()) &&
+                    (uri.type == AM_PLAYBACK_URI_FILE))) {
+        bool added = false;
+        m_demuxer->enable(true);
+        while (type == check_media_type(uri)) {
+          if (AM_UNLIKELY(!m_demuxer->add_uri(uri))) {
+            ERROR("Failed to add %s", uri.media.file);
+            break;
+          } else {
+            added = true;
+            uri_list->pop();
+            if (AM_LIKELY(!uri_list->empty())) {
+              uri = uri_list->front();
+            } else {
+              break;
+            }
+          }
+        }
+        if (AM_UNLIKELY(!added)) {
+          ERROR("Failed to add media to demuxer!");
+          m_demuxer = nullptr;
+        }
+      }
+    }
+    m_demuxer_lock.lock();
     if (AM_LIKELY(m_demuxer)) {
       if (AM_UNLIKELY(m_demuxer->is_play_list_empty())) {
         if (AM_LIKELY(++count < m_demuxer_config->wait_count)) {
-          m_demuxer_lock->unlock();
+          m_demuxer_lock.unlock();
           usleep(m_demuxer_config->file_empty_timeout);
           continue;
         }
         if (AM_LIKELY(state == AM_DEMUXER_NO_FILE)) {
           if (m_packet_pool->alloc_packet(packet, 0)) {
-            NOTICE("Timeout! no files found! Send EOF packet!");
-            packet->set_type(AMPacket::AM_PAYLOAD_TYPE_EOF);
+            NOTICE("Timeout! no files found! Send %s packet!",
+                   uri_list->empty() ? "EOL" : "EOF");
+            packet->set_type(uri_list->empty() ?
+                AMPacket::AM_PAYLOAD_TYPE_EOL :
+                AMPacket::AM_PAYLOAD_TYPE_EOF);
             packet->set_attr(AMPacket::AM_PAYLOAD_ATTR_AUDIO);
             packet->set_stream_id(m_demuxer->stream_id());
             send_packet(packet);
@@ -228,7 +552,7 @@ void AMFileDemuxer::on_run()
           }
         }
         count = 0;
-        m_demuxer_lock->unlock();
+        m_demuxer_lock.unlock();
         usleep(m_demuxer_config->file_empty_timeout);
         continue;
       }
@@ -245,14 +569,15 @@ void AMFileDemuxer::on_run()
         default: break;
       }
     }
-    m_demuxer_lock->unlock();
+    m_demuxer_lock.unlock();
     /* Just make m_demuxer_lock can be obtained by other thread */
     usleep(1000);
   }
   if (AM_LIKELY(m_demuxer)) {
     m_demuxer->enable(false);
+    m_demuxer = nullptr;
   }
-  if (AM_UNLIKELY(m_run)) {
+  if (AM_UNLIKELY(m_run.load())) {
     NOTICE("%s posts ENG_MSG_ABORT!", m_name);
     post_engine_msg(AMIEngine::ENG_MSG_ABORT);
   }
@@ -309,7 +634,7 @@ AM_DEMUXER_TYPE AMFileDemuxer::check_media_type(const AMPlaybackUri& uri)
       }
     }break;
     case AM_PLAYBACK_URI_RTP: {
-      switch(uri.media.rtp.audio_format) {
+      switch(uri.media.rtp.audio_type) {
         case AM_AUDIO_G711A:
         case AM_AUDIO_G711U:
         case AM_AUDIO_G726_40:
@@ -324,6 +649,9 @@ AM_DEMUXER_TYPE AMFileDemuxer::check_media_type(const AMPlaybackUri& uri)
         }break;
       }
     }break;
+    case AM_PLAYBACK_URI_UNIX_DOMAIN : {
+      type = AM_DEMUXER_UNIX_DOMAIN;
+    } break;
     default:
       ERROR("uri type error.");
       break;
@@ -343,10 +671,12 @@ AMFileDemuxer::DemuxerList* AMFileDemuxer::load_codecs()
     list = new AMFileDemuxer::DemuxerList();
     for (int i = 0; i < number; ++ i) {
       AMFileDemuxerObject *object = new AMFileDemuxerObject(codecs[i]);
-      if (AM_LIKELY(object && object->open())) {
-        list->push(object);
-      } else if (AM_LIKELY(object)) {
-        delete object;
+      if (AM_LIKELY(object)) {
+        if (AM_LIKELY(object->open())) {
+          list->push(object);
+        } else {
+          delete object;
+        }
       }
     }
   } else {
@@ -361,9 +691,9 @@ AMIDemuxerCodec* AMFileDemuxer::get_demuxer_codec(AM_DEMUXER_TYPE type,
                                                   uint32_t stream_id)
 {
   AMFileDemuxerObject *obj = NULL;
-  for (uint32_t i = 0; i < m_demuxer_list->size(); ++ i) {
-    obj = m_demuxer_list->front();
-    m_demuxer_list->pop();
+  uint32_t size = m_demuxer_list->size();
+  for (uint32_t i = 0; i < size; ++ i) {
+    obj = m_demuxer_list->front_pop();
     m_demuxer_list->push(obj);
     if (AM_LIKELY(obj->m_type == type)) {
       break;
@@ -375,24 +705,11 @@ AMIDemuxerCodec* AMFileDemuxer::get_demuxer_codec(AM_DEMUXER_TYPE type,
           demuxer_type_to_str[type]);
   }
 
-  return (obj ? obj->get_demuxer_codec(stream_id) : NULL);
+  return (obj ? obj->get_demuxer(stream_id) : NULL);
 }
 
 AMFileDemuxer::AMFileDemuxer(AMIEngine *engine) :
-    inherited(engine),
-    m_config(nullptr),
-    m_demuxer_config(nullptr),
-    m_packet_pool(nullptr),
-    m_demuxer(nullptr),
-    m_demuxer_lock(nullptr),
-    m_demuxer_event(nullptr),
-    m_demuxer_list(nullptr),
-    m_output_pins(nullptr),
-    m_input_num(0),
-    m_output_num(0),
-    m_run(false),
-    m_paused(false),
-    m_started(false)
+  inherited(engine)
 {
 }
 
@@ -400,12 +717,15 @@ AMFileDemuxer::~AMFileDemuxer()
 {
   delete m_config;
   AM_DESTROY(m_demuxer_event);
-  AM_DESTROY(m_demuxer_lock);
   AM_DESTROY(m_packet_pool);
   for (uint32_t i = 0; i < m_output_num; ++ i) {
     AM_DESTROY(m_output_pins[i]);
   }
   delete[] m_output_pins;
+  while (m_demuxer_list && !m_demuxer_list->empty()) {
+    delete m_demuxer_list->front_pop();
+  }
+  delete m_demuxer_list;
   DEBUG("~AMFileDemuxer");
 }
 
@@ -452,12 +772,6 @@ AM_STATE AMFileDemuxer::init(const std::string& config,
             m_demuxer_config->packet_size);
         if (AM_UNLIKELY(NULL == m_packet_pool)) {
           ERROR("Failed to create packet pool for %s", m_name);
-          state = AM_STATE_NO_MEMORY;
-          break;
-        }
-        m_demuxer_lock = AMSpinLock::create();
-        if (AM_UNLIKELY(!m_demuxer_lock)) {
-          ERROR("Failed to create AMSpinLock!");
           state = AM_STATE_NO_MEMORY;
           break;
         }

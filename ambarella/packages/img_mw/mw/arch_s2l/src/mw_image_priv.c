@@ -1,4 +1,4 @@
-/**********************************************************************
+/*
  *
  * mw_image_priv.c
  *
@@ -6,14 +6,31 @@
  *	2010/02/28 - [Jian Tang] Created this file
  *	2012/03/23 - [Jian Tang] Modified this file
  *
- * Copyright (C) 2007 - 2012, Ambarella, Inc.
+ * Copyright (C) 2015 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
  *
- *********************************************************************/
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -29,6 +46,7 @@
 
 #include "iav_common.h"
 #include "iav_ioctl.h"
+#include "iav_fastboot.h"
 #include "iav_vin_ioctl.h"
 #include "iav_vout_ioctl.h"
 #include "ambas_imgproc_arch.h"
@@ -84,15 +102,15 @@ typedef enum  {
 #define CALI_FILES_PATH		"/ambarella/calibration"
 #define	ADJ_PARAM_PATH	"/etc/idsp/adj_params"
 
-#define PRELOAD_AWB_FILE		"/tmp/awb"
-#define PRELOAD_AE_FILE		"/tmp/ae"
-
 #define AWB_TILE_NUM_COL		(24)
 #define AWB_TILE_NUM_ROW		(16)
 
 extern _mw_global_config G_mw_config;
 static line_t G_mw_ae_lines[MAX_AE_LINES_NUM];
 static pthread_t ae_control_task_id = 0;
+static pthread_t tone_curve_task_id = 0;
+extern u8 G_dynamic_tone_curve_active;
+extern int AmbaDSP_ImgLowIsoDumpCfg(amba_img_dsp_cfg_info_t CfgInfo, char *dir);
 
 /*************************** AE lines **********************************/
 
@@ -329,18 +347,25 @@ static u32 iris_index_to_fno(int index)
 
 #define LENS_FNO(index)		(iris_index_to_fno(index))
 
-inline int update_hdr_shutter_max(u32 fps, int expo_num)
+void wait_irq_count(int num)
 {
-	u32 shutter_max = 0;
+	do {
+		ioctl(G_mw_config.fd, IAV_IOC_WAIT_NEXT_FRAME, 0);
+	} while (--num > 0);
+}
+
+static inline int update_hdr_shutter_max(u32 fps, int expo_num, u16 expo_ratio)
+{
+	u64 shutter_max = 0;
 	int i;
 	const line_t *p_src = NULL;
 
 	switch (expo_num) {
 		case HDR_2X:
-			shutter_max = HDR_2X_MAX_SHUTTER(fps);
+			shutter_max = HDR_2X_MAX_SHUTTER((u64)fps, (u64)expo_ratio);
 			break;
 		case HDR_3X:
-			shutter_max = HDR_3X_MAX_SHUTTER(fps);
+			shutter_max = HDR_3X_MAX_SHUTTER((u64)fps, (u64)expo_ratio);
 			break;
 		default:
 			MW_ERROR("Not support hdr expo num[%d]\n", expo_num);
@@ -361,8 +386,9 @@ inline int update_hdr_shutter_max(u32 fps, int expo_num)
 		}
 	}
 
-	if (G_mw_config.ae_params.shutter_time_max > shutter_max)
+	if (G_mw_config.ae_params.shutter_time_max > shutter_max) {
 		G_mw_config.ae_params.shutter_time_max = shutter_max;
+	}
 
 	return 0;
 }
@@ -389,7 +415,7 @@ int get_sensor_aaa_params(_mw_global_config *pMw_info)
 	video_info.info.mode = AMBA_VIDEO_MODE_CURRENT;
 	if (ioctl(pMw_info->fd, IAV_IOC_VIN_GET_VIDEOINFO, &video_info) < 0) {
 		perror("IAV_IOC_VIN_GET_VIDEOINFO");
-		return 0;
+		return -1;
 	}
 
 	if (video_info.info.width != sensor->vin_width ||
@@ -407,6 +433,7 @@ int get_sensor_aaa_params(_mw_global_config *pMw_info)
 		(video_info.info.type == AMBA_VIDEO_TYPE_RGB_RAW));
 
 	if (!sensor->is_rgb_sensor) {
+		MW_INFO("It's not RGB sensor. Not support.\n");
 		return 0;
 	}
 
@@ -416,12 +443,15 @@ int get_sensor_aaa_params(_mw_global_config *pMw_info)
 		perror("IAV_IOC_VIN_GET_AAAINFO error\n");
 		return -1;
 	}
-	get_vin_frame_rate(&vin_fps);
+	if (get_vin_frame_rate(&vin_fps) < 0) {
+		return -1;
+	}
+
 	sensor->default_fps = vin_fps;
 	sensor->current_fps = vin_fps;
 
 	if (resource->hdr_expo_num > HDR_1X) {
-		if (update_hdr_shutter_max(vin_fps, resource->hdr_expo_num) < 0) {
+		if (update_hdr_shutter_max(vin_fps, resource->hdr_expo_num, MW_HDR_BLEND_EXPO_RATIO_MIN) < 0) {
 			MW_ERROR("update_hdr_shutter_max error \n");
 			return -1;
 		}
@@ -446,6 +476,9 @@ int get_sensor_aaa_params(_mw_global_config *pMw_info)
 			break;
 		case SENSOR_OV5658:
 			sprintf(sensor->name, "ov5658");
+			break;
+		case SENSOR_OV2718:
+			sprintf(sensor->name, "ov2718");
 			break;
 
 		case SENSOR_IMX123:
@@ -472,6 +505,9 @@ int get_sensor_aaa_params(_mw_global_config *pMw_info)
 		case SENSOR_IMX322:
 			sprintf(sensor->name, "imx322");
 			break;
+		case SENSOR_IMX326:
+			sprintf(sensor->name, "imx326");
+			break;
 
 		case SENSOR_AR0141:
 			sprintf(sensor->name, "ar0141");
@@ -484,6 +520,9 @@ int get_sensor_aaa_params(_mw_global_config *pMw_info)
 			break;
 		case SENSOR_AR0230:
 			sprintf(sensor->name, "ar0230");
+			break;
+		case SENSOR_AR0237:
+			sprintf(sensor->name, "ar0237");
 			break;
 		default:
 			MW_INFO("sensor is [%s]\n", vin_info.name);
@@ -591,8 +630,7 @@ static inline int set_vsync_vin_framerate(u32 frame_rate)
 	int rval;
 	struct vindev_fps vsrc_fps;
 
-	ioctl(G_mw_config.fd, IAV_IOC_WAIT_NEXT_FRAME, 0);
-
+	wait_irq_count(1);
 	vsrc_fps.vsrc_id = 0;
 	vsrc_fps.fps = frame_rate;
 	if ((rval = ioctl(G_mw_config.fd, IAV_IOC_VIN_SET_FPS, &vsrc_fps)) < 0) {
@@ -949,26 +987,32 @@ static int load_default_image_param(void)
 int reload_previous_params(void)
 {
 	u16 target_ratio[MAX_HDR_EXPOSURE_NUM];
+	u8 metering_mode[MAX_HDR_EXPOSURE_NUM];
 	awb_control_mode_t wb_mode[MAX_HDR_EXPOSURE_NUM];
 
-	//restores AE line
+	/* restores AE line */
 	if (G_mw_config.ae_params.slow_shutter_enable) {
 		G_mw_config.sensor.current_fps = G_mw_config.ae_params.current_vin_fps;
 	}
 	load_ae_exp_lines(&G_mw_config.ae_params);
-	//restore mctf strength
-	if (img_set_mctf_strength(G_mw_config.enh_params.mctf_strength) < 0) {
-		MW_ERROR("img_set_mctf_strength error!\n");
-		return -1;
-	}
-	//restore AE exposure level
+
+	/* restore AE exposure level */
 	target_ratio[0] = (u16)((G_mw_config.ae_params.ae_level[0] << 10) / 100);
 	if (img_set_ae_target_ratio(target_ratio) < 0) {
 		MW_ERROR("img_ae_set_target_ratio error\n");
 		return -1;
 	}
 
-	//restores Awb
+	/* restore AE metering mode */
+	metering_mode[0] = G_mw_config.ae_params.ae_metering_mode;
+	if (G_mw_config.res.hdr_expo_num == MIN_HDR_EXPOSURE_NUM) {
+		if (img_set_ae_meter_mode(metering_mode) < 0) {
+			MW_ERROR("img_ae_set_meter_mode error\n");
+			return -1;
+		}
+	}
+
+	/* restores Awb */
 	if (G_mw_config.awb_params.wb_mode == MW_WB_MODE_HOLD) {
 		if (img_enable_awb(0) < 0) {
 			MW_ERROR("img_enable_awb error\n");
@@ -1009,6 +1053,18 @@ int reload_previous_params(void)
 		}
 	if (img_set_sharpening_strength(G_mw_config.image_params.sharpness) < 0) {
 		MW_ERROR("img_set_sharpness error!\n");
+		return -1;
+	}
+
+	/* restore mctf strength */
+	if (img_set_mctf_strength(G_mw_config.enh_params.mctf_strength) < 0) {
+		MW_ERROR("img_set_mctf_strength error!\n");
+		return -1;
+	}
+
+	/* restore day_night mode */
+	if (img_set_bw_mode(G_mw_config.enh_params.dn_mode) < 0) {
+		MW_ERROR("img_set_bw_mode error.\n");
 		return -1;
 	}
 
@@ -1065,19 +1121,155 @@ static inline int print_ae_lines(line_t *lines,
 	return 0;
 }
 
-static int generate_normal_ae_lines(mw_ae_param *p, line_t *lines,
-	int *line_num, u16 *line_belt, int *default_line_belt)
+static void refresh_ae_lines(line_t *lines, int *line_num, u32 p_index_min, u32 p_index_max)
 {
-	int dst, src, i;
-	u32 s_max, s_min, g_max, g_min, p_index_max, p_index_min;
-	const line_t *p_src = NULL;
-	int flicker_off_shutter_time = 0;
+	int i = 0;
+	u32 g_min, g_max;
+	struct vindev_agc vsrc_agc;
+
+	/* change min gain from sensor driver */
+	get_sensor_agc_info(G_mw_config.fd, &vsrc_agc);
+	g_min = vsrc_agc.agc_min >> 24;
+	i = 0;
+	while (G_gain_table[i] < g_min) {
+		if (++i == GAIN_TABLE_NUM) {
+			--i;
+			break;
+		}
+	}
+	g_min = G_gain_table[i];
+
+	MW_INFO("---Min Gain: %d\n", g_min);
+
+	i = 0;
+	while (i < *line_num) {
+		if (lines[i].start.factor[MW_SHUTTER] != lines[i].end.factor[MW_SHUTTER]) {
+			/* Shutter line: change min gain both for start and end points */
+			if (lines[i].start.factor[MW_DGAIN] < g_min) {
+				lines[i].start.factor[MW_DGAIN] = g_min;
+			}
+			if (lines[i].end.factor[MW_DGAIN] < g_min) {
+				lines[i].end.factor[MW_DGAIN] = g_min;
+			}
+		} else {
+			/* Gain line: change min gain for start point */
+			if (lines[i].start.factor[MW_DGAIN] < g_min) {
+				lines[i].start.factor[MW_DGAIN] = g_min;
+			}
+		}
+		++i;
+	}
+
+	/* change the min/max piris lens size */
+	if (p_index_min < lines[0].start.factor[MW_IRIS]) {
+		 lines[0].start.factor[MW_IRIS] = p_index_min;
+	}
+	if (p_index_max > lines[*line_num - 1].end.factor[MW_IRIS]) {
+		 lines[*line_num - 1].end.factor[MW_IRIS] = p_index_max;
+	}
+	i = 0;
+	while (i < *line_num) {
+		if (p_index_min > lines[i].start.factor[MW_IRIS]) {
+			 lines[i].start.factor[MW_IRIS] = p_index_min;
+		}
+		if (p_index_min > lines[i].end.factor[MW_IRIS]) {
+			 lines[i].end.factor[MW_IRIS] = p_index_min;
+		}
+		if (p_index_max < lines[i].start.factor[MW_IRIS]) {
+			 lines[i].start.factor[MW_IRIS] = p_index_max;
+		}
+		if (p_index_max < lines[i].end.factor[MW_IRIS]) {
+			 lines[i].end.factor[MW_IRIS] = p_index_max;
+		}
+		++i;
+	}
+
+	/* seperate the end line,if both end gain/iris are different with start */
+	if ((lines[*line_num - 1].end.factor[MW_IRIS] !=
+		lines[*line_num - 1].start.factor[MW_IRIS]) &&
+		(lines[*line_num - 1].end.factor[MW_DGAIN] !=
+		lines[*line_num - 1].start.factor[MW_DGAIN])) {
+		/* keep the end gain = start gain */
+		g_max = lines[*line_num - 1].end.factor[MW_DGAIN];
+		lines[*line_num - 1].end.factor[MW_DGAIN] =
+			lines[*line_num - 1].start.factor[MW_DGAIN];
+
+		/* create a new lines with max gain*/
+		if (*line_num < MAX_AE_LINES_NUM) {
+			lines[*line_num]= lines[*line_num - 1];
+			/* update start_piris, and end_gain */
+			lines[*line_num].start.factor[MW_IRIS] =
+				lines[*line_num - 1].end.factor[MW_IRIS];
+			lines[*line_num].end.factor[MW_DGAIN] = g_max;
+			*line_num = *line_num + 1;
+		}
+	}
+
+	return;
+}
+
+static void update_ae_belt(mw_ae_param *p, line_t *lines, line_info *ae_belt)
+{
 	int longest_possible_shutter = 0, curr_belt = 0;
 	int match_vin_shutter = 0;
 	int match_vin_belt = 0;
 	int calc_def_belt = 0;
 
-	struct vindev_agc vsrc_agc;
+	/* calculate line belt of current and default */
+	curr_belt = ae_belt->line_num;
+	while (1) {
+		longest_possible_shutter = lines[curr_belt - 1].end.factor[MW_SHUTTER];
+		if (longest_possible_shutter <= G_mw_config.sensor.default_fps) {
+			ae_belt->belt_def = curr_belt;
+		}
+		if (p->slow_shutter_enable) {
+			if (longest_possible_shutter <= G_mw_config.sensor.current_fps) {
+				MW_INFO("\tSlow shutter is enabled, set curr_belt [%d] to"
+					" current frame rate [%d].\n",
+					curr_belt, G_mw_config.sensor.current_fps);
+				calc_def_belt = 1;
+				break;
+			}
+		} else {
+			if (longest_possible_shutter <= G_mw_config.sensor.default_fps) {
+				lines[curr_belt - 1].end.factor[MW_DGAIN] =
+					lines[ae_belt->line_num - 1].end.factor[MW_DGAIN];
+				MW_INFO("\tSlow shutter is disabled, restore curr_belt [%d] to"
+					" default frame rate [%d].\n",
+					curr_belt, G_mw_config.sensor.default_fps);
+				break;
+			}
+		}
+		--curr_belt;
+	}
+	if (calc_def_belt) {
+		for (match_vin_belt = curr_belt; match_vin_belt > 1; match_vin_belt--) {
+			match_vin_shutter = lines[match_vin_belt - 1].end.factor[MW_SHUTTER];
+			if (match_vin_shutter <= G_mw_config.sensor.default_fps) {
+				ae_belt->belt_def = match_vin_belt;
+				break;
+			}
+		}
+		if (match_vin_belt <= 1) {
+			ae_belt->belt_def = 1;
+		}
+	}
+
+	ae_belt->belt_cur = curr_belt;
+
+	MW_INFO("\tcurr_belt [%d] def_belt [%d] == VIN [%d fps]\n",
+		curr_belt, ae_belt->belt_def, G_mw_config.sensor.current_fps);
+
+	return;
+}
+
+static int generate_normal_ae_lines(mw_ae_param *p, line_t *lines,
+	line_info *ae_belt)
+{
+	int dst, src;
+	u32 s_max, s_min, g_max, p_index_max, p_index_min;
+	const line_t *p_src = NULL;
+	int flicker_off_shutter_time = 0;
 
 	s_max = p->shutter_time_max;
 	s_min = p->shutter_time_min;
@@ -1095,7 +1287,7 @@ static int generate_normal_ae_lines(mw_ae_param *p, line_t *lines,
 		G_60HZ_LINES : G_50HZ_LINES;
 	flicker_off_shutter_time = (p->anti_flicker_mode == MW_ANTI_FLICKER_60HZ) ?
 		SHUTTER_1BY120_SEC : SHUTTER_1BY100_SEC;
-	dst = src = curr_belt = 0;
+	dst = src = 0;
 
 	// create line 1 - shutter line / digital gain line
 	if (s_min < flicker_off_shutter_time) {
@@ -1112,7 +1304,6 @@ static int generate_normal_ae_lines(mw_ae_param *p, line_t *lines,
 			lines[dst].end.factor[MW_SHUTTER] = s_max;
 			lines[dst].end.factor[MW_DGAIN] = g_max;
 			++dst;
-			curr_belt = dst;
 			goto GENERATE_LINES_EXIT;
 		}
 		++dst;
@@ -1148,151 +1339,71 @@ static int generate_normal_ae_lines(mw_ae_param *p, line_t *lines,
 	}
 	lines[dst - 1].end.factor[MW_DGAIN] = g_max;
 
-	// change min gain from sensor driver
-	get_sensor_agc_info(G_mw_config.fd, &vsrc_agc);
-	g_min = vsrc_agc.agc_min >> 24;
-	i = 0;
-	while (G_gain_table[i] < g_min) {
-		if (++i == GAIN_TABLE_NUM) {
-			--i;
-			break;
-		}
-	}
-	g_min = G_gain_table[i];
-
-	MW_INFO("---Min Gain: %d, Max Gain: %d\n", g_min, g_max);
-	i = 0;
-	while (i < dst) {
-		if (lines[i].start.factor[MW_SHUTTER] != lines[i].end.factor[MW_SHUTTER]) {
-			/* Shutter line: change min gain both for start and end points */
-			if (lines[i].start.factor[MW_DGAIN] < g_min) {
-				lines[i].start.factor[MW_DGAIN] = g_min;
-			}
-			if (lines[i].end.factor[MW_DGAIN] < g_min) {
-				lines[i].end.factor[MW_DGAIN] = g_min;
-			}
-		} else {
-			/* Gain line: change min gain for start point */
-			if (lines[i].start.factor[MW_DGAIN] < g_min) {
-				lines[i].start.factor[MW_DGAIN] = g_min;
-			}
-		}
-		++i;
-	}
-
-	/* change the min/max piris lens size */
-	if (p_index_min < lines[0].start.factor[MW_IRIS]) {
-		 lines[0].start.factor[MW_IRIS] = p_index_min;
-	}
-	if (p_index_max > lines[dst].end.factor[MW_IRIS]) {
-		 lines[dst].end.factor[MW_IRIS] = p_index_max;
-	}
-	i = 0;
-	while (i < dst) {
-		if (p_index_min > lines[i].start.factor[MW_IRIS]) {
-			 lines[i].start.factor[MW_IRIS] = p_index_min;
-		}
-		if (p_index_min > lines[i].end.factor[MW_IRIS]) {
-			 lines[i].end.factor[MW_IRIS] = p_index_min;
-		}
-		if (p_index_max < lines[i].start.factor[MW_IRIS]) {
-			 lines[i].start.factor[MW_IRIS] = p_index_max;
-		}
-		if (p_index_max < lines[i].end.factor[MW_IRIS]) {
-			 lines[i].end.factor[MW_IRIS] = p_index_max;
-		}
-		++i;
-	}
-
-	// calculate line belt of current and default
-	curr_belt = dst;
-	while (1) {
-		longest_possible_shutter = lines[curr_belt - 1].end.factor[MW_SHUTTER];
-		if (longest_possible_shutter <= G_mw_config.sensor.default_fps) {
-			*default_line_belt = curr_belt;
-		}
-		if (p->slow_shutter_enable) {
-			if (longest_possible_shutter <= G_mw_config.sensor.current_fps) {
-				MW_INFO("\tSlow shutter is enabled, set curr_belt [%d] to"
-					" current frame rate [%d].\n",
-					curr_belt, G_mw_config.sensor.current_fps);
-				calc_def_belt = 1;
-				break;
-			}
-		} else {
-			if (longest_possible_shutter <= G_mw_config.sensor.default_fps) {
-				lines[curr_belt - 1].end.factor[MW_DGAIN] = g_max;
-				MW_INFO("\tSlow shutter is disabled, restore curr_belt [%d] to"
-					" default frame rate [%d].\n",
-					curr_belt, G_mw_config.sensor.default_fps);
-				break;
-			}
-		}
-		--curr_belt;
-	}
-	if (calc_def_belt) {
-		for (match_vin_belt = curr_belt; match_vin_belt > 1; match_vin_belt--) {
-			match_vin_shutter = lines[match_vin_belt - 1].end.factor[MW_SHUTTER];
-			if (match_vin_shutter <= G_mw_config.sensor.default_fps) {
-				*default_line_belt = match_vin_belt;
-				break;
-			}
-		}
-		if (match_vin_belt <= 1) {
-			*default_line_belt = 1;
-		}
-		calc_def_belt = 0;
-	}
-	MW_INFO("\tcurr_belt [%d] def_belt [%d] == VIN [%d fps]\n",
-		curr_belt, *default_line_belt, G_mw_config.sensor.current_fps);
-
 GENERATE_LINES_EXIT:
-	*line_num = dst;
-	*line_belt = curr_belt;
 
-	print_ae_lines(lines, dst, curr_belt, 1);
+	refresh_ae_lines(lines, &dst, p_index_min, p_index_max);
+	ae_belt->line_num = dst;
+	update_ae_belt(p, lines, ae_belt);
+	print_ae_lines(lines, dst, ae_belt->belt_cur, 1);
 	return 0;
 }
 
 static inline int generate_manual_shutter_lines(mw_ae_param *p,
-	line_t *lines, int *line_num, u16 *line_belt, int *default_line_belt)
+	line_t *lines, line_info *ae_belt)
 {
 	int total_lines = 0;
+
 	lines[total_lines].start.factor[MW_SHUTTER] = p->shutter_time_max;
 	lines[total_lines].start.factor[MW_DGAIN] = 0;
-	lines[total_lines].start.factor[MW_IRIS] = 0;
 	lines[total_lines].end.factor[MW_SHUTTER] = p->shutter_time_max;
 	lines[total_lines].end.factor[MW_DGAIN] = p->sensor_gain_max;
-	lines[total_lines].end.factor[MW_IRIS] = 0;
+
+	if ((p->lens_aperture.aperture_min == APERTURE_AUTO) ||
+		(p->lens_aperture.aperture_max == APERTURE_AUTO)) {
+		lines[total_lines].start.factor[MW_IRIS] = 0;
+		lines[total_lines].end.factor[MW_IRIS] = 0;
+	} else {
+		lines[total_lines].start.factor[MW_IRIS] =
+			iris_to_index(p->lens_aperture.aperture_max);
+		lines[total_lines].end.factor[MW_IRIS] =
+			iris_to_index(p->lens_aperture.aperture_min);
+	}
+
 	++total_lines;
-	*line_num = total_lines;
-	*line_belt = total_lines;
-	*default_line_belt = total_lines;
+
+	refresh_ae_lines(lines, &total_lines, lines[0].start.factor[MW_IRIS],
+		lines[0].end.factor[MW_IRIS]);
+
+	ae_belt->line_num = total_lines;
+	ae_belt->belt_cur = total_lines;
+	ae_belt->belt_def = total_lines;
 
 	print_ae_lines(lines, total_lines, total_lines, 1);
 	return 0;
 }
 
 static int generate_ae_lines(mw_ae_param *p,
-	line_t *lines, int *line_num, u16 *line_belt, int *default_line_belt)
+	line_t *lines, line_info *ae_belt)
 {
 	int retv = 0;
 
 	if (p->shutter_time_max != p->shutter_time_min) {
-		retv = generate_normal_ae_lines(p, lines, line_num, line_belt, default_line_belt);
+		retv = generate_normal_ae_lines(p, lines, ae_belt);
 	} else {
-		retv = generate_manual_shutter_lines(p, lines, line_num, line_belt, default_line_belt);
+		retv = generate_manual_shutter_lines(p, lines, ae_belt);
 	}
 
 	return retv;
 }
 
-static int load_ae_lines(line_t *line, u16 line_num, u16 line_belt, int default_line_belt)
+static int load_ae_lines(line_t *line, line_info *ae_belt)
 {
 	int i;
 	line_t img_ae_lines[MAX_AE_LINES_NUM * MAX_HDR_EXPOSURE_NUM];
 	u16 line_num_expo[MAX_HDR_EXPOSURE_NUM];
 	u16 line_belt_expo[MAX_HDR_EXPOSURE_NUM];
+	u8 ae_stable;
+	u16 line_num = ae_belt->line_num;
 
 	memcpy(img_ae_lines, line, sizeof(line_t) * line_num);
 	//transfer q9 format to shutter index format
@@ -1304,7 +1415,7 @@ static int load_ae_lines(line_t *line, u16 line_num, u16 line_belt, int default_
 	}
 
 	line_num_expo[0] = line_num;
-	line_belt_expo[0] = line_belt;
+	line_belt_expo[0] = ae_belt->belt_cur;
 
 	if (G_mw_config.res.hdr_expo_num >= HDR_2X) {
 		if (G_mw_config.ae_params.anti_flicker_mode == MW_ANTI_FLICKER_60HZ) {
@@ -1338,19 +1449,30 @@ static int load_ae_lines(line_t *line, u16 line_num, u16 line_belt, int default_
 	if (img_format_ae_line(G_mw_config.fd, img_ae_lines, line_num,
 		G_mw_config.sensor.vin_aaa_info.agc_step) < 0) {
 		MW_ERROR("[img_ae_load_exp_line error] : line_num [%d] line_belt [%d].\n",
-			line_num, line_belt);
+			line_num, ae_belt->belt_cur);
 		return -1;
+	}
+
+	while (G_mw_config.sensor.lens_id != LENS_CMOUNT_ID) {
+		img_get_ae_stable(&ae_stable);
+		MW_DEBUG("Wait AE stable!\n");
+		if (ae_stable != 0) {
+			break;
+		}
+		wait_irq_count(1);
 	}
 
 	if (img_set_ae_exp_lines(img_ae_lines, line_num_expo, line_belt_expo) < 0) {
 		MW_ERROR("[img_set_ae_exp_lines error] : line_num [%d] line_belt [%d].\n",
-			line_num, line_belt);
+			line_num, ae_belt->belt_cur);
 		return -1;
 	}
-	ioctl(G_mw_config.fd, IAV_IOC_WAIT_NEXT_FRAME);//Wait two VIN frames to make sure AE lines becomes effective in image kernel
-	ioctl(G_mw_config.fd, IAV_IOC_WAIT_NEXT_FRAME);
-	G_mw_config.cur_status.ae_belt.line_num = line_num;
-	G_mw_config.cur_status.ae_belt.belt_def = default_line_belt;
+
+	wait_irq_count(2);
+
+	G_mw_config.cur_status.ae_belt.line_num = line_num_expo[0];
+	G_mw_config.cur_status.ae_belt.belt_def = ae_belt->belt_def;
+	G_mw_config.cur_status.ae_belt.belt_cur = ae_belt->belt_cur;
 	memcpy(G_mw_ae_lines, line, sizeof(line_t) * line_num);
 	pthread_mutex_unlock(&G_mw_config.slow_shutter_lock);
 
@@ -1392,7 +1514,7 @@ int check_iav_work(void)
 	return 0;
 }
 
-inline int get_iav_cfg(_mw_global_config *mw_info)
+static inline int get_iav_cfg(_mw_global_config *mw_info)
 {
 	struct iav_system_resource system_resource;
 	struct iav_srcbuf_setup srcbuf_setup;
@@ -1461,11 +1583,11 @@ inline int get_shutter_time(u32 *pShutter_time)
 
 int load_ae_exp_lines(mw_ae_param *ae)
 {
-	u16 ae_line_belt = 0;
-	int default_line_belt = 0;
-	int ae_lines_num;
 	line_t ae_lines[MAX_AE_LINES_NUM];
+	line_info ae_belt;
+
 	memset(ae_lines, 0, sizeof(ae_lines));
+	memset(&ae_belt, 0, sizeof(line_info));
 
 	if (ae->shutter_time_max < ae->shutter_time_min) {
 		MW_INFO("shutter limit max [%d] is less than shutter min [%d]. Tie them to shutter min\n",
@@ -1473,15 +1595,14 @@ int load_ae_exp_lines(mw_ae_param *ae)
 		ae->shutter_time_max = ae->shutter_time_min;
 	}
 
-	if (generate_ae_lines(ae, ae_lines,
-		&ae_lines_num, &ae_line_belt, &default_line_belt) < 0) {
+	if (generate_ae_lines(ae, ae_lines, &ae_belt) < 0) {
 		MW_ERROR("generate_ae_lines error\n");
 		return -1;
 	}
 
-	if (load_ae_lines(ae_lines, ae_lines_num, ae_line_belt, default_line_belt) < 0) {
+	if (load_ae_lines(ae_lines, &ae_belt) < 0) {
 		MW_MSG("load_ae_lines error! line_num [%d], line_belt [%d], default_line_belt [%d]\n",
-			ae_lines_num, ae_line_belt, default_line_belt);
+			ae_belt.line_num, ae_belt.belt_cur, ae_belt.belt_def);
 		return -1;
 	}
 
@@ -1510,6 +1631,7 @@ int set_ae_exposure_lines(mw_ae_line *lines, u32 num)
 	int i, curr_belt;
 	int default_line_belt = 0;
 	line_t ae_lines[MAX_AE_LINES_NUM];
+	line_info ae_belt;
 
 	for (i = 0; i < num - 1; ++i) {
 		if (lines[i+1].start.factor[MW_SHUTTER] == SHUTTER_INVALID) {
@@ -1541,9 +1663,14 @@ int set_ae_exposure_lines(mw_ae_line *lines, u32 num)
 	}
 	default_line_belt = curr_belt;
 	MW_DEBUG("vin [%d]\n", G_mw_config.sensor.current_fps);
+
+	ae_belt.line_num = i;
+	ae_belt.belt_cur = curr_belt;
+	ae_belt.belt_def = default_line_belt;
+
 	print_ae_lines(ae_lines, i, curr_belt, 1);
 
-	if (load_ae_lines(ae_lines, i, curr_belt, default_line_belt) < 0) {
+	if (load_ae_lines(ae_lines, &ae_belt) < 0) {
 		MW_MSG("load_ae_lines error! line_num [%d], line_belt [%d], default_line_belt [%d]\n",
 			i, curr_belt, default_line_belt);
 		return -1;
@@ -1577,7 +1704,7 @@ int set_ae_switch_points(mw_ae_point *points, u32 num)
 		switch_point->factor[MW_DGAIN] = points[i].factor[MW_DGAIN];
 	}
 
-	if (load_ae_lines(G_mw_ae_lines, ae_belt->line_num, ae_belt->belt_cur, ae_belt->belt_def) < 0) {
+	if (load_ae_lines(G_mw_ae_lines, ae_belt) < 0) {
 		MW_MSG("load_ae_lines error! line_num [%d], line_belt_cur [%d], line_belt_def [%d]\n",
 			ae_belt->line_num, ae_belt->belt_cur, ae_belt->belt_def);
 		return -1;
@@ -1624,10 +1751,25 @@ static void slow_shutter_control(int ae_cursor)
 					target_frame_time, G_mw_config.cur_status.ae_belt.belt_cur);
 				transition_counter = 0;
 			}
+		} else {
+			if ((ae_belt->belt_cur > ae_belt->belt_def) &&
+				(ae_cursor <= ae_belt->line_num)) {
+				++transition_counter;
+				if (transition_counter == HISTORY_LENGTH) {
+					img_set_ae_loosen_belt(&ae_belt->belt_cur);
+					MW_INFO("[CHANGE Belt]= def [%d], curr [%d], ae_cursor [%d].\n",
+						ae_belt->belt_def, ae_belt->belt_cur, ae_cursor);
+					transition_counter = 0;
+				}
+			}
 		}
 	} else {
 		if (G_mw_config.sensor.current_fps > G_mw_config.sensor.default_fps) {
-			set_vsync_vin_framerate(G_mw_config.sensor.default_fps);
+			if (set_vsync_vin_framerate(G_mw_config.sensor.default_fps) < 0) {
+				MW_ERROR("set_vsync_vin_framerate failed!\n");
+			} else {
+				G_mw_config.sensor.current_fps = G_mw_config.sensor.default_fps;
+			}
 			img_set_ae_loosen_belt(&ae_belt->belt_def);
 		}
 	}
@@ -1652,7 +1794,7 @@ void ae_control_task(void *arg)
 	}
 
 	while (G_mw_config.init_params.slow_shutter_active) {
-		ioctl(G_mw_config.fd, IAV_IOC_WAIT_NEXT_FRAME, 0);
+		wait_irq_count(1);
 
 		img_get_ae_cursor(&ae_cursor);
 
@@ -1704,6 +1846,19 @@ int create_ae_control_task(void)
 		MW_INFO("Create thread <ae_control_task> successful !\n");
 	}
 
+	if(G_mw_config.res.hdr_expo_num == HDR_2X) {
+		G_dynamic_tone_curve_active = 1;
+		if (tone_curve_task_id == 0) {
+			if (pthread_create(&tone_curve_task_id, NULL,
+				(void *)tone_curve_task, NULL) != 0) {
+				MW_ERROR("Failed. Can't create thread <%s> !\n",
+					MW_THREAD_NAME_TONE_CURVE_CTRL);
+			}
+			pthread_setname_np(tone_curve_task_id, MW_THREAD_NAME_TONE_CURVE_CTRL);
+
+			MW_INFO("Create thread <tone_curve_task> successful !\n");
+		}
+	}
 	return 0;
 }
 
@@ -1719,8 +1874,19 @@ int destroy_ae_control_task(void)
 		}
 		MW_INFO("Destroy thread <ae_control_task> successful !\n");
 	}
-
 	ae_control_task_id = 0;
+
+	/* destroy tone curve thread */
+	G_dynamic_tone_curve_active = 0;
+	if (tone_curve_task_id != 0) {
+		if (pthread_join(tone_curve_task_id, NULL) != 0) {
+			MW_ERROR("Failed. Can't destroy thread <%s> !\n",
+				MW_THREAD_NAME_TONE_CURVE_CTRL);
+			perror("pthread_join in destory tone curve thread");
+		}
+		MW_INFO("Destroy thread <tone_curve_task> successful !\n");
+	}
+	tone_curve_task_id = 0;
 
 	return 0;
 }
@@ -1818,7 +1984,8 @@ static inline int load_calibration_file(void)
 	return 0;
 }
 
-static int save_content_file(const char* filename, const char* content)
+static int save_content_file(const char* filename, const void* content,
+	const int size)
 {
 	int fd = -1;
 	int ret = -1;
@@ -1829,9 +1996,32 @@ static int save_content_file(const char* filename, const char* content)
 		return ret;
 	}
 
-	ret = write(fd, content, strlen(content));
+	ret = write(fd, content, size);
+	if (ret != size) {
+		MW_ERROR("Write %s failed!\n", filename);
+		ret = -1;
+	}
 	close(fd);
 	fd = -1;
+
+	return ret;
+}
+
+static int load_content_file(const char *filename, void *dest, const int size)
+{
+	int fd = -1;
+	int ret = -1;
+
+	fd = open(filename, O_RDONLY | O_NONBLOCK);
+	if (fd >= 0) {
+		ret = read(fd, dest, size);
+		if (ret != size) {
+			MW_ERROR("Read %s failed!\n", filename);
+			ret = -1;
+		}
+		close(fd);
+		fd = -1;
+	}
 
 	return ret;
 }
@@ -1846,23 +2036,54 @@ static void save_awb_ae_config(void)
 	amba_img_dsp_wb_gain_t preload_wb_gain = {0, 0, 0, 0, 0};
 	amba_img_dsp_mode_cfg_t dsp_mode_cfg;
 
-	preload_agc = img_get_sensor_agc();
-	preload_shutter = img_get_sensor_shutter();
+	hdr_sensor_gp_t sht_agc_gp;
+	amba_img_dsp_amp_linearization_t amp_linearizatoin;
 
 	memset(&dsp_mode_cfg, 0, sizeof(dsp_mode_cfg));
 	if (get_dsp_mode_cfg(&dsp_mode_cfg) < 0) {
 		return;
 	}
 
-	amba_img_dsp_get_wb_gain(&dsp_mode_cfg, &preload_wb_gain);
-	preload_dgain = preload_wb_gain.AeGain*preload_wb_gain.GlobalDGain>>12;
+	if (amba_img_dsp_get_wb_gain(&dsp_mode_cfg, &preload_wb_gain) < 0) {
+		MW_ERROR("amba_img_dsp_get_wb_gain \n");
+		return;
+	}
+	preload_dgain = (preload_wb_gain.AeGain *
+		preload_wb_gain.GlobalDGain) >> 12;
+
+
+	if (G_mw_config.res.hdr_expo_num == HDR_1X) {
+		preload_agc = img_get_sensor_agc();
+		preload_shutter = img_get_sensor_shutter();
+	} else {
+		if (img_get_hdr_sensor_shutter_group(G_mw_config.fd,
+			&sht_agc_gp.shutter_gp) < 0) {
+			MW_ERROR("img_get_hdr_sensor_shutter_group \n");
+			return;
+		}
+		if (img_get_hdr_sensor_agc_group(G_mw_config.fd,
+			&sht_agc_gp.agc_gp) < 0) {
+			MW_ERROR("img_get_hdr_sensor_shutter_group \n");
+			return;
+		}
+		preload_shutter = sht_agc_gp.shutter_gp.shutter_info[0];
+		preload_agc = sht_agc_gp.agc_gp.gain_info[0];
+
+		if (amba_img_dsp_get_amp_linearization(&dsp_mode_cfg,
+			&amp_linearizatoin) < 0) {
+			MW_ERROR("amba_img_dsp_get_amp_linearization \n");
+			return;
+		}
+		preload_wb_gain.GainR = amp_linearizatoin.amp_linear[0].mul_r;
+		preload_wb_gain.GainB = amp_linearizatoin.amp_linear[0].mul_b;
+	}
 
 	/* AWB */
 	memset(aaa_content, 0, sizeof(aaa_content));
 	snprintf(aaa_content, sizeof(aaa_content), "%u,%d\n",
 		preload_wb_gain.GainR, preload_wb_gain.GainB);
 
-	ret = save_content_file(PRELOAD_AWB_FILE, aaa_content);
+	ret = save_content_file(PRELOAD_AWB_FILE, aaa_content, strlen(aaa_content));
 	if (ret > 0) {
 		MW_DEBUG("Save AWB: r_gain=%d, b_gain=%d\n",
 			preload_wb_gain.GainR, preload_wb_gain.GainB);
@@ -1872,7 +2093,7 @@ static void save_awb_ae_config(void)
 	memset(aaa_content, 0, sizeof(aaa_content));
 	snprintf(aaa_content, sizeof(aaa_content), "%u,%d,%d\n",
 		preload_dgain, preload_shutter, preload_agc);
-	save_content_file(PRELOAD_AE_FILE, aaa_content);
+	save_content_file(PRELOAD_AE_FILE, aaa_content, strlen(aaa_content));
 	if (ret > 0) {
 		MW_DEBUG("Save AE: d_gain=%d, shutter=%d, agc=%d\n",
 			preload_dgain, preload_shutter, preload_agc);
@@ -1889,14 +2110,16 @@ static void preload_awb_ae_config(void)
 	int preload_iris_index = 0;
 	amba_img_dsp_wb_gain_t preload_wb_gain = {0, 0, 0, 0, 0};
 	wb_gain_t pre_wb_gain = {0, 0, 0};
-
 	char content[32];
 	char *content_c = NULL;
 
 	fd_awb = open(PRELOAD_AWB_FILE, O_RDONLY | O_NONBLOCK);
 	if (fd_awb >= 0) {
 		memset(content, 0, sizeof(content));
-		read(fd_awb, content, sizeof(content));
+		if (read(fd_awb, content, sizeof(content)) < 0) {
+			printf("read error.\n");
+			return;
+		}
 		close(fd_awb);
 		fd_awb = -1;
 
@@ -1915,14 +2138,16 @@ static void preload_awb_ae_config(void)
 		pre_wb_gain.r_gain = preload_wb_gain.GainR >> 2;
 		pre_wb_gain.b_gain = preload_wb_gain.GainB >> 2;
 		pre_wb_gain.g_gain = 1024;
-		adj_pre_config();
 		awb_flow_pre_config(&pre_wb_gain);
 	}
 
 	fd_ae = open(PRELOAD_AE_FILE, O_RDONLY | O_NONBLOCK);
 	if (fd_ae >= 0) {
 		memset(content, 0, sizeof(content));
-		read(fd_ae, content, sizeof(content));
+		if (read(fd_ae, content, sizeof(content)) < 0) {
+			printf("read error.\n");
+			return;
+		}
 		close(fd_ae);
 		fd_ae = -1;
 
@@ -1945,6 +2170,99 @@ static void preload_awb_ae_config(void)
 			preload_iris_index);
 	}
 }
+
+static void save_adj_config(void)
+{
+	amba_img_dsp_tone_curve_t tone_curve;
+	amba_img_dsp_rgb_to_yuv_t rgb2yuv_matrix;
+	amba_img_dsp_local_exposure_t local_exposure;
+	amba_img_dsp_mode_cfg_t dsp_mode_cfg;
+
+	memset(&dsp_mode_cfg, 0, sizeof(dsp_mode_cfg));
+	if (get_dsp_mode_cfg(&dsp_mode_cfg) < 0) {
+		return;
+	}
+
+	if (amba_img_dsp_get_tone_curve(&dsp_mode_cfg, &tone_curve) < 0) {
+		MW_ERROR("Get tone curve failed!\n");
+		return;
+	}
+	if (amba_img_dsp_get_rgb_to_yuv_matrix(&dsp_mode_cfg, &rgb2yuv_matrix) < 0) {
+		MW_ERROR("Get rgb2yuv matrix failed!\n");
+		return;
+	}
+	if (amba_img_dsp_get_local_exposure(&dsp_mode_cfg, &local_exposure) < 0) {
+		MW_ERROR("Get local exposure failed!\n");
+		return;
+	}
+
+	if (save_content_file(PRELOAD_TONE_CURVE, &tone_curve,
+		sizeof(tone_curve)) < 0) {
+		return;
+	}
+	if (save_content_file(PRELOAD_RGB2YUV_MAT, &rgb2yuv_matrix,
+		sizeof(rgb2yuv_matrix)) < 0) {
+		return;
+	}
+	if (save_content_file(PRELOAD_LOCAL_EXPO, &local_exposure,
+		sizeof(local_exposure)) < 0) {
+		return;
+	}
+
+	return;
+}
+
+static int preload_adj_config(void)
+{
+	adj_pre_config_t adj_pre_cfg;
+
+	memset(&adj_pre_cfg, 0, sizeof(adj_pre_cfg));
+	if (load_content_file(PRELOAD_TONE_CURVE, &adj_pre_cfg.tone_curve,
+		sizeof(amba_img_dsp_tone_curve_t)) < 0) {
+		return -1;
+	}
+	if (load_content_file(PRELOAD_RGB2YUV_MAT, &adj_pre_cfg.r2y,
+		sizeof(amba_img_dsp_rgb_to_yuv_t)) < 0) {
+		return -1;
+	}
+	if (load_content_file(PRELOAD_LOCAL_EXPO, &adj_pre_cfg.le,
+		sizeof(amba_img_dsp_local_exposure_t)) < 0) {
+		return -1;
+	}
+
+	adj_pre_config_ex(&adj_pre_cfg);
+
+	return 0;
+}
+
+static struct aaa_statistics_ex af_eng_cof = {
+	0,					// af_horizontal_filter1_mode;
+	0,					// af_horizontal_filter1_stage1_enb;
+	1,					// af_horizontal_filter1_stage2_enb;
+	0,					// af_horizontal_filter1_stage3_enb;
+	{200, 0, 0, 0, -55, 0, 0},		// af_horizontal_filter1_gain[7];
+	{6, 0, 0, 0},		// af_horizontal_filter1_shift[4];
+	0,					// af_horizontal_filter1_bias_off;
+	0,					// af_horizontal_filter1_thresh;
+	0,					// af_vertical_filter1_thresh;
+	8,					// af_tile_fv1_horizontal_shift;
+	8,					// af_tile_fv1_vertical_shift;
+	168,				// af_tile_fv1_horizontal_weight;
+	87,					// af_tile_fv1_vertical_weight;
+	0,					// af_horizontal_filter2_mode;
+	1,					// af_horizontal_filter2_stage1_enb;
+	1,					// af_horizontal_filter2_stage2_enb;
+	1,					// af_horizontal_filter2_stage3_enb;
+	{188, 467, -235, 375, -184, 276, -206},		// af_horizontal_filter2_gain[7];
+	{7, 2, 2, 0},		// af_horizontal_filter2_shift[4];
+	0,					// af_horizontal_filter2_bias_off;
+	0,					// af_horizontal_filter2_thresh;
+	0,					// af_vertical_filter2_thresh;
+	8,					// af_tile_fv2_horizontal_shift;
+	8,					// af_tile_fv2_vertical_shift;
+	123,				// af_tile_fv2_horizontal_weight;
+	132					// af_tile_fv2_vertical_weight;
+};
 
 int do_prepare_aaa(void)
 {
@@ -1979,13 +2297,13 @@ int do_prepare_aaa(void)
 	img_config.raw_resolution = G_mw_config.sensor.raw_resolution;
 
 	if (G_mw_config.sensor.is_rgb_sensor) {
-
 		vin_aaa_info = &G_mw_config.sensor.vin_aaa_info;
 		img_config.raw_bayer = vin_aaa_info->bayer_pattern;
 
-		/* Preload 3A param from /tmp when start process, Just support LISO now */
-		if (img_config.isp_pipeline == ISP_PIPELINE_LISO) {
+		/* Preload 3A param from /tmp when start process. */
+		if (img_config.isp_pipeline == ISP_PIPELINE_ADV_LISO) {
 			preload_awb_ae_config();
+			preload_adj_config();
 		}
 
 		if (vin_aaa_info->dual_gain_mode) {
@@ -2047,6 +2365,14 @@ int do_prepare_aaa(void)
 		MW_ERROR("img_prepare_isp fail\n");
 		return -1;
 	}
+
+	amba_img_dsp_mode_cfg_t dsp_mode_cfg;
+	memset(&dsp_mode_cfg, 0, sizeof(dsp_mode_cfg));
+	if (get_dsp_mode_cfg(&dsp_mode_cfg) < 0) {
+		return -1;
+	}
+	amba_img_dsp_set_af_statistics_ex(G_mw_config.fd, &dsp_mode_cfg, &af_eng_cof, 1);
+
 	return 0;
 }
 
@@ -2075,6 +2401,9 @@ int do_start_aaa(void)
 		MW_ERROR("img_set_work_mode error!\n");
 		return -1;
 	}
+
+	/* Delay one frame to correct 3A for the first frame. */
+	wait_irq_count(1);
 
 	if (load_calibration_file() < 0) {
 		MW_ERROR("load_calibration_file error!\n");
@@ -2112,6 +2441,48 @@ int do_start_aaa(void)
 	return 0;
 }
 
+static int auto_dump_img_cfg(void)
+{
+	char liso_file[128];
+
+	amba_img_dsp_mode_cfg_t ik_mode = {0};
+	ik_mode.AlgoMode = AMBA_DSP_IMG_ALGO_MODE_LISO;
+	ik_mode.BatchId = 0xff;
+
+	AMBA_DSP_IMG_DEBUG_MODE_s debug = {0};
+	debug.Step = 0;
+	debug.Mode = 0;
+	amba_img_dsp_set_debug_mode(&ik_mode, &debug);
+
+	/* Fix me, we need remove usleep */
+	usleep(33 * 1000);
+	static amba_img_dsp_cfg_info_t CfgInfo;
+	CfgInfo.Pipe = AMBA_DSP_IMG_PIPE_VIDEO;
+	CfgInfo.CfgId =ik_mode.ConfigId;
+	AmbaDSP_ImgLowIsoDumpCfg(CfgInfo, IDSP_LISO_DUMP_DIR);
+
+	amba_img_dsp_cfg_status_t CfgStatus;
+	amba_img_dsp_get_cfg_status(&CfgInfo, &CfgStatus);
+
+	sprintf(liso_file, "%s/%s", IDSP_LISO_DUMP_DIR, IDSP_LISO_DUMP_FILE);
+	int fd = -1;
+	fd = open(liso_file, O_WRONLY | O_CREAT, 0666);
+
+	if (fd > 0) {
+		/* hard-code the size MW_SIZE_LISO_CFG_ADV for now.
+		When the size info is exposed in the API, change this. */
+		if (write(fd, (void*)CfgStatus.Addr, SIZE_LISO_CFG_ADV_ISO) < 0) {
+			printf("write error.\n");
+			return -1;
+		}
+		close(fd);
+	} else {
+		MW_MSG("failed to open %s.\n", liso_file);
+	}
+
+	return 0;
+}
+
 int do_stop_aaa(void)
 {
 	if (G_mw_config.init_params.aaa_active == 0) {
@@ -2121,12 +2492,11 @@ int do_stop_aaa(void)
 
 	if (G_mw_config.sensor.is_rgb_sensor) {
 		/* Save 3A param to /tmp when start process */
-		if (G_mw_config.res.isp_pipeline == ISP_PIPELINE_LISO) {
+		if (G_mw_config.res.isp_pipeline == ISP_PIPELINE_ADV_LISO) {
 			save_awb_ae_config();
+			save_adj_config();
 		}
-		if (G_mw_config.ae_params.slow_shutter_enable) {
-			destroy_ae_control_task();
-		}
+		destroy_ae_control_task();
 		/*destroy mutex G_mw_config.slow_shutter_lock after destroying slow shutter control thread*/
 		pthread_mutex_destroy(&G_mw_config.slow_shutter_lock);
 		if (img_stop_aaa() < 0) {
@@ -2134,6 +2504,13 @@ int do_stop_aaa(void)
 			return -1;
 		}
 		usleep(1000);
+	}
+
+	if (G_mw_config.enh_params.auto_dump_cfg) {
+		if (G_mw_config.res.isp_pipeline == ISP_PIPELINE_MID_LISO ||
+			G_mw_config.res.isp_pipeline == ISP_PIPELINE_ADV_LISO) {
+			auto_dump_img_cfg();
+		}
 	}
 
 	if (img_lib_deinit() < 0) {

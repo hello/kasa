@@ -1,16 +1,34 @@
-/**
+/*******************************************************************************
  * amba_cloud_agent.cpp
  *
  * History:
  *  2015/03/03 - [Zhi He] create file
  *
- * Copyright (C) 2014 - 2024, the Ambarella Inc.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of the Ambarella Inc.
- */
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ ******************************************************************************/
 
 #include <sys/time.h>
 #include <signal.h>
@@ -345,16 +363,14 @@ EECode CAmbaCloudAgent::Construct()
         return EECode_NoMemory;
     }
 
-    mpIMClientAgent = gfCreateIMClientAgent(EProtocolType_SACP);
-    if (DUnlikely(!mpIMClientAgent)) {
-        LOG_ERROR("gfCreateIMClientAgent() fail\n");
-        return EECode_InternalLogicalBug;
+    mpDeviceSecondVideoDataQueue = (SAgentMsgQueue *)DDBG_MALLOC(sizeof(SAgentMsgQueue), "CSDQ");
+    if (DUnlikely(!mpDeviceSecondVideoDataQueue)) {
+        LOG_FATAL("DDBG_MALLOC mpDeviceAudioDataQueue failed\n");
+        return EECode_NoMemory;
     }
-
-    EECode err = createCloudAgent();
-    if (DUnlikely(EECode_OK != err)) {
-        LOG_ERROR("createCloudAgent fail, ret %d, %s\n", err, gfGetErrorCodeString(err));
-        return err;
+    if (DUnlikely(0 != __msg_slave_queue_init(mpDeviceSecondVideoDataQueue, mpDeviceVideoDataQueue))) {
+        LOG_FATAL("init mpDeviceSecondVideoDataQueue failed\n");
+        return EECode_NoMemory;
     }
 
     return EECode_OK;
@@ -366,6 +382,7 @@ CAmbaCloudAgent::CAmbaCloudAgent(const TChar *account_filename)
     : mpAccountConfFilename(account_filename)
     , mDeviceUniqueID(0)
     , mVideoFormat(ESACPDataChannelSubType_H264_NALU)
+    , mSecondVideoFormat(ESACPDataChannelSubType_H264_NALU)
     , mAudioFormat(ESACPDataChannelSubType_AAC)
     , mbReadDataThreadRun(0)
     , mbMainThreadRun(0)
@@ -376,13 +393,13 @@ CAmbaCloudAgent::CAmbaCloudAgent(const TChar *account_filename)
     , mbVideoUploadingStarted(0)
     , mbAudioUploadingStarted(0)
     , mVideoStreamFormat(AM_EXPORT_PACKET_FORMAT_AVC)
-    , mAudioStreamFormat(AM_EXPORT_PACKET_FORMAT_AAC)
+    , mAudioStreamFormat(AM_EXPORT_PACKET_FORMAT_AAC_48KHZ)
     , mVideoStreamIndex(DINVALID_STREAM_INDEX)
     , mAudioStreamIndex(DINVALID_STREAM_INDEX)
     , mbEnableVideoEncryption(1)
     , mbStartedVideoEncryption(0)
     , mAudioChannelNumber(1)
-    , mAudioSampleFrequency(DDefaultAudioSampleRate)
+    , mAudioSampleFrequency(16000)
     , mAudioBitrate(48000)
     , mpAudioExtraData(NULL)
     , mAudioExtraDataSize(0)
@@ -400,6 +417,7 @@ CAmbaCloudAgent::CAmbaCloudAgent(const TChar *account_filename)
     , mpDeviceCommandQueue(NULL)
     , mpDeviceVideoDataQueue(NULL)
     , mpDeviceAudioDataQueue(NULL)
+    , mpDeviceSecondVideoDataQueue(NULL)
     , mpCloudServerUrl(NULL)
     , mIMServerPort(DDefaultSACPServerPort)
     , mCloudServerPort(DDefaultSACPServerPort)
@@ -418,14 +436,39 @@ CAmbaCloudAgent::CAmbaCloudAgent(const TChar *account_filename)
 
     mpDataExportClient = NULL;
 
+    mbEnableSecondStream = 0;
+    mbEnableSecondStreamAudio = 0;
+    mbSecondstreamVideoUploadingStarted = 0;
+    mbSecondstreamAudioUploadingStarted = 0;
+    mbSecondStreamAgentConnected = 0;
+    mpCloudClientAgentV2SecStream = NULL;
+
+    mSecondVideoStreamFormat = AM_EXPORT_PACKET_FORMAT_AVC;
+    mSecondVideoStreamIndex = 1;
+
+    mSecondVideoFramerateDen = DDefaultVideoFramerateDen;
+    mSecondVideoFramerate = 30;
+    mSecondVideoResWidth = 640;
+    mSecondVideoResHeight = 480;
+    mSecondVideoBitrate = 0;
+    mpSecondVideoExtraData = NULL;
+    mSecondVideoExtraDataSize = 0;
+
+    mSecondVideoGOPN = 120;
+    mSecondVideoGOPM = 1;
+    mSecondVideoGOPIDRInterval = 1;
+
+    mSecondVideoSeqNum = 0;
+    mSecondBeginTimeStamp = 0;
+    mSecondLastVideoPTS = 0;
+
 #ifdef D_ENABLE_ENCRYPTION
     mpDataCypher = NULL;
+    mpDataCypherSecondStream = NULL;
     snprintf(mDataCypherKey, DMAX_SYMMETRIC_KEY_LENGTH_BYTES, "%s", "123456789abcdef0");
     snprintf(mDataCypherIV, DMAX_SYMMETRIC_KEY_LENGTH_BYTES, "%s", "abcdef0123456789");
 
-    mCypherBufferSize = 0;
     mDataBufferSize = 0;
-    mpCypherInputBuffer = NULL;
     mpCypherOutputBuffer = NULL;
 #endif
 
@@ -466,15 +509,27 @@ CAmbaCloudAgent::~CAmbaCloudAgent()
         mpCloudClientAgentV2 = NULL;
     }
 
+    if (mpCloudClientAgentV2SecStream) {
+        mpCloudClientAgentV2SecStream->Delete();
+        mpCloudClientAgentV2SecStream = NULL;
+    }
+
     if (mpVideoExtraData) {
         DDBG_FREE(mpVideoExtraData, "CVED");
         mpVideoExtraData = NULL;
         mVideoExtraDataSize = 0;
     }
+
     if (mpAudioExtraData) {
         DDBG_FREE(mpAudioExtraData, "CAED");
         mpAudioExtraData = NULL;
         mAudioExtraDataSize = 0;
+    }
+
+    if (mpSecondVideoExtraData) {
+        DDBG_FREE(mpSecondVideoExtraData, "CVED");
+        mpSecondVideoExtraData = NULL;
+        mSecondVideoExtraDataSize = 0;
     }
 
     if (mpFreePacketList) {
@@ -493,30 +548,53 @@ CAmbaCloudAgent::~CAmbaCloudAgent()
         mpDataCypher = NULL;
     }
 
-    if (mpCypherInputBuffer) {
-        free(mpCypherInputBuffer);
-        mpCypherInputBuffer = NULL;
+    if (mpDataCypherSecondStream) {
+        destroy_symmetric_cypher(mpDataCypherSecondStream);
+        mpDataCypherSecondStream = NULL;
     }
+
     if (mpCypherOutputBuffer) {
-        free(mpCypherOutputBuffer);
+        DDBG_FREE(mpCypherOutputBuffer, "CYOB");
         mpCypherOutputBuffer = NULL;
     }
 #endif
 
 }
 
-EECode CAmbaCloudAgent::Start(TU8 stream_index, TU8 audio_disable, TU8 m, TU8 print_pts_seq, TU8 fps)
+EECode CAmbaCloudAgent::Start(TU8 stream_index, TU8 audio_disable, TU8 m, TU8 print_pts_seq, TU8 fps, TU8 enable_second_stream)
 {
     if (DUnlikely(mbMainThreadRun)) {
         LOG_WARN("CAmbaCloudAgent already started\n");
         return EECode_BadState;
     }
     mbMainThreadRun = 1;
-    mVideoStreamIndex = stream_index;
+    if (!enable_second_stream) {
+        mVideoStreamIndex = stream_index;
+        mbEnableSecondStream = 0;
+    } else {
+        mVideoStreamIndex = 0;
+        mSecondVideoStreamIndex = 1;
+        mbEnableSecondStream = 1;
+    }
     mbEnableAudio = !audio_disable;
+    mbEnableSecondStreamAudio = mbEnableAudio;
     mDebugPrintPTSSeqNum = print_pts_seq;
 
+    mpIMClientAgent = gfCreateIMClientAgent(EProtocolType_SACP);
+    if (DUnlikely(!mpIMClientAgent)) {
+        LOG_ERROR("gfCreateIMClientAgent() fail\n");
+        return EECode_InternalLogicalBug;
+    }
+
+    EECode err = createCloudAgent();
+    if (DUnlikely(EECode_OK != err)) {
+        LOG_ERROR("createCloudAgent fail, ret %d, %s\n", err, gfGetErrorCodeString(err));
+        return err;
+    }
+
     mVideoGOPM = m;
+
+#ifndef D_REMOVE_HARD_CODE
 
     if (mbEnableAudio) {
         TU32 generated_config_size = 0;
@@ -537,7 +615,7 @@ EECode CAmbaCloudAgent::Start(TU8 stream_index, TU8 audio_disable, TU8 m, TU8 pr
     if (!fps) {
         if (1 == stream_index) {
             mVideoFramerateDen = 6006;
-            mVideoFramerate = 15;
+            mVideoFramerate = 30;
             mVideoResWidth = 640;
             mVideoResHeight = 480;
         } else {
@@ -567,16 +645,22 @@ EECode CAmbaCloudAgent::Start(TU8 stream_index, TU8 audio_disable, TU8 m, TU8 pr
     }
     LOG_NOTICE("video index %d, frame rate %f, width %d, height %d\n", stream_index, (float)90000 / (float)mVideoFramerateDen, mVideoResWidth, mVideoResHeight);
 
+#endif
+
 #ifdef D_ENABLE_ENCRYPTION
     mpDataCypher = create_symmetric_cypher(CYPHER_TYPE_AES128, BLOCK_CYPHER_MODE_CTR);
     if (DUnlikely(!mpDataCypher)) {
         LOG_WARN("create_symmetric_cypher fail!\n");
     } else {
-        mCypherBufferSize = 1024;
-        mDataBufferSize = 1024 * 1024;
-        mpCypherInputBuffer = (TU8 *) malloc(mCypherBufferSize);
-        mpCypherOutputBuffer = (TU8 *) malloc(mDataBufferSize);
-        if (!mpCypherInputBuffer || !mpCypherOutputBuffer) {
+        if (enable_second_stream) {
+            mpDataCypherSecondStream = create_symmetric_cypher(CYPHER_TYPE_AES128, BLOCK_CYPHER_MODE_CTR);
+            if (DUnlikely(!mpDataCypherSecondStream)) {
+                LOG_WARN("create_symmetric_cypher fail!\n");
+            }
+        }
+        mDataBufferSize = 2 * 1024 * 1024;
+        mpCypherOutputBuffer = (TU8 *) DDBG_MALLOC(mDataBufferSize, "CACB");
+        if (!mpCypherOutputBuffer) {
             LOG_WARN("no memory!\n");
             return EECode_NoMemory;
         }
@@ -831,6 +915,8 @@ void CAmbaCloudAgent::readDataThread(void *param)
     bool ret = 0;
     TInt wait_first_idr = 1;
     TInt video_started = 0;
+    TInt sec_wait_first_idr = 1;
+    TInt sec_video_started = 0;
     TInt size = 0;
     TInt send_size = 0;
     unsigned long long pts = 0;
@@ -890,50 +976,91 @@ wait_apps_laucher:
         if (DLikely(ret)) {
             p_packet->user_alloc_memory = 0;
             if (AM_EXPORT_PACKET_TYPE_VIDEO_DATA == p_packet->packet_type) {
-                if ((DINVALID_STREAM_INDEX == p_packet->stream_index) || (!mbEnableVideo) || (p_packet->packet_format != mVideoStreamFormat)) {
+                if ((DINVALID_STREAM_INDEX == p_packet->stream_index) || (!mbEnableVideo)) {
                     releaseDataPacket(p_packet);
                     p_packet = NULL;
                     continue;
                 }
-                if (mVideoStreamIndex != p_packet->stream_index) {
+                if ((!mVideoResWidth) || (!mVideoResHeight)) {
                     releaseDataPacket(p_packet);
                     p_packet = NULL;
                     continue;
                 }
-                if (DUnlikely(wait_first_idr)) {
-                    if (!p_packet->is_key_frame) {
-                        LOG_PRINTF("wait video IDR ...\n");
-                        releaseDataPacket(p_packet);
-                        p_packet = NULL;
-                        continue;
-                    } else {
-                        wait_first_idr = 0;
-                        msg.flags = DDeviceSyncPointFlag;
-                        LOG_PRINTF("wait video IDR done\n");
-                        video_started = 1;
-                    }
-                } else if (p_packet->is_key_frame) {
-                    msg.flags = DDeviceSyncPointFlag;
-                } else {
-                    msg.flags = 0;
-                }
-                msg.ptr = (void *) p_packet;
 
-                if (DUnlikely(0 == mVideoSeqNum)) {
-                    mBeginTimeStamp = p_packet->pts;
-                    LOG_NOTICE("mBeginTimeStamp %lld\n", mBeginTimeStamp);
+                if (mVideoStreamIndex == p_packet->stream_index) {
+                    if (DUnlikely(wait_first_idr)) {
+                        if (!p_packet->is_key_frame) {
+                            LOG_PRINTF("wait video IDR ...\n");
+                            releaseDataPacket(p_packet);
+                            p_packet = NULL;
+                            continue;
+                        } else {
+                            wait_first_idr = 0;
+                            msg.flags = DDeviceSyncPointFlag;
+                            LOG_PRINTF("wait video IDR done\n");
+                            video_started = 1;
+                        }
+                    } else if (p_packet->is_key_frame) {
+                        msg.flags = DDeviceSyncPointFlag;
+                    } else {
+                        msg.flags = 0;
+                    }
+                    msg.ptr = (void *) p_packet;
+
+                    if (DUnlikely(0 == mVideoSeqNum)) {
+                        mBeginTimeStamp = p_packet->pts;
+                        LOG_NOTICE("mBeginTimeStamp %lld\n", mBeginTimeStamp);
+                    }
+                    //LOG_NOTICE("video pts %lld, offset %lld\n", p_packet->pts, p_packet->pts - mBeginTimeStamp);
+                    //LOG_NOTICE("read video packet, format %02x, index %d, size %ld\n", p_packet->packet_format, p_packet->stream_index, p_packet->data_size);
+                    mLastVideoPTS = p_packet->pts;
+                    p_packet->seq_num = mVideoSeqNum ++;
+                    msg.ptr = (void *) p_packet;
+                    //LOG_NOTICE("read video packet, size %d, seq %d\n", p_packet->data_size, p_packet->seq_num);
+                    __msg_queue_put(mpDeviceVideoDataQueue, &msg);
+                    p_packet = NULL;
+                } else if (mbEnableSecondStream && (mSecondVideoStreamIndex == p_packet->stream_index)) {
+
+                    if (DUnlikely(sec_wait_first_idr)) {
+                        if (!p_packet->is_key_frame) {
+                            LOG_PRINTF("wait video IDR ...\n");
+                            releaseDataPacket(p_packet);
+                            p_packet = NULL;
+                            continue;
+                        } else {
+                            sec_wait_first_idr = 0;
+                            msg.flags = DDeviceSyncPointFlag;
+                            LOG_PRINTF("wait video IDR done (sec)\n");
+                            sec_video_started = 1;
+                        }
+                    } else if (p_packet->is_key_frame) {
+                        msg.flags = DDeviceSyncPointFlag;
+                    } else {
+                        msg.flags = 0;
+                    }
+                    msg.ptr = (void *) p_packet;
+
+                    if (DUnlikely(0 == mSecondVideoSeqNum)) {
+                        mSecondBeginTimeStamp = p_packet->pts;
+                        LOG_NOTICE("mSecondBeginTimeStamp %lld\n", mSecondBeginTimeStamp);
+                    }
+                    //LOG_NOTICE("video pts %lld, offset %lld\n", p_packet->pts, p_packet->pts - mBeginTimeStamp);
+                    //LOG_NOTICE("read video packet, format %02x, index %d, size %ld\n", p_packet->packet_format, p_packet->stream_index, p_packet->data_size);
+                    mSecondLastVideoPTS = p_packet->pts;
+                    p_packet->seq_num = mSecondVideoSeqNum ++;
+                    msg.ptr = (void *) p_packet;
+                    //LOG_NOTICE("read video packet, size %d, seq %d\n", p_packet->data_size, p_packet->seq_num);
+                    __msg_queue_put(mpDeviceSecondVideoDataQueue, &msg);
+                    p_packet = NULL;
+                } else {
+                    releaseDataPacket(p_packet);
+                    p_packet = NULL;
+                    continue;
                 }
-                //LOG_NOTICE("video pts %lld, offset %lld\n", p_packet->pts, p_packet->pts - mBeginTimeStamp);
-                //LOG_NOTICE("read video packet, format %02x, index %d, size %ld\n", p_packet->packet_format, p_packet->stream_index, p_packet->data_size);
-                mLastVideoPTS = p_packet->pts;
-                p_packet->seq_num = mVideoSeqNum ++;
-                msg.ptr = (void *) p_packet;
-                //LOG_NOTICE("read video packet, size %d, seq %d\n", p_packet->data_size, p_packet->seq_num);
-                __msg_queue_put(mpDeviceVideoDataQueue, &msg);
-                p_packet = NULL;
+
             } else if (AM_EXPORT_PACKET_TYPE_AUDIO_DATA == p_packet->packet_type) {
 
-                if ((!mbEnableAudio) || (p_packet->packet_format != mAudioStreamFormat)) {
+                if ((!mbEnableAudio) || (p_packet->packet_format != mAudioStreamFormat) || (!mpAudioExtraData)) {
                     releaseDataPacket(p_packet);
                     p_packet = NULL;
                     continue;
@@ -989,6 +1116,84 @@ wait_apps_laucher:
                 }
 
             } else {
+#ifdef D_REMOVE_HARD_CODE
+                if (AM_EXPORT_PACKET_TYPE_AUDIO_INFO == p_packet->packet_type) {
+                    if (p_packet->packet_format == mAudioStreamFormat) {
+                        AMExportAudioInfo *audio_info = (AMExportAudioInfo *) p_packet->data_ptr;
+
+                        if (audio_info && (!mpAudioExtraData)) {
+                            TU32 generated_config_size = 0;
+                            TU8 *generated_aac_config = NULL;
+
+                            mAudioSampleFrequency = audio_info->samplerate;
+                            mAudioChannelNumber = audio_info->channels;
+
+                            LOG_PRINTF("audio sample rate %d, channels %d\n", mAudioSampleFrequency, mAudioChannelNumber);
+                            generated_aac_config= gfGenerateAACExtraData(mAudioSampleFrequency, mAudioChannelNumber, generated_config_size);
+
+                            if (DLikely(generated_aac_config && (16 > generated_config_size))) {
+                                mpAudioExtraData = generated_aac_config;
+                                mAudioExtraDataSize = (TMemSize)generated_config_size;
+                                LOG_WARN("generate mAudioExtraDataSize=%lu, mpAudioExtraData first 2 bytes: 0x%x 0x%x\n", mAudioExtraDataSize, mpAudioExtraData[0], mpAudioExtraData[1]);
+                            } else {
+                                LOG_FATAL("no memory\n");
+                            }
+                        }
+
+                    }
+                } else if (AM_EXPORT_PACKET_TYPE_VIDEO_INFO == p_packet->packet_type) {
+                    if ((mVideoStreamIndex == p_packet->stream_index) && (p_packet->packet_format == mVideoStreamFormat)) {
+                        AMExportVideoInfo *video_info = (AMExportVideoInfo *) p_packet->data_ptr;
+
+                        if (video_info) {
+                            if ((1 < video_info->framerate_num) && (1 < video_info->framerate_den)) {
+                                TU32 frnum = video_info->framerate_num;
+                                mVideoFramerateDen = video_info->framerate_den;
+                                if (mVideoFramerateDen && frnum) {
+                                    mVideoFramerate = (frnum + mVideoFramerateDen / 2) / mVideoFramerateDen;
+
+                                    if (90000 != frnum) {
+                                        mVideoFramerateDen = (TU32) ((TU64)(((TU64) 90000 * (TU64) mVideoFramerateDen) / (TU64)frnum));
+                                    }
+                                }
+                            } else {
+                                mVideoFramerate = 30;
+                                mVideoFramerateDen = 3003;
+                                LOG_WARN("use default 90000/3003 = 29.97\n");
+                            }
+                            mVideoResWidth = video_info->width;
+                            mVideoResHeight = video_info->height;
+                            LOG_PRINTF("video resolution %dx%d, fr num %d, den %d, calculated fps %d, 90000/%d\n", mVideoResWidth, mVideoResHeight, video_info->framerate_num, video_info->framerate_den, mVideoFramerate, mVideoFramerateDen);
+                        }
+
+                    } else if (mbEnableSecondStream && (mSecondVideoStreamIndex == p_packet->stream_index) && (p_packet->packet_format == mSecondVideoStreamFormat)) {
+
+                        AMExportVideoInfo *video_info = (AMExportVideoInfo *) p_packet->data_ptr;
+
+                        if (video_info) {
+                            if ((1 < video_info->framerate_num) && (1 < video_info->framerate_den)) {
+                                TU32 frnum = video_info->framerate_num;
+                                mSecondVideoFramerateDen = video_info->framerate_den;
+                                if (mSecondVideoFramerateDen && frnum) {
+                                    mSecondVideoFramerate = (frnum + mSecondVideoFramerateDen / 2) / mSecondVideoFramerateDen;
+
+                                    if (90000 != frnum) {
+                                        mSecondVideoFramerateDen = (TU32) ((TU64)(((TU64) 90000 * (TU64) mSecondVideoFramerateDen) / (TU64)frnum));
+                                    }
+                                }
+                            } else {
+                                mSecondVideoFramerate = 30;
+                                mSecondVideoFramerateDen = 3003;
+                                LOG_WARN("use default 90000/3003 = 29.97\n");
+                            }
+                            mSecondVideoResWidth = video_info->width;
+                            mSecondVideoResHeight = video_info->height;
+                            LOG_PRINTF("video (second stream) resolution %dx%d, fr num %d, den %d, calculated fps %d, 90000/%d\n", mSecondVideoResWidth, mSecondVideoResHeight, video_info->framerate_num, video_info->framerate_den, mSecondVideoFramerate, mSecondVideoFramerateDen);
+                        }
+
+                    }
+                }
+#endif
                 releaseDataPacket(p_packet);
                 p_packet = NULL;
             }
@@ -1021,12 +1226,15 @@ void CAmbaCloudAgent::uploadThread(void *param)
     TU8 *pdata = NULL;
     TU32 data_size = 0;
     TU32 skip_size = 0;
-    TU8 audio_extradata_send = 0, video_extradata_send = 0, discard_non_idr = 1;
+    TU8 audio_extradata_send = 0, video_extradata_send = 0, sec_video_extradata_send = 0, discard_non_idr = 1, sec_discard_non_idr = 1;
     SAgentMsg msg;
     SAgentMsgQueue *queue = NULL;
 
     TU32 kr_count = 0;
     TU32 sync_video = 0;
+
+    TU32 sec_kr_count = 0;
+    TU32 sec_sync_video = 0;
 
     DASSERT(mpCloudClientAgentV2);
     DASSERT(mpDeviceVideoDataQueue);
@@ -1091,6 +1299,7 @@ void CAmbaCloudAgent::uploadThread(void *param)
                         connected = 0;
                         audio_extradata_send = 0;
                         video_extradata_send = 0;
+                        sec_video_extradata_send = 0;
                         releaseDataPacket((void *) p_packet);
                         p_packet = NULL;
                         usleep(DRetryIntervalUS);
@@ -1131,21 +1340,22 @@ void CAmbaCloudAgent::uploadThread(void *param)
 
 #ifdef D_PRINT_AVSYNC
             if (mDebugPrintPTSSeqNum) {
-                printf("    upload h264(%d, %lld)\n", (TU32)seq_num, cur_pts - mBeginTimeStamp);
+                printf("    upload h264(%d, %lld)\n", (TU32)seq_num, cur_pts);
             }
 #endif
 
             if (DUnlikely(!mbVideoUploadingStarted)) {
-                LOG_NOTICE("[pts]: video upload begin pts %lld, cur %lld, begin offset %lld\n", cur_pts - mBeginTimeStamp, cur_pts, mBeginTimeStamp);
-                mpCloudClientAgentV2->VideoSync((TTime)cur_pts - mBeginTimeStamp, seq_num);
+                LOG_NOTICE("[pts]: video upload begin pts %lld\n", cur_pts);
+                mpCloudClientAgentV2->VideoSync((TTime)cur_pts, seq_num);
                 mbVideoUploadingStarted = 1;
                 err = uploadH264stream(pdata, data_size, (TU32)seq_num, extra_flag);
                 if (DUnlikely(EECode_OK != err)) {
-                    LOG_ERROR("CAmbaCloudAgent::uploadThread, uploadH264stream() failed, err = %d, %s\n", err, gfGetErrorCodeString(err));
+                    LOG_ERROR("uploadH264stream() failed, err = %d, %s\n", err, gfGetErrorCodeString(err));
                     cloudAgentDisconnect();
                     connected = 0;
                     audio_extradata_send = 0;
                     video_extradata_send = 0;
+                    sec_video_extradata_send = 0;
                     releaseDataPacket((void *) p_packet);
                     p_packet = NULL;
                     usleep(DRetryIntervalUS);
@@ -1154,11 +1364,12 @@ void CAmbaCloudAgent::uploadThread(void *param)
             } else {
                 err = uploadH264stream(pdata, data_size, (TU32)seq_num, extra_flag);
                 if (DUnlikely(EECode_OK != err)) {
-                    LOG_ERROR("CAmbaCloudAgent::uploadThread, uploadH264stream() failed, err = %d, %s\n", err, gfGetErrorCodeString(err));
+                    LOG_ERROR("uploadH264stream() failed, err = %d, %s\n", err, gfGetErrorCodeString(err));
                     cloudAgentDisconnect();
                     connected = 0;
                     audio_extradata_send = 0;
                     video_extradata_send = 0;
+                    sec_video_extradata_send = 0;
                     releaseDataPacket((void *) p_packet);
                     p_packet = NULL;
                     usleep(DRetryIntervalUS);
@@ -1167,10 +1378,10 @@ void CAmbaCloudAgent::uploadThread(void *param)
                 if (DUnlikely(sync_video)) {
 #ifdef D_PRINT_AVSYNC
                     if (mDebugPrintPTSSeqNum) {
-                        printf("[sync video]: (%d, %lld)\n", (TU32)seq_num, cur_pts - mBeginTimeStamp);
+                        printf("[sync video]: (%d, %lld)\n", (TU32)seq_num, cur_pts);
                     }
 #endif
-                    mpCloudClientAgentV2->VideoSync((TTime)cur_pts - mBeginTimeStamp, seq_num);
+                    mpCloudClientAgentV2->VideoSync((TTime)cur_pts, seq_num);
                 }
             }
             discard_non_idr = 0;
@@ -1181,15 +1392,31 @@ void CAmbaCloudAgent::uploadThread(void *param)
             if (!audio_extradata_send) {
                 err = mpCloudClientAgentV2->SetupAudioParams(mAudioFormat, mAudioChannelNumber, mAudioSampleFrequency, mAudioBitrate, mpAudioExtraData, (TU16)mAudioExtraDataSize);
                 if (DUnlikely(EECode_OK != err)) {
-                    LOG_ERROR("CAmbaCloudAgent::uploadThread, setAudioParams() failed, err = %d, %s\n", err, gfGetErrorCodeString(err));
+                    LOG_ERROR("setAudioParams() failed, err = %d, %s\n", err, gfGetErrorCodeString(err));
                     cloudAgentDisconnect();
                     connected = 0;
                     audio_extradata_send = 0;
                     video_extradata_send = 0;
+                    sec_video_extradata_send = 0;
                     releaseDataPacket((void *) p_packet);
                     p_packet = NULL;
                     usleep(DRetryIntervalUS);
                     continue;
+                }
+                if (mbEnableSecondStream && mbSecondStreamAgentConnected) {
+                    err = mpCloudClientAgentV2SecStream->SetupAudioParams(mAudioFormat, mAudioChannelNumber, mAudioSampleFrequency, mAudioBitrate, mpAudioExtraData, (TU16)mAudioExtraDataSize);
+                    if (DUnlikely(EECode_OK != err)) {
+                        LOG_ERROR("setAudioParams() failed, err = %d, %s\n", err, gfGetErrorCodeString(err));
+                        cloudAgentDisconnect();
+                        connected = 0;
+                        audio_extradata_send = 0;
+                        video_extradata_send = 0;
+                        sec_video_extradata_send = 0;
+                        releaseDataPacket((void *) p_packet);
+                        p_packet = NULL;
+                        usleep(DRetryIntervalUS);
+                        continue;
+                    }
                 }
                 audio_extradata_send = 1;
             }
@@ -1202,31 +1429,202 @@ void CAmbaCloudAgent::uploadThread(void *param)
 
 #ifdef D_PRINT_AVSYNC
             if (mDebugPrintPTSSeqNum) {
-                printf("    upload aac(%d, %lld)\n", (TU32)seq_num, cur_pts - mBeginTimeStamp);
+                printf("    upload aac(%d, %lld)\n", (TU32)seq_num, cur_pts);
             }
 #endif
 
             if (DUnlikely(!mbAudioUploadingStarted)) {
                 mbAudioUploadingStarted = 1;
-                LOG_NOTICE("[pts]: audio upload begin pts %lld, cur %lld, begin offset %lld\n", cur_pts - mBeginTimeStamp, cur_pts, mBeginTimeStamp);
-                mpCloudClientAgentV2->AudioSync((TTime)cur_pts - mBeginTimeStamp, seq_num);
+                LOG_NOTICE("[pts]: audio upload begin pts %lld\n", cur_pts);
+                mpCloudClientAgentV2->AudioSync((TTime)cur_pts, seq_num);
+
+                if (mbEnableSecondStream && mbEnableSecondStreamAudio && mbSecondStreamAgentConnected) {
+                    mpCloudClientAgentV2SecStream->AudioSync((TTime)cur_pts, seq_num);
+                }
 
                 err = uploadAACstream(pdata, data_size, seq_num);
                 if (DUnlikely(EECode_OK != err)) {
-                    LOG_ERROR("CAmbaCloudAgent::uploadThread, uploadAACstream(%d) failed, err=%d, %s\n", data_size, err, gfGetErrorCodeString(err));
+                    LOG_ERROR("uploadAACstream(%d) failed, err=%d, %s\n", data_size, err, gfGetErrorCodeString(err));
                     cloudAgentDisconnect();
                     connected = 0;
                     audio_extradata_send = 0;
                     video_extradata_send = 0;
+                    sec_video_extradata_send = 0;
+                    releaseDataPacket((void *) p_packet);
+                    p_packet = NULL;
+                    usleep(DRetryIntervalUS);
+                    continue;
+                }
+                if (mbEnableSecondStream && mbEnableSecondStreamAudio && mbSecondStreamAgentConnected) {
+                    err = uploadAACstreamSecondStream(pdata, data_size, seq_num);
+                    if (DUnlikely(EECode_OK != err)) {
+                        LOG_ERROR("uploadAACstreamSecondStream(%d) failed, err=%d, %s\n", data_size, err, gfGetErrorCodeString(err));
+                        cloudAgentDisconnect();
+                        connected = 0;
+                        audio_extradata_send = 0;
+                        video_extradata_send = 0;
+                        sec_video_extradata_send = 0;
+                        releaseDataPacket((void *) p_packet);
+                        p_packet = NULL;
+                        usleep(DRetryIntervalUS);
+                        continue;
+                    }
+                }
+            } else {
+                err = uploadAACstream(pdata, data_size, seq_num);
+                if (DUnlikely(EECode_OK != err)) {
+                    LOG_ERROR("uploadAACstream(%d) failed, err=%d, %s\n", data_size, err, gfGetErrorCodeString(err));
+                    cloudAgentDisconnect();
+                    connected = 0;
+                    audio_extradata_send = 0;
+                    video_extradata_send = 0;
+                    sec_video_extradata_send = 0;
+                    releaseDataPacket((void *) p_packet);
+                    p_packet = NULL;
+                    usleep(DRetryIntervalUS);
+                    continue;
+                }
+
+                if (mbEnableSecondStream && mbEnableSecondStreamAudio && mbSecondStreamAgentConnected) {
+                    err = uploadAACstreamSecondStream(pdata, data_size, seq_num);
+                    if (DUnlikely(EECode_OK != err)) {
+                        LOG_ERROR("uploadAACstreamSecondStream(%d) failed, err=%d, %s\n", data_size, err, gfGetErrorCodeString(err));
+                        cloudAgentDisconnect();
+                        connected = 0;
+                        audio_extradata_send = 0;
+                        video_extradata_send = 0;
+                        sec_video_extradata_send = 0;
+                        releaseDataPacket((void *) p_packet);
+                        p_packet = NULL;
+                        usleep(DRetryIntervalUS);
+                        continue;
+                    }
+                }
+
+                if (DUnlikely(DClientNeedSync(seq_num))) {
+#ifdef D_PRINT_AVSYNC
+                    if (mDebugPrintPTSSeqNum) {
+                        printf("[sync audio]: (%d, %lld)\n", (TU32)seq_num, cur_pts);
+                    }
+#endif
+                    mpCloudClientAgentV2->AudioSync((TTime)cur_pts, seq_num);
+                    if (mbEnableSecondStream && mbEnableSecondStreamAudio && mbSecondStreamAgentConnected) {
+                        mpCloudClientAgentV2SecStream->AudioSync((TTime)cur_pts, seq_num);
+                    }
+                }
+            }
+
+            releaseDataPacket((void *) p_packet);
+            p_packet = NULL;
+        } else if (queue == mpDeviceSecondVideoDataQueue) {
+            pdata = p_packet->data_ptr;
+            skip_size = __skip_delimter_size(pdata);
+            pdata += skip_size;
+            data_size = p_packet->data_size - skip_size;
+
+            extra_flag = 0;
+            sync_video = 0;
+            if (DUnlikely(AM_EXPORT_VIDEO_FRAME_TYPE_IDR == p_packet->frame_type)) {
+                extra_flag |= DSACPHeaderFlagBit_PacketKeyFrameIndicator;
+                if (DUnlikely(!video_extradata_send)) {
+                    if ((!mpSecondVideoExtraData) || (!mSecondVideoExtraDataSize)) {
+                        TU8 *p_extradata = NULL;
+                        TU32 extradata_size = 0;
+                        err = gfGetH264Extradata(pdata, data_size, p_extradata, extradata_size);
+                        if (DUnlikely(EECode_OK != err)) {
+                            LOG_FATAL("can not find extra data, corrupted h264 data?\n");
+                            gfPrintMemory(pdata, 64);
+                            releaseDataPacket((void *) p_packet);
+                            p_packet = NULL;
+                            continue;
+                        }
+                        mSecondVideoExtraDataSize = extradata_size;
+                        mpSecondVideoExtraData = (TU8 *) DDBG_MALLOC(mSecondVideoExtraDataSize + 16, "CVED");
+                        if (DUnlikely(!mpSecondVideoExtraData)) {
+                            LOG_FATAL("no memory, request size %ld\n", (mSecondVideoExtraDataSize + 16));
+                            releaseDataPacket((void *) p_packet);
+                            p_packet = NULL;
+                            continue;
+                        }
+                        memcpy(mpSecondVideoExtraData, p_extradata, mSecondVideoExtraDataSize);
+                    }
+
+                    LOG_NOTICE("video extra size (second) %d\n", (TU32)mSecondVideoExtraDataSize);
+                    gfPrintMemory(mpSecondVideoExtraData, (TU32)mSecondVideoExtraDataSize);
+
+                    err = mpCloudClientAgentV2SecStream->SetupVideoParams(mSecondVideoFormat, ((mSecondVideoFramerateDen) << 8) | (mSecondVideoFramerate & 0xff), mSecondVideoResWidth, mSecondVideoResHeight, mSecondVideoBitrate, mpSecondVideoExtraData, (TU16)mSecondVideoExtraDataSize, DBuildGOP(mSecondVideoGOPM, mSecondVideoGOPN, mSecondVideoGOPIDRInterval));
+                    if (DUnlikely(EECode_OK != err)) {
+                        LOG_ERROR("setVideoParams() failed, err = %d, %s\n", err, gfGetErrorCodeString(err));
+                        cloudAgentDisconnect();
+                        connected = 0;
+                        audio_extradata_send = 0;
+                        video_extradata_send = 0;
+                        sec_video_extradata_send = 0;
+                        releaseDataPacket((void *) p_packet);
+                        p_packet = NULL;
+                        usleep(DRetryIntervalUS);
+                        continue;
+                    }
+                    sec_video_extradata_send = 1;
+                }
+                sec_kr_count ++;
+                if (DUnlikely(!(sec_kr_count & 0xf))) {
+                    sec_sync_video = 1;
+                }
+            } else if (DUnlikely(sec_discard_non_idr)) {
+                LOG_WARN("skip non-idr data, type %d\n", p_packet->frame_type);
+                releaseDataPacket((void *) p_packet);
+                p_packet = NULL;
+                continue;
+            }
+
+            if (((0x01 == pdata[2]) && (0x07 == (0x1f & pdata[3]))) || ((0x01 == pdata[3]) && (0x07 == (0x1f & pdata[4])))) {
+                TU8 nal_type = 0;
+                TU8 *ptmp = gfNALUFindFirstAVCSliceHeaderType(pdata, data_size, nal_type);
+                if (ptmp) {
+                    if ((nal_type & 0x1f) != 0x05) {
+                        LOG_WARN("skip sps pps before non-IDR frame\n");
+                        data_size -= (TU32)(ptmp - pdata);
+                        pdata = ptmp;
+                        extra_flag = 0;
+                    } else {
+                        extra_flag |= DSACPHeaderFlagBit_PacketExtraDataIndicator;
+                    }
+                } else {
+                    LOG_FATAL("data corruption\n");
+                }
+            }
+
+            TU64 seq_num = p_packet->seq_num;
+            TU64 cur_pts = p_packet->pts;
+
+#ifdef D_PRINT_AVSYNC
+            if (mDebugPrintPTSSeqNum) {
+                printf("    upload h264(%d, %lld)\n", (TU32)seq_num, cur_pts);
+            }
+#endif
+
+            if (DUnlikely(!mbSecondstreamVideoUploadingStarted)) {
+                LOG_NOTICE("[pts]: video (second) upload begin pts %lld\n", cur_pts);
+                mpCloudClientAgentV2SecStream->VideoSync((TTime)cur_pts, seq_num);
+                mbSecondstreamVideoUploadingStarted = 1;
+                err = uploadH264streamSecondStream(pdata, data_size, (TU32)seq_num, extra_flag);
+                if (DUnlikely(EECode_OK != err)) {
+                    LOG_ERROR("uploadH264streamSecondStream() failed, err = %d, %s\n", err, gfGetErrorCodeString(err));
+                    cloudAgentDisconnect();
+                    connected = 0;
+                    audio_extradata_send = 0;
+                    video_extradata_send = 0;
+                    sec_video_extradata_send = 0;
                     releaseDataPacket((void *) p_packet);
                     p_packet = NULL;
                     usleep(DRetryIntervalUS);
                     continue;
                 }
             } else {
-                err = uploadAACstream(pdata, data_size, seq_num);
+                err = uploadH264streamSecondStream(pdata, data_size, (TU32)seq_num, extra_flag);
                 if (DUnlikely(EECode_OK != err)) {
-                    LOG_ERROR("CAmbaCloudAgent::uploadThread, uploadAACstream(%d) failed, err=%d, %s\n", data_size, err, gfGetErrorCodeString(err));
+                    LOG_ERROR("uploadH264streamSecondStream() failed, err = %d, %s\n", err, gfGetErrorCodeString(err));
                     cloudAgentDisconnect();
                     connected = 0;
                     audio_extradata_send = 0;
@@ -1236,16 +1634,16 @@ void CAmbaCloudAgent::uploadThread(void *param)
                     usleep(DRetryIntervalUS);
                     continue;
                 }
-                if (DUnlikely(DClientNeedSync(seq_num))) {
+                if (DUnlikely(sec_sync_video)) {
 #ifdef D_PRINT_AVSYNC
                     if (mDebugPrintPTSSeqNum) {
-                        printf("[sync audio]: (%d, %lld)\n", (TU32)seq_num, cur_pts - mBeginTimeStamp);
+                        printf("[sync video, sec]: (%d, %lld)\n", (TU32)seq_num, cur_pts);
                     }
 #endif
-                    mpCloudClientAgentV2->AudioSync((TTime)cur_pts - mBeginTimeStamp, seq_num);
+                    mpCloudClientAgentV2SecStream->VideoSync((TTime)cur_pts, seq_num);
                 }
             }
-
+            sec_discard_non_idr = 0;
             releaseDataPacket((void *) p_packet);
             p_packet = NULL;
         } else {
@@ -1378,6 +1776,15 @@ EECode CAmbaCloudAgent::createCloudAgent()
             return EECode_NoMemory;
         }
         mpCloudClientAgentV2->SetHardwareAuthenticateCallback(__clientAgentAuthenticateCallBack);
+
+        if (mbEnableSecondStream) {
+            mpCloudClientAgentV2SecStream = gfCreateCloudClientAgentV2(EProtocolType_SACP);
+            if (DUnlikely(!mpCloudClientAgentV2SecStream)) {
+                LOG_FATAL("gfCreateCloudClientAgentV2() fail\n");
+                return EECode_NoMemory;
+            }
+            mpCloudClientAgentV2SecStream->SetHardwareAuthenticateCallback(__clientAgentAuthenticateCallBack);
+        }
     } else {
         LOG_WARN("already created\n");
     }
@@ -1388,22 +1795,44 @@ EECode CAmbaCloudAgent::cloudAgentConnectServer()
 {
     if (DLikely(mpCloudClientAgentV2)) {
         EECode err = EECode_OK;
+        TU32 need_send_discontinous_indicator = 0;
+        if (!mbApplicationStarted) {
+            need_send_discontinous_indicator = 1;
+        }
         err = mpCloudClientAgentV2->ConnectToServer(mpCloudServerUrl, mCloudServerPort, mDeviceAccountName, mDeviceDynamicPassword);
         if (EECode_OK == err) {
-            if (DUnlikely(!mbApplicationStarted)) {
+            if (DUnlikely(need_send_discontinous_indicator)) {
                 err = mpCloudClientAgentV2->DiscontiousIndicator();
-                if (DLikely(EECode_OK == err)) {
-                    mbApplicationStarted = 1;
-                    return EECode_OK;
+                if (DLikely(EECode_OK != err)) {
+                    LOG_ERROR("DiscontiousIndicator fail! ret %d, %s\n", err, gfGetErrorCodeString(err));
+                    return err;
                 }
-                LOG_ERROR("DiscontiousIndicator fail! ret %d, %s\n", err, gfGetErrorCodeString(err));
-                return err;
             }
-            return EECode_OK;
         } else {
             LOG_WARN("connect data server(%s, %d) fail, name %s, dynamic password %s, ret %d %s\n", mpCloudServerUrl, mCloudServerPort, mDeviceAccountName, mDeviceDynamicPassword, err, gfGetErrorCodeString(err));
             return err;
         }
+
+        if (mbEnableSecondStream && mpCloudClientAgentV2SecStream) {
+            TChar second_stream_name[DMAX_ACCOUNT_NAME_LENGTH_EX] = {0};
+            snprintf(second_stream_name, sizeof(second_stream_name), "%s_sec", mDeviceAccountName);
+
+            err = mpCloudClientAgentV2SecStream->ConnectToServer(mpCloudServerUrl, mCloudServerPort, second_stream_name, mDeviceDynamicPassword);
+            if (EECode_OK == err) {
+                if (DUnlikely(need_send_discontinous_indicator)) {
+                    err = mpCloudClientAgentV2SecStream->DiscontiousIndicator();
+                    if (DLikely(EECode_OK != err)) {
+                        LOG_ERROR("DiscontiousIndicator fail! ret %d, %s\n", err, gfGetErrorCodeString(err));
+                        return err;
+                    }
+                }
+                mbSecondStreamAgentConnected = 1;
+            } else {
+                LOG_WARN("connect data server(%s, %d) fail, name %s, dynamic password %s, ret %d %s\n", mpCloudServerUrl, mCloudServerPort, second_stream_name, mDeviceDynamicPassword, err, gfGetErrorCodeString(err));
+                return err;
+            }
+        }
+        mbApplicationStarted = 1;
     } else {
         LOG_FATAL("NULL mpCloudClientAgentV2\n");
         return EECode_InternalLogicalBug;
@@ -1417,6 +1846,15 @@ void CAmbaCloudAgent::cloudAgentDisconnect()
         mpCloudClientAgentV2->DisconnectToServer();
     } else {
         LOG_FATAL("NULL mpCloudClientAgentV2\n");
+    }
+
+    if (mbEnableSecondStream) {
+        if (DLikely(mpCloudClientAgentV2SecStream)) {
+            mpCloudClientAgentV2SecStream->DisconnectToServer();
+        } else {
+            LOG_FATAL("NULL mpCloudClientAgentV2SecStream\n");
+        }
+        mbSecondStreamAgentConnected = 0;
     }
 }
 
@@ -1433,7 +1871,6 @@ EECode CAmbaCloudAgent::uploadH264stream(TU8 *pdata, TMemSize data_size, TU32 se
             return uploadEncryptedH264stream(pdata, data_size, seq_num, keyframe);
         }
 #endif
-        //LOG_PRINTF("upload h264, size %d, seq %d\n", data_size, seq_num);
         if (DUnlikely(keyframe)) {
             return mpCloudClientAgentV2->Uploading(pdata, data_size, ESACPDataChannelSubType_H264_NALU, seq_num, DSACPHeaderFlagBit_PacketKeyFrameIndicator);
         } else {
@@ -1445,10 +1882,33 @@ EECode CAmbaCloudAgent::uploadH264stream(TU8 *pdata, TMemSize data_size, TU32 se
     }
 }
 
-#ifdef D_ENABLE_ENCRYPTION
-EECode CAmbaCloudAgent::encryptData(TU8 *pdata, TMemSize data_size)
+EECode CAmbaCloudAgent::uploadH264streamSecondStream(TU8 *pdata, TMemSize data_size, TU32 seq_num, TU32 keyframe)
 {
-    if (DLikely(mpDataCypher)) {
+    if (DLikely(mpCloudClientAgentV2SecStream)) {
+#ifdef D_ENABLE_ENCRYPTION
+        if (keyframe) {
+            mbStartedVideoEncryptionSecondStream = mbEnableVideoEncryption;
+        }
+
+        if (mpDataCypher && mbStartedVideoEncryptionSecondStream) {
+            return uploadSecondEncryptedH264stream(pdata, data_size, seq_num, keyframe);
+        }
+#endif
+        if (DUnlikely(keyframe)) {
+            return mpCloudClientAgentV2SecStream->Uploading(pdata, data_size, ESACPDataChannelSubType_H264_NALU, seq_num, DSACPHeaderFlagBit_PacketKeyFrameIndicator);
+        } else {
+            return mpCloudClientAgentV2SecStream->Uploading(pdata, data_size, ESACPDataChannelSubType_H264_NALU, seq_num, 0);
+        }
+    } else {
+        LOG_FATAL("NULL mpCloudClientAgentV2SecStream\n");
+        return EECode_InternalLogicalBug;
+    }
+}
+
+#ifdef D_ENABLE_ENCRYPTION
+EECode CAmbaCloudAgent::encryptData(s_symmetric_cypher *cypher, TU8 *pdata, TMemSize data_size)
+{
+    if (DLikely(cypher)) {
         int outsize = 0;
         int processed_size = 0;
         int pre_size = 0;
@@ -1459,7 +1919,7 @@ EECode CAmbaCloudAgent::encryptData(TU8 *pdata, TMemSize data_size)
         unsigned char *ptmp = gfNALUFindFirstAVCSliceHeader(pdata, data_size);
         if (ptmp) {
             pre_size = (int)(ptmp + 8 - pdata);
-            if ((pre_size + mpDataCypher->block_length_in_bytes) <= data_size) {
+            if ((pre_size + cypher->block_length_in_bytes) <= data_size) {
             } else {
                 return EECode_OK_SKIP;
             }
@@ -1474,13 +1934,10 @@ EECode CAmbaCloudAgent::encryptData(TU8 *pdata, TMemSize data_size)
         p_in += pre_size;
 
         remain_size = data_size - pre_size;
-        remain_size &= mpDataCypher->block_length_mask;
-
-        //LOG_PRINTF("[encryption]: datasize %d, pre_size %d, handle size %d\n", data_size, pre_size, remain_size);
-        //gfPrintMemory(pdata, pre_size);
+        remain_size &= cypher->block_length_mask;
 
         while (remain_size >= 1024) {
-            outsize = symmetric_cryption(mpDataCypher, p_in, 1024, p_out, 1);
+            outsize = symmetric_cryption(cypher, p_in, 1024, p_out, 1);
             if (outsize != 1024) {
                 LOG_ERROR("why in out size not match\n");
                 break;
@@ -1492,7 +1949,7 @@ EECode CAmbaCloudAgent::encryptData(TU8 *pdata, TMemSize data_size)
         }
 
         if (remain_size) {
-            outsize = symmetric_cryption(mpDataCypher, p_in, remain_size, p_out, 1);
+            outsize = symmetric_cryption(cypher, p_in, remain_size, p_out, 1);
             if (outsize != remain_size) {
                 LOG_ERROR("why in out size not match\n");
             }
@@ -1506,57 +1963,61 @@ EECode CAmbaCloudAgent::encryptData(TU8 *pdata, TMemSize data_size)
         }
 
     } else {
-        LOG_FATAL("NULL mpDataCypher\n");
+        LOG_FATAL("NULL cypher\n");
         return EECode_OK_SKIP;
     }
 
     return EECode_OK;
 }
 
-void CAmbaCloudAgent::resetCypher()
+int CAmbaCloudAgent::resetCypher(s_symmetric_cypher *cypher)
 {
-    if (DLikely(mpDataCypher)) {
+    if (DLikely(cypher)) {
         int ret = 0;
 
-        //LOG_NOTICE("[reset cypher], state %d\n", mpDataCypher->state);
-        if (mpDataCypher->state) {
-            end_symmetric_cryption(mpDataCypher);
+        //LOG_NOTICE("[reset cypher], state %d\n", cypher->state);
+        if (cypher->state) {
+            end_symmetric_cryption(cypher);
         }
 
-        ret = set_symmetric_key_iv(mpDataCypher, mDataCypherKey, mDataCypherIV);
+        ret = set_symmetric_key_iv(cypher, mDataCypherKey, mDataCypherIV);
         if (ret) {
-            destroy_symmetric_cypher(mpDataCypher);
-            mpDataCypher = NULL;
+            destroy_symmetric_cypher(cypher);
             LOG_FATAL("set_symmetric_key_iv fail, disable encryption\n");
+            return (-1);
         }
 
-        ret = begin_symmetric_cryption(mpDataCypher, 1);
+        ret = begin_symmetric_cryption(cypher, 1);
         if (ret) {
-            destroy_symmetric_cypher(mpDataCypher);
-            mpDataCypher = NULL;
+            destroy_symmetric_cypher(cypher);
             LOG_FATAL("begin_symmetric_cryption fail, disable encryption\n");
+            return (-1);
         }
     } else {
-        LOG_WARN("NULL mpDataCypher\n");
+        LOG_WARN("NULL cypher\n");
     }
+    return 0;
 }
 
 EECode CAmbaCloudAgent::uploadEncryptedH264stream(TU8 *pdata, TMemSize data_size, TU32 seq_num, TU32 keyframe)
 {
     if (DLikely(mpCloudClientAgentV2)) {
         if (DUnlikely(keyframe)) {
-            resetCypher();
+            int ret = resetCypher(mpDataCypher);
+            if (ret) {
+                mpDataCypher = NULL;
+            }
         }
         if (DUnlikely(keyframe)) {
             if (mpDataCypher) {
-                if (EECode_OK == encryptData(pdata, data_size)) {
+                if (EECode_OK == encryptData(mpDataCypher, pdata, data_size)) {
                     return mpCloudClientAgentV2->Uploading(mpCypherOutputBuffer, data_size, ESACPDataChannelSubType_H264_NALU, seq_num, DSACPHeaderFlagBit_PacketKeyFrameIndicator);
                 }
             }
             return mpCloudClientAgentV2->Uploading(pdata, data_size, ESACPDataChannelSubType_H264_NALU, seq_num, DSACPHeaderFlagBit_PacketKeyFrameIndicator);
         } else {
             if (mpDataCypher) {
-                if (EECode_OK == encryptData(pdata, data_size)) {
+                if (EECode_OK == encryptData(mpDataCypher, pdata, data_size)) {
                     return mpCloudClientAgentV2->Uploading(mpCypherOutputBuffer, data_size, ESACPDataChannelSubType_H264_NALU, seq_num, 0);
                 }
             }
@@ -1564,6 +2025,36 @@ EECode CAmbaCloudAgent::uploadEncryptedH264stream(TU8 *pdata, TMemSize data_size
         }
     } else {
         LOG_FATAL("NULL mpCloudClientAgentV2\n");
+        return EECode_InternalLogicalBug;
+    }
+}
+
+EECode CAmbaCloudAgent::uploadSecondEncryptedH264stream(TU8 *pdata, TMemSize data_size, TU32 seq_num, TU32 keyframe)
+{
+    if (DLikely(mpCloudClientAgentV2SecStream)) {
+        if (DUnlikely(keyframe)) {
+            int ret = resetCypher(mpDataCypherSecondStream);
+            if (ret) {
+                mpDataCypherSecondStream = NULL;
+            }
+        }
+        if (DUnlikely(keyframe)) {
+            if (mpDataCypherSecondStream) {
+                if (EECode_OK == encryptData(mpDataCypherSecondStream, pdata, data_size)) {
+                    return mpCloudClientAgentV2SecStream->Uploading(mpCypherOutputBuffer, data_size, ESACPDataChannelSubType_H264_NALU, seq_num, DSACPHeaderFlagBit_PacketKeyFrameIndicator);
+                }
+            }
+            return mpCloudClientAgentV2SecStream->Uploading(pdata, data_size, ESACPDataChannelSubType_H264_NALU, seq_num, DSACPHeaderFlagBit_PacketKeyFrameIndicator);
+        } else {
+            if (mpDataCypher) {
+                if (EECode_OK == encryptData(mpDataCypherSecondStream, pdata, data_size)) {
+                    return mpCloudClientAgentV2SecStream->Uploading(mpCypherOutputBuffer, data_size, ESACPDataChannelSubType_H264_NALU, seq_num, 0);
+                }
+            }
+            return mpCloudClientAgentV2SecStream->Uploading(pdata, data_size, ESACPDataChannelSubType_H264_NALU, seq_num, 0);
+        }
+    } else {
+        LOG_FATAL("NULL mpCloudClientAgentV2SecStream\n");
         return EECode_InternalLogicalBug;
     }
 }
@@ -1575,6 +2066,16 @@ EECode CAmbaCloudAgent::uploadAACstream(TU8 *pdata, TMemSize data_size, TU32 seq
         return mpCloudClientAgentV2->Uploading(pdata, data_size, ESACPDataChannelSubType_AAC, seq_num, 0);
     } else {
         LOG_FATAL("NULL mpCloudClientAgentV2\n");
+        return EECode_InternalLogicalBug;
+    }
+}
+
+EECode CAmbaCloudAgent::uploadAACstreamSecondStream(TU8 *pdata, TMemSize data_size, TU32 seq_num)
+{
+    if (DLikely(mpCloudClientAgentV2SecStream)) {
+        return mpCloudClientAgentV2SecStream->Uploading(pdata, data_size, ESACPDataChannelSubType_AAC, seq_num, 0);
+    } else {
+        LOG_FATAL("NULL mpCloudClientAgentV2SecStream\n");
         return EECode_InternalLogicalBug;
     }
 }

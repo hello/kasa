@@ -4,12 +4,29 @@
 ## History:
 ##    2012/05/30 - [Cao Rongrong] Created file
 ##
-## Copyright (C) 2012-2016, Ambarella, Inc.
+## Copyright (c) 2015 Ambarella, Inc.
 ##
-## All rights reserved. No Part of this file may be reproduced, stored
-## in a retrieval system, or transmitted, in any form, or by any means,
-## electronic, mechanical, photocopying, recording, or otherwise,
-## without the prior consent of Ambarella, Inc.
+## This file and its contents ("Software") are protected by intellectual
+## property rights including, without limitation, U.S. and/or foreign
+## copyrights. This Software is also the confidential and proprietary
+## information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+## disclose, distribute, modify, or otherwise prepare derivative works of this
+## Software or any portion thereof except pursuant to a signed license agreement
+## or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+## In the absence of such an agreement, you agree to promptly notify and return
+## this Software to Ambarella, Inc.
+##
+## THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+## INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+## MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+## IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+## INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+## (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+## LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+## INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+## CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+## ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+## POSSIBILITY OF SUCH DAMAGE.
 ##
 
 ifeq ($(CONFIG_AMBARELLA_GDB_SUPPORT), y)
@@ -21,12 +38,13 @@ __gdb_GLIBC_VERSION__ := $(shell find $(SYS_LIB_DIR) -name libc-*.so | \
 				sed 's/\([0-9*]\)\.\([0-9]*\)\.*[0-9]*/\1\.\2/g')
 
 __gdb_VERSION := $(if $(__gdb_GLIBC_VERSION__), $(__gdb_GLIBC_VERSION__), 2.10)
-GDB_DIR := $(strip $(if $(CONFIG_CPU_ARM1136JS), $(GDB_DIR_ARMV6), $(if $(CONFIG_CPU_CORTEXA9), $(GDB_DIR_ARMV7_SF), $(if $(CONFIG_CPU_CORTEXA9_HF), $(GDB_DIR_ARMV7), ))))
+GDB_DIR := $(strip $(if $(CONFIG_CPU_ARM1136JS), $(GDB_DIR_ARMV6), $(if $(CONFIG_CPU_CORTEXA9), $(GDB_DIR_ARMV7_SF), $(if $(CONFIG_CPU_CORTEXA9_HF), $(GDB_DIR_ARMV7), $(if $(CONFIG_CPU_CORTEXA53), $(GDB_DIR_AARCH64))))))
 
 prebuild_gdb: LOCAL_PATH:=$(call my-dir)
 prebuild_gdb:
 ifneq ($(GDB_DIR),)
 	@mkdir -p $(FAKEROOT_DIR)/usr/bin
+	@mkdir -p $(FAKEROOT_DIR)/root
 	@cp -dpRf $(GDB_DIR)/gdb $(FAKEROOT_DIR)/usr/bin
 	@echo add-auto-load-safe-path / > $(FAKEROOT_DIR)/root/.gdbinit
 else

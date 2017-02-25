@@ -4,14 +4,33 @@
  * History:
  *    2009/06/02 - [Zhenwu Xue] Initial revision
  *
- * Copyright (C) 2004-2009, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -27,7 +46,7 @@
 #include <plat/clk.h>
 #include <plat/ambevent.h>
 #include <plat/audio.h>
-#include <plat/service.h>
+#include <plat/iav_helper.h>
 
 #include "vout_pri.h"
 #include "ambhdmi.h"
@@ -38,7 +57,7 @@
 
 struct ambhdmi_sink {
         struct device			*dev;
-        u32		                regbase;
+        void __iomem	                *regbase;
         u32				irq;
         wait_queue_head_t		irq_waitqueue;
         u32				irq_pending;
@@ -61,42 +80,23 @@ struct ambhdmi_instance_info {
 };
 
 /* ========================================================================== */
-
-static struct ambhdmi_instance_info hdmi_instance = {
-        .name		= "HDMI",
-        .source_id	= AMBA_VOUT_SOURCE_STARTING_ID + 1,
-        .sink_type	= AMBA_VOUT_SINK_TYPE_HDMI,
-        .io_mem		= {
-                .start	= HDMI_BASE,
-                .end	= HDMI_BASE + 0x1000 - 1,
-                .flags	= IORESOURCE_MEM,
-        },
-        .irq		= {
-                .start	= HDMI_IRQ,
-                .end	= HDMI_IRQ,
-                .flags	= IORESOURCE_IRQ,
-        }
-};
-/* ========================================================================== */
 #include "ambhdmi_edid.c"
 #include "ambhdmi_hdmise.c"
 
 /* ========================================================================== */
 static void ambhdmi_unplug(struct __amba_vout_video_sink *pvideo_sink)
 {
-        int                     i;
-        u32                     regbase;
         struct  ambhdmi_sink    *phdmi_sink;
+        int                     i;
 
         phdmi_sink = (struct ambhdmi_sink *)pvideo_sink->pinfo;
-        regbase = phdmi_sink->regbase;
         pvideo_sink->hdmi_plug = AMBA_VOUT_SINK_REMOVED;
 
         for (i = 0; i < AMBA_HDMI_MODE_MAX; i++) {
                 pvideo_sink->hdmi_modes[i] = AMBA_VIDEO_MODE_MAX;
         }
         pvideo_sink->hdmi_native_mode = AMBA_VIDEO_MODE_MAX;
-        amba_writel(regbase + HDMI_CLOCK_GATED_OFFSET, 0);
+        writel_relaxed(0, phdmi_sink->regbase + HDMI_CLOCK_GATED_OFFSET);
 
         amba_vout_video_source_cmd(pvideo_sink->source_id,
                                    AMBA_VIDEO_SOURCE_REPORT_SINK_EVENT,
@@ -106,27 +106,27 @@ static void ambhdmi_unplug(struct __amba_vout_video_sink *pvideo_sink)
 
 static void ambhdmi_plug(struct __amba_vout_video_sink *pvideo_sink)
 {
+	 void __iomem		*reg;
         int                     i, j, rval;
-        u32                     regbase, reg, val;
+        u32                     val;
         struct ambhdmi_sink     *phdmi_sink;
         amba_hdmi_edid_t        *pedid;
 
         phdmi_sink      = (struct ambhdmi_sink *)pvideo_sink->pinfo;
         pedid           = &phdmi_sink->edid;
-        regbase         = phdmi_sink->regbase;
 
         /* Enable CEC Clock */
-        reg     = regbase + HDMI_CLOCK_GATED_OFFSET;
-        val     = amba_readl(reg);
+        reg     = phdmi_sink->regbase + HDMI_CLOCK_GATED_OFFSET;
+        val     = readl_relaxed(reg);
         val     |= (HDMI_CLOCK_GATED_CEC_CLOCK_EN |
                     HDMI_CLOCK_GATED_HDCP_CLOCK_EN);
-        amba_writel(reg, val);
+        writel_relaxed(val, reg);
 
         /* Read and Parse EDID */
         rval = ambhdmi_edid_read_and_parse(phdmi_sink);
         if(rval) {
                 vout_notice("No EDID found!\n");
-                amba_writel(regbase + HDMI_CLOCK_GATED_OFFSET, 0);
+                writel_relaxed(0, phdmi_sink->regbase + HDMI_CLOCK_GATED_OFFSET);
                 return;
         }
 
@@ -145,11 +145,6 @@ static void ambhdmi_plug(struct __amba_vout_video_sink *pvideo_sink)
                         CEA_Timings[pedid->cea_timings.supported_cea_timings[i]].vmode;
         }
 
-        /* hdmi_native_mode */
-        if (pedid->native_timings.number) {
-                pedid->native_timings.supported_native_timings[0].vmode =
-                        AMBA_VIDEO_MODE_HDMI_NATIVE;
-        }
         pvideo_sink->hdmi_native_mode =
                 pedid->native_timings.supported_native_timings[0].vmode;
         pvideo_sink->hdmi_native_width =
@@ -165,42 +160,42 @@ static void ambhdmi_plug(struct __amba_vout_video_sink *pvideo_sink)
         ambhdmi_edid_print(pedid);
 
         /* Enable CEC Rx Interrupt */
-        reg = regbase + HDMI_INT_ENABLE_OFFSET;
-        val = amba_readl(reg);
+        reg = phdmi_sink->regbase + HDMI_INT_ENABLE_OFFSET;
+        val = readl_relaxed(reg);
         val |= HDMI_INT_ENABLE_CEC_RX_INT_EN;
-        amba_writel(reg, val);
+        writel_relaxed(val, reg);
 
         /* If working previously, reenable hdmise clock */
-        reg = regbase + HDMI_OP_MODE_OFFSET;
-        val = amba_readl(reg);
+        reg = phdmi_sink->regbase + HDMI_OP_MODE_OFFSET;
+        val = readl_relaxed(reg);
         if (val & HDMI_OP_MODE_OP_EN) {
-                reg = regbase + HDMI_CLOCK_GATED_OFFSET;
-                val = amba_readl(reg);
+                reg = phdmi_sink->regbase + HDMI_CLOCK_GATED_OFFSET;
+                val = readl_relaxed(reg);
                 val |= HDMI_CLOCK_GATED_HDMISE_CLOCK_EN;
-                amba_writel(reg, val);
+                writel_relaxed(val, reg);
         }
 
         /* Switch between HDMI and DVI Mode */
-        reg = regbase + HDMI_OP_MODE_OFFSET;
-        val = amba_readl(reg);
+        reg = phdmi_sink->regbase + HDMI_OP_MODE_OFFSET;
+        val = readl_relaxed(reg);
         if (HDMI_OP_MODE_OP_MODE(val) == HDMI_OP_MODE_OP_MODE_HDMI &&
             phdmi_sink->edid.interface == DVI) {
                 val &= 0xfffffffe;
                 val |= HDMI_OP_MODE_OP_MODE_DVI;
-                amba_writel(reg, val);
+                writel_relaxed(val, reg);
         }
         if (HDMI_OP_MODE_OP_MODE(val) == HDMI_OP_MODE_OP_MODE_DVI &&
             phdmi_sink->edid.interface == HDMI) {
                 val &= 0xfffffffe;
                 val |= HDMI_OP_MODE_OP_MODE_HDMI;
-                amba_writel(reg, val);
+                writel_relaxed(val, reg);
         }
 }
 
 static int ambhdmi_task(void *arg)
 {
-        u32				regbase, reg, val;
-        u32				irq, status;
+	void __iomem			*regbase, *reg;
+        u32				val, irq, status;
         amba_hdmi_edid_t 		*pedid;
         char *				envp[2];
         struct __amba_vout_video_sink	*pvideo_sink;
@@ -221,7 +216,7 @@ static int ambhdmi_task(void *arg)
                 phdmi_sink->irq_pending = 0;
 
                 msleep(200);
-                status = amba_readl(regbase + HDMI_STS_OFFSET);
+                status = readl_relaxed(regbase + HDMI_STS_OFFSET);
 
                 /* Rx Sense Remove or HPD Low */
                 if ((status & AMBHDMI_PLUG_IN) != AMBHDMI_PLUG_IN) {
@@ -253,13 +248,13 @@ static int ambhdmi_task(void *arg)
                 /* CEC Rx */
                 if (status & HDMI_INT_STS_CEC_RX_INTERRUPT) {
                         reg = regbase + HDMI_INT_ENABLE_OFFSET;
-                        val = amba_readl(reg);
+                        val = readl_relaxed(reg);
                         if (val & HDMI_INT_ENABLE_CEC_RX_INT_EN) {
                                 ambhdmi_cec_receive_message(phdmi_sink);
                         }
                 }
 
-                amba_writel(regbase + HDMI_INT_STS_OFFSET, 0);
+                writel_relaxed(0, regbase + HDMI_INT_STS_OFFSET);
                 enable_irq(irq);
         }
 
@@ -269,7 +264,7 @@ static int ambhdmi_task(void *arg)
 #ifdef CONFIG_PROC_FS
 static int ambarella_hdmi_edid_proc_show(struct seq_file *m, void *v)
 {
-        int                     i, j, rval = 0;
+        int                     i, j;
         struct ambhdmi_sink     *phdmi_sink = m->private;
 
         /* Check HDMI sink */
@@ -279,12 +274,12 @@ static int ambarella_hdmi_edid_proc_show(struct seq_file *m, void *v)
         }
 
         if (phdmi_sink->video_sink.hdmi_plug == AMBA_VOUT_SINK_REMOVED) {
-                rval = seq_printf(m, "No HDMI Plugged In!\n");
-                return rval;
+                seq_printf(m, "No HDMI Plugged In!\n");
+                return 0;
         }
         if (!phdmi_sink->raw_edid.buf) {
-                rval = seq_printf(m, "No EDID Contained !\n");
-                return rval;
+                seq_printf(m, "No EDID Contained !\n");
+                return 0;
         }
 
         /* Base EDID */
@@ -316,7 +311,7 @@ static int ambarella_hdmi_edid_proc_show(struct seq_file *m, void *v)
                 }
         }
 
-        return rval;
+        return 0;
 }
 
 static int ambarella_hdmi_edid_proc_open(struct inode *inode,
@@ -375,30 +370,26 @@ static irqreturn_t ambhdmi_isr(int irq, void *dev_id)
 static int ambhdmi_hw_init(struct ambhdmi_sink *phdmi_sink)
 {
         int     rval = 0;
-        u32     regbase;
-
-        regbase = phdmi_sink->regbase;
 
         /* Power on HDMI 5V */
         /* Soft Reset HDMISE */
-        amba_writel(regbase + HDMI_HDMISE_SOFT_RESET_OFFSET,
-                    HDMI_HDMISE_SOFT_RESET);
-        amba_writel(regbase + HDMI_HDMISE_SOFT_RESET_OFFSET,
-                    ~HDMI_HDMISE_SOFT_RESET);
+        writel_relaxed(HDMI_HDMISE_SOFT_RESET,
+        	phdmi_sink->regbase + HDMI_HDMISE_SOFT_RESET_OFFSET);
+        writel_relaxed(~HDMI_HDMISE_SOFT_RESET,
+		phdmi_sink->regbase + HDMI_HDMISE_SOFT_RESET_OFFSET);
 
         /* Reset CEC */
-        amba_writel(regbase + CEC_CTRL_OFFSET, 0x1 << 31);
+        writel_relaxed(0x1 << 31, phdmi_sink->regbase + CEC_CTRL_OFFSET);
 
         /* Clock Gating */
-        amba_writel(regbase + HDMI_CLOCK_GATED_OFFSET, 0);
+        writel_relaxed(0, phdmi_sink->regbase + HDMI_CLOCK_GATED_OFFSET);
 
         /* Enable Hotplug detect and loss interrupt */
-        amba_writel(regbase + HDMI_INT_ENABLE_OFFSET,
-                    HDMI_INT_ENABLE_PHY_RX_SENSE_REMOVE_EN |
+        writel_relaxed(HDMI_INT_ENABLE_PHY_RX_SENSE_REMOVE_EN |
                     HDMI_INT_ENABLE_PHY_RX_SENSE_EN |
                     HDMI_INT_ENABLE_HOT_PLUG_LOSS_EN |
-                    HDMI_INT_ENABLE_HOT_PLUG_DETECT_EN
-                   );
+                    HDMI_INT_ENABLE_HOT_PLUG_DETECT_EN,
+                    phdmi_sink->regbase + HDMI_INT_ENABLE_OFFSET);
 
         return rval;
 }
@@ -412,7 +403,7 @@ static int ambhdmi_reset(struct __amba_vout_video_sink *psink, u32 *args)
 
         psink->pstate = psink->state;
         psink->state = AMBA_VOUT_SINK_STATE_IDLE;
-        amba_writel(phdmi_sink->regbase + HDMI_CLOCK_GATED_OFFSET, 0);
+        writel_relaxed(0, phdmi_sink->regbase + HDMI_CLOCK_GATED_OFFSET);
 
         return rval;
 }
@@ -526,7 +517,7 @@ static int ambhdmi_suspend(struct __amba_vout_video_sink *psink, u32 *args)
         psink->pstate = psink->state;
         psink->state = AMBA_VOUT_SINK_STATE_SUSPENDED;
         psink->hdmi_plug = AMBA_VOUT_SINK_REMOVED;
-        amba_writel(phdmi_sink->regbase + HDMI_CLOCK_GATED_OFFSET, 0);
+        writel_relaxed(0, phdmi_sink->regbase + HDMI_CLOCK_GATED_OFFSET);
 
         return rval;
 }
@@ -613,6 +604,10 @@ static int ambhdmi_docmd(struct __amba_vout_video_sink *psink,
         return rval;
 }
 
+#ifndef HDMI_IRQ
+#define HDMI_IRQ	-1
+#endif
+
 static int ambhdmi_add_video_sink(struct i2c_adapter *adapter,
                                   struct device *pdev)
 {
@@ -630,8 +625,12 @@ static int ambhdmi_add_video_sink(struct i2c_adapter *adapter,
 
         /* Fill HDMI INFO */
         phdmi_sink->dev = pdev;
-        phdmi_sink->regbase = hdmi_instance.io_mem.start;
-        phdmi_sink->irq = hdmi_instance.irq.start;
+
+	phdmi_sink->regbase = ioremap(HDMI_PHYS, 0x1000);
+	if (!phdmi_sink->regbase)
+		return -ENOMEM;
+
+        phdmi_sink->irq = HDMI_IRQ;
         phdmi_sink->irq_pending	= 0;
         phdmi_sink->killing_kthread = 0;
         phdmi_sink->ddc_adapter = adapter;
@@ -648,10 +647,9 @@ static int ambhdmi_add_video_sink(struct i2c_adapter *adapter,
 
         /* Add Sink and Register Audio Notifier */
         pvideo_sink = &phdmi_sink->video_sink;
-        pvideo_sink->source_id = hdmi_instance.source_id;
-        pvideo_sink->sink_type = hdmi_instance.sink_type;
-        strlcpy(pvideo_sink->name, hdmi_instance.name,
-                sizeof(pvideo_sink->name));
+        pvideo_sink->source_id = AMBA_VOUT_SOURCE_STARTING_ID + 1;
+        pvideo_sink->sink_type = AMBA_VOUT_SINK_TYPE_HDMI;
+        strlcpy(pvideo_sink->name, "HDMI", sizeof(pvideo_sink->name));
         pvideo_sink->state = AMBA_VOUT_SINK_STATE_IDLE;
         pvideo_sink->hdmi_plug = AMBA_VOUT_SINK_REMOVED;
         for (i = 0; i < AMBA_HDMI_MODE_MAX; i++) {
@@ -690,6 +688,7 @@ static int ambhdmi_del_video_sink(struct ambhdmi_sink *phdmi_sink)
                 vfree(phdmi_sink->raw_edid.buf);
         ambarella_audio_unregister_notifier(&phdmi_sink->audio_transition);
         rval = amba_vout_del_video_sink(&phdmi_sink->video_sink);
+	iounmap(phdmi_sink->regbase);
         vout_notice("%s module removed!\n", phdmi_sink->video_sink.name);
         kfree(phdmi_sink);
 

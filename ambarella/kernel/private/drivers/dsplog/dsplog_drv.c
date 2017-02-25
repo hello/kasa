@@ -4,17 +4,32 @@
  * History:
  * 	2013/09/30 - [Louis Sun] create new dsplog driver
  *
- * Copyright (C) 2012-2016, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
-//#include <amba_common.h>
-
-
 
 #include <config.h>
 
@@ -49,7 +64,7 @@
 #include <linux/mutex.h>
 #include <linux/completion.h>
 #include <linux/i2c.h>
-
+#include <iav_devnum.h>
 
 #include "iav_utils.h"
 
@@ -70,22 +85,19 @@ MODULE_LICENSE("Proprietary");
 
 amba_dsplog_controller_t    g_dsplog_controller;
 
-
 static int amba_dsplog_major = AMBA_DEV_MAJOR;
 static int amba_dsplog_minor = (AMBA_DEV_MINOR_PUBLIC_END + 9);
 static const char * amba_dsplog_name = "dsplog";
 static struct cdev amba_dsplog_cdev;
+int clean_dsplog_memory = 1; /* Set it into 0 in fastboot case */
+module_param(clean_dsplog_memory, int, 0644);
 
-
-
-
-static ssize_t amba_dsplog_read(struct file *filp, char __user *buffer, size_t count, loff_t *offp)
+static ssize_t amba_dsplog_read(struct file *filp,
+	char __user *buffer, size_t count, loff_t *offp)
 {
 	return dsplog_read(buffer, count);
 	return -1;
 }
-
-
 
 DEFINE_MUTEX(amba_dsplog_mutex);
 
@@ -99,44 +111,46 @@ void dsplog_unlock(void)
 	mutex_unlock(&amba_dsplog_mutex);
 }
 
-
 static long amba_dsplog_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	int rval;
+
 	dsplog_lock();
-      switch (cmd) {
-              case AMBA_IOC_DSPLOG_START_CAPUTRE:
-                rval = dsplog_start_cap();
-                break;
+	switch (cmd) {
+	case AMBA_IOC_DSPLOG_START_CAPUTRE:
+		rval = dsplog_start_cap();
+		break;
 
-             case AMBA_IOC_DSPLOG_STOP_CAPTURE:
-                rval = dsplog_stop_cap();
-                break;
+	case AMBA_IOC_DSPLOG_STOP_CAPTURE:
+		rval = dsplog_stop_cap();
+		break;
 
-            case AMBA_IOC_DSPLOG_SET_LOG_LEVEL:
-                rval = dsplog_set_level((int)arg);
-                break;
+	case AMBA_IOC_DSPLOG_SET_LOG_LEVEL:
+		rval = dsplog_set_level((int)arg);
+		break;
 
-            case AMBA_IOC_DSPLOG_GET_LOG_LEVEL:
-                rval = dsplog_get_level((int *) arg);
-                break;
+	case AMBA_IOC_DSPLOG_GET_LOG_LEVEL:
+		rval = dsplog_get_level((int *)arg);
+		break;
 
-            case AMBA_IOC_DSPLOG_PARSE_LOG:
-                rval = dsplog_parse((int)arg);
-                break;
+	case AMBA_IOC_DSPLOG_PARSE_LOG:
+		rval = dsplog_parse((int)arg);
+		break;
 
-		default:
-			rval = -ENOIOCTLCMD;
-			break;
+	default:
+		rval = -ENOIOCTLCMD;
+		break;
 	}
-
 	dsplog_unlock();
+
 	return rval;
 }
 
 static int amba_dsplog_open(struct inode *inode, struct file *filp)
 {
-	amba_dsplog_context_t *context = kzalloc(sizeof(amba_dsplog_context_t), GFP_KERNEL);
+	amba_dsplog_context_t *context;
+
+	context = kzalloc(sizeof(amba_dsplog_context_t), GFP_KERNEL);
 	if (context == NULL) {
 		return -ENOMEM;
 	}
@@ -153,6 +167,22 @@ static int amba_dsplog_release(struct inode *inode, struct file *filp)
 	kfree(filp->private_data);
 	return 0;
 }
+
+#ifdef CONFIG_PM
+int amba_dsplog_suspend(void)
+{
+	dsplog_suspend();
+	return 0;
+}
+EXPORT_SYMBOL(amba_dsplog_suspend);
+
+int amba_dsplog_resume(void)
+{
+	dsplog_resume();
+	return 0;
+}
+EXPORT_SYMBOL(amba_dsplog_resume);
+#endif
 
 static struct file_operations amba_dsplog_fops = {
 	.owner = THIS_MODULE,

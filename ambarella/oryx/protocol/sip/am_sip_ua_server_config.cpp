@@ -4,12 +4,29 @@
  * History:
  *   2015-1-28 - [Shiming Dong] created file
  *
- * Copyright (C) 2008-2015, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -67,6 +84,26 @@ SipUAServerConfig* AMSipUAServerConfig::get_config(const std::string &conf)
         NOTICE("\"sip_to_media_service_name\" is not specified, use default");
         m_sip_config->sip_to_media_service_name =
             "/run/oryx/sip-to-media-service.socket";
+      }
+
+      if (AM_LIKELY(sip["sip_media_rtp_client_name"].exists())) {
+        m_sip_config->sip_media_rtp_client_name =
+            sip["sip_media_rtp_client_name"].\
+            get<std::string>("/run/oryx/sip-media-rtp-client.socket");
+      } else {
+        NOTICE("\"sip_media_rtp_client_name\" is not specified, use default");
+        m_sip_config->sip_media_rtp_client_name =
+            "/run/oryx/sip-media-rtp-client.socket";
+      }
+
+      if (AM_LIKELY(sip["sip_media_rtp_server_name"].exists())) {
+        m_sip_config->sip_media_rtp_server_name =
+            sip["sip_media_rtp_server_name"].\
+            get<std::string>("/run/oryx/sip-media-rtp-server.socket");
+      } else {
+        NOTICE("\"sip_media_rtp_server_name\" is not specified, use default");
+        m_sip_config->sip_media_rtp_server_name =
+            "/run/oryx/sip-media-rtp-server.socket";
       }
 
       if (AM_LIKELY(sip["sip_retry_interval"].exists())) {
@@ -171,6 +208,26 @@ SipUAServerConfig* AMSipUAServerConfig::get_config(const std::string &conf)
       } else {
         NOTICE("\"enable_video\" is not specified, use default!");
         m_sip_config->enable_video = false;
+      }
+
+      if (AM_LIKELY(sip["jitter_buffer"].exists())) {
+        m_sip_config->jitter_buffer =
+            sip["jitter_buffer"].get<bool>(false);
+      } else {
+        NOTICE("\"jitter_buffer\" is not specified, use default!");
+        m_sip_config->jitter_buffer = false;
+      }
+
+      if (AM_LIKELY(sip["frames_remain_in_jb"].exists())) {
+        int tmp = sip["frames_remain_in_jb"].get<int>(20);
+        if (AM_UNLIKELY(tmp < 0)) {
+          WARN("Invalid value of frames_remain_in_jb, reset to 20!");
+          tmp = 20;
+        }
+        m_sip_config->frames_remain_in_jb = tmp;
+      } else {
+        NOTICE("\"frames_remain_in_jb\" is not specified, use default 20!");
+        m_sip_config->frames_remain_in_jb = 20;
       }
 
       if (AM_LIKELY(sip["audio_priority_list"].exists())) {

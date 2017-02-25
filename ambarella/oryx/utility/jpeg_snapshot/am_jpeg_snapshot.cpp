@@ -4,66 +4,61 @@
  * History:
  *   2015-07-01 - [Zhifeng Gong] created file
  *
- * Copyright (C) 2014-2015, Ambarella Co,Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <sys/ioctl.h>
-#include <sys/mman.h>
-#include <iav_ioctl.h>
-#include <sys/time.h>
-#include <signal.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 
 #include "am_base_include.h"
 #include "am_log.h"
 #include "am_define.h"
 #include "am_file.h"
 #include "am_configure.h"
-#include "am_event_monitor_if.h"
 #include "am_video_reader_if.h"
 #include "am_jpeg_snapshot.h"
+
+#include <iostream>
+#include <list>
+#include <sys/time.h>
 
 static std::recursive_mutex m_mtx;
 #define  DECLARE_MUTEX  std::lock_guard<std::recursive_mutex> lck (m_mtx);
 
-#define ORYX_VIDEO_CONF_DIR    ((const char *)"/etc/oryx/utility/")
-#define JPEG_ENCODE_CONFIG     ((const char *)"jpeg_snapshot.acs")
-#define MD_JPEG_PATH           ((const char *)"/tmp/md_jpeg")
+#define MAX_CACHE_BUF          10
+#define USR_DRAM_Y_OFFSET      0
+#define USR_DRAM_UV_OFFSET     (2*1024*1024)
 
+AMJpegSnapshot *AMJpegSnapshot::m_instance = nullptr;
 
-AMJpegSnapshot *AMJpegSnapshot::m_instance = NULL;
-
-AMJpegSnapshot::AMJpegSnapshot():
-  m_run(false),
-  m_file_table(NULL),
-  m_file_index(0),
-  m_motion_state(AM_MD_MOTION_END),
-  m_jpeg_encode_param(NULL),
-  m_jpeg_encoder(NULL),
-  m_thread(NULL),
-  m_mutex(NULL),
-  m_cond(NULL),
-  m_config(NULL),
-  m_conf_path(ORYX_VIDEO_CONF_DIR)
+AMJpegSnapshot::AMJpegSnapshot()
 {
 }
 
 AMJpegSnapshot::~AMJpegSnapshot()
 {
   destroy();
-  delete m_config;
-  delete m_jpeg_encode_param;
-
+  m_instance = nullptr;
   AM_DESTROY(m_mutex);
   AM_DESTROY(m_cond);
   AM_DESTROY(m_thread);
@@ -88,24 +83,23 @@ void AMJpegSnapshot::release()
 {
   DECLARE_MUTEX;
   DEBUG("AMJpegSnapshot release is called!");
-  if ((m_ref_counter >= 0) && (--m_ref_counter <= 0)) {
+  if ((m_ref_counter > 0) && (--m_ref_counter == 0)) {
     DEBUG("This is the last reference of AMVideoReader's object, "
           "delete object instance %p", m_instance);
     delete m_instance;
-    m_instance = NULL;
+    m_instance = nullptr;
   }
 }
 
 AMJpegSnapshot *AMJpegSnapshot::create()
 {
   DECLARE_MUTEX;
-  if (m_instance) {
-    return m_instance;
-  }
-  m_instance = new AMJpegSnapshot();
-  if (m_instance && m_instance->init()) {
-    delete m_instance;
-    m_instance = NULL;
+  if (!m_instance) {
+    m_instance = new AMJpegSnapshot();
+    if (m_instance && (AM_RESULT_OK != m_instance->init())) {
+      delete m_instance;
+      m_instance = nullptr;
+    }
   }
   return m_instance;
 }
@@ -113,30 +107,129 @@ AMJpegSnapshot *AMJpegSnapshot::create()
 void AMJpegSnapshot::destroy()
 {
   if (m_instance) {
-    stop();
+    if (m_run) {
+      m_run = false;
+      m_mutex->lock();
+      m_cond->signal();
+      m_mutex->unlock();
+      AM_DESTROY(m_thread);
+      AM_DESTROY(m_jpeg_encoder);
+    }
     deinit_dir();
-    delete m_instance;
-    m_instance = NULL;
+    delete m_param;
+    m_param = nullptr;
   }
+}
+
+AM_RESULT AMJpegSnapshot::set_source_buffer(AM_SOURCE_BUFFER_ID id)
+{
+  AM_RESULT ret = AM_RESULT_OK;
+  do {
+    if (m_param == nullptr) {
+      ERROR("invalid paraments");
+      ret = AM_RESULT_ERR_INVALID;
+      break;
+    }
+    m_param->source_buffer = id;
+  } while (0);
+  return ret;
+}
+
+AM_RESULT AMJpegSnapshot::set_file_path(string path)
+{
+  AM_RESULT ret = AM_RESULT_OK;
+  do {
+    if (m_param == nullptr || path.empty()) {
+      ERROR("invalid paraments");
+      ret = AM_RESULT_ERR_INVALID;
+      break;
+    }
+    m_param->jpeg_path = path;
+  } while (0);
+  return ret;
+}
+
+AM_RESULT AMJpegSnapshot::set_fps(float fps)
+{
+  AM_RESULT ret = AM_RESULT_OK;
+  do {
+    if (m_param == nullptr || fps < 0.0) {
+      ERROR("invalid paraments");
+      ret = AM_RESULT_ERR_INVALID;
+      break;
+    }
+    m_param->fps = fps;
+  } while (0);
+  return ret;
+}
+#define MAX_JPEG_FILE_NUM    500
+AM_RESULT AMJpegSnapshot::set_file_max_num(int num)
+{
+  AM_RESULT ret = AM_RESULT_OK;
+  do {
+    if (m_param == nullptr || num > MAX_JPEG_FILE_NUM || num <= 0) {
+      ERROR("invalid paraments");
+      ret = AM_RESULT_ERR_INVALID;
+      break;
+    }
+    m_param->max_files = num;
+  } while (0);
+  return ret;
+}
+
+AM_RESULT AMJpegSnapshot::set_data_cb(AMJpegSnapshotCb cb)
+{
+  m_data_cb = cb;
+  return AM_RESULT_OK;
+}
+
+AM_RESULT AMJpegSnapshot::save_file_enable()
+{
+  AM_RESULT ret = AM_RESULT_OK;
+  do {
+    if (m_param == nullptr) {
+      ERROR("invalid paraments");
+      ret = AM_RESULT_ERR_INVALID;
+      break;
+    }
+    m_param->need_save_file = true;
+  } while (0);
+  return ret;
+}
+
+AM_RESULT AMJpegSnapshot::save_file_disable()
+{
+  AM_RESULT ret = AM_RESULT_OK;
+  do {
+    if (m_param == nullptr) {
+      ERROR("invalid paraments");
+      ret = AM_RESULT_ERR_INVALID;
+      break;
+    }
+    m_param->need_save_file = false;
+  } while (0);
+  return ret;
 }
 
 bool AMJpegSnapshot::init_dir()
 {
   bool res = true;
-  struct file_table *ft = NULL;
+  struct file_table *ft = nullptr;
   do {
-    if (false == AMFile::create_path(m_config->get_jpeg_path())) {
+    if (false == AMFile::create_path(m_param->jpeg_path.c_str())) {
       ERROR("AMFile::create_path failed!\n");
       res = false;
       break;
     }
-    m_file_table = (struct file_table *)calloc(1, m_config->get_max_files() * sizeof(struct file_table));
+    m_file_table = (struct file_table *)calloc(1,
+                    m_param->max_files * sizeof(struct file_table));
+    INFO("m_file_table = %p", m_file_table);
     if (!m_file_table) {
       ERROR("malloc file_table failed!\n");
       res = false;
       break;
     }
-    for (int i = 0; i < m_config->get_max_files(); ++i) {
+    for (int i = 0; i < m_param->max_files; ++i) {
       ft = m_file_table + i;
       ft->id = i;
     }
@@ -148,6 +241,7 @@ void AMJpegSnapshot::deinit_dir()
 {
   if (m_file_table) {
     free(m_file_table);
+    m_file_table = nullptr;
   }
 }
 
@@ -161,29 +255,57 @@ int AMJpegSnapshot::get_file_name(char *str, int len)
   time_t now_sec;
   int res = AM_RESULT_OK;
   do {
-    if (str == NULL || len <= 0) {
+    if (str == nullptr || len <= 0) {
       ERROR("invalid paraments!\n");
       res = AM_RESULT_ERR_INVALID;
       break;
     }
-    gettimeofday(&tv, NULL);
+    gettimeofday(&tv, nullptr);
     now_sec = tv.tv_sec;
     now_ms = tv.tv_usec/1000;
     localtime_r(&now_sec, &now_tm);
     strftime(date_fmt, 20, "%Y%m%d_%H%M%S", &now_tm);
     snprintf(date_ms, sizeof(date_ms), "%03d", now_ms);
-    snprintf(str, len, "%s/%s_%s.jpeg", m_config->get_jpeg_path(), date_fmt, date_ms);
+    snprintf(str, len, "%s/%s_%s.jpeg",
+             m_param->jpeg_path.c_str(), date_fmt, date_ms);
+  } while (0);
+  return res;
+}
+
+int AMJpegSnapshot::get_yuv_file_name(char *str, int len)
+{
+  char date_fmt[20];
+  char date_ms[4];
+  struct timeval tv;
+  struct tm now_tm;
+  int now_ms;
+  time_t now_sec;
+  int res = AM_RESULT_OK;
+  do {
+    if (str == nullptr || len <= 0) {
+      ERROR("invalid paraments!\n");
+      res = AM_RESULT_ERR_INVALID;
+      break;
+    }
+    gettimeofday(&tv, nullptr);
+    now_sec = tv.tv_sec;
+    now_ms = tv.tv_usec/1000;
+    localtime_r(&now_sec, &now_tm);
+    strftime(date_fmt, 20, "%Y%m%d_%H%M%S", &now_tm);
+    snprintf(date_ms, sizeof(date_ms), "%03d", now_ms);
+    snprintf(str, len, "%s/%s_%s.yuv",
+             m_param->jpeg_path.c_str(), date_fmt, date_ms);
   } while (0);
   return res;
 }
 
 int AMJpegSnapshot::trim_jpeg_files()
 {
-  struct file_table *ft = NULL;
+  struct file_table *ft = nullptr;
   int res = AM_RESULT_OK;
   do {
     ++m_file_index;
-    if (m_file_index >= m_config->get_max_files()) {
+    if (m_file_index >= m_param->max_files) {
       m_file_index = 0;
     }
     ft = m_file_table + m_file_index;
@@ -220,41 +342,52 @@ int AMJpegSnapshot::save_jpeg_in_file(char *filename, void *data, size_t size)
   return res;
 }
 
+int AMJpegSnapshot::save_yuv_in_file(char *filename, AMYUVData *yuv)
+{
+  int res = AM_RESULT_OK;
+  AMFile f(filename);
+  do {
+    if (!f.open(AMFile::AM_FILE_CREATE)) {
+      PERROR("Failed to open file");
+      res = AM_RESULT_ERR_INVALID;
+      break;
+    }
+    if (f.write_reliable(yuv->y.iov_base, yuv->y.iov_len) < 0) {
+      PERROR("Failed to sava y data into file\n");
+      res = AM_RESULT_ERR_INVALID;
+      break;
+    }
+    if (f.write_reliable(yuv->uv.iov_base, yuv->uv.iov_len) < 0) {
+      PERROR("Failed to sava uv data into file\n");
+      res = AM_RESULT_ERR_INVALID;
+      break;
+    }
+  } while (0);
+  f.close();
+  return res;
+}
+
+
 AM_RESULT AMJpegSnapshot::init()
 {
   AM_RESULT res = AM_RESULT_OK;
 
   do {
-    m_config = new AMJpegSnapshotConfig();
-    if (!m_config) {
-      ERROR("AMJpegSnapshotConfig:: new m_config error\n");
+    m_param = new JpegSnapshotParam();
+    if (!m_param) {
+      ERROR("AMJpegSnapshotConfig:: new m_param error\n");
       res = AM_RESULT_ERR_INVALID;
       break;
     }
-    m_conf_path.append("/").append(JPEG_ENCODE_CONFIG);
-    m_jpeg_encode_param = m_config->get_config(m_conf_path);
-    if (!m_jpeg_encode_param) {
-      ERROR("AMJpegSnapshotConfig:: get config failed!\n");
-      res = AM_RESULT_ERR_INVALID;
-      break;
-    }
-    if (!is_enable()) {
-      INFO("AMJpegSnapshotConfig:: md_enable is false!\n");
-      res = AM_RESULT_OK;
-      break;
-    }
-    PRINTF("motion detection enabled\n");
     m_jpeg_encoder = AMIJpegEncoder::get_instance();
     if (!m_jpeg_encoder) {
       res = AM_RESULT_ERR_INVALID;
       ERROR("Failed to create AMJpegEncode!");
       break;
     }
-    m_jpeg_encoder->create();
-
-    if (false == init_dir()) {
+    if (0 != m_jpeg_encoder->create()) {
       res = AM_RESULT_ERR_INVALID;
-      ERROR("init dir failed!\n");
+      ERROR("Failed to create AMJpegEncode!");
       break;
     }
 
@@ -275,18 +408,17 @@ AM_RESULT AMJpegSnapshot::init()
   return res;
 }
 
-AM_RESULT AMJpegSnapshot::start()
+AM_RESULT AMJpegSnapshot::run()
 {
   AM_RESULT res = AM_RESULT_OK;
-
   do {
-    if (!is_enable()) {
-      INFO("AMJpegSnapshotConfig:: md_enable is false!\n");
-      res = AM_RESULT_OK;
-      break;
-    }
     if (m_run) {
       INFO("AMJpegSnapshot:: is already started\n");
+      break;
+    }
+    if (false == init_dir()) {
+      res = AM_RESULT_ERR_INVALID;
+      ERROR("init dir failed!\n");
       break;
     }
     m_video_reader = AMIVideoReader::get_instance();
@@ -294,15 +426,26 @@ AM_RESULT AMJpegSnapshot::start()
       res = AM_RESULT_ERR_INVALID;
       break;
     }
-
-    if (m_video_reader->init() != AM_RESULT_OK) {
-      ERROR("unable to init AMVideoReader\n");
+    m_video_address = AMIVideoAddress::get_instance();
+    if (!m_video_address) {
       res = AM_RESULT_ERR_INVALID;
       break;
     }
 
+    m_gdma_support = m_video_reader->is_gdmacpy_support();
+    if (m_gdma_support == false) {
+      NOTICE("IAV Usr Buffer Size didn't set, only memcpy can be used\n");
+      NOTICE("please set IAV_MEM_USR_SIZE=0x00800000 on menuconfig");
+    } else {
+      if (m_video_address->usr_addr_get(m_usr_addr) != AM_RESULT_OK) {
+        ERROR("get usr mem failed \n");
+        res = AM_RESULT_ERR_INVALID;
+        break;
+      }
+    }
     m_run = true;
-    if (!(m_thread = AMThread::create("JpegEncodeThread", static_jpeg_encode_thread, this))) {
+    if (!(m_thread = AMThread::create("JpegEncodeThread",
+                                      static_jpeg_encode_thread, this))) {
       ERROR("Failed to create AMThread!");
       res = AM_RESULT_ERR_INVALID;
       break;
@@ -314,45 +457,17 @@ AM_RESULT AMJpegSnapshot::start()
   return res;
 }
 
-AM_RESULT AMJpegSnapshot::stop()
-{
-  AM_RESULT res = AM_RESULT_OK;
-  do {
-    if (!is_enable()) {
-      INFO("AMJpegSnapshotConfig:: md_enable is false!\n");
-      res = AM_RESULT_OK;
-      break;
-    }
-    if (!m_run) {
-      INFO("AMJpegSnapshot:: is already stopped!\n");
-      break;
-    }
-    m_run = false;
-    m_mutex->lock();
-    m_cond->signal();
-    m_mutex->unlock();
-    AM_DESTROY(m_thread);
-    m_jpeg_encoder->destroy();
-  } while (0);
-
-  return res;
-}
-
-bool AMJpegSnapshot::is_enable()
-{
-  return m_jpeg_encode_param->md_enable;
-}
-
 AMYUVData *AMJpegSnapshot::capture_yuv_buffer()
 {
-  AMQueryDataFrameDesc frame_desc;
-  AMMemMapInfo dsp_mem;
-  AMYUVData *yuv = NULL;
+  AMQueryFrameDesc frame_desc;
+  AMQueryFrameDesc frame_tmp;
+  static std::list<AMQueryFrameDesc> frame_desc_queue;
+  uint32_t cache_size = 0;
+  AMYUVData *yuv = nullptr;
   AM_RESULT result = AM_RESULT_OK;
-  uint8_t *y_offset, *uv_offset, *y_tmp;
+  uint8_t *y_offset, *uv_offset;
   int32_t uv_height;
-  int32_t i;
-  int buf_id = m_jpeg_encode_param->source_buffer;
+  int buf_id = m_param->source_buffer;
 
   do {
     yuv = (AMYUVData *)calloc(1, sizeof(AMYUVData));
@@ -362,61 +477,172 @@ AMYUVData *AMJpegSnapshot::capture_yuv_buffer()
       break;
     }
 
-    result = m_video_reader->get_dsp_mem(&dsp_mem);
-    if (result != AM_RESULT_OK) {
-      ERROR("get dsp mem failed \n");
-      result = AM_RESULT_ERR_INVALID;
-      break;
-    }
-
-    result = m_video_reader->query_yuv_frame(&frame_desc,
-                                AM_ENCODE_SOURCE_BUFFER_ID(buf_id), false);
+    result = m_video_reader->query_yuv_frame(frame_desc,
+                                AM_SOURCE_BUFFER_ID(buf_id), false);
     if (result != AM_RESULT_OK) {
       ERROR("query yuv frame failed \n");
       result = AM_RESULT_ERR_INVALID;
       break;
     }
+    uint32_t resolution = frame_desc.yuv.width * frame_desc.yuv.height;
+    if (resolution >= 1920*1080) {//Full HD
+      cache_size = 1;
+    } else if (resolution >= 1280*720) {//HD
+      cache_size = 2;
+    } else {//smaller than HD
+      cache_size = 2;
+    }
 
-    y_offset = dsp_mem.addr + frame_desc.yuv.y_addr_offset;
-    uv_offset = dsp_mem.addr + frame_desc.yuv.uv_addr_offset;
-    yuv->width = frame_desc.yuv.width;
-    yuv->height = frame_desc.yuv.height;
-    yuv->pitch = frame_desc.yuv.pitch;
-    yuv->format = frame_desc.yuv.format;
+    frame_desc_queue.push_back(frame_desc);
+    if (frame_desc_queue.size() < cache_size) {
+      ERROR("cache first frame, size = %d", frame_desc_queue.size());
+      break;
+    }
+    if (!frame_desc_queue.empty()) {
+      frame_tmp = frame_desc_queue.front();
+      frame_desc_queue.pop_front();
+    } else {
+      ERROR("frame_desc_queue is empty");
+      result = AM_RESULT_ERR_INVALID;
+      break;
+    }
 
-    if (frame_desc.yuv.format == AM_ENCODE_CHROMA_FORMAT_YUV420) {
+    if (m_gdma_support) {
+      y_offset = (uint8_t *)frame_tmp.yuv.y_offset;
+      uv_offset = (uint8_t *)frame_tmp.yuv.uv_offset;
+    } else {
+      AMAddress yaddr, uvaddr;
+      result = m_video_address->yuv_y_addr_get(frame_tmp, yaddr);
+      if (result != AM_RESULT_OK) {
+        ERROR("yuv_y_addr_get failed");
+        break;
+      }
+      y_offset = yaddr.data;
+      result = m_video_address->yuv_uv_addr_get(frame_tmp, uvaddr);
+      if (result != AM_RESULT_OK) {
+        ERROR("yuv_uv_addr_get failed");
+        break;
+      }
+      uv_offset = uvaddr.data;
+    }
+
+    yuv->width = frame_tmp.yuv.width;
+    yuv->height = frame_tmp.yuv.height;
+    yuv->pitch = frame_tmp.yuv.pitch;
+    yuv->format = frame_tmp.yuv.format;
+    yuv->y_addr = y_offset;
+    yuv->uv_addr = uv_offset;
+    if (frame_tmp.yuv.format == AM_CHROMA_FORMAT_YUV420) {
       uv_height = yuv->height / 2;
-    } else if (frame_desc.yuv.format == AM_ENCODE_CHROMA_FORMAT_YUV422) {
+    } else if (frame_tmp.yuv.format == AM_CHROMA_FORMAT_YUV422) {
       uv_height = yuv->height;
     } else {
       ERROR("not supported chroma format in YUV dump\n");
       result = AM_RESULT_ERR_INVALID;
       break;
     }
-
-    //copy y buffer
-    yuv->y.iov_len = yuv->width * yuv->height;
-    yuv->y.iov_base = (uint8_t *)calloc(1, yuv->y.iov_len);
-    y_tmp = (uint8_t *)yuv->y.iov_base;
-    if (yuv->pitch == yuv->width) {
-      memcpy(yuv->y.iov_base, y_offset, yuv->y.iov_len);
-    } else {
-      for (i = 0; i < yuv->height ; i++) {
-        memcpy(y_tmp, y_offset + i * yuv->pitch, yuv->width);
-        y_tmp += yuv->width;
+    if (m_gdma_support) {
+      //copy y buffer
+      yuv->y.iov_len = yuv->width * yuv->height;
+      yuv->y.iov_base = (uint8_t *)USR_DRAM_Y_OFFSET;
+      result = m_video_reader->gdmacpy(yuv->y.iov_base, y_offset,
+                                       yuv->width, yuv->height, yuv->pitch);
+      if (result != AM_RESULT_OK) {
+        ERROR("gdmacpy y buffer failed");
+        break;
       }
-    }
+      yuv->y.iov_base = (uint8_t *)(m_usr_addr.data);
 
-    //copy uv buffer
-    yuv->uv.iov_len = yuv->pitch * uv_height;//XXX: pitch
-    yuv->uv.iov_base = (uint8_t *)calloc(1, yuv->uv.iov_len);
-    memcpy(yuv->uv.iov_base, uv_offset, yuv->uv.iov_len);
+      //copy uv buffer
+      yuv->uv.iov_len = yuv->pitch * uv_height;//XXX: pitch
+      yuv->uv.iov_base = (uint8_t *)yuv->y.iov_len;
+      result = m_video_reader->gdmacpy(yuv->uv.iov_base, uv_offset,
+                                       yuv->pitch, uv_height, yuv->pitch);
+      if (result != AM_RESULT_OK) {
+        ERROR("gdmacpy uv buffer failed");
+        break;
+      }
+      yuv->uv.iov_base = (uint8_t *)m_usr_addr.data + yuv->y.iov_len;
+      yuv->buffer = m_usr_addr.data;
+    } else {
+      //copy y buffer
+      yuv->y.iov_len = yuv->width * yuv->height;
+      yuv->y.iov_base = (uint8_t *)calloc(1, yuv->y.iov_len);
+      uint8_t *y_tmp = (uint8_t *)yuv->y.iov_base;
+      if (yuv->pitch == yuv->width) {
+        memcpy(yuv->y.iov_base, y_offset, yuv->y.iov_len);
+      } else {
+        for (int i = 0; i < yuv->height ; i++) {
+          memcpy(y_tmp, y_offset + i * yuv->pitch, yuv->width);
+          y_tmp += yuv->width;
+        }
+      }
+
+      //copy uv buffer
+      yuv->uv.iov_len = yuv->pitch * uv_height;//XXX: pitch
+      yuv->uv.iov_base = (uint8_t *)calloc(1, yuv->uv.iov_len);
+      memcpy(yuv->uv.iov_base, uv_offset, yuv->uv.iov_len);
+    }
 
   } while (0);
 
   if (result != AM_RESULT_OK) {
     free_yuv_buffer(yuv);
-    yuv = NULL;
+    yuv = nullptr;
+  }
+
+  return yuv;
+}
+
+AMYUVData *AMJpegSnapshot::query_yuv_buffer()
+{
+  AMQueryFrameDesc frame_desc;
+  AMYUVData *yuv = nullptr;
+  AM_RESULT result = AM_RESULT_OK;
+  uint8_t *y_offset, *uv_offset;
+  int buf_id = m_param->source_buffer;
+
+  do {
+    yuv = (AMYUVData *)calloc(1, sizeof(AMYUVData));
+    if (!yuv) {
+      ERROR("malloc yuv failed!\n");
+      result = AM_RESULT_ERR_INVALID;
+      break;
+    }
+
+    result = m_video_reader->query_yuv_frame(frame_desc,
+                                AM_SOURCE_BUFFER_ID(buf_id), false);
+    if (result != AM_RESULT_OK) {
+      ERROR("query yuv frame failed \n");
+      result = AM_RESULT_ERR_INVALID;
+      break;
+    }
+
+    AMAddress yaddr, uvaddr;
+    result = m_video_address->yuv_y_addr_get(frame_desc, yaddr);
+    if (result != AM_RESULT_OK) {
+      ERROR("yuv_y_addr_get failed");
+      break;
+    }
+    y_offset = yaddr.data;
+    result = m_video_address->yuv_uv_addr_get(frame_desc, uvaddr);
+    if (result != AM_RESULT_OK) {
+      ERROR("yuv_uv_addr_get failed");
+      break;
+    }
+    uv_offset = uvaddr.data;
+
+    yuv->width = frame_desc.yuv.width;
+    yuv->height = frame_desc.yuv.height;
+    yuv->pitch = frame_desc.yuv.pitch;
+    yuv->format = frame_desc.yuv.format;
+    yuv->y_addr = y_offset;
+    yuv->uv_addr = uv_offset;
+  } while (0);
+
+  if (result != AM_RESULT_OK) {
+    free_yuv_buffer(yuv);
+    yuv = nullptr;
   }
 
   return yuv;
@@ -429,65 +655,62 @@ void AMJpegSnapshot::static_jpeg_encode_thread(void *arg)
   int ms_sleep = 0;
   struct timeval delay;
   struct timeval pre = {0, 0}, curr = {0, 0};
-
   while (jpeg_encoder->m_run) {
-    if (jpeg_encoder->m_motion_state == AM_MD_MOTION_END) {
+    if (jpeg_encoder->m_state == AM_SNAPSHOT_STOP) {
       jpeg_encoder->m_mutex->lock();
-      INFO("wait motion detect");
+      INFO("wait event");
       jpeg_encoder->m_cond->wait(jpeg_encoder->m_mutex);
       jpeg_encoder->m_mutex->unlock();
-      INFO("motion detect occur");
+      INFO("event occur");
       continue;
     } else {
-      gettimeofday(&curr, NULL);
+      gettimeofday(&curr, nullptr);
       pre = curr;
       jpeg_encoder->encode_yuv_to_jpeg();
-      gettimeofday(&curr, NULL);
-      ms_encode = ((1000000 * (curr.tv_sec - pre.tv_sec)) + (curr.tv_usec - pre.tv_usec)) / 1000;
+      gettimeofday(&curr, nullptr);
+      ms_encode = ((1000000 * (curr.tv_sec - pre.tv_sec))
+                  + (curr.tv_usec - pre.tv_usec)) / 1000;
       INFO("encode_yuv_to_jpeg take [%06ld ms]", ms_encode);
-      ms_sleep = (1.0/jpeg_encoder->m_jpeg_encode_param->fps)*1000 - ms_encode;
+      ms_sleep = (1.0/jpeg_encoder->m_param->fps)*1000 - ms_encode;
       ms_sleep = (ms_sleep < 0) ? 0 : ms_sleep;
       delay.tv_sec = 0;
       delay.tv_usec = ms_sleep * 1000;
-      select(0, NULL, NULL, NULL, &delay);
+      select(0, nullptr, nullptr, nullptr, &delay);
     }
   }
 }
 
-void AMJpegSnapshot::update_motion_state(AM_EVENT_MESSAGE *msg)
+AM_RESULT AMJpegSnapshot::capture_start()
 {
-  AM_MOTION_TYPE type = msg->md_msg.mt_type;
-  m_motion_state = type;
-  switch (type) {
-  case AM_MD_MOTION_START:
-    INFO("AM_MD_MOTION_START\n");
-    m_mutex->lock();
-    m_cond->signal();
-    m_mutex->unlock();
-    break;
-  case AM_MD_MOTION_LEVEL_CHANGED:
-    INFO("AM_MD_MOTION_LEVEL_CHANGED\n");
-    m_mutex->lock();
-    m_cond->signal();
-    m_mutex->unlock();
-    break;
-  case AM_MD_MOTION_END:
-    INFO("AM_MD_MOTION_END\n");
-    break;
-  default:
-    INFO("AM_MD_MOTION_TYPE=%d\n", type);
-    break;
-  }
+  m_state = AM_SNAPSHOT_START;
+  m_mutex->lock();
+  m_cond->signal();
+  m_mutex->unlock();
+  return AM_RESULT_OK;
+}
+
+AM_RESULT AMJpegSnapshot::capture_stop()
+{
+  m_state = AM_SNAPSHOT_STOP;
+  m_mutex->lock();
+  m_cond->signal();
+  m_mutex->unlock();
+  return AM_RESULT_OK;
 }
 
 void AMJpegSnapshot::free_yuv_buffer(AMYUVData *yuv)
 {
-  if (!yuv) {
-    return;
+  if (yuv) {
+    if (m_gdma_support == false) {
+      if (yuv->y.iov_base) {
+        free(yuv->y.iov_base);
+      }
+      if (yuv->uv.iov_base) {
+        free(yuv->uv.iov_base);
+      }
+    }
+    free(yuv);
   }
-  free(yuv->y.iov_base);
-  free(yuv->uv.iov_base);
-  free(yuv);
 }
 
 int AMJpegSnapshot::encode_yuv_to_jpeg()
@@ -495,18 +718,17 @@ int AMJpegSnapshot::encode_yuv_to_jpeg()
   AM_RESULT res = AM_RESULT_OK;
   int ret = -1;
   char filename_jpeg[MAX_FILENAME_LEN];
-  struct file_table *ft = NULL;
-  AMYUVData *yuv = NULL;
-  AMJpegData *jpeg = NULL;
+  struct file_table *ft = nullptr;
+  AMYUVData *yuv = nullptr;
+  AMJpegData *jpeg = nullptr;
 
   do {
-    yuv = capture_yuv_buffer();
+    yuv = query_yuv_buffer();
     if (!yuv) {
       ERROR("capture_yuv_buffer failed!\n");
       res = AM_RESULT_ERR_INVALID;
       break;
     }
-
     jpeg = m_jpeg_encoder->new_jpeg_data(yuv->width, yuv->height);
     if (!jpeg) {
       ERROR("new_jpeg_data failed!\n");
@@ -519,140 +741,28 @@ int AMJpegSnapshot::encode_yuv_to_jpeg()
       res = AM_RESULT_ERR_INVALID;
       break;
     }
-    if (AM_RESULT_OK != trim_jpeg_files()) {
-      ERROR("trim_jpeg_files failed!\n");
-      res = AM_RESULT_ERR_INVALID;
-      break;
+    if (m_data_cb) {
+      m_data_cb(jpeg->data.iov_base, jpeg->data.iov_len);
     }
-    if (AM_RESULT_OK != get_file_name(filename_jpeg, MAX_FILENAME_LEN)) {
-      ERROR("get_file_name failed!\n");
-      res = AM_RESULT_ERR_INVALID;
-      break;
+    if (m_param->need_save_file) {
+      if (AM_RESULT_OK != trim_jpeg_files()) {
+        ERROR("trim_jpeg_files failed!\n");
+        res = AM_RESULT_ERR_INVALID;
+        break;
+      }
+      if (AM_RESULT_OK != get_file_name(filename_jpeg, MAX_FILENAME_LEN)) {
+        ERROR("get_file_name failed!\n");
+        res = AM_RESULT_ERR_INVALID;
+        break;
+      }
+      ft = m_file_table + m_file_index;
+      save_jpeg_in_file(ft->name, jpeg->data.iov_base, jpeg->data.iov_len);
+      INFO("Save JPEG file [%s] OK.\n", filename_jpeg);
     }
-    ft = m_file_table + m_file_index;
-    save_jpeg_in_file(ft->name, jpeg->data.iov_base, jpeg->data.iov_len);
-    INFO("Save JPEG file [%s] OK.\n", filename_jpeg);
-
     m_jpeg_encoder->free_jpeg_data(jpeg);
   } while (0);
 
   free_yuv_buffer(yuv);
 
   return res;
-}
-
-AMJpegSnapshotConfig::AMJpegSnapshotConfig() :
-    m_param(NULL)
-{
-}
-
-AMJpegSnapshotConfig::~AMJpegSnapshotConfig()
-{
-  delete m_param;
-}
-
-JpegSnapshotParam *AMJpegSnapshotConfig::get_config(const std::string &cfg_file_path)
-{
-  AMConfig *pconf = NULL;
-  do {
-    pconf = AMConfig::create(cfg_file_path.c_str());
-    if (!pconf) {
-      ERROR("AMJpegSnapshotConfig:: Create AMConfig failed!\n");
-      break;
-    }
-
-    if (!m_param) {
-      m_param = new JpegSnapshotParam();
-      if (!m_param ) {
-        ERROR("AMJpegSnapshotConfig::new jpeg encode config failed!\n");
-        break;
-      }
-    }
-
-    std::string tmp;
-    AMConfig &conf = *pconf;
-    if (conf["md_enable"].exists()) {
-      m_param->md_enable = conf["md_enable"].get<bool>(false);
-    } else {
-      m_param->md_enable = false;
-    }
-
-    if (conf["source_buffer"].exists()) {
-      m_param->source_buffer = conf["source_buffer"].get<int>(0);
-    } else {
-      m_param->source_buffer = 0;
-    }
-
-    if (conf["fps"].exists()) {
-      m_param->fps = conf["fps"].get<float>(1.0);
-    } else {
-      m_param->fps = 1.0;
-    }
-
-    if (conf["jpeg_path"].exists()) {
-      tmp = conf["jpeg_path"].get<std::string>(MD_JPEG_PATH);
-      strncpy(m_param->jpeg_path, tmp.c_str(), tmp.length());
-    } else {
-      strncpy(m_param->jpeg_path, MD_JPEG_PATH, MAX_FILENAME_LEN);
-    }
-
-    if (conf["max_files"].exists()) {
-      m_param->max_files = conf["max_files"].get<int>(10);
-    } else {
-      m_param->max_files = 10;
-    }
-  } while (0);
-  if (pconf) {
-    pconf->destroy();
-  }
-  return m_param;
-}
-
-bool AMJpegSnapshotConfig::set_config(JpegSnapshotParam *param, const std::string &cfg_file_path)
-{
-  bool res = true;
-  std::string tmp;
-  AMConfig *pconf = NULL;
-
-  do {
-    pconf = AMConfig::create(cfg_file_path.c_str());
-    if (!pconf) {
-      ERROR("AMJpegSnapshotConfig::Create AMConfig failed!\n");
-      break;
-    }
-    if (!m_param) {
-      m_param = new JpegSnapshotParam();
-      if (!m_param) {
-        ERROR("AMJpegSnapshotConfig:: new jpeg encode config failed!\n");
-        break;
-      }
-    }
-    memcpy(m_param, param, sizeof(JpegSnapshotParam));
-    AMConfig &conf = *pconf;
-    conf["md_enable"] = m_param->md_enable;
-    conf["source_buffer"] = m_param->source_buffer;
-    conf["fps"] = m_param->fps;
-    tmp = m_param->jpeg_path;
-    conf["jpeg_path"] = tmp;
-    conf["max_files"] = m_param->max_files;
-    if (!conf.save()) {
-      ERROR("AMJpegSnapshotConfig: failed to save_config\n");
-      res = false;
-      break;
-    }
-  } while (0);
-  if (pconf) {
-    pconf->destroy();
-  }
-  return res;
-}
-
-char *AMJpegSnapshotConfig::get_jpeg_path()
-{
-  return m_param->jpeg_path;
-}
-
-int AMJpegSnapshotConfig::get_max_files()
-{
-  return m_param->max_files;
 }

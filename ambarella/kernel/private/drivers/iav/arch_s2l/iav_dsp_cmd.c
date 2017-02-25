@@ -4,14 +4,33 @@
  * History:
  *	2013/08/28 - [Cao Rongrong] created file
  *
- * Copyright (C) 2012-2016, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 
 #include <plat/ambcache.h>
 #include <iav_utils.h>
@@ -53,13 +72,15 @@ static inline void *get_cmd(struct dsp_device *dsp, struct amb_dsp_cmd *cmd)
 }
 
 static inline void put_cmd(struct dsp_device *dsp, struct amb_dsp_cmd *cmd,
-	void *dsp_cmd, int cmd_type, u32 cmd_delay)
+	void *dsp_cmd, int cmd_type, int cmd_keep_latest, u32 cmd_delay)
 {
 	if (likely(cmd)) {
 		cmd->cmd_type = cmd_type;
+		cmd->keep_latest = cmd_keep_latest;
 	} else {
 		cmd = container_of(dsp_cmd, struct amb_dsp_cmd, dsp_cmd);
 		cmd->cmd_type = cmd_type;
+		cmd->keep_latest = cmd_keep_latest;
 		dsp->put_cmd(dsp, cmd, cmd_delay);
 	}
 }
@@ -290,10 +311,19 @@ static inline int calc_frame_rate(struct ambarella_iav *iav,
 		custom_encoder_frame_rate = 3750;
 		break;
 	default:
-		custom_encoder_frame_rate = DIV_ROUND_CLOSEST(512000000,
-			(idsp_out_frame_rate / 1000));
+		/* If fps >= 10, only the round number is kept,
+		 * otherwise, the decimal part is also kept.
+		 */
+		if (idsp_out_frame_rate <= AMBA_VIDEO_FPS_10) {
+			custom_encoder_frame_rate = DIV_ROUND_CLOSEST(512000000,
+				idsp_out_frame_rate) * 1000;
+		} else {
+			custom_encoder_frame_rate = DIV_ROUND_CLOSEST(512000000,
+				(idsp_out_frame_rate / 1000));
+		}
 		break;
 	}
+
 	custom_encoder_frame_rate = custom_encoder_frame_rate *
 		multiplication_factor / division_factor;
 	*dsp_out_frame_rate = (0 |
@@ -402,21 +432,7 @@ static int get_gop_struct_from_quailty(struct iav_h264_config *h264_config, int 
 	return 0;
 }
 
-static u32 get_dsp_encode_bitrate(struct iav_stream *stream)
-{
-	u32 ff_multi = stream->fps.fps_multi;
-	u32 ff_division = stream->fps.fps_div;
-	u32 full_bitrate = stream->h264_config.average_bitrate;
-	u32 bitrate = 0;
-
-	if (ff_division) {
-		bitrate =  full_bitrate * ff_multi / ff_division;
-	}
-
-	return bitrate;
-}
-
-inline void get_round_encode_format(struct iav_stream *stream,
+static inline void get_round_encode_format(struct iav_stream *stream,
 	u16* width, u16* height, s16* offset_y_shift)
 {
 	struct iav_stream_format *format = &stream->format;
@@ -486,6 +502,7 @@ static inline preview_type_t buffer_format_to_preview_type(u32 type, u16 width)
 		preview_type = OFF_PREVIEW_TYPE;
 		break;
 	case IAV_SRCBUF_TYPE_ENCODE:
+	case IAV_SRCBUF_TYPE_VCA:
 		preview_type = CAPTURE_PREVIEW_TYPE;
 		break;
 	case IAV_SRCBUF_TYPE_PREVIEW:
@@ -537,7 +554,7 @@ static u32 is_h264_frame_num_gap_allowed(struct iav_stream *stream)
 	case IAV_GOP_LT_REF_P:
 		// 2 ref without fast seek
 		if ((h264_cfg->multi_ref_p == 1) &&
-			(h264_cfg->long_term_intvl == 0 || h264_cfg->long_term_intvl == 63)) {
+			(h264_cfg->fast_seek_intvl == 0 || h264_cfg->fast_seek_intvl == 63)) {
 			allow_flag = 0;
 		} else {
 			allow_flag = 1;
@@ -551,23 +568,6 @@ static u32 is_h264_frame_num_gap_allowed(struct iav_stream *stream)
 	return allow_flag;
 }
 
-
-int cmd_chip_selection(struct ambarella_iav *iav, struct amb_dsp_cmd *cmd)
-{
-	chip_select_t *dsp_cmd;
-
-	dsp_cmd = get_cmd(iav->dsp, cmd);
-	if (!dsp_cmd)
-		return -ENOMEM;
-
-	dsp_cmd->cmd_code = CHIP_SELECTION;
-	dsp_cmd->chip_type = 3;	// A5
-
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0);
-
-	return 0;
-}
-
 int cmd_vin_timer_mode(struct ambarella_iav *iav, struct amb_dsp_cmd *cmd)
 {
 	vin_timer_mode_t *dsp_cmd;
@@ -579,7 +579,7 @@ int cmd_vin_timer_mode(struct ambarella_iav *iav, struct amb_dsp_cmd *cmd)
 	dsp_cmd->cmd_code = H264_ENC_USE_TIMER;
 	dsp_cmd->timer_scaler = 0;
 
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0, 0);
 
 	return 0;
 }
@@ -695,7 +695,7 @@ int cmd_set_warp_control(struct ambarella_iav *iav, struct amb_dsp_cmd *cmd)
 	dsp_cmd->actual_right_bot_x = (crop_w << 16);
 	dsp_cmd->actual_right_bot_y = (crop_h << 16);
 
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 1, 0);
 
 	//update warp index
 	iav->next_warp_index = (iav->next_warp_index + 1) % IAV_PARTITION_TOGGLE_NUM;
@@ -722,7 +722,7 @@ int cmd_system_info_setup(struct ambarella_iav *iav, struct amb_dsp_cmd *cmd,
 	if (unlikely(decode_flag)) {
 		dsp_cmd->audio_clk_freq = 12288000;
 		dsp_cmd->idsp_freq = 216000000;
-		put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_DEC, 0);
+		put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_DEC, 0, 0);
 	} else {
 		enc_mode = iav->encode_mode;
 		dsp_cmd->mode_flags = enc_mode;
@@ -750,6 +750,7 @@ int cmd_system_info_setup(struct ambarella_iav *iav, struct amb_dsp_cmd *cmd,
 		dsp_cmd->voutA_osd_blend_enabled = iav->osd_from_mixer_a;
 		dsp_cmd->voutB_osd_blend_enabled = iav->osd_from_mixer_b;
 		dsp_cmd->audio_clk_freq = 0;
+		dsp_cmd->vin_overflow_protection = iav->vin_overflow_protection;
 		/* both RGB and YUV raw */
 		dsp_cmd->raw_encode_enabled = (config->enc_raw_rgb || config->enc_raw_yuv);
 
@@ -774,7 +775,7 @@ int cmd_system_info_setup(struct ambarella_iav *iav, struct amb_dsp_cmd *cmd,
 
 		dsp_cmd->core_freq = (u32)clk_get_rate(clk_get(NULL, "gclk_core"));
 
-		put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0);
+		put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0, 0);
 	}
 
 	return 0;
@@ -811,7 +812,7 @@ int cmd_set_vin_global_config(struct ambarella_iav *iav,
 		break;
 	}
 
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0, 0);
 
 	return 0;
 }
@@ -830,7 +831,7 @@ int cmd_set_vin_master_config(struct ambarella_iav *iav,
 	memcpy(&dsp_cmd->master_sync_reg_word0,
 		iav->vinc[0]->master_config, sizeof(struct vin_master_config));
 
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0, 0);
 
 	return 0;
 }
@@ -853,7 +854,7 @@ int cmd_set_vin_config(struct ambarella_iav *iav,
 #else
 	dsp_cmd->cmd_code = SET_VIN_CONFIG;
 #endif
-	get_vin_win(iav, &vin_win, 1);
+	get_vin_win(iav, &vin_win, 0);
 	dsp_cmd->vin_width = vin_win->width;
 	dsp_cmd->vin_height = vin_win->height;
 	dsp_cmd->vin_config_dram_addr = VIRT_TO_DSP(iav->vinc[0]->dsp_config);
@@ -863,7 +864,7 @@ int cmd_set_vin_config(struct ambarella_iav *iav,
 
 	clean_d_cache(iav->vinc[0]->dsp_config, sizeof(struct vin_dsp_config));
 
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0, 0);
 
 	return 0;
 }
@@ -889,7 +890,7 @@ int cmd_raw_encode_video_setup(struct ambarella_iav *iav,
 	dsp_cmd->dpitch = iav->raw_enc.pitch;
 	dsp_cmd->num_frames = iav->raw_enc.raw_frame_num;
 
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0, 0);
 
 	return 0;
 }
@@ -981,8 +982,8 @@ int cmd_video_preproc(struct ambarella_iav *iav,
 		width = vout1_info->width;
 		height = vout1_info->height;
 	}
-	dsp_cmd->preview_w_B = vout1_info->width;
-	dsp_cmd->preview_h_B = vout1_info->height;
+	dsp_cmd->preview_w_B = width;
+	dsp_cmd->preview_h_B = height;
 	dsp_cmd->preview_format_B = amba_iav_format_to_format(vout1_info->format);
 	dsp_cmd->preview_frame_rate_B = amba_iav_fps_to_fps(vout1_info->fps);
 	dsp_cmd->preview_B_en = vout_swap ?
@@ -1015,7 +1016,7 @@ int cmd_video_preproc(struct ambarella_iav *iav,
 #else
 	dsp_cmd->cmdReadDly = 0;
 #endif
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0, 0);
 
 	return 0;
 }
@@ -1047,7 +1048,7 @@ int cmd_sensor_config(struct ambarella_iav *iav,
 	dsp_cmd->first_line_field_7 = 0;
 	dsp_cmd->sensor_readout_mode = 0;
 
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0, 0);
 
 	return 0;
 }
@@ -1056,7 +1057,7 @@ int cmd_video_system_setup(struct ambarella_iav *iav,
 		struct amb_dsp_cmd *cmd)
 {
 	ipcam_video_system_setup_t *dsp_cmd = NULL;
-	u16 max_w, max_h;
+	u16 max_w, max_h, i;
 	int enc_mode = iav->encode_mode;
 	struct amba_video_info *vout0_info = NULL, *vout1_info = NULL;
 	struct iav_buffer *buffer = NULL;
@@ -1118,6 +1119,7 @@ int cmd_video_system_setup(struct ambarella_iav *iav,
 		max_w = max_h = 0;
 		break;
 	case IAV_SRCBUF_TYPE_ENCODE:
+	case IAV_SRCBUF_TYPE_VCA:
 		max_win = &buffer->max;
 		calc_roundup_size(max_win->width, max_win->height,
 			IAV_STREAM_TYPE_H264, 0, &max_w, &max_h);
@@ -1136,6 +1138,7 @@ int cmd_video_system_setup(struct ambarella_iav *iav,
 		max_w = max_h = 0;
 		break;
 	case IAV_SRCBUF_TYPE_ENCODE:
+	case IAV_SRCBUF_TYPE_VCA:
 		max_win = &buffer->max;
 		calc_roundup_size(max_win->width, max_win->height,
 			IAV_STREAM_TYPE_H264, 0, &max_w, &max_h);
@@ -1163,6 +1166,7 @@ int cmd_video_system_setup(struct ambarella_iav *iav,
 		max_w = max_h = 0;
 		break;
 	case IAV_SRCBUF_TYPE_ENCODE:
+	case IAV_SRCBUF_TYPE_VCA:
 		max_win = &buffer->max;
 		calc_roundup_size(max_win->width, max_win->height,
 			IAV_STREAM_TYPE_H264, 0, &max_w, &max_h);
@@ -1234,6 +1238,18 @@ int cmd_video_system_setup(struct ambarella_iav *iav,
 	dsp_cmd->stream_2_LT_enable = iav->stream[2].long_ref_enable;
 	dsp_cmd->stream_3_LT_enable = iav->stream[3].long_ref_enable;
 
+	dsp_cmd->B_frame_enable_in_LT_gop = config->long_ref_b_frame;
+
+	for (i = IAV_SRCBUF_FIRST; i < IAV_SRCBUF_LAST; ++i) {
+		buffer = &iav->srcbuf[i];
+		if (buffer->type == IAV_SRCBUF_TYPE_VCA) {
+			dsp_cmd->vca_preview_id = iav->srcbuf[i].id_dsp;
+			dsp_cmd->vca_frame_num = iav->srcbuf[i].dump_duration;
+			dsp_cmd->vca_daddr_base = PHYS_TO_DSP(iav->mmap[IAV_BUFFER_VCA].phys);
+			dsp_cmd->vca_daddr_size = iav->mmap[IAV_BUFFER_VCA].size;
+		}
+	}
+
 	/* Add 16 lines more to avoid roundup issue in dewarp mode.
 		It's to fix the 16 lines alignment for each warp region.
 	*/
@@ -1249,7 +1265,9 @@ int cmd_video_system_setup(struct ambarella_iav *iav,
 		}
 	}
 
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0);
+	dsp_cmd->enc_buf_extra_MB_row_at_top = config->extra_top_row_buf_enable;
+
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0, 0);
 
 	return 0;
 }
@@ -1277,7 +1295,7 @@ int cmd_capture_buffer_default_setup(struct ambarella_iav *iav,
 	dsp_cmd->input_win_offset_x = 0;
 	dsp_cmd->input_win_offset_y = 0;
 
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0, 0);
 
 	return 0;
 }
@@ -1298,10 +1316,13 @@ int cmd_capture_buffer_setup(struct ambarella_iav *iav,
 	dsp_cmd->cmd_code = IPCAM_VIDEO_CAPTURE_PREVIEW_SIZE_SETUP;
 
 	dsp_cmd->preview_id = buffer->id_dsp;
-	if (buffer->win.width == 0 && buffer->win.height == 0) {
+	if (buffer->win.width == 0 || buffer->win.height == 0) {
 		dsp_cmd->disabled = 1;
-		dsp_cmd->cap_width = buffer->max.width;
-		dsp_cmd->cap_height = buffer->max.height;
+		/* avoid w / h upsampling for sub buffer when it is disabled. */
+		dsp_cmd->cap_width = (buffer->max.width > buffer->input.width) ?
+			buffer->input.width : buffer->max.width;
+		dsp_cmd->cap_height = (buffer->max.height > buffer->input.height) ?
+			buffer->input.height : buffer->max.height;
 	} else {
 		dsp_cmd->disabled = 0;
 		dsp_cmd->cap_width = buffer->win.width;
@@ -1313,8 +1334,11 @@ int cmd_capture_buffer_setup(struct ambarella_iav *iav,
 	dsp_cmd->input_win_height = buffer->input.height;
 	dsp_cmd->input_win_offset_x = buffer->input.x;
 	dsp_cmd->input_win_offset_y = buffer->input.y;
+	if (buffer->type == IAV_SRCBUF_TYPE_VCA) {
+		dsp_cmd->skip_interval = buffer->dump_interval - 1;
+	}
 
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0, 0);
 
 	return 0;
 }
@@ -1333,7 +1357,7 @@ int cmd_encode_size_setup(struct iav_stream *stream, struct amb_dsp_cmd *cmd)
 		return -ENOMEM;
 
 	dsp_cmd->cmd_code = GET_DSP_CMD_CODE(IPCAM_VIDEO_ENCODE_SIZE_SETUP,
-		stream->format.id);
+		stream->id_dsp);
 
 	if (stream->iav->encode_mode == DSP_MULTI_REGION_WARP_MODE) {
 		switch (format->buf_id) {
@@ -1360,7 +1384,7 @@ int cmd_encode_size_setup(struct iav_stream *stream, struct amb_dsp_cmd *cmd)
 	dsp_cmd->enc_x = format->enc_win.x;
 	dsp_cmd->enc_y = format->enc_win.y + offset_y;
 
-	put_cmd(stream->iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_ENC, 0);
+	put_cmd(stream->iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_ENC, 0, 0);
 
 	return 0;
 }
@@ -1373,6 +1397,8 @@ int cmd_h264_encode_setup(struct iav_stream *stream, struct amb_dsp_cmd *cmd)
 	struct iav_h264_config *h264_config;
 	struct iav_vin_format *vin_format;
 	struct iav_stream_format *stream_format;
+	struct iav_mv_dump mv_dump;
+	struct iav_window win;
 	u32 encoder_frame_rate;
 
 	dsp_cmd = get_cmd(stream->iav->dsp, cmd);
@@ -1384,7 +1410,7 @@ int cmd_h264_encode_setup(struct iav_stream *stream, struct amb_dsp_cmd *cmd)
 	vin_format = &iav->vinc[0]->vin_format;
 
 	dsp_cmd->cmd_code = GET_DSP_CMD_CODE(H264_ENCODING_SETUP,
-		stream->format.id);
+		stream->id_dsp);
 
 	dsp_cmd->mode = 1;
 	dsp_cmd->M = h264_config->M;
@@ -1427,9 +1453,23 @@ int cmd_h264_encode_setup(struct iav_stream *stream, struct amb_dsp_cmd *cmd)
 	dsp_cmd->fast_rc_idc = h264_config->fast_rc_idc;
 	dsp_cmd->cpb_user_size = h264_config->cpb_user_size;
 
-	dsp_cmd->fast_seek_interval = h264_config->long_term_intvl;
+	dsp_cmd->fast_seek_interval = h264_config->fast_seek_intvl;
 
-	put_cmd(stream->iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_ENC, 0);
+	if (iav->mmap[IAV_BUFFER_MV].size > 0) {
+		get_stream_win_MB(stream_format, &win);
+		mv_dump.width = win.width;
+		mv_dump.height = win.height;
+		mv_dump.pitch = ALIGN(mv_dump.width * sizeof(struct iav_mv), 32);
+		mv_dump.unit_size = mv_dump.pitch * mv_dump.height;
+		mv_dump.buf_num = iav->mmap[IAV_BUFFER_MV].size / mv_dump.unit_size;
+		dsp_cmd->mvdump_daddr = PHYS_TO_DSP(iav->mmap[IAV_BUFFER_MV].phys);
+		dsp_cmd->mvdump_dpitch = mv_dump.pitch;
+		dsp_cmd->mvdump_fifo_unit_sz = mv_dump.unit_size;
+		dsp_cmd->mvdump_fifo_limit = dsp_cmd->mvdump_daddr +
+			mv_dump.buf_num * mv_dump.unit_size - 1;
+	}
+
+	put_cmd(stream->iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_ENC, 0, 0);
 
 	return 0;
 }
@@ -1451,7 +1491,7 @@ int cmd_h264_encode_start(struct iav_stream *stream, struct amb_dsp_cmd *cmd)
 	if (!dsp_cmd)
 		return -ENOMEM;
 
-	dsp_cmd->cmd_code = GET_DSP_CMD_CODE(H264_ENCODE, stream->format.id);
+	dsp_cmd->cmd_code = GET_DSP_CMD_CODE(H264_ENCODE, stream->id_dsp);
 	dsp_cmd->start_encode_frame_no = 0xffffffff;
 	dsp_cmd->encode_duration = (stream->format.duration ?
 		stream->format.duration : ENCODE_DURATION_FOREVER);
@@ -1459,10 +1499,12 @@ int cmd_h264_encode_start(struct iav_stream *stream, struct amb_dsp_cmd *cmd)
 	dsp_cmd->enable_slow_shutter = 0;
 	dsp_cmd->res_rate_min = 40;
 
-	dsp_cmd->en_loop_filter = 2;
 	dsp_cmd->max_upsampling_rate = 1;
 	dsp_cmd->slow_shutter_upsampling_rate = 0;
 	dsp_cmd->au_type = h264_config->au_type;
+	dsp_cmd->alpha = h264_config->deblocking_filter_alpha;
+	dsp_cmd->beta = h264_config->deblocking_filter_beta;
+	dsp_cmd->en_loop_filter = h264_config->deblocking_filter_enable;
 	dsp_cmd->gaps_in_frame_num_value_allowed_flag =
 		is_h264_frame_num_gap_allowed(stream);
 
@@ -1477,6 +1519,19 @@ int cmd_h264_encode_start(struct iav_stream *stream, struct amb_dsp_cmd *cmd)
 		dsp_cmd->video_signal_type_present_flag = 1;
 		dsp_cmd->video_full_range_flag = 1;
 		dsp_cmd->video_format = 5;
+
+		dsp_cmd->custom_bitstream_restriction_cfg = 0;
+		dsp_cmd->bitstream_restriction_flag = 0;
+		/* bitstream restriction */
+		{
+			dsp_cmd->motion_vectors_over_pic_boundaries_flag = 0;
+			dsp_cmd->max_bytes_per_pic_denom = 0;
+			dsp_cmd->max_bits_per_mb_denom = 0;
+			dsp_cmd->log2_max_mv_length_horizontal = 0;
+			dsp_cmd->log2_max_mv_length_vertical = 0;
+			dsp_cmd->num_reorder_frames = 0;
+			dsp_cmd->max_dec_frame_buffering = 0;
+		}
 	}
 
 	/* color primaries */
@@ -1501,9 +1556,10 @@ int cmd_h264_encode_start(struct iav_stream *stream, struct amb_dsp_cmd *cmd)
 		round_factor = is_vcap_interlaced(stream->iav, 0) ?
 			(PIXEL_IN_MB << 1) : PIXEL_IN_MB;
 		dsp_cmd->frame_cropping_flag = 1;
-		dsp_cmd->frame_crop_left_offset = 0;
-		dsp_cmd->frame_crop_right_offset = 0;
-		dsp_cmd->frame_crop_top_offset = 0;
+		dsp_cmd->frame_crop_left_offset = stream->h264_config.frame_crop_left_offset >> 1;
+		dsp_cmd->frame_crop_right_offset = stream->h264_config.frame_crop_right_offset >> 1;
+		dsp_cmd->frame_crop_top_offset = stream->h264_config.frame_crop_top_offset >> 1;
+		dsp_cmd->frame_crop_bottom_offset = stream->h264_config.frame_crop_bottom_offset >> 1;
 		round_height = ALIGN(stream_height, round_factor);
 		margin = round_height - stream_height;
 		if (is_vcap_interlaced(stream->iav, 0))
@@ -1515,12 +1571,12 @@ int cmd_h264_encode_start(struct iav_stream *stream, struct amb_dsp_cmd *cmd)
 			/* Use minus height offset to compensate left cropping flag, so use
 			 * right cropping flag all the time.
 			 */
-			dsp_cmd->frame_crop_right_offset = margin;
+			dsp_cmd->frame_crop_right_offset += margin;
 		} else {
 			/* Use minus height offset to compensate top cropping flag, so
 			 * use bottom cropping flag all the time.
 			 */
-			dsp_cmd->frame_crop_bottom_offset = margin;
+			dsp_cmd->frame_crop_bottom_offset += margin;
 		}
 	}
 
@@ -1581,7 +1637,7 @@ int cmd_h264_encode_start(struct iav_stream *stream, struct amb_dsp_cmd *cmd)
 		}
 	}
 
-	put_cmd(stream->iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_ENC, 0);
+	put_cmd(stream->iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_ENC, 0, 0);
 
 	return 0;
 }
@@ -1594,11 +1650,11 @@ int cmd_encode_stop(struct iav_stream *stream, struct amb_dsp_cmd *cmd)
 	if (!dsp_cmd)
 		return -ENOMEM;
 
-	dsp_cmd->cmd_code = GET_DSP_CMD_CODE(ENCODING_STOP, stream->format.id);
+	dsp_cmd->cmd_code = GET_DSP_CMD_CODE(ENCODING_STOP, stream->id_dsp);
 	// Stop on next P or I picture after stop command has been received.
 	dsp_cmd->stop_method = H264_STOP_ON_NEXT_IP;
 
-	put_cmd(stream->iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_ENC, 0);
+	put_cmd(stream->iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_ENC, 0, 0);
 
 	return 0;
 }
@@ -1622,12 +1678,12 @@ int cmd_jpeg_encode_setup(struct iav_stream *stream, struct amb_dsp_cmd *cmd)
 		return -ENOMEM;
 
 	dsp_cmd->cmd_code = GET_DSP_CMD_CODE(JPEG_ENCODING_SETUP,
-		stream->format.id);
+		stream->id_dsp);
 
 	dsp_cmd->chroma_format = mjpeg_config->chroma_format;
 	dsp_cmd->is_mjpeg = 1;
 
-	init_stream_jpeg_dqt(iav, stream->format.id, mjpeg_config->quality);
+	init_stream_jpeg_dqt(iav, stream->id_dsp, mjpeg_config->quality);
 	offset = (u32)mjpeg_config->jpeg_quant_matrix -
 		iav->mmap[IAV_BUFFER_QUANT].virt;
 	dsp_cmd->quant_matrix_addr =
@@ -1648,7 +1704,7 @@ int cmd_jpeg_encode_setup(struct iav_stream *stream, struct amb_dsp_cmd *cmd)
 	dsp_cmd->vflip = stream_format->vflip;
 	dsp_cmd->rotate = stream_format->rotate_cw;
 
-	put_cmd(stream->iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_ENC, 0);
+	put_cmd(stream->iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_ENC, 0, 0);
 
 	return 0;
 }
@@ -1661,12 +1717,12 @@ int cmd_jpeg_encode_start(struct iav_stream *stream, struct amb_dsp_cmd *cmd)
 	if (!dsp_cmd)
 		return -ENOMEM;
 
-	dsp_cmd->cmd_code = GET_DSP_CMD_CODE(MJPEG_ENCODE, stream->format.id);
+	dsp_cmd->cmd_code = GET_DSP_CMD_CODE(MJPEG_ENCODE, stream->id_dsp);
 	dsp_cmd->start_encode_frame_no = -1;
 	dsp_cmd->encode_duration = (stream->format.duration ?
 		stream->format.duration : ENCODE_DURATION_FOREVER);
 
-	put_cmd(stream->iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_ENC, 0);
+	put_cmd(stream->iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_ENC, 0, 0);
 
 	return 0;
 }
@@ -1682,6 +1738,7 @@ int cmd_update_encode_params(struct iav_stream *stream,
 	struct iav_vin_format *vin_format;
 	u32 dsp_vin_fps, dsp_encoder_fps, i, offset;
 	u32 idsp_out_frame_rate = 0;
+	u8 ff_m = 1, ff_n = 1;
 
 	dsp_cmd = get_cmd(iav->dsp, cmd);
 	if (!dsp_cmd)
@@ -1692,7 +1749,7 @@ int cmd_update_encode_params(struct iav_stream *stream,
 	vin_format = &iav->vinc[0]->vin_format;
 
 	dsp_cmd->cmd_code = GET_DSP_CMD_CODE(
-		IPCAM_REAL_TIME_ENCODE_PARAM_SETUP, stream->format.id);
+		IPCAM_REAL_TIME_ENCODE_PARAM_SETUP, stream->id_dsp);
 
 	if (flags & REALTIME_PARAM_CBR_MODIFY_BIT) {
 		dsp_cmd->enable_flags |= REALTIME_PARAM_CBR_MODIFY_BIT;
@@ -1717,13 +1774,19 @@ int cmd_update_encode_params(struct iav_stream *stream,
 		dsp_cmd->qp_max_on_I = h264_config->qp_max_on_I;
 		dsp_cmd->qp_max_on_P = h264_config->qp_max_on_P;
 		dsp_cmd->qp_max_on_B = h264_config->qp_max_on_B;
+		dsp_cmd->qp_max_on_Q = h264_config->qp_max_on_Q;
 		dsp_cmd->qp_min_on_I = h264_config->qp_min_on_I;
 		dsp_cmd->qp_min_on_P = h264_config->qp_min_on_P;
 		dsp_cmd->qp_min_on_B = h264_config->qp_min_on_B;
+		dsp_cmd->qp_min_on_Q = h264_config->qp_min_on_Q;
 		dsp_cmd->aqp = h264_config->adapt_qp;
 		dsp_cmd->i_qp_reduce = h264_config->i_qp_reduce;
 		dsp_cmd->p_qp_reduce = h264_config->p_qp_reduce;
+		dsp_cmd->q_qp_reduce = h264_config->q_qp_reduce;
+		dsp_cmd->log_q_num_per_gop_plus_1 = h264_config->log_q_num_plus_1;
 		dsp_cmd->skip_flags = h264_config->skip_flag;
+		/* convert from KB to bits */
+		dsp_cmd->set_I_size = h264_config->max_I_size_KB << 13;
 	}
 	if (flags & REALTIME_PARAM_GOP_BIT) {
 		dsp_cmd->enable_flags |= REALTIME_PARAM_GOP_BIT;
@@ -1735,7 +1798,7 @@ int cmd_update_encode_params(struct iav_stream *stream,
 		dsp_cmd->enable_flags |= REALTIME_PARAM_CUSTOM_VIN_FPS_BIT;
 		if (calc_frame_rate(iav,
 			0, 0, 1, 1, &dsp_vin_fps, FRAME_RATE_SRC_VIN) < 0) {
-			iav_error("frame rate calculation for realtime encode param"
+			iav_error("frame rate calculation for realtime encode param "
 				"update failed, frame rate 0x%x.\n",
 				vin_format->frame_rate);
 			return -EINVAL;
@@ -1744,15 +1807,14 @@ int cmd_update_encode_params(struct iav_stream *stream,
 		if (iav_vin_get_idsp_frame_rate(iav, &idsp_out_frame_rate) < 0) {
 			return -EINVAL;
 		}
-		dsp_cmd->idsp_frame_rate_M = (u8)DIV_ROUND_CLOSEST(FPS_Q9_BASE,
-			idsp_out_frame_rate);
-		dsp_cmd->idsp_frame_rate_N = (u8)DIV_ROUND_CLOSEST(FPS_Q9_BASE,
-			iav->vinc[0]->vin_format.frame_rate);
-		if (check_idsp_upsample_factor(dsp_cmd->idsp_frame_rate_M,
-			dsp_cmd->idsp_frame_rate_N) < 0) {
+		ff_m = (u8)DIV_ROUND_CLOSEST(FPS_Q9_BASE, idsp_out_frame_rate);
+		ff_n = (u8)DIV_ROUND_CLOSEST(FPS_Q9_BASE, vin_format->frame_rate);
+		if (check_idsp_upsample_factor(ff_m, ff_n) < 0) {
 			iav_error("IDSP multiplication_factor can not be smaller than division_factor!\n");
 			return -EINVAL;
 		}
+		dsp_cmd->idsp_frame_rate_M = ff_m;
+		dsp_cmd->idsp_frame_rate_N = ff_n;
 	}
 	if (flags & REALTIME_PARAM_INTRA_MB_ROWS_BIT) {
 		dsp_cmd->enable_flags |= REALTIME_PARAM_INTRA_MB_ROWS_BIT;
@@ -1767,8 +1829,8 @@ int cmd_update_encode_params(struct iav_stream *stream,
 		if (h264_config->qp_roi_enable) {
 			dsp_cmd->roi_daddr = PHYS_TO_DSP(
 				iav->mmap[IAV_BUFFER_QPMATRIX].phys +
-				stream->format.id * STREAM_QP_MATRIX_SIZE);
-#ifdef CONFIG_AMBARELLA_IAV_QP_OFFSET_IPB
+				stream->id_dsp * STREAM_QP_MATRIX_SIZE);
+#ifdef CONFIG_AMBARELLA_IAV_ROI_IPB
 			dsp_cmd->roi_daddr_p = dsp_cmd->roi_daddr + SINGLE_QP_MATRIX_SIZE;
 			dsp_cmd->roi_daddr_b = dsp_cmd->roi_daddr_p + SINGLE_QP_MATRIX_SIZE;
 #else
@@ -1799,7 +1861,7 @@ int cmd_update_encode_params(struct iav_stream *stream,
 	}
 	if (flags & REALTIME_PARAM_QUANT_MATRIX_BIT) {
 		dsp_cmd->enable_flags |= REALTIME_PARAM_QUANT_MATRIX_BIT;
-		init_stream_jpeg_dqt(iav, stream->format.id,
+		init_stream_jpeg_dqt(iav, stream->id_dsp,
 			mjpeg_config->quality);
 		offset = (u32)mjpeg_config->jpeg_quant_matrix -
 			iav->mmap[IAV_BUFFER_QUANT].virt;
@@ -1829,7 +1891,7 @@ int cmd_update_encode_params(struct iav_stream *stream,
 	}
 	if (flags & REALTIME_PARAM_FLAT_AREA_BIT) {
 		dsp_cmd->enable_flags |= REALTIME_PARAM_FLAT_AREA_BIT;
-		dsp_cmd->flat_area_improvement_on = h264_config->enc_improve;
+		dsp_cmd->flat_area_improvement_on = h264_config->flat_area_improve;
 	}
 	if (flags & REALTIME_PARAM_FORCE_FAST_SEEK_BIT) {
 		dsp_cmd->enable_flags |= REALTIME_PARAM_FORCE_FAST_SEEK_BIT;
@@ -1838,8 +1900,23 @@ int cmd_update_encode_params(struct iav_stream *stream,
 		dsp_cmd->enable_flags |= REALTIME_PARAM_FRAME_DROP_BIT;
 		dsp_cmd->drop_frame = h264_config->drop_frames;
 	}
+	if (flags & REALTIME_PARAM_MV_DUMP_BIT) {
+		dsp_cmd->enable_flags |= REALTIME_PARAM_MV_DUMP_BIT;
+		dsp_cmd->mvdump_enable = h264_config->statis;
+	}
+	if (flags & REALTIME_PARAM_LONG_REF_P_BIT) {
+		dsp_cmd->enable_flags |= REALTIME_PARAM_LONG_REF_P_BIT;
+	}
+	if (flags & REALTIME_PARAM_FORCE_PSKIP_BIT) {
+		dsp_cmd->enable_flags |= REALTIME_PARAM_FORCE_PSKIP_BIT;
+		if (h264_config->pskip_repeat_enable) {
+			dsp_cmd->force_pskip_num_plus1 = h264_config->repeat_pskip_num + 1;
+		} else {
+			dsp_cmd->force_pskip_num_plus1 = 0;
+		}
+	}
 
-	put_cmd(stream->iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_ENC, 0);
+	put_cmd(stream->iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_ENC, 0, 0);
 
 	return 0;
 }
@@ -1851,8 +1928,6 @@ int cmd_update_idsp_factor(struct ambarella_iav *iav, struct amb_dsp_cmd *cmd)
 	u32 dsp_vin_fps = 0;
 	u32 idsp_out_frame_rate = 0;
 	int rval = 0;
-
-	mutex_lock(&iav->iav_mutex);
 
 	do {
 		if (iav->state != IAV_STATE_PREVIEW && iav->state != IAV_STATE_ENCODING) {
@@ -1892,10 +1967,8 @@ int cmd_update_idsp_factor(struct ambarella_iav *iav, struct amb_dsp_cmd *cmd)
 			break;
 		}
 
-		put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_ENC, 0);
+		put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_ENC, 0, 0);
 	} while (0);
-
-	mutex_unlock(&iav->iav_mutex);
 
 	return rval;
 }
@@ -1908,14 +1981,17 @@ int update_sync_encode_params(struct iav_stream *stream,
 	struct iav_h264_config *h264_config;
 	struct iav_mjpeg_config *mjpeg_config;
 	struct iav_vin_format *vin_format;
+	struct iav_cmd_sync *cmd_sync;
 	u32 dsp_vin_fps, dsp_encoder_fps, offset;
 	u8 *addr;
 	int i, qpm_idx;
 	u32 idsp_out_frame_rate = 0;
 
+	cmd_sync = &iav->cmd_sync;
+
 	addr = (u8 *)iav->mmap[IAV_BUFFER_CMD_SYNC].virt +
-		iav->cmd_sync_idx * CMD_SYNC_SIZE +
-		stream->format.id * DSP_ENC_CMD_SIZE;
+		cmd_sync->idx * CMD_SYNC_SIZE +
+		stream->id_dsp * DSP_ENC_CMD_SIZE;
 	dsp_cmd = (ipcam_real_time_encode_param_setup_t *)addr;
 
 	h264_config = &stream->h264_config;
@@ -1923,7 +1999,7 @@ int update_sync_encode_params(struct iav_stream *stream,
 	vin_format = &iav->vinc[0]->vin_format;
 
 	dsp_cmd->cmd_code = GET_DSP_CMD_CODE(
-		IPCAM_REAL_TIME_ENCODE_PARAM_SETUP, stream->format.id);
+		IPCAM_REAL_TIME_ENCODE_PARAM_SETUP, stream->id_dsp);
 
 	if (flags & REALTIME_PARAM_CBR_MODIFY_BIT) {
 		dsp_cmd->enable_flags |= REALTIME_PARAM_CBR_MODIFY_BIT;
@@ -1948,13 +2024,19 @@ int update_sync_encode_params(struct iav_stream *stream,
 		dsp_cmd->qp_max_on_I = h264_config->qp_max_on_I;
 		dsp_cmd->qp_max_on_P = h264_config->qp_max_on_P;
 		dsp_cmd->qp_max_on_B = h264_config->qp_max_on_B;
+		dsp_cmd->qp_max_on_Q = h264_config->qp_max_on_Q;
 		dsp_cmd->qp_min_on_I = h264_config->qp_min_on_I;
 		dsp_cmd->qp_min_on_P = h264_config->qp_min_on_P;
 		dsp_cmd->qp_min_on_B = h264_config->qp_min_on_B;
+		dsp_cmd->qp_min_on_Q = h264_config->qp_min_on_Q;
 		dsp_cmd->aqp = h264_config->adapt_qp;
 		dsp_cmd->i_qp_reduce = h264_config->i_qp_reduce;
 		dsp_cmd->p_qp_reduce = h264_config->p_qp_reduce;
+		dsp_cmd->q_qp_reduce = h264_config->q_qp_reduce;
+		dsp_cmd->log_q_num_per_gop_plus_1 = h264_config->log_q_num_plus_1;
 		dsp_cmd->skip_flags = h264_config->skip_flag;
+		/* convert from KB to bits */
+		dsp_cmd->set_I_size = h264_config->max_I_size_KB << 13;
 	}
 	if (flags & REALTIME_PARAM_GOP_BIT) {
 		dsp_cmd->enable_flags |= REALTIME_PARAM_GOP_BIT;
@@ -1997,17 +2079,17 @@ int update_sync_encode_params(struct iav_stream *stream,
 		dsp_cmd->enable_flags |= REALTIME_PARAM_QP_ROI_MATRIX_BIT;
 		if (h264_config->qp_roi_enable) {
 			/* use previous qp matrix if not updated */
-			if (!iav->cmd_sync_qpm_flag) {
-				qpm_idx = (iav->cmd_sync_qpm_idx + ENC_CMD_TOGGLED_NUM - 2) %
-					ENC_CMD_TOGGLED_NUM + 1;
+			if (!cmd_sync->qpm_flag) {
+				qpm_idx = (cmd_sync->qpm_idx + QP_MATRIX_TOGGLED_NUM - 2) %
+					QP_MATRIX_TOGGLED_NUM + 1;
 			} else {
-				qpm_idx = iav->cmd_sync_qpm_idx;
+				qpm_idx = cmd_sync->qpm_idx;
 			}
 			dsp_cmd->roi_daddr = PHYS_TO_DSP(
 				iav->mmap[IAV_BUFFER_QPMATRIX].phys +
 				qpm_idx * QP_MATRIX_SIZE +
-				stream->format.id * STREAM_QP_MATRIX_SIZE);
-#ifdef CONFIG_AMBARELLA_IAV_QP_OFFSET_IPB
+				stream->id_dsp * STREAM_QP_MATRIX_SIZE);
+#ifdef CONFIG_AMBARELLA_IAV_ROI_IPB
 			dsp_cmd->roi_daddr_p = dsp_cmd->roi_daddr + SINGLE_QP_MATRIX_SIZE;
 			dsp_cmd->roi_daddr_b = dsp_cmd->roi_daddr_p + SINGLE_QP_MATRIX_SIZE;
 #else
@@ -2037,7 +2119,7 @@ int update_sync_encode_params(struct iav_stream *stream,
 	}
 	if (flags & REALTIME_PARAM_QUANT_MATRIX_BIT) {
 		dsp_cmd->enable_flags |= REALTIME_PARAM_QUANT_MATRIX_BIT;
-		init_stream_jpeg_dqt(iav, stream->format.id,
+		init_stream_jpeg_dqt(iav, stream->id_dsp,
 			mjpeg_config->quality);
 		offset = (u32)mjpeg_config->jpeg_quant_matrix -
 			iav->mmap[IAV_BUFFER_QUANT].virt;
@@ -2067,7 +2149,7 @@ int update_sync_encode_params(struct iav_stream *stream,
 	}
 	if (flags & REALTIME_PARAM_FLAT_AREA_BIT) {
 		dsp_cmd->enable_flags |= REALTIME_PARAM_FLAT_AREA_BIT;
-		dsp_cmd->flat_area_improvement_on = h264_config->enc_improve;
+		dsp_cmd->flat_area_improvement_on = h264_config->flat_area_improve;
 	}
 	if (flags & REALTIME_PARAM_FORCE_FAST_SEEK_BIT) {
 		dsp_cmd->enable_flags |= REALTIME_PARAM_FORCE_FAST_SEEK_BIT;
@@ -2075,6 +2157,21 @@ int update_sync_encode_params(struct iav_stream *stream,
 	if (flags & REALTIME_PARAM_FRAME_DROP_BIT) {
 		dsp_cmd->enable_flags |= REALTIME_PARAM_FRAME_DROP_BIT;
 		dsp_cmd->drop_frame = h264_config->drop_frames;
+	}
+	if (flags & REALTIME_PARAM_MV_DUMP_BIT) {
+		dsp_cmd->enable_flags |= REALTIME_PARAM_MV_DUMP_BIT;
+		dsp_cmd->mvdump_enable = h264_config->statis;
+	}
+	if (flags & REALTIME_PARAM_LONG_REF_P_BIT) {
+		dsp_cmd->enable_flags |= REALTIME_PARAM_LONG_REF_P_BIT;
+	}
+	if (flags & REALTIME_PARAM_FORCE_PSKIP_BIT) {
+		dsp_cmd->enable_flags |= REALTIME_PARAM_FORCE_PSKIP_BIT;
+		if (h264_config->pskip_repeat_enable) {
+			dsp_cmd->force_pskip_num_plus1 = h264_config->repeat_pskip_num + 1;
+		} else {
+			dsp_cmd->force_pskip_num_plus1 = 0;
+		}
 	}
 
 	return 0;
@@ -2095,7 +2192,7 @@ int cmd_overlay_insert(struct iav_stream *stream, struct amb_dsp_cmd *cmd,
 	if (!dsp_cmd)
 		return -ENOMEM;
 
-	dsp_cmd->cmd_code = GET_DSP_CMD_CODE(IPCAM_OSD_INSERT, stream->format.id);
+	dsp_cmd->cmd_code = GET_DSP_CMD_CODE(IPCAM_OSD_INSERT, stream->id_dsp);
 
 	if (info->enable) {
 		if (stream->iav->osd_from_mixer_a)
@@ -2148,9 +2245,10 @@ int cmd_overlay_insert(struct iav_stream *stream, struct amb_dsp_cmd *cmd,
 			dsp_cmd->osd_num_regions_ex = active_areas -
 				MAX_NUM_OSD_AERA_NO_EXTENSION;
 		}
+		dsp_cmd->osd_insert_always = info->osd_insert_always;
 	}
 
-	put_cmd(stream->iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_ENC, 0);
+	put_cmd(stream->iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_ENC, 0, 0);
 
 	return 0;
 }
@@ -2172,7 +2270,7 @@ int cmd_set_pm_mctf(struct ambarella_iav *iav,struct amb_dsp_cmd *cmd,
 	dsp_cmd->U = iav->pm.u;
 	dsp_cmd->V = iav->pm.v;
 
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, delay);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0, delay);
 
 	return 0;
 }
@@ -2192,7 +2290,7 @@ int cmd_fastosd_insert(struct iav_stream *stream, struct amb_dsp_cmd *cmd,
 		return -ENOMEM;
 
 	dsp_cmd->cmd_code = GET_DSP_CMD_CODE(IPCAM_FAST_OSD_INSERT,
-		stream->format.id);
+		stream->id_dsp);
 
 	if (info->enable) {
 		dsp_cmd->fast_osd_enable = 1;
@@ -2249,7 +2347,7 @@ int cmd_fastosd_insert(struct iav_stream *stream, struct amb_dsp_cmd *cmd,
 
 	}
 
-	put_cmd(stream->iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_ENC, 0);
+	put_cmd(stream->iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_ENC, 0, 0);
 
 	return 0;
 }
@@ -2268,7 +2366,7 @@ int cmd_dsp_set_debug_level(struct ambarella_iav *iav,
 	dsp_cmd->debug_level = debug_level;
 	dsp_cmd->coding_thread_printf_disable_mask = mask;
 
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0, 0);
 
 	return 0;
 }
@@ -2282,7 +2380,7 @@ int cmd_set_pm_bpc(struct ambarella_iav *iav, struct amb_dsp_cmd *cmd)
 	if (!dsp_cmd)
 		return -ENOMEM;
 
-	get_pm_vin_win(iav, &vin_win);
+	get_vin_win(iav, &vin_win, 0);
 
 	dsp_cmd->cmd_code = FIXED_PATTERN_NOISE_CORRECTION;
 	dsp_cmd->fpn_pixel_mode = 3;
@@ -2293,7 +2391,7 @@ int cmd_set_pm_bpc(struct ambarella_iav *iav, struct amb_dsp_cmd *cmd)
 	dsp_cmd->fpn_pixels_addr = PHYS_TO_DSP(iav->mmap[IAV_BUFFER_PM_BPC].phys +
 			PM_BPC_PARTITION_SIZE * (iav->curr_pm_index));
 
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0, 0);
 
 	return 0;
 }
@@ -2325,7 +2423,7 @@ int cmd_bpc_setup(struct ambarella_iav *iav, struct amb_dsp_cmd *cmd,
 	dsp_cmd->dark_pixel_thresh_addr = PHYS_TO_DSP(iav->mmap[IAV_BUFFER_BPC].phys +
 		BPC_TABLE_SIZE);
 
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0, 0);
 
 	return 0;
 }
@@ -2354,7 +2452,7 @@ int cmd_static_bpc(struct ambarella_iav *iav, struct amb_dsp_cmd *cmd,
 	dsp_cmd->column_gain_addr = 0;//VIRT_TO_DSP(column_offset);
 	dsp_cmd->bad_pixel_a5m_mode = 1;
 
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0, 0);
 
 	return 0;
 }
@@ -2536,19 +2634,16 @@ int cmd_set_warp_batch_cmds(struct ambarella_iav *iav, int active_num,
 		WARP_BATCH_CMDS_OFFSET + iav->next_warp_index *
 		WARP_TABLE_AREA_MAX_NUM * WARP_CMD_SIZE);
 
-	put_cmd(iav->dsp, cmd, warp_batch_cmd, DSP_CMD_TYPE_NORMAL, 0);
+	put_cmd(iav->dsp, cmd, warp_batch_cmd, DSP_CMD_TYPE_NORMAL, 0, 0);
 
 	return 0;
 }
 
-int cmd_apply_frame_sync_cmd(struct ambarella_iav *iav,
-	struct amb_dsp_cmd *cmd, struct iav_apply_frame_sync *apply)
+int cmd_apply_frame_sync_cmd(struct ambarella_iav *iav, struct amb_dsp_cmd *cmd,
+	struct iav_apply_frame_sync *apply, u32 stream_map)
 {
 	enc_sync_cmd_t *dsp_cmd;
-	ipcam_real_time_encode_param_setup_t *cmd_data;
 	u8 *addr = NULL;
-	u16 enable_flag = 0;
-	int i;
 
 	dsp_cmd = get_cmd(iav->dsp, cmd);
 	if (!dsp_cmd)
@@ -2558,22 +2653,13 @@ int cmd_apply_frame_sync_cmd(struct ambarella_iav *iav,
 	dsp_cmd->target_pts = apply->dsp_pts;
 
 	addr = (u8 *)iav->mmap[IAV_BUFFER_CMD_SYNC].phys +
-		iav->cmd_sync_idx * CMD_SYNC_SIZE;
+		iav->cmd_sync.idx * CMD_SYNC_SIZE;
 	dsp_cmd->cmd_daddr = PHYS_TO_DSP(addr);
 
-	for (i = 0; i < IAV_MAX_ENCODE_STREAMS_NUM; ++i) {
-		addr = (u8 *)iav->mmap[IAV_BUFFER_CMD_SYNC].virt +
-			iav->cmd_sync_idx * CMD_SYNC_SIZE + i * DSP_ENC_CMD_SIZE;
-		cmd_data = (ipcam_real_time_encode_param_setup_t *)addr;
-		if (cmd_data->cmd_code) {
-			enable_flag |= (1 << i);
-		}
-	}
+	dsp_cmd->enable_flag = stream_map;
+	dsp_cmd->force_update_flag = (stream_map & apply->force_update);
 
-	dsp_cmd->enable_flag = enable_flag;
-	dsp_cmd->force_update_flag = (enable_flag & apply->force_update);
-
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_ENC, 0);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_ENC, 0, 0);
 
 	return 0;
 }
@@ -2592,7 +2678,7 @@ int cmd_get_frm_buf_pool_info(struct ambarella_iav *iav,
 	dsp_cmd->cmd_code = IPCAM_GET_FRAME_BUF_POOL_INFO;
 	dsp_cmd->frm_buf_pool_info_req_bit_flag = get_buffer_pool_map(buf_map);
 
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0, 0);
 
 	return 0;
 }
@@ -2616,7 +2702,7 @@ int cmd_efm_creat_frm_buf_pool(struct ambarella_iav *iav,
 	dsp_cmd->max_num_yuv = iav->efm.req_buf_num;
 	dsp_cmd->max_num_me1 = iav->efm.req_buf_num;
 
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0, 0);
 
 	return 0;
 }
@@ -2635,13 +2721,13 @@ int cmd_efm_req_frame_buf(struct ambarella_iav *iav, struct amb_dsp_cmd *cmd)
 	dsp_cmd->fbp_type = (1 << EFM_BUF_POOL_TYPE_ME1) |
 		(1 << EFM_BUF_POOL_TYPE_YUV420);
 
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0, 0);
 
 	return 0;
 }
 
 // 0x6010 command
-int cmd_efm_handshake(struct ambarella_iav *iav, struct amb_dsp_cmd *cmd)
+int cmd_efm_handshake(struct ambarella_iav *iav, struct amb_dsp_cmd *cmd, u8 is_last_frame)
 {
 	ipcam_efm_handshake_cmd_t *dsp_cmd;
 	struct iav_efm_buf_pool *pool = &iav->efm.buf_pool;
@@ -2655,8 +2741,9 @@ int cmd_efm_handshake(struct ambarella_iav *iav, struct amb_dsp_cmd *cmd)
 	dsp_cmd->yuv_fId = pool->yuv_fId[pool->hs_idx];
 	dsp_cmd->me1_fId = pool->me1_fId[pool->hs_idx];
 	dsp_cmd->pts = iav->efm.curr_pts;
+	dsp_cmd->is_last_frame = !!is_last_frame;
 
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0, 0);
 
 	return 0;
 }
@@ -2673,7 +2760,24 @@ int cmd_hash_verification(struct ambarella_iav *iav, u8* input)
 	dsp_cmd->cmd_code = HASH_VERIFICATION;
 	memcpy(dsp_cmd->hash_input, input, 8);
 
-	put_cmd(iav->dsp, NULL, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0);
+	put_cmd(iav->dsp, NULL, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0, 0);
+
+	return 0;
+}
+
+// 0x1011 command
+int cmd_hash_verification_long(struct ambarella_iav *iav, u8* input)
+{
+	hash_verification_ex_t *dsp_cmd;
+
+	dsp_cmd = get_cmd(iav->dsp, NULL);
+	if (!dsp_cmd)
+		return -ENOMEM;
+
+	dsp_cmd->cmd_code = HASH_VERIFICATION_EX;
+	memcpy(dsp_cmd->hash_input, input, sizeof(dsp_cmd->hash_input));
+
+	put_cmd(iav->dsp, NULL, dsp_cmd, DSP_CMD_TYPE_NORMAL, 0, 0);
 
 	return 0;
 }
@@ -2689,7 +2793,7 @@ int cmd_reset_operation(struct ambarella_iav *iav, struct amb_dsp_cmd *cmd)
 
 	dsp_cmd->cmd_code = RESET_OPERATION;
 
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_DEC, 0);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_DEC, 0, 0);
 
 	return 0;
 }
@@ -2713,18 +2817,27 @@ int cmd_h264_decoder_setup(struct ambarella_iav *iav,
 	dsp_cmd->cabac_to_recon_delay = 0x6;
 	dsp_cmd->forced_max_fb_size = 0x0;
 
+	dsp_cmd->video_max_width = decoder->width;
+	dsp_cmd->video_max_height = decoder->height;
+
 	dsp_cmd->gop_n = 0xf;
 	dsp_cmd->gop_m = 0x1;
 	dsp_cmd->dpb_size = 0x6;
 	dsp_cmd->customer_mem_usage = 1;
 	dsp_cmd->trickplay_fw = 1;
-	dsp_cmd->trickplay_ff_IP = 1;
-	dsp_cmd->trickplay_ff_I = 1;
-	dsp_cmd->trickplay_bw = 1;
-	dsp_cmd->trickplay_fb_IP = 1;
-	dsp_cmd->trickplay_fb_I = 1;
+	if (iav->decode_context.mode_config.b_support_ff_fb_bw) {
+		dsp_cmd->trickplay_ff_IP = 1;
+		dsp_cmd->trickplay_ff_I = 1;
+		dsp_cmd->trickplay_bw = 1;
+		dsp_cmd->trickplay_fb_IP = 1;
+		dsp_cmd->trickplay_fb_I = 1;
+	}
 	dsp_cmd->trickplay_rsv = 0;
-	dsp_cmd->bit_rate = (12 << 20);
+	//if (!dec_config->max_bitrate) {
+		dsp_cmd->bit_rate = (10 << 20);
+	//} else {
+	//	dsp_cmd->bit_rate = dec_config->max_bitrate;
+	//}
 
 	//if (!iav->decode_context.b_interlace_vout) {
 	if (0 == decoder->vout_configs[0].vout_id) {
@@ -2736,7 +2849,7 @@ int cmd_h264_decoder_setup(struct ambarella_iav *iav,
 	}
 	//}
 
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_DEC, 0);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_DEC, 0, 0);
 
 	return 0;
 }
@@ -2754,14 +2867,13 @@ int cmd_decode_stop(struct ambarella_iav *iav, u8 decoder_id, u8 stop_flag)
 	dsp_cmd->cmd_code = DECODE_STOP;
 	dsp_cmd->stop_flag = stop_flag;
 
-	put_cmd(iav->dsp, NULL, dsp_cmd, DSP_CMD_TYPE_DEC, 0);
+	put_cmd(iav->dsp, NULL, dsp_cmd, DSP_CMD_TYPE_DEC, 0, 0);
 
 	return 0;
 }
 
 int cmd_vout_video_setup(struct ambarella_iav *iav, struct amb_dsp_cmd *cmd,
-	u16 vout_id, u8 en, u8 src, u8 flip, u8 rotate,
-	u16 offset_x, u16 offset_y, u16 width, u16 height)
+	struct iav_decode_vout_config *p_vout_config, u8 src, u8 is_interlace)
 {
 	vout_video_setup_t *dsp_cmd;
 
@@ -2771,17 +2883,21 @@ int cmd_vout_video_setup(struct ambarella_iav *iav, struct amb_dsp_cmd *cmd,
 
 	memset(dsp_cmd, 0x0, sizeof(vout_video_setup_t));
 	dsp_cmd->cmd_code = VOUT_VIDEO_SETUP;
-	dsp_cmd->vout_id = vout_id;
-	dsp_cmd->en = en;
+	dsp_cmd->vout_id = p_vout_config->vout_id;
+	dsp_cmd->en = p_vout_config->enable;
 	dsp_cmd->src = src;
-	dsp_cmd->flip = flip;
-	dsp_cmd->rotate = rotate;
-	dsp_cmd->win_offset_x = offset_x;
-	dsp_cmd->win_offset_y = offset_y;
-	dsp_cmd->win_width = width;
-	dsp_cmd->win_height = height;
+	dsp_cmd->flip = p_vout_config->flip;
+	dsp_cmd->rotate = p_vout_config->rotate;
+	dsp_cmd->win_offset_x = p_vout_config->target_win_offset_x;
+	dsp_cmd->win_offset_y = p_vout_config->target_win_offset_y;
+	dsp_cmd->win_width = p_vout_config->target_win_width;
+	if (!is_interlace) {
+		dsp_cmd->win_height = p_vout_config->target_win_height;
+	} else {
+		dsp_cmd->win_height = p_vout_config->target_win_height / 2;
+	}
 
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_DEC, 0);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_DEC, 0, 0);
 
 	return 0;
 }
@@ -2838,7 +2954,7 @@ int cmd_rescale_postp(struct ambarella_iav *iav, struct amb_dsp_cmd *cmd,
 		}
 	}
 
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_DEC, 0);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_DEC, 0, 0);
 
 	return 0;
 }
@@ -2858,7 +2974,7 @@ int cmd_playback_speed(struct ambarella_iav *iav, struct amb_dsp_cmd *cmd,
 	dsp_cmd->scan_mode = scan_mode;
 	dsp_cmd->direction = direction;
 
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_DEC, 0);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_DEC, 0, 0);
 
 	return 0;
 }
@@ -2880,7 +2996,7 @@ int cmd_h264_decode(struct ambarella_iav *iav, struct amb_dsp_cmd *cmd,
 	dsp_cmd->num_pics = num_frames;
 	dsp_cmd->first_frame_display = first_frame_display;
 
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_DEC, 0);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_DEC, 0, 0);
 
 	return 0;
 }
@@ -2901,7 +3017,7 @@ int cmd_h264_decode_fifo_update(struct ambarella_iav *iav,
 	dsp_cmd->bits_fifo_end = bits_fifo_end;
 	dsp_cmd->num_pics = num_frames;
 
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_DEC, 0);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_DEC, 0, 0);
 
 	return 0;
 }
@@ -2919,7 +3035,7 @@ int cmd_h264_trick_play(struct ambarella_iav *iav,
 	dsp_cmd->cmd_code = H264_TRICKPLAY;
 	dsp_cmd->mode = mode;
 
-	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_DEC, 0);
+	put_cmd(iav->dsp, cmd, dsp_cmd, DSP_CMD_TYPE_DEC, 0, 0);
 
 	return 0;
 }
@@ -2927,18 +3043,47 @@ int cmd_h264_trick_play(struct ambarella_iav *iav,
 static int parse_cmd_system_info_setup(struct ambarella_iav *iav, DSP_CMD *cmd)
 {
 	system_setup_info_t *dsp_cmd = (system_setup_info_t *)cmd;
+	u32 chip_id;
+	u32 enc_mode = dsp_cmd->mode_flags;
 
-	iav->encode_mode = dsp_cmd->mode_flags;
+	iav->encode_mode = enc_mode;
 	iav->srcbuf[IAV_SRCBUF_PA].type = preview_type_to_buffer_format(dsp_cmd->preview_A_type);
 	iav->srcbuf[IAV_SRCBUF_PB].type = preview_type_to_buffer_format(dsp_cmd->preview_B_type);
 
 	iav->osd_from_mixer_a = dsp_cmd->voutA_osd_blend_enabled;
 	iav->osd_from_mixer_b = dsp_cmd->voutB_osd_blend_enabled;
-	iav->system_config[iav->encode_mode].enc_raw_rgb = dsp_cmd->raw_encode_enabled;
-	iav->system_config[iav->encode_mode].expo_num = dsp_cmd->hdr_num_exposures_minus_1 + 1;
-	iav->system_config[iav->encode_mode].vout_swap = dsp_cmd->vout_swap;
-	iav->system_config[iav->encode_mode].me0_scale = dsp_cmd->me0_scale_factor;
-	/* TODO: dsp_cmd->adv_iso_disabled */
+	iav->system_config[enc_mode].enc_raw_rgb = dsp_cmd->raw_encode_enabled;
+	iav->system_config[enc_mode].expo_num = dsp_cmd->hdr_num_exposures_minus_1 + 1;
+	iav->system_config[enc_mode].vout_swap = dsp_cmd->vout_swap;
+	iav->system_config[enc_mode].me0_scale = dsp_cmd->me0_scale_factor;
+
+	if (enc_mode == DSP_ADVANCED_ISO_MODE) {
+		iav->dsp->get_chip_id(iav->dsp, &chip_id, NULL);
+		switch (chip_id) {
+		case IAV_CHIP_ID_S2L_22M:
+		case IAV_CHIP_ID_S2L_33M:
+		case IAV_CHIP_ID_S2L_55M:
+		case IAV_CHIP_ID_S2L_99M:
+		case IAV_CHIP_ID_S2L_TEST:
+		case IAV_CHIP_ID_S2L_33MEX:
+			if (dsp_cmd->adv_iso_disabled == 0) {
+				iav->system_config[enc_mode].debug_enable_map |= DEBUG_TYPE_ISO_TYPE;
+				iav->system_config[enc_mode].debug_iso_type = ISO_TYPE_ADVANCED;
+			}
+			break;
+		case IAV_CHIP_ID_S2L_63:
+		case IAV_CHIP_ID_S2L_66:
+		case IAV_CHIP_ID_S2L_88:
+		case IAV_CHIP_ID_S2L_99:
+		case IAV_CHIP_ID_S2L_22:
+		case IAV_CHIP_ID_S2L_33EX:
+			if (dsp_cmd->adv_iso_disabled == 1) {
+				iav->system_config[enc_mode].debug_enable_map |= DEBUG_TYPE_ISO_TYPE;
+				iav->system_config[enc_mode].debug_iso_type = ISO_TYPE_MIDDLE;
+			}
+			break;
+		}
+	}
 
 	iav_debug ("cmd_code = 0x%08X, Encode mode [%u]\n", dsp_cmd->cmd_code, iav->encode_mode);
 
@@ -3132,6 +3277,7 @@ static int parse_set_warp_control(struct ambarella_iav *iav, DSP_CMD *cmd)
 
 static int parse_cmd_video_system_setup(struct ambarella_iav *iav, DSP_CMD *cmd)
 {
+	u32 buff_id;
 	ipcam_video_system_setup_t *dsp_cmd = (ipcam_video_system_setup_t *)cmd;
 
 	if (iav->encode_mode == DSP_MULTI_REGION_WARP_MODE) {
@@ -3157,6 +3303,12 @@ static int parse_cmd_video_system_setup(struct ambarella_iav *iav, DSP_CMD *cmd)
 	iav->srcbuf[IAV_SRCBUF_PB].max.height = get_rounddown_height(dsp_cmd->preview_B_max_height);
 	iav->srcbuf[IAV_SRCBUF_PA].max.width = dsp_cmd->preview_A_max_width;
 	iav->srcbuf[IAV_SRCBUF_PA].max.height = get_rounddown_height(dsp_cmd->preview_A_max_height);
+	for (buff_id = IAV_SUB_SRCBUF_FIRST; buff_id < IAV_SUB_SRCBUF_LAST; buff_id ++) {
+		if (iav->srcbuf[buff_id].max.width == 0 ||
+			iav->srcbuf[buff_id].max.height == 0) {
+			iav->srcbuf[buff_id].type = IAV_SRCBUF_TYPE_OFF;
+		}
+	}
 
 	iav->stream[0].max_GOP_M = dsp_cmd->stream_0_max_GOP_M;
 	iav->stream[1].max_GOP_M = dsp_cmd->stream_1_max_GOP_M;
@@ -3239,8 +3391,9 @@ static int parse_cmd_encode_size_setup(struct ambarella_iav *iav, DSP_CMD *cmd)
 		 rval = get_srcbuf_id(dsp_cmd->capture_source, &iav->stream[id].format.buf_id);
 	}
 
+	iav->stream[id].srcbuf = &iav->srcbuf[iav->stream[id].format.buf_id];
 	iav->stream[id].format.enc_win.width = dsp_cmd->enc_width;
-	iav->stream[id].format.enc_win.height = get_rounddown_height(dsp_cmd->enc_height);
+	iav->stream[id].format.enc_win.height = dsp_cmd->enc_height;
 	iav->stream[id].format.enc_win.x = dsp_cmd->enc_x;
 	iav->stream[id].format.enc_win.y = dsp_cmd->enc_y;
 
@@ -3252,6 +3405,9 @@ static int parse_cmd_encode_size_setup(struct ambarella_iav *iav, DSP_CMD *cmd)
 static int parse_cmd_h264_encode_setup(struct ambarella_iav *iav, DSP_CMD *cmd)
 {
 	int id = 0;
+	s16 offset_y;
+	u32 tmp_width;
+	u32 tmp_height;
 	h264_encode_setup_t *dsp_cmd = (h264_encode_setup_t *)cmd;
 	id = GET_STRAME_ID_CODE(dsp_cmd->cmd_code);
 
@@ -3264,6 +3420,18 @@ static int parse_cmd_h264_encode_setup(struct ambarella_iav *iav, DSP_CMD *cmd)
 	iav->stream[id].format.hflip = dsp_cmd->hflip;
 	iav->stream[id].format.vflip = dsp_cmd->vflip;
 	iav->stream[id].format.rotate_cw = dsp_cmd->rotate;
+	tmp_width = iav->stream[id].format.enc_win.width;
+	tmp_height = iav->stream[id].format.enc_win.height;
+	if (dsp_cmd->rotate) {
+		iav->stream[id].max.width = get_rounddown_height(iav->stream[id].max.width);
+		iav->stream[id].format.enc_win.width = tmp_height;
+		iav->stream[id].format.enc_win.height = get_rounddown_height(tmp_width);
+		offset_y = (iav->stream[id].format.hflip ? 0 : (iav->stream[id].format.enc_win.height - tmp_width));
+	} else {
+		iav->stream[id].format.enc_win.height = get_rounddown_height(tmp_height);
+		offset_y = (iav->stream[id].format.vflip ? (iav->stream[id].format.enc_win.height - tmp_height) : 0);
+	}
+	iav->stream[id].format.enc_win.y = iav->stream[id].format.enc_win.y - offset_y;
 	iav->stream[id].h264_config.chroma_format = dsp_cmd->chroma_format;
 	iav->stream[id].fps.fps_div = dsp_cmd->frame_rate_division_factor;
 	iav->stream[id].fps.fps_multi = dsp_cmd->frame_rate_multiplication_factor;
@@ -3309,7 +3477,10 @@ static int parse_cmd_h264_encode_start(struct ambarella_iav *iav, DSP_CMD *cmd)
 	iav->stream[id].dsp_state = ENC_BUSY_STATE;
 	iav->stream[id].op = IAV_STREAM_OP_START;
 	iav->stream[id].format.type = IAV_STREAM_TYPE_H264;
-	inc_srcbuf_ref(iav->stream[id].srcbuf);
+	iav->stream[id].h264_config.deblocking_filter_alpha = dsp_cmd->alpha;
+	iav->stream[id].h264_config.deblocking_filter_beta = dsp_cmd->beta;
+	iav->stream[id].h264_config.deblocking_filter_enable = dsp_cmd->en_loop_filter;
+	inc_srcbuf_ref(iav->stream[id].srcbuf, id);
 
 	/*TODO: dsp_cmd->frame_crop_right_offset
 			dsp_cmd->frame_crop_bottom_offset
@@ -3352,7 +3523,7 @@ static int parse_cmd_jpeg_encode_start(struct ambarella_iav *iav, DSP_CMD *cmd)
 	iav->stream[id].dsp_state = ENC_BUSY_STATE;
 	iav->stream[id].op = IAV_STREAM_OP_START;
 	iav->stream[id].format.type = IAV_STREAM_TYPE_MJPEG;
-	inc_srcbuf_ref(iav->stream[id].srcbuf);
+	inc_srcbuf_ref(iav->stream[id].srcbuf, id);
 
 	iav_debug ("cmd_code = 0x%08X, Stream ID [%c]\n", dsp_cmd->cmd_code, 'A' + id);
 
@@ -3370,12 +3541,16 @@ static int parse_cmd_encode_param(struct ambarella_iav *iav, DSP_CMD *cmd)
 		iav->stream[id].h264_config.qp_max_on_I = dsp_cmd->qp_max_on_I;
 		iav->stream[id].h264_config.qp_max_on_P = dsp_cmd->qp_max_on_P;
 		iav->stream[id].h264_config.qp_max_on_B = dsp_cmd->qp_max_on_B;
+		iav->stream[id].h264_config.qp_max_on_Q = dsp_cmd->qp_max_on_Q;
 		iav->stream[id].h264_config.qp_min_on_I = dsp_cmd->qp_min_on_I;
 		iav->stream[id].h264_config.qp_min_on_P = dsp_cmd->qp_min_on_P;
 		iav->stream[id].h264_config.qp_min_on_B = dsp_cmd->qp_min_on_B;
+		iav->stream[id].h264_config.qp_min_on_Q = dsp_cmd->qp_min_on_Q;
 		iav->stream[id].h264_config.adapt_qp = dsp_cmd->aqp;
 		iav->stream[id].h264_config.i_qp_reduce = dsp_cmd->i_qp_reduce;
 		iav->stream[id].h264_config.p_qp_reduce = dsp_cmd->p_qp_reduce;
+		iav->stream[id].h264_config.q_qp_reduce = dsp_cmd->q_qp_reduce;
+		iav->stream[id].h264_config.log_q_num_plus_1 = dsp_cmd->log_q_num_per_gop_plus_1;
 		iav->stream[id].h264_config.skip_flag = dsp_cmd->skip_flags;
 	}
 	if (dsp_cmd->enable_flags & REALTIME_PARAM_GOP_BIT) {
@@ -3417,7 +3592,8 @@ static int parse_cmd_encode_param(struct ambarella_iav *iav, DSP_CMD *cmd)
 		iav->stream[id].h264_config.zmv_threshold = dsp_cmd->zmv_threshold;
 	}
 	if (dsp_cmd->enable_flags & REALTIME_PARAM_FLAT_AREA_BIT) {
-		iav->stream[id].h264_config.enc_improve = dsp_cmd->flat_area_improvement_on;
+		iav->stream[id].h264_config.flat_area_improve =
+			dsp_cmd->flat_area_improvement_on;
 	}
 	if (dsp_cmd->enable_flags & REALTIME_PARAM_FRAME_DROP_BIT) {
 		iav->stream[id].h264_config.drop_frames = dsp_cmd->drop_frame;
@@ -3444,8 +3620,8 @@ int parse_dsp_cmd_to_iav(struct ambarella_iav *iav)
 	dsp_init_data_t *dsp_init_data = NULL;
 
 	dsp_init_data = iav->dsp->get_dsp_init_data(iav->dsp);
-	cmd_data_phys = DSP_TO_PHYS(dsp_init_data->cmd_data_ptr);
-	cmd_data_virt = ioremap_nocache(cmd_data_phys, DSP_CMD_BUF_SIZE);
+	cmd_data_phys = DSP_TO_PHYS(dsp_init_data->default_config_ptr);
+	cmd_data_virt = ioremap_nocache(cmd_data_phys, DSP_DEF_CMD_BUF_SIZE);
 	if (!cmd_data_virt) {
 		iav_error("Failed to call ioremap() for dsp_cmd_data.\n");
 		return -ENOMEM;

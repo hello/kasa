@@ -39,7 +39,7 @@
 #define IDC_BASE			(APB_BASE + IDC_OFFSET)
 #define IDC_REG(x)			(IDC_BASE + (x))
 
-#if (CHIP_REV == S2L) || (CHIP_REV == S3)
+#if (CHIP_REV == S2L) || (CHIP_REV == S3) || (CHIP_REV == S3L)
 #define IDC2_OFFSET			0x1000
 #else
 #define IDC2_OFFSET			0x7000
@@ -51,7 +51,7 @@
 #define IDC3_OFFSET			0x13000
 #elif (CHIP_REV == A8)
 #define IDC3_OFFSET			0xE000
-#elif (CHIP_REV == S2L) || (CHIP_REV == S3)
+#elif (CHIP_REV == S2L) || (CHIP_REV == S3) || (CHIP_REV == S3L)
 #define IDC3_OFFSET			0x7000
 #endif
 #define IDC3_BASE			(APB_BASE + IDC3_OFFSET)
@@ -75,6 +75,9 @@
 #define IDC_CTRL_IF			(0x02)
 #define IDC_CTRL_ACK			(0x01)
 #define IDC_CTRL_CLS			(0x00)
+
+#define IDC_STS_FIFO_EMP		(0x04)
+#define IDC_STS_FIFO_FUL		(0x02)
 
 #define IDC_FIFO_BUF_SIZE		(63)
 

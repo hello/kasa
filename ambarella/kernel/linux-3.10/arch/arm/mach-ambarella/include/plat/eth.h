@@ -39,8 +39,24 @@
 
 #if (CHIP_REV == S3)
 #define ETH_ENHANCED 1
+struct ambeth_desc {
+	u32				status;
+	u32				length;
+	u32				buffer1;
+	u32				buffer2;
+	u32				des4;
+	u32				des5;
+	u32				des6;
+	u32				des7;
+} __attribute((packed));
 #else
 #define ETH_ENHANCED 0
+struct ambeth_desc {
+	u32				status;
+	u32				length;
+	u32				buffer1;
+	u32				buffer2;
+} __attribute((packed));
 #endif
 /* ==========================================================================*/
 #define ETH_OFFSET			0xE000
@@ -319,12 +335,21 @@
 
 /* Receive Descriptor 1 (RDES1) */
 #define ETH_RDES1_DIC			0x80000000
+#if (CHIP_REV == S3)
+#define ETH_RDES1_RER			0x00008000
+#define ETH_RDES1_RCH			0x00004000
+#define ETH_RDES1_RBS2(v)		(((v) & 0x1FFF0000) >> 16)
+#define ETH_RDES1_RBS1(v)		((v) & 0x00001FFF)
+#define ETH_RDES1_RBS2x(x)		(((x) << 16) & 0x1FFF0000)
+#define ETH_RDES1_RBS1x(x)		((x) & 0x00001FFF)
+#else
 #define ETH_RDES1_RER			0x02000000
 #define ETH_RDES1_RCH			0x01000000
 #define ETH_RDES1_RBS2(v)		(((v) & 0x003ff800) >> 11)	/* Receive Buffer 2 Size */
 #define ETH_RDES1_RBS1(v)		((v) & 0x000007ff)		/* Receive Buffer 1 Size */
 #define ETH_RDES1_RBS2x(x)		(((x) << 11) & 0x003ff800)	/* Receive Buffer 2 Size */
 #define ETH_RDES1_RBS1x(x)		((x) & 0x000007ff)		/* Receive Buffer 1 Size */
+#endif
 
 /* Transmit Descriptor 0 (TDES0) */
 #define ETH_TDES0_OWN			0x80000000
@@ -359,41 +384,18 @@
 #define ETH_TDES1_TER			0x02000000
 #define ETH_TDES1_TCH			0x01000000
 #define ETH_TDES1_DP			0x00800000
+#if (CHIP_REV == S3)
+#define ETH_TDES1_TBS2(v)		(((v) & 0x1FFF0000) >> 16)
+#define ETH_TDES1_TBS1(v)		((v) & 0x00001FFF)
+#define ETH_TDES1_TBS2x(x)		(((x) << 16) & 0x1FFF0000)
+#define ETH_TDES1_TBS1x(x)		((x) & 0x00001FFF)
+#else
 #define ETH_TDES1_TBS2(v)		(((v) & 0x003ff800) >> 11)
 #define ETH_TDES1_TBS1(v)		((v) & 0x000007ff)
 #define ETH_TDES1_TBS2x(x)		(((x) << 11) & 0x003ff800)
 #define ETH_TDES1_TBS1x(x)		((x) & 0x000007ff)
-
+#endif
 /* ==========================================================================*/
-#define ETH_ENHANCED_RDES0_OWN		0x80000000
-#define ETH_ENHANCED_RDES0_AFM		0x40000000
-#define ETH_ENHANCED_RDES0_FL(v)	(((v) & 0x3FFF0000) >> 16)
-#define ETH_ENHANCED_RDES0_ES		0x00008000
-#define ETH_ENHANCED_RDES0_DE		0x00004000
-#define ETH_ENHANCED_RDES0_SAF		0x00002000
-#define ETH_ENHANCED_RDES0_LE		0x00001000
-#define ETH_ENHANCED_RDES0_OE		0x00000800
-#define ETH_ENHANCED_RDES0_VLAN		0x00000400
-#define ETH_ENHANCED_RDES0_FS		0x00000200
-#define ETH_ENHANCED_RDES0_LS		0x00000100
-#define ETH_ENHANCED_RDES0_IPC		0x00000080
-#define ETH_ENHANCED_RDES0_LC		0x00000040
-#define ETH_ENHANCED_RDES0_FT		0x00000020
-#define ETH_ENHANCED_RDES0_RWT		0x00000010
-#define ETH_ENHANCED_RDES0_RE		0x00000008
-#define ETH_ENHANCED_RDES0_DBE		0x00000004
-#define ETH_ENHANCED_RDES0_CE		0x00000002
-#define ETH_ENHANCED_RDES0_RX		0x00000001
-
-#define ETH_ENHANCED_RDES1_DIC		0x80000000
-#define ETH_ENHANCED_RDES1_RER		0x00008000
-#define ETH_ENHANCED_RDES1_RCH		0x00004000
-#define ETH_ENHANCED_RDES1_RBS2(v)	(((v) & 0x1FFF0000) >> 16)
-#define ETH_ENHANCED_RDES1_RBS1(v)	((v) & 0x00001FFF)
-#define ETH_ENHANCED_RDES1_RBS2x(x)	(((x) << 16) & 0x1FFF0000)
-#define ETH_ENHANCED_RDES1_RBS1x(x)	((x) & 0x00001FFF)
-
-#define ETH_ENHANCED_TDES0_OWN		0x80000000
 #define ETH_ENHANCED_TDES0_IC		0x40000000
 #define ETH_ENHANCED_TDES0_LS		0x20000000
 #define ETH_ENHANCED_TDES0_FS		0x10000000
@@ -405,39 +407,18 @@
 #define ETH_ENHANCED_TDES0_CIC_HDR	0x00400000
 #define ETH_ENHANCED_TDES0_TER		0x00200000
 #define ETH_ENHANCED_TDES0_TCH		0x00100000
-#define ETH_ENHANCED_TDES0_TTSS		0x00020000
-#define ETH_ENHANCED_TDES0_IHE		0x00010000
-#define ETH_ENHANCED_TDES0_ES		0x00008000
-#define ETH_ENHANCED_TDES0_JT		0x00004000
-#define ETH_ENHANCED_TDES0_FF		0x00002000
-#define ETH_ENHANCED_TDES0_IPE		0x00001000
-#define ETH_ENHANCED_TDES0_LCA		0x00000800
-#define ETH_ENHANCED_TDES0_NC		0x00000400
-#define ETH_ENHANCED_TDES0_LCO		0x00000200
-#define ETH_ENHANCED_TDES0_EC		0x00000100
-#define ETH_ENHANCED_TDES0_VF		0x00000080
-#define ETH_ENHANCED_TDES0_CC(v)	(((v) & 0x00000078) >> 3)
-#define ETH_ENHANCED_TDES0_ED		0x00000004
-#define ETH_ENHANCED_TDES0_UF		0x00000002
-#define ETH_ENHANCED_TDES0_DB		0x00000001
-#define ETH_ENHANCED_TDES0_ES_MASK	(ETH_ENHANCED_TDES0_UF | \
-					ETH_ENHANCED_TDES0_ED | \
-					ETH_ENHANCED_TDES0_EC | \
-					ETH_ENHANCED_TDES0_LCO | \
-					ETH_ENHANCED_TDES0_NC | \
-					ETH_ENHANCED_TDES0_LCA | \
-					ETH_ENHANCED_TDES0_FF | \
-					ETH_ENHANCED_TDES0_JT | \
-					ETH_ENHANCED_TDES0_ES)
 
 #define ETH_ENHANCED_TDES1_SAIC_MAC1	0x80000000
 #define ETH_ENHANCED_TDES1_SAIC_REPLACE	0x40000000
 #define ETH_ENHANCED_TDES1_SAIC_INCLUDE	0x20000000
-#define ETH_ENHANCED_TDES1_TBS2(v)	(((v) & 0x1FFF0000) >> 16)
-#define ETH_ENHANCED_TDES1_TBS1(v)	((v) & 0x00001FFF)
-#define ETH_ENHANCED_TDES1_TBS2x(x)	(((x) << 16) & 0x1FFF0000)
-#define ETH_ENHANCED_TDES1_TBS1x(x)	((x) & 0x00001FFF)
 
+/*Different Bit of Descriptor*/
+#define ETH_TDES_IC	0x1
+#define ETH_TDES_LS	0x2
+#define ETH_TDES_FS	0x4
+#define ETH_TDES_DC	0x8
+#define ETH_TDES_TCH	0x10
+#define ETH_TDES_CIC	0x20
 /* ==========================================================================*/
 #define AMBARELLA_ETH_FC_AUTONEG	(1 << 0)
 #define AMBARELLA_ETH_FC_RX		(1 << 1)
@@ -447,7 +428,7 @@
 #define SYS_CONFIG_ETH_ENABLE		0xffffffff
 #elif (CHIP_REV == S2) || (CHIP_REV == S2E)
 #define SYS_CONFIG_ETH_ENABLE		0x00800000
-#elif (CHIP_REV == S2L) || (CHIP_REV == S3)
+#elif (CHIP_REV == S2L) || (CHIP_REV == S3) || (CHIP_REV == S3L)
 #define SYS_CONFIG_ETH_ENABLE		0x00000001
 #else
 #define SYS_CONFIG_ETH_ENABLE		0x00000080

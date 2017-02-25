@@ -1,0 +1,13 @@
+--- NetworkManager-1.4.0/src/devices/wifi/nm-device-wifi.c.orig	2016-09-02 15:55:51.999093532 +0800
++++ NetworkManager-1.4.0/src/devices/wifi/nm-device-wifi.c	2016-09-02 15:57:05.860808252 +0800
+@@ -1241,8 +1241,8 @@ scanning_allowed (NMDeviceWifi *self)
+ 		/* Can always scan when disconnected */
+ 		return TRUE;
+ 	case NM_DEVICE_STATE_ACTIVATED:
+-		/* Need to do further checks when activated */
+-		break;
++		/* Don't scan when activated, reducing WiFi loading */
++		return FALSE;
+ 	}
+ 
+ 	/* Don't scan if the supplicant is busy */

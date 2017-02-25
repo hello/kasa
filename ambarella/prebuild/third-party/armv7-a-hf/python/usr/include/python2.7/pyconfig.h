@@ -1,5 +1,5 @@
 /* pyconfig.h.  Generated from pyconfig.h.in by configure.  */
-/* pyconfig.h.in.  Generated from configure.in by autoheader.  */
+/* pyconfig.h.in.  Generated from configure.ac by autoheader.  */
 
 
 #ifndef Py_PYCONFIG_H
@@ -35,7 +35,7 @@
 /* #undef DOUBLE_IS_LITTLE_ENDIAN_IEEE754 */
 
 /* Define if --enable-ipv6 is specified */
-/* #undef ENABLE_IPV6 */
+#define ENABLE_IPV6 1
 
 /* Define if flock needs to be linked with bsd library. */
 /* #undef FLOCK_NEEDS_LIBBSD */
@@ -56,6 +56,9 @@
 /* Define to 1 if you have the `alarm' function. */
 #define HAVE_ALARM 1
 
+/* Define to 1 if you have the <alloca.h> header file. */
+#define HAVE_ALLOCA_H 1
+
 /* Define this if your time.h defines altzone. */
 /* #undef HAVE_ALTZONE */
 
@@ -69,7 +72,7 @@
 #define HAVE_ATANH 1
 
 /* Define if GCC supports __attribute__((format(PyArg_ParseTuple, 2, 3))) */
-#define HAVE_ATTRIBUTE_FORMAT_PARSETUPLE 1
+/* #undef HAVE_ATTRIBUTE_FORMAT_PARSETUPLE */
 
 /* Define to 1 if you have the `bind_textdomain_codeset' function. */
 #define HAVE_BIND_TEXTDOMAIN_CODESET 1
@@ -115,6 +118,9 @@
 
 /* Define to 1 if you have the `clock' function. */
 #define HAVE_CLOCK 1
+
+/* Define if the C compiler supports computed gotos. */
+/* #undef HAVE_COMPUTED_GOTOS */
 
 /* Define to 1 if you have the `confstr' function. */
 #define HAVE_CONFSTR 1
@@ -162,10 +168,10 @@
 /* Define to 1 if you have the device macros. */
 #define HAVE_DEVICE_MACROS 1
 
-/* Define if we have /dev/ptc. */
-/* #undef HAVE_DEV_PTC */
+/* Define to 1 if you have the /dev/ptc device file. */
+#define HAVE_DEV_PTC 1
 
-/* Define if we have /dev/ptmx. */
+/* Define to 1 if you have the /dev/ptmx device file. */
 #define HAVE_DEV_PTMX 1
 
 /* Define to 1 if you have the <direct.h> header file. */
@@ -270,13 +276,16 @@
 /* #undef HAVE_GCC_ASM_FOR_X87 */
 
 /* Define if you have the getaddrinfo function. */
-/* #undef HAVE_GETADDRINFO */
+#define HAVE_GETADDRINFO 1
 
 /* Define to 1 if you have the `getcwd' function. */
 #define HAVE_GETCWD 1
 
 /* Define this if you have flockfile(), getc_unlocked(), and funlockfile() */
 #define HAVE_GETC_UNLOCKED 1
+
+/* Define to 1 if you have the `getentropy' function. */
+/* #undef HAVE_GETENTROPY */
 
 /* Define to 1 if you have the `getgroups' function. */
 #define HAVE_GETGROUPS 1
@@ -371,6 +380,12 @@
 /* Define to 1 if you have the `initgroups' function. */
 #define HAVE_INITGROUPS 1
 
+/* Define if your compiler provides int32_t. */
+#define HAVE_INT32_T 1
+
+/* Define if your compiler provides int64_t. */
+#define HAVE_INT64_T 1
+
 /* Define to 1 if you have the <inttypes.h> header file. */
 #define HAVE_INTTYPES_H 1
 
@@ -420,7 +435,7 @@
 #define HAVE_LIBINTL_H 1
 
 /* Define if you have the readline library (-lreadline). */
-/* #undef HAVE_LIBREADLINE */
+#define HAVE_LIBREADLINE 1
 
 /* Define to 1 if you have the `resolv' library (-lresolv). */
 /* #undef HAVE_LIBRESOLV */
@@ -467,6 +482,9 @@
 /* Define to 1 if you have the `mktime' function. */
 #define HAVE_MKTIME 1
 
+/* Define to 1 if you have the `mmap' function. */
+#define HAVE_MMAP 1
+
 /* Define to 1 if you have the `mremap' function. */
 #define HAVE_MREMAP 1
 
@@ -512,6 +530,9 @@
 /* Define if you have GNU PTH threads. */
 /* #undef HAVE_PTH */
 
+/* Define to 1 if you have the `pthread_atfork' function. */
+#define HAVE_PTHREAD_ATFORK 1
+
 /* Defined for Solaris 2.6 bug in pthread header. */
 /* #undef HAVE_PTHREAD_DESTRUCTOR */
 
@@ -530,6 +551,9 @@
 /* Define to 1 if you have the `putenv' function. */
 #define HAVE_PUTENV 1
 
+/* Define if the libcrypto has RAND_egd */
+#define HAVE_RAND_EGD 1
+
 /* Define to 1 if you have the `readlink' function. */
 #define HAVE_READLINK 1
 
@@ -537,25 +561,25 @@
 #define HAVE_REALPATH 1
 
 /* Define if you have readline 2.1 */
-/* #undef HAVE_RL_CALLBACK */
+#define HAVE_RL_CALLBACK 1
 
 /* Define if you can turn off readline's signal handling. */
-/* #undef HAVE_RL_CATCH_SIGNAL */
+#define HAVE_RL_CATCH_SIGNAL 1
 
 /* Define if you have readline 2.2 */
-/* #undef HAVE_RL_COMPLETION_APPEND_CHARACTER */
+#define HAVE_RL_COMPLETION_APPEND_CHARACTER 1
 
 /* Define if you have readline 4.0 */
-/* #undef HAVE_RL_COMPLETION_DISPLAY_MATCHES_HOOK */
+#define HAVE_RL_COMPLETION_DISPLAY_MATCHES_HOOK 1
 
 /* Define if you have readline 4.2 */
-/* #undef HAVE_RL_COMPLETION_MATCHES */
+#define HAVE_RL_COMPLETION_MATCHES 1
 
 /* Define if you have rl_completion_suppress_append */
-/* #undef HAVE_RL_COMPLETION_SUPPRESS_APPEND */
+#define HAVE_RL_COMPLETION_SUPPRESS_APPEND 1
 
 /* Define if you have readline 4.0 */
-/* #undef HAVE_RL_PRE_INPUT_HOOK */
+#define HAVE_RL_PRE_INPUT_HOOK 1
 
 /* Define to 1 if you have the `round' function. */
 #define HAVE_ROUND 1
@@ -848,6 +872,12 @@
 /* Define this if you have tcl and TCL_UTF_MAX==6 */
 /* #undef HAVE_UCS4_TCL */
 
+/* Define if your compiler provides uint32_t. */
+#define HAVE_UINT32_T 1
+
+/* Define if your compiler provides uint64_t. */
+#define HAVE_UINT64_T 1
+
 /* Define to 1 if the system has the type `uintptr_t'. */
 #define HAVE_UINTPTR_T 1
 
@@ -950,7 +980,7 @@
 #define PY_FORMAT_SIZE_T "z"
 
 /* Define as the integral type used for Unicode representation. */
-#define PY_UNICODE_TYPE unsigned short
+#define PY_UNICODE_TYPE unsigned long
 
 /* Define if you want to build an interpreter with many run-time checks. */
 /* #undef Py_DEBUG */
@@ -959,7 +989,7 @@
 #define Py_ENABLE_SHARED 1
 
 /* Define as the size of the unicode type. */
-#define Py_UNICODE_SIZE 2
+#define Py_UNICODE_SIZE 4
 
 /* Define if you want to have a Unicode type. */
 #define Py_USING_UNICODE 1
@@ -1043,6 +1073,9 @@
 /* Define to 1 if your <sys/time.h> declares `struct tm'. */
 /* #undef TM_IN_SYS_TIME */
 
+/* Define if you want to use computed gotos in ceval.c. */
+/* #undef USE_COMPUTED_GOTOS */
+
 /* Enable extensions on AIX 3, Interix.  */
 #ifndef _ALL_SOURCE
 # define _ALL_SOURCE 1
@@ -1082,7 +1115,7 @@
 #define WINDOW_HAS_FLAGS 1
 
 /* Define if you want documentation strings in extension modules */
-#define WITH_DOC_STRINGS 1
+/* #undef WITH_DOC_STRINGS */
 
 /* Define if you want to use the new-style (Openstep, Rhapsody, MacOS) dynamic
    linker (dyld) instead of the old-style (NextStep) dynamic linker (rld).

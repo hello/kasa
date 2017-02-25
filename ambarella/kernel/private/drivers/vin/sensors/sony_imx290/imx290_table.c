@@ -4,14 +4,33 @@
  * History:
  *    2015/03/23 - [Long Zhao] Create
  *
- * Copyright (C) 2004-2015, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 static struct vin_video_pll imx290_plls[] = {
 	{0, 37125000, 148500000}, /* for 1080p */
 	{0, 37125000, 148500000}, /* for 720p */
@@ -207,6 +226,108 @@ static struct vin_reg_16_8 imx290_mode_regs[][31] = {
 		{IMX290_HBLANK_LSB,		0xFC},
 		{IMX290_HBLANK_MSB,		0x00},
 	},
+	{	/* 2x DOL: 720p60 10bits */
+		{IMX290_ADBIT0,			0x00},
+		{IMX290_ADBIT1,			0x1D},
+		{IMX290_ADBIT2,			0x12},
+		{IMX290_ADBIT3,			0x37},
+		{IMX290_WINMODE,		0x10},
+		{IMX290_FRSEL,			0x00},
+		{IMX290_VMAX_LSB,		0xEE},
+		{IMX290_VMAX_MSB,		0x02},
+		{IMX290_VMAX_HSB,		0x00},
+		{IMX290_HMAX_LSB,		0x72},
+		{IMX290_HMAX_MSB,		0x06},
+		{IMX290_ODBIT,			0xE0},
+		{IMX290_BLKLEVEL_LSB,	0x3C},
+		{IMX290_BLKLEVEL_MSB,	0x00},
+		/* DOL related */
+		{IMX290_WDMODE,		0x11},
+		{IMX290_SHS1_LSB,		0x02},
+		{IMX290_SHS1_MSB,		0x00},
+		{IMX290_SHS1_HSB,		0x00},
+		{IMX290_SHS2_LSB,		0x5B},
+		{IMX290_SHS2_MSB,		0x04},
+		{IMX290_SHS2_HSB,		0x00},
+		{IMX290_SHS3_LSB,		0x00},
+		{IMX290_SHS3_MSB,		0x00},
+		{IMX290_SHS3_HSB,		0x00},
+		{IMX290_PATTERN,		0x00},
+		{IMX290_XVSCNT_INT,		0x90},
+		{IMX290_NULL0SIZE,		0x00},
+		{IMX290_YOUTSIZE_LSB,	0xBA},
+		{IMX290_YOUTSIZE_MSB,	0x05},
+		{IMX290_HBLANK_LSB,		0x34},
+		{IMX290_HBLANK_MSB,		0x05},
+	},
+	{	/* 3x DOL: 720p30 10bits */
+		{IMX290_ADBIT0,			0x00},
+		{IMX290_ADBIT1,			0x1D},
+		{IMX290_ADBIT2,			0x12},
+		{IMX290_ADBIT3,			0x37},
+		{IMX290_WINMODE,		0x10},
+		{IMX290_FRSEL,			0x00},
+		{IMX290_VMAX_LSB,		0xEE},
+		{IMX290_VMAX_MSB,		0x02},
+		{IMX290_VMAX_HSB,		0x00},
+		{IMX290_HMAX_LSB,		0x72},
+		{IMX290_HMAX_MSB,		0x06},
+		{IMX290_ODBIT,			0xE0},
+		{IMX290_BLKLEVEL_LSB,	0x3C},
+		{IMX290_BLKLEVEL_MSB,	0x00},
+		/* DOL related */
+		{IMX290_WDMODE,		0x21},
+		{IMX290_SHS1_LSB,		0x05},
+		{IMX290_SHS1_MSB,		0x00},
+		{IMX290_SHS1_HSB,		0x00},
+		{IMX290_SHS2_LSB,		0x1B},
+		{IMX290_SHS2_MSB,		0x02},
+		{IMX290_SHS2_HSB,		0x00},
+		{IMX290_SHS3_LSB,		0xB7},
+		{IMX290_SHS3_MSB,		0x02},
+		{IMX290_SHS3_HSB,		0x00},
+		{IMX290_PATTERN,		0x00},
+		{IMX290_XVSCNT_INT,		0xB0},
+		{IMX290_NULL0SIZE,		0x00},
+		{IMX290_YOUTSIZE_LSB,	0x8B},
+		{IMX290_YOUTSIZE_MSB,	0x0B},
+		{IMX290_HBLANK_LSB,		0x34},
+		{IMX290_HBLANK_MSB,		0x05},
+	},
+	{	/* linear: 1080p60 12bits */
+		{IMX290_ADBIT0,			0x01},
+		{IMX290_ADBIT1,			0x00},
+		{IMX290_ADBIT2,			0x00},
+		{IMX290_ADBIT3,			0x0E},
+		{IMX290_WINMODE,		0x00},
+		{IMX290_FRSEL,			0x01},
+		{IMX290_VMAX_LSB,		0x65},
+		{IMX290_VMAX_MSB,		0x04},
+		{IMX290_VMAX_HSB,		0x00},
+		{IMX290_HMAX_LSB,		0x98},
+		{IMX290_HMAX_MSB,		0x08},
+		{IMX290_ODBIT,			0xE1},
+		{IMX290_BLKLEVEL_LSB,	0xF0},
+		{IMX290_BLKLEVEL_MSB,	0x00},
+		/* DOL related */
+		{IMX290_WDMODE,		0x00},
+		{IMX290_SHS1_LSB,		0x00},
+		{IMX290_SHS1_MSB,		0x00},
+		{IMX290_SHS1_HSB,		0x00},
+		{IMX290_SHS2_LSB,		0x00},
+		{IMX290_SHS2_MSB,		0x00},
+		{IMX290_SHS2_HSB,		0x00},
+		{IMX290_SHS3_LSB,		0x00},
+		{IMX290_SHS3_MSB,		0x00},
+		{IMX290_SHS3_HSB,		0x00},
+		{IMX290_PATTERN,		0x01},
+		{IMX290_XVSCNT_INT,		0x00},
+		{IMX290_NULL0SIZE,		0x01},
+		{IMX290_YOUTSIZE_LSB,	0x49},
+		{IMX290_YOUTSIZE_MSB,	0x04},
+		{IMX290_HBLANK_LSB,		0xFC},
+		{IMX290_HBLANK_MSB,		0x00},
+	},
 };
 
 static struct vin_reg_16_8 imx290_share_regs[] = {
@@ -262,9 +383,6 @@ static struct vin_reg_16_8 imx290_share_regs[] = {
 
 #ifdef CONFIG_PM
 static struct vin_reg_16_8 pm_regs[] = {
-	{IMX290_VMAX_HSB, 0x00},
-	{IMX290_VMAX_MSB, 0x00},
-	{IMX290_VMAX_LSB, 0x00},
 	{IMX290_SHS1_HSB, 0x00},
 	{IMX290_SHS1_MSB, 0x00},
 	{IMX290_SHS1_LSB, 0x00},
@@ -275,6 +393,7 @@ static struct vin_reg_16_8 pm_regs[] = {
 	{IMX290_SHS3_MSB, 0x00},
 	{IMX290_SHS3_LSB, 0x00},
 	{IMX290_GAIN, 0x00},
+	{IMX290_FRSEL, 0x00},
 };
 #endif
 
@@ -331,8 +450,6 @@ static struct vin_video_format imx290_formats[] = {
 		.act_start_y	= 0,
 		.act_width	= 1920,
 		.act_height	= 1080,
-		.max_act_width = 1920,
-		.max_act_height = IMX290_1080P_BRL,
 		/* sensor mode */
 		.hdr_mode = AMBA_VIDEO_2X_HDR_MODE,
 		.device_mode	= 2,
@@ -355,6 +472,34 @@ static struct vin_video_format imx290_formats[] = {
 		.hdr_long_offset = 0,
 		.hdr_short1_offset = (IMX290_1080P_2X_RHS1 - 1) + 1, /* hdr_long_offset + 2 x VBP1 + 1 */
 	},
+	{	/* support for 2:1 shutter ratio */
+		.video_mode	= AMBA_VIDEO_MODE_1080P_A,
+		.def_start_x	= 4+8,
+		.def_start_y	= (1+2+10+8)*2,
+		.def_width	= 1920,
+		.def_height	= 1080 * 2 + (IMX290_1080P_2X_RATIO_RHS1 - 1), /* (1080 + VBP1)*2 */
+		.act_start_x	= 0,
+		.act_start_y	= 0,
+		.act_width	= 1920,
+		.act_height	= 1080,
+		/* sensor mode */
+		.hdr_mode = AMBA_VIDEO_2X_HDR_MODE,
+		.device_mode	= 2,
+		.pll_idx	= 0,
+		.width		= IMX290_1080P_H_PIXEL*2+IMX290_1080P_HBLANK,
+		.height		= 1080,
+		.format		= AMBA_VIDEO_FORMAT_PROGRESSIVE,
+		.type		= AMBA_VIDEO_TYPE_RGB_RAW,
+		.bits		= AMBA_VIDEO_BITS_10,
+		.ratio		= AMBA_VIDEO_RATIO_16_9,
+		.max_fps	= AMBA_VIDEO_FPS_30,
+		.default_fps	= AMBA_VIDEO_FPS_29_97,
+		.default_agc	= 0,
+		.default_shutter_time	= AMBA_VIDEO_FPS_60,
+		.default_bayer_pattern	= VINDEV_BAYER_PATTERN_RG,
+		.hdr_long_offset = 0,
+		.hdr_short1_offset = (IMX290_1080P_2X_RATIO_RHS1 - 1) + 1, /* hdr_long_offset + 2 x VBP1 + 1 */
+	},
 	{
 		.video_mode	= AMBA_VIDEO_MODE_1080P,
 		.def_start_x	= 4+8,
@@ -365,8 +510,6 @@ static struct vin_video_format imx290_formats[] = {
 		.act_start_y	= 0,
 		.act_width	= 1920,
 		.act_height	= 1080,
-		.max_act_width = 1920,
-		.max_act_height = IMX290_1080P_BRL,
 		/* sensor mode */
 		.hdr_mode = AMBA_VIDEO_3X_HDR_MODE,
 		.device_mode	= 3,
@@ -396,8 +539,6 @@ static struct vin_video_format imx290_formats[] = {
 		.act_start_y	= 0,
 		.act_width	= 1920,
 		.act_height	= 1080,
-		.max_act_width = 1920,
-		.max_act_height = IMX290_1080P_BRL,
 		/* sensor mode */
 		.hdr_mode = AMBA_VIDEO_2X_HDR_MODE,
 		.device_mode	= 4,
@@ -415,6 +556,88 @@ static struct vin_video_format imx290_formats[] = {
 		.default_bayer_pattern	= VINDEV_BAYER_PATTERN_RG,
 		.hdr_long_offset = 0,
 		.hdr_short1_offset = (IMX290_1080P_2X_12B_RHS1 - 1) + 1, /* hdr_long_offset + 2 x VBP1 + 1 */
+	},
+	{
+		.video_mode	= AMBA_VIDEO_MODE_720P,
+		.def_start_x	= 4+8,
+		.def_start_y	= (1+2+4+4)*2,
+		.def_width	= 1280,
+		.def_height	= 720 * 2 + (IMX290_720P_2X_RHS1 - 1), /* (720 + VBP1)*2 */
+		.act_start_x	= 0,
+		.act_start_y	= 0,
+		.act_width	= 1280,
+		.act_height	= 720,
+		/* sensor mode */
+		.hdr_mode = AMBA_VIDEO_2X_HDR_MODE,
+		.device_mode	= 5,
+		.pll_idx	= 1,
+		.width		= IMX290_720P_H_PIXEL*2+IMX290_720P_HBLANK,
+		.height		= 720,
+		.format		= AMBA_VIDEO_FORMAT_PROGRESSIVE,
+		.type		= AMBA_VIDEO_TYPE_RGB_RAW,
+		.bits		= AMBA_VIDEO_BITS_10,
+		.ratio		= AMBA_VIDEO_RATIO_16_9,
+#if USE_720P_2X_30FPS
+		.max_fps	= AMBA_VIDEO_FPS_30,
+#else
+		.max_fps	= AMBA_VIDEO_FPS_60,
+#endif
+		.default_fps	= AMBA_VIDEO_FPS_29_97,
+		.default_agc	= 0,
+		.default_shutter_time	= AMBA_VIDEO_FPS_60,
+		.default_bayer_pattern	= VINDEV_BAYER_PATTERN_RG,
+		.hdr_long_offset = 0,
+		.hdr_short1_offset = (IMX290_720P_2X_RHS1 - 1) + 1, /* hdr_long_offset + 2 x VBP1 + 1 */
+	},
+	{
+		.video_mode	= AMBA_VIDEO_MODE_720P,
+		.def_start_x	= 4+8,
+		.def_start_y	= (1+2+4+4)*3,
+		.def_width	= 1280,
+		.def_height	= 720 * 3 + (IMX290_720P_3X_RHS2 - 2), /* (720 + VBP2)*3 */
+		.act_start_x	= 0,
+		.act_start_y	= 0,
+		.act_width	= 1280,
+		.act_height	= 720,
+		/* sensor mode */
+		.hdr_mode = AMBA_VIDEO_3X_HDR_MODE,
+		.device_mode	= 6,
+		.pll_idx	= 1,
+		.width		= IMX290_720P_H_PIXEL*3+IMX290_720P_HBLANK*2,
+		.height		= 720,
+		.format		= AMBA_VIDEO_FORMAT_PROGRESSIVE,
+		.type		= AMBA_VIDEO_TYPE_RGB_RAW,
+		.bits		= AMBA_VIDEO_BITS_10,
+		.ratio		= AMBA_VIDEO_RATIO_16_9,
+		.max_fps	= AMBA_VIDEO_FPS_30,
+		.default_fps	= AMBA_VIDEO_FPS_29_97,
+		.default_agc	= 0,
+		.default_shutter_time	= AMBA_VIDEO_FPS_60,
+		.default_bayer_pattern	= VINDEV_BAYER_PATTERN_RG,
+		.hdr_long_offset = 0,
+		.hdr_short1_offset = (IMX290_720P_3X_RHS1 - 1) + 1, /* hdr_long_offset + 3 x VBP1 + 1 */
+		.hdr_short2_offset = (IMX290_720P_3X_RHS2 - 2) + 2, /* hdr_long_offset + 3 x VBP2 + 2 */
+	},
+	{
+		.video_mode	= AMBA_VIDEO_MODE_1080P,
+		.def_start_x	= 4+8,
+		.def_start_y	= 1+2+10+8,
+		.def_width	= 1920,
+		.def_height	= 1080,
+		/* sensor mode */
+		.device_mode	= 7,
+		.pll_idx	= 0,
+		.width		= 1920,
+		.height		= 1080,
+		.format		= AMBA_VIDEO_FORMAT_PROGRESSIVE,
+		.type		= AMBA_VIDEO_TYPE_RGB_RAW,
+		.bits		= AMBA_VIDEO_BITS_12,
+		.ratio		= AMBA_VIDEO_RATIO_16_9,
+		.max_fps	= AMBA_VIDEO_FPS_60,
+		.default_fps	= AMBA_VIDEO_FPS_29_97,
+		.default_agc	= 0,
+		.default_shutter_time	= AMBA_VIDEO_FPS_60,
+		.default_bayer_pattern	= VINDEV_BAYER_PATTERN_RG,
 	},
 };
 

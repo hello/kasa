@@ -26,7 +26,7 @@
 
 #if (CHIP_REV == A8)
 #define PWM_INSTANCES			0
-#elif (CHIP_REV == S2L) || (CHIP_REV == S3)
+#elif (CHIP_REV == S2L) || (CHIP_REV == S3) || (CHIP_REV == S3L)
 #define PWM_INSTANCES			4
 #else
 #define PWM_INSTANCES			5
@@ -47,28 +47,24 @@
 #define PWM_MODE_OFFSET			0x08
 #define PWM_CONTROL1_OFFSET		0x0c
 
-#if (CHIP_REV == S2L) || (CHIP_REV == S3)
-
+#if (CHIP_REV == S2L) || (CHIP_REV == S3) || (CHIP_REV == S3L)
 #define PWM_B0_ENABLE_OFFSET		0x04
 #define PWM_B1_ENABLE_OFFSET		0x0c
 #define PWM_C0_ENABLE_OFFSET		0x14
 #define PWM_C1_ENABLE_OFFSET		0x1c
-#define PWM_B0_DATA1_OFFSET			0x20
-#define PWM_B1_DATA1_OFFSET			0x24
-#define PWM_C0_DATA1_OFFSET			0x28
-#define PWM_C1_DATA1_OFFSET			0x2c
-
+#define PWM_B0_DATA1_OFFSET		0x20
+#define PWM_B1_DATA1_OFFSET		0x24
+#define PWM_C0_DATA1_OFFSET		0x28
+#define PWM_C1_DATA1_OFFSET		0x2c
 #else
-
 #define PWM_B0_ENABLE_OFFSET		0x304
 #define PWM_B1_ENABLE_OFFSET		0x30c
 #define PWM_C0_ENABLE_OFFSET		0x314
 #define PWM_C1_ENABLE_OFFSET		0x31c
-#define PWM_B0_DATA1_OFFSET			0x320
-#define PWM_B1_DATA1_OFFSET			0x324
-#define PWM_C0_DATA1_OFFSET			0x328
-#define PWM_C1_DATA1_OFFSET			0x32c
-
+#define PWM_B0_DATA1_OFFSET		0x320
+#define PWM_B1_DATA1_OFFSET		0x324
+#define PWM_C0_DATA1_OFFSET		0x328
+#define PWM_C1_DATA1_OFFSET		0x32c
 #endif
 
 #define PWM_CLK_SRC_BIT			(0x1 << 31)
@@ -77,7 +73,7 @@
 #define PWM_PWM_EN_BIT			(0x1)
 
 #define PWM_PWM_TICKS_MAX_BITS		16
-#if (CHIP_REV == S2L) || (CHIP_REV == S3)
+#if (CHIP_REV == S2L) || (CHIP_REV == S3) || (CHIP_REV == S3L)
 #define PWM_ST_TICKS_MAX_BITS		16
 #else
 #define PWM_ST_TICKS_MAX_BITS		10

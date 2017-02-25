@@ -1,0 +1,135 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Ambarella Oryx Getting Started</title>
+    <meta name="author" content="Huaiqing Wang" />
+    <meta name="Copyright" content="Copyright (c) 2016 Ambarella, Inc." />
+    <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+    <link rel="stylesheet" type="text/css" href="css/oryxStyle.css" />
+    <link rel="stylesheet" type="text/css" href="css/zTreeStyle.css" />
+    <link rel="stylesheet" type="text/css" href="css/googlecode.css" />
+    <style>
+      pre {
+        counter-reset: line-numbering;
+        border: solid 1px #d9d9d9;
+        border-radius: 0;
+        background: #f00;
+        padding: 0;
+        line-height: 23px;
+        margin-bottom: 30px;
+        white-space: pre;
+        overflow-x: auto;
+        word-break: inherit;
+        word-wrap: inherit;
+      }
+      pre a::before {
+        content: counter(line-numbering);
+        counter-increment: line-numbering;
+        padding-right: 1em; /* space after numbers */
+        width: 25px;
+        text-align: right;
+        opacity: 0.7;
+        display: inline-block;
+        color: #aaa;
+        background: #eee;
+        margin-right: 16px;
+        padding: 2px 10px;
+        font-size: 13px;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        -khtml-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+      }
+      pre a:first-of-type::before {
+        padding-top: 10px;
+      }
+      pre a:last-of-type::before {
+        padding-bottom: 10px;
+      }
+      pre a:only-of-type::before {
+        padding: 10px;
+      }
+      .markdown-body .highlight pre, .markdown-body pre {
+        background: #D8D8D8;
+      }
+      .ztree li a.curSelectedNode {
+        padding-top: 0px;
+        background-color: #FFE6B0;
+        color: black;
+        height: 16px;
+        border: 1px #FFB951 solid;
+        opacity: 0.8;
+      }
+      .ztree{
+        overflow: auto;
+        height:100%;
+        min-height: 200px;
+        top: 0px;
+      }
+    </style>
+    <script src="js/jquery-1.11.3.min.js"></script>
+    <script src="js/showdown.min.js"></script>
+    <script src="js/jquery.ztree.core-3.5.min.js"></script>
+    <script src="js/ztree_toc.min.js"></script>
+    <script src="js/MathJax/MathJax.js?config=TeX-AMS_CHTML"></script>
+    <script src="js/highlight.pack.js"></script>
+    <script type="text/x-mathjax-config">
+      MathJax.Hub.Config({tex2jax: {inlineMath: [['$','$'], ['\\(','\\)']]}});
+    </script>
+    <script>
+      $(function() {
+        hljs.initHighlightingOnLoad();
+        $.ajax({
+            type: "GET",
+            url: "markdown/getting_started.md",
+            data: {},
+            dataType: "text",
+            cache: true,
+            success: function(data) {
+              var converter = new showdown.Converter({parseImgDimensions: true,
+                  simplifiedAutoLink:true,
+                  strikethrough:true,
+                  tables:true,
+                  tablesHeaderId:true,
+                  ghCodeBlocks:true,
+                  literalMidWordUnderscores:true,
+                  tasklists:true});
+              $("#markdown-show").html(converter.makeHtml(data));
+              $("#tree").ztree_toc({
+                  is_auto_number: true,
+                  documment_selector: ".markdown-body"
+              });
+              $('pre code').each(function(i, block) {
+                hljs.highlightBlock(block);
+              });
+            },
+            error: function(jqXHR, textStatus, errorThrown) {
+              var explorer = window.navigator.userAgent;
+              if ((explorer.indexOf("Firefox") < 0) && (explorer.indexOf("MSIE") < 0 ||
+                  (explorer.indexOf("MSIE") >= 0 && (/\d+/.exec(explorer.split(';')[1])) < 9))) {
+                $("#readme").css({"width":"100%","margin-left":0,"text-align":"center"});
+                $("#readme").html("<b style='font-size:2.5em'>Please use firefox or IE(version>=9) browser to open this document! Or</b>" +
+                  "<p style='font-size:1.4em'>if you want use chrome, you can add a '-allow-file-access-from-files' option when launch it. " +
+                  "For example: $ google-chrome -allow-file-access-from-files</p>");
+              }
+            }
+        });
+      })
+    </script>
+  </head>
+
+  <body>
+    <div>
+      <div style="width:30%;">
+        <ul id="tree" class="ztree" style="width:100%">
+        </ul>
+      </div>
+      <div id="readme" style="width:70%;margin-left:25%;">
+        <article id="markdown-show" class="markdown-body">
+        </article>
+      </div>
+    </div>
+  </body>
+</html>

@@ -68,6 +68,18 @@ struct nand_flash_dev nand_flash_ids[] = {
 		{ .id = {0xad, 0xda, 0x90, 0x95, 0x46} },
 		  SZ_2K, SZ_256, SZ_128K, 0, 5, 128},
 
+	{"GD5F1GQ4UCY1G SPINAND 1Gb 3.3V 8-bit",
+		{ .id = {0xc8, 0xb1, 0x48} },
+		SZ_2K, SZ_128, SZ_128K, LP_OPTIONS, 3, 128},
+
+	{"GD5F2GQ4UCY1G SPINAND 2Gb 3.3V 8-bit",
+		{ .id = {0xc8, 0xb2, 0x48} },
+		SZ_2K, SZ_256, SZ_128K, LP_OPTIONS, 3, 128},
+
+	{"HYF1GQ4UBACAE SPINAND 1Gb 3.3V 8-bit",
+		{ .id = {0xc9, 0x59, 0x1b} },
+		SZ_2K, SZ_128, SZ_128K, LP_OPTIONS, 3, 128},
+
 	LEGACY_ID_NAND("NAND 4MiB 5V 8-bit",   0x6B, 4, SZ_8K, SP_OPTIONS),
 	LEGACY_ID_NAND("NAND 4MiB 3,3V 8-bit", 0xE3, 4, SZ_8K, SP_OPTIONS),
 	LEGACY_ID_NAND("NAND 4MiB 3,3V 8-bit", 0xE5, 4, SZ_8K, SP_OPTIONS),
@@ -193,6 +205,7 @@ struct nand_manufacturers nand_manuf_ids[] = {
 	{NAND_MFR_AMD, "AMD/Spansion"},
 	{NAND_MFR_MACRONIX, "Macronix"},
 	{NAND_MFR_EON, "Eon"},
+	{NAND_MFR_GD,"GigdDevice"},
 	{0x0, "Unknown"}
 };
 

@@ -1,0 +1,26 @@
+oryx_doorbell_demo Application Introduction:
+
+  In order to run oryx_doorbell_demo, please do following steps:
+    1. Modify the parameter "dewarp_func" in the file "/etc/oryx/video/features.acs":
+        dewarp_func = ldc
+    2. Modify the parameter "rotate_possible" in the file "/etc/oryx/video/adv_iso_mode_resource_limit.acs":
+        rotate_possible = true
+    3. Change the parameters of Stream A in the file "/etc/oryx/video/stream_fmt.acs":
+        enc_rect = {960, 720, 480, 180}
+        flip = "both"
+        ratate_90_ccw = true
+    4. Run "apps_launchers" to start services. If you see some overlay related errors which means the area
+       size or data block size of the overlay are not matched, since we have rotated the stream and overlay
+       is related with the resolution, you can change the overlay configuration file to fix the error or
+       just ignore that.
+    5. In another console, run "oryx_doorbell_demo -r" to start this application, and you also can give
+       the option "-t" to specify the duration of triggered status of the doorbell, default time is 10
+       seconds. for examle:
+                oryx_doorbell_demo -t 10 -r
+    6. Rotate your camera 90 degrees counter-clockwise.
+    7. Make sure your iPad and camera have connected with the same router then open the APP in
+       iPad and fill in the correct rtsp url, for example: rtsp://10.0.0.2/video=video0,audio=aac
+       after that push the play button.
+    8. After connected with the camera, you can see the live streaming in your iPad. Moreover, you
+       can click the second button on camera to trigger the doorbell and slide the iPad's screen up and
+       down or double-click on the top/middle/bottom of the screen to change the view.

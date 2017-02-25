@@ -119,7 +119,7 @@ G_BEGIN_DECLS
  * @G_PARAM_WRITABLE: the parameter is writable
  * @G_PARAM_READWRITE: alias for %G_PARAM_READABLE | %G_PARAM_WRITABLE
  * @G_PARAM_CONSTRUCT: the parameter will be set upon object construction
- * @G_PARAM_CONSTRUCT_ONLY: the parameter will only be set upon object construction
+ * @G_PARAM_CONSTRUCT_ONLY: the parameter can only be set upon object construction
  * @G_PARAM_LAX_VALIDATION: upon parameter conversion (see g_param_value_convert())
  *  strict validation is not required
  * @G_PARAM_STATIC_NAME: the string used as name when constructing the 
@@ -145,7 +145,7 @@ G_BEGIN_DECLS
  *  Since 2.26
  * 
  * Through the #GParamFlags flag values, certain aspects of parameters
- * can be configured. See also #G_PARAM_READWRITE and #G_PARAM_STATIC_STRINGS.
+ * can be configured. See also #G_PARAM_STATIC_STRINGS.
  */
 typedef enum
 {
@@ -163,8 +163,10 @@ typedef enum
   G_PARAM_STATIC_BLURB	      = 1 << 7,
   /* User defined flags go here */
   G_PARAM_EXPLICIT_NOTIFY     = 1 << 30,
-  G_PARAM_DEPRECATED          = 1 << 31
+  /* Avoid warning with -Wpedantic for gcc6 */
+  G_PARAM_DEPRECATED          = (gint)(1u << 31)
 } GParamFlags;
+
 /**
  * G_PARAM_STATIC_STRINGS:
  * 
@@ -194,7 +196,7 @@ typedef struct _GParamSpecClass GParamSpecClass;
 typedef struct _GParameter	GParameter;
 typedef struct _GParamSpecPool  GParamSpecPool;
 /**
- * GParamSpec:
+ * GParamSpec: (ref-func g_param_spec_ref_sink) (unref-func g_param_spec_uref) (set-value-func g_value_set_param) (get-value-func g_value_get_param)
  * @g_type_instance: private #GTypeInstance portion
  * @name: name of this parameter: always an interned string
  * @flags: #GParamFlags flags for this parameter
@@ -340,7 +342,10 @@ GLIB_DEPRECATED_FOR(g_value_take_param)
 void           g_value_set_param_take_ownership (GValue        *value,
                                                  GParamSpec    *param);
 GLIB_AVAILABLE_IN_2_36
-const GValue *  g_param_spec_get_default_value  (GParamSpec     *param);
+const GValue *  g_param_spec_get_default_value  (GParamSpec    *pspec);
+
+GLIB_AVAILABLE_IN_2_46
+GQuark          g_param_spec_get_name_quark     (GParamSpec    *pspec);
 
 /* --- convenience functions --- */
 typedef struct _GParamSpecTypeInfo GParamSpecTypeInfo;

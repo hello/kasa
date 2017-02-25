@@ -3,13 +3,31 @@
  *
  * History:
  *   2014-9-17 - [lysun] created file
+ *   2016-8-09 - [Shupeng Ren] modified file
  *
- * Copyright (C) 2008-2014, Ambarella Co,Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 #ifndef AM_VIDEO_SERVICE_MSG_MAP_H_
@@ -17,153 +35,79 @@
 #include "commands/am_api_cmd_video.h"
 #include "commands/am_api_cmd_common.h"
 
-void ON_SERVICE_INIT(void *msg_data,
-                     int msg_data_size,
-                     void *result_addr,
-                     int result_max_size);
-void ON_SERVICE_DESTROY(void *msg_data,
-                        int msg_data_size,
-                        void *result_addr,
-                        int result_max_size);
+#define DECLARE_FUNC(func_name)         \
+    void func_name(void *msg_data,      \
+                   int msg_data_size,   \
+                   void *result_addr,   \
+                   int result_max_size)
 
-void ON_SERVICE_START(void *msg_data,
-                      int msg_data_size,
-                      void *result_addr,
-                      int result_max_size);
-void ON_SERVICE_STOP(void *msg_data,
-                     int msg_data_size,
-                     void *result_addr,
-                     int result_max_size);
-
-void ON_SERVICE_RESTART(void *msg_data,
-                        int msg_data_size,
-                        void *result_addr,
-                        int result_max_size);
-void ON_SERVICE_STATUS(void *msg_data,
-                       int msg_data_size,
-                       void *result_addr,
-                       int result_max_size);
-
-void ON_VIN_GET(void *msg_data,
-                int msg_data_size,
-                void *result_addr,
-                int result_max_size);
-void ON_VIN_SET(void *msg_data,
-                int msg_data_size,
-                void *result_addr,
-                int result_max_size);
-
-void ON_STREAM_FMT_GET(void *msg_data,
-                       int msg_data_size,
-                       void *result_addr,
-                       int result_max_size);
-void ON_STREAM_FMT_SET(void *msg_data,
-                       int msg_data_size,
-                       void *result_addr,
-                       int result_max_size);
-
-void ON_STREAM_CFG_GET(void *msg_data,
-                       int msg_data_size,
-                       void *result_addr,
-                       int result_max_size);
-void ON_STREAM_CFG_SET(void *msg_data,
-                       int msg_data_size,
-                       void *result_addr,
-                       int result_max_size);
-
-void ON_BUFFER_FMT_GET(void *msg_data,
-                       int msg_data_size,
-                       void *result_addr,
-                       int result_max_size);
-
-void ON_BUFFER_FMT_SET(void *msg_data,
-                       int msg_data_size,
-                       void *result_addr,
-                       int result_max_size);
-
-void ON_BUFFER_ALLOC_STYLE_GET(void *msg_data,
-                               int msg_data_size,
-                               void *result_addr,
-                               int result_max_size);
-
-void ON_BUFFER_ALLOC_STYLE_SET(void *msg_data,
-                               int msg_data_size,
-                               void *result_addr,
-                               int result_max_size);
-
-void ON_STREAM_STATUS_GET(void *msg_data,
-                          int msg_data_size,
-                          void *result_addr,
-                          int result_max_size);
-
-void ON_DPTZ_WARP_SET(void *msg_data,
-                      int msg_data_size,
-                      void *result_addr,
-                      int result_max_size);
-
-void ON_DPTZ_WARP_GET(void *msg_data,
-                      int msg_data_size,
-                      void *result_addr,
-                      int result_max_size);
-
-void ON_ENCODE_H264_LBR_SET(void *msg_data,
-                            int msg_data_size,
-                            void *result_addr,
-                            int result_max_size);
-
-void ON_ENCODE_H264_LBR_GET(void *msg_data,
-                            int msg_data_size,
-                            void *result_addr,
-                            int result_max_size);
-
-void ON_VIDEO_ENCODE_START(void *msg_data,
-                           int msg_data_size,
-                           void *result_addr,
-                           int result_max_size);
-void ON_VIDEO_ENCODE_STOP(void *msg_data,
-                          int msg_data_size,
-                          void *result_addr,
-                          int result_max_size);
-
-void ON_VIDEO_FORCE_IDR(void *msg_data,
-                        int msg_data_size,
-                        void *result_addr,
-                        int result_max_size);
-
-void ON_COMMON_GET_EVENT(void *msg_data,
-                         int msg_data_size,
-                         void *result_addr,
-                         int result_max_size);
-
-void ON_VIDEO_OVERLAY_GET_MAX_NUM(void *msg_data,
-                                  int msg_data_size,
-                                  void *result_addr,
-                                  int result_max_size);
-
-void ON_VIDEO_OVERLAY_DESTROY(void *msg_data,
-                              int msg_data_size,
-                              void *result_addr,
-                              int result_max_size);
-
-void ON_VIDEO_OVERLAY_SAVE(void *msg_data,
-                           int msg_data_size,
-                           void *result_addr,
-                           int result_max_size);
-
-void ON_VIDEO_OVERLAY_ADD(void *msg_data,
-                          int msg_data_size,
-                          void *result_addr,
-                          int result_max_size);
-
-void ON_VIDEO_OVERLAY_SET(void *msg_data,
-                          int msg_data_size,
-                          void *result_addr,
-                          int result_max_size);
-
-void ON_VIDEO_OVERLAY_GET(void *msg_data,
-                          int msg_data_size,
-                          void *result_addr,
-                          int result_max_size);
+DECLARE_FUNC(ON_SERVICE_INIT);
+DECLARE_FUNC(ON_SERVICE_DESTROY);
+DECLARE_FUNC(ON_SERVICE_START);
+DECLARE_FUNC(ON_SERVICE_STOP);
+DECLARE_FUNC(ON_SERVICE_RESTART);
+DECLARE_FUNC(ON_SERVICE_STATUS);
+DECLARE_FUNC(ON_CFG_ALL_LOAD);
+DECLARE_FUNC(ON_CFG_FEATURE_GET);
+DECLARE_FUNC(ON_CFG_FEATURE_SET);
+DECLARE_FUNC(ON_CFG_VIN_GET);
+DECLARE_FUNC(ON_CFG_VIN_SET);
+DECLARE_FUNC(ON_CFG_VOUT_GET);
+DECLARE_FUNC(ON_CFG_VOUT_SET);
+DECLARE_FUNC(ON_CFG_BUFFER_GET);
+DECLARE_FUNC(ON_CFG_BUFFER_SET);
+DECLARE_FUNC(ON_CFG_STREAM_FMT_GET);
+DECLARE_FUNC(ON_CFG_STREAM_FMT_SET);
+DECLARE_FUNC(ON_CFG_STREAM_H26x_GET);
+DECLARE_FUNC(ON_CFG_STREAM_H26x_SET);
+DECLARE_FUNC(ON_CFG_STREAM_MJPEG_GET);
+DECLARE_FUNC(ON_CFG_STREAM_MJPEG_SET);
+DECLARE_FUNC(ON_DYN_VOUT_HALT);
+DECLARE_FUNC(ON_DYN_BUFFER_MAX_NUM_GET);
+DECLARE_FUNC(ON_DYN_BUFFER_STATE_GET);
+DECLARE_FUNC(ON_DYN_BUFFER_FMT_GET);
+DECLARE_FUNC(ON_DYN_BUFFER_FMT_SET);
+DECLARE_FUNC(ON_DYN_STREAM_MAX_NUM_GET);
+DECLARE_FUNC(ON_DYN_STREAM_STATUS_GET);
+DECLARE_FUNC(ON_DYN_STREAM_LOCK_STATE_GET);
+DECLARE_FUNC(ON_DYN_STREAM_LOCK);
+DECLARE_FUNC(ON_DYN_STREAM_START);
+DECLARE_FUNC(ON_DYN_STREAM_STOP);
+DECLARE_FUNC(ON_DYN_STREAM_FORCE_IDR);
+DECLARE_FUNC(ON_DYN_STREAM_PARAMETERS_SET);
+DECLARE_FUNC(ON_DYN_STREAM_PARAMETERS_GET);
+DECLARE_FUNC(ON_DYN_CPU_CLK_GET);
+DECLARE_FUNC(ON_DYN_CUR_CPU_CLK_GET);
+DECLARE_FUNC(ON_DYN_CPU_CLK_SET);
+DECLARE_FUNC(ON_DYN_VIN_GET);
+DECLARE_FUNC(ON_DYN_DPTZ_RATIO_SET);
+DECLARE_FUNC(ON_DYN_DPTZ_RATIO_GET);
+DECLARE_FUNC(ON_DYN_DPTZ_SIZE_SET);
+DECLARE_FUNC(ON_DYN_DPTZ_SIZE_GET);
+DECLARE_FUNC(ON_DYN_WARP_SET);
+DECLARE_FUNC(ON_DYN_WARP_GET);
+DECLARE_FUNC(ON_DYN_LBR_SET);
+DECLARE_FUNC(ON_DYN_LBR_GET);
+DECLARE_FUNC(ON_VIDEO_ENCODE_START);
+DECLARE_FUNC(ON_VIDEO_ENCODE_STOP);
+DECLARE_FUNC(ON_DYN_POWER_MODE_SET);
+DECLARE_FUNC(ON_DYN_POWER_MODE_GET);
+DECLARE_FUNC(ON_COMMON_GET_EVENT);
+DECLARE_FUNC(ON_DYN_VIDEO_OVERLAY_GET_MAX_NUM);
+DECLARE_FUNC(ON_DYN_VIDEO_OVERLAY_DESTROY);
+DECLARE_FUNC(ON_DYN_VIDEO_OVERLAY_SAVE);
+DECLARE_FUNC(ON_DYN_VIDEO_OVERLAY_INIT);
+DECLARE_FUNC(ON_DYN_VIDEO_OVERLAY_DATA_ADD);
+DECLARE_FUNC(ON_DYN_VIDEO_OVERLAY_DATA_UPDATE);
+DECLARE_FUNC(ON_DYN_VIDEO_OVERLAY_DATA_GET);
+DECLARE_FUNC(ON_DYN_VIDEO_OVERLAY_SET);
+DECLARE_FUNC(ON_DYN_VIDEO_OVERLAY_GET);
+DECLARE_FUNC(ON_VIDEO_EIS_SET);
+DECLARE_FUNC(ON_VIDEO_EIS_GET);
+DECLARE_FUNC(ON_VIDEO_MOTION_DETECT_SET);
+DECLARE_FUNC(ON_VIDEO_MOTION_DETECT_GET);
+DECLARE_FUNC(ON_VIDEO_MOTION_DETECT_STOP);
+DECLARE_FUNC(ON_VIDEO_MOTION_DETECT_START);
 
 BEGIN_MSG_MAP(API_PROXY_TO_VIDEO_SERVICE)
 MSG_ACTION(AM_IPC_SERVICE_INIT, ON_SERVICE_INIT)
@@ -172,39 +116,84 @@ MSG_ACTION(AM_IPC_SERVICE_START, ON_SERVICE_START)
 MSG_ACTION(AM_IPC_SERVICE_STOP, ON_SERVICE_STOP)
 MSG_ACTION(AM_IPC_SERVICE_RESTART, ON_SERVICE_RESTART)
 MSG_ACTION(AM_IPC_SERVICE_STATUS, ON_SERVICE_STATUS)
-MSG_ACTION(AM_IPC_MW_CMD_VIDEO_VIN_GET, ON_VIN_GET)
-MSG_ACTION(AM_IPC_MW_CMD_VIDEO_VIN_SET, ON_VIN_SET)
 
-MSG_ACTION(AM_IPC_MW_CMD_VIDEO_STREAM_FMT_GET, ON_STREAM_FMT_GET)
-MSG_ACTION(AM_IPC_MW_CMD_VIDEO_STREAM_FMT_SET, ON_STREAM_FMT_SET)
-MSG_ACTION(AM_IPC_MW_CMD_VIDEO_STREAM_CFG_GET, ON_STREAM_CFG_GET)
-MSG_ACTION(AM_IPC_MW_CMD_VIDEO_STREAM_CFG_SET, ON_STREAM_CFG_SET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_CFG_ALL_LOAD, ON_CFG_ALL_LOAD)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_CFG_FEATURE_GET, ON_CFG_FEATURE_GET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_CFG_FEATURE_SET, ON_CFG_FEATURE_SET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_CFG_VIN_GET, ON_CFG_VIN_GET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_CFG_VIN_SET, ON_CFG_VIN_SET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_CFG_BUFFER_GET, ON_CFG_BUFFER_GET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_CFG_BUFFER_SET, ON_CFG_BUFFER_SET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_CFG_STREAM_FMT_GET, ON_CFG_STREAM_FMT_GET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_CFG_STREAM_FMT_SET, ON_CFG_STREAM_FMT_SET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_CFG_STREAM_H26x_GET, ON_CFG_STREAM_H26x_GET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_CFG_STREAM_H26x_SET, ON_CFG_STREAM_H26x_SET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_CFG_STREAM_MJPEG_GET, ON_CFG_STREAM_MJPEG_GET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_CFG_STREAM_MJPEG_SET, ON_CFG_STREAM_MJPEG_SET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_CFG_VOUT_SET, ON_CFG_VOUT_SET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_CFG_VOUT_GET, ON_CFG_VOUT_GET)
 
-MSG_ACTION(AM_IPC_MW_CMD_VIDEO_BUFFER_FMT_GET, ON_BUFFER_FMT_GET)
-MSG_ACTION(AM_IPC_MW_CMD_VIDEO_BUFFER_FMT_SET, ON_BUFFER_FMT_SET)
-MSG_ACTION(AM_IPC_MW_CMD_VIDEO_BUFFER_ALLOC_STYLE_GET,
-    ON_BUFFER_ALLOC_STYLE_GET)
-MSG_ACTION(AM_IPC_MW_CMD_VIDEO_BUFFER_ALLOC_STYLE_SET,
-    ON_BUFFER_ALLOC_STYLE_SET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_VOUT_HALT, ON_DYN_VOUT_HALT)
 
-MSG_ACTION(AM_IPC_MW_CMD_VIDEO_STREAM_STATUS_GET, ON_STREAM_STATUS_GET)
-MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DPTZ_WARP_SET, ON_DPTZ_WARP_SET)
-MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DPTZ_WARP_GET, ON_DPTZ_WARP_GET)
-MSG_ACTION(AM_IPC_MW_CMD_VIDEO_ENCODE_H264_LBR_SET, ON_ENCODE_H264_LBR_SET)
-MSG_ACTION(AM_IPC_MW_CMD_VIDEO_ENCODE_H264_LBR_GET, ON_ENCODE_H264_LBR_GET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_BUFFER_MAX_NUM_GET, ON_DYN_BUFFER_MAX_NUM_GET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_BUFFER_STATE_GET, ON_DYN_BUFFER_STATE_GET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_BUFFER_FMT_GET, ON_DYN_BUFFER_FMT_GET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_BUFFER_FMT_SET, ON_DYN_BUFFER_FMT_SET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_LBR_SET, ON_DYN_LBR_SET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_LBR_GET, ON_DYN_LBR_GET)
+
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_STREAM_MAX_NUM_GET, ON_DYN_STREAM_MAX_NUM_GET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_STREAM_STATUS_GET, ON_DYN_STREAM_STATUS_GET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_STREAM_LOCK_STATE_GET, ON_DYN_STREAM_LOCK_STATE_GET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_STREAM_LOCK, ON_DYN_STREAM_LOCK)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_STREAM_START, ON_DYN_STREAM_START)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_STREAM_STOP, ON_DYN_STREAM_STOP)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_STREAM_FORCE_IDR, ON_DYN_STREAM_FORCE_IDR)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_STREAM_PARAMETERS_SET,
+           ON_DYN_STREAM_PARAMETERS_SET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_STREAM_PARAMETERS_GET,
+           ON_DYN_STREAM_PARAMETERS_GET)
+
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_VIN_PARAMETERS_GET,
+           ON_DYN_VIN_GET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_DPTZ_RATIO_SET, ON_DYN_DPTZ_RATIO_SET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_DPTZ_RATIO_GET, ON_DYN_DPTZ_RATIO_GET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_DPTZ_SIZE_SET, ON_DYN_DPTZ_SIZE_SET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_DPTZ_SIZE_GET, ON_DYN_DPTZ_SIZE_GET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_WARP_SET, ON_DYN_WARP_SET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_WARP_GET, ON_DYN_WARP_GET)
+
 MSG_ACTION(AM_IPC_MW_CMD_VIDEO_ENCODE_START, ON_VIDEO_ENCODE_START)
 MSG_ACTION(AM_IPC_MW_CMD_VIDEO_ENCODE_STOP, ON_VIDEO_ENCODE_STOP)
-
-MSG_ACTION(AM_IPC_MW_CMD_VIDEO_ENCODE_FORCE_IDR, ON_VIDEO_FORCE_IDR)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_POWER_MODE_SET, ON_DYN_POWER_MODE_SET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_POWER_MODE_GET, ON_DYN_POWER_MODE_GET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_CPU_CLK_GET, ON_DYN_CPU_CLK_GET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_CUR_CPU_CLK_GET, ON_DYN_CUR_CPU_CLK_GET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_CPU_CLK_SET, ON_DYN_CPU_CLK_SET)
 
 MSG_ACTION(AM_IPC_MW_CMD_COMMON_GET_EVENT, ON_COMMON_GET_EVENT)
 
-MSG_ACTION(AM_IPC_MW_CMD_VIDEO_OVERLAY_GET_MAX_NUM, ON_VIDEO_OVERLAY_GET_MAX_NUM)
-MSG_ACTION(AM_IPC_MW_CMD_VIDEO_OVERLAY_DESTROY, ON_VIDEO_OVERLAY_DESTROY)
-MSG_ACTION(AM_IPC_MW_CMD_VIDEO_OVERLAY_SAVE, ON_VIDEO_OVERLAY_SAVE)
-MSG_ACTION(AM_IPC_MW_CMD_VIDEO_OVERLAY_ADD, ON_VIDEO_OVERLAY_ADD)
-MSG_ACTION(AM_IPC_MW_CMD_VIDEO_OVERLAY_SET, ON_VIDEO_OVERLAY_SET)
-MSG_ACTION(AM_IPC_MW_CMD_VIDEO_OVERLAY_GET, ON_VIDEO_OVERLAY_GET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_OVERLAY_MAX_NUM_GET,
+           ON_DYN_VIDEO_OVERLAY_GET_MAX_NUM)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_OVERLAY_DESTROY, ON_DYN_VIDEO_OVERLAY_DESTROY)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_OVERLAY_SAVE, ON_DYN_VIDEO_OVERLAY_SAVE)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_OVERLAY_INIT, ON_DYN_VIDEO_OVERLAY_INIT)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_OVERLAY_DATA_ADD, ON_DYN_VIDEO_OVERLAY_DATA_ADD)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_OVERLAY_DATA_UPDATE,
+           ON_DYN_VIDEO_OVERLAY_DATA_UPDATE)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_OVERLAY_DATA_GET, ON_DYN_VIDEO_OVERLAY_DATA_GET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_OVERLAY_SET, ON_DYN_VIDEO_OVERLAY_SET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_OVERLAY_GET, ON_DYN_VIDEO_OVERLAY_GET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_EIS_SET, ON_VIDEO_EIS_SET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_EIS_GET, ON_VIDEO_EIS_GET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_MOTION_DETECT_CONFIG_SET,
+           ON_VIDEO_MOTION_DETECT_SET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_MOTION_DETECT_CONFIG_GET,
+           ON_VIDEO_MOTION_DETECT_GET)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_MOTION_DETECT_STOP,
+           ON_VIDEO_MOTION_DETECT_STOP)
+MSG_ACTION(AM_IPC_MW_CMD_VIDEO_DYN_MOTION_DETECT_START,
+           ON_VIDEO_MOTION_DETECT_START)
 
 END_MSG_MAP()
 

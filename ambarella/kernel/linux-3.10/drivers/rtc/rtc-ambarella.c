@@ -51,6 +51,7 @@ struct ambarella_rtc {
 	 * 1. cannot detect power lost
 	 * 2. the msb 2bits are reserved. */
 	bool			is_limited;
+	int			irq;
 };
 
 
@@ -102,7 +103,7 @@ static int ambrtc_set_alarm_or_time(struct ambarella_rtc *ambrtc,
 		alarm_val = secs;
 		time_val = amba_readl(ambrtc->reg + RTC_CURT_OFFSET);
                 // only for wakeup ambarella internal PWC
-                amba_writel(ambrtc->reg + RTC_PWC_SET_STATUS_OFFSET, 0x8);
+                amba_writel(ambrtc->reg + RTC_PWC_SET_STATUS_OFFSET, 0x28);
 	}
 
 	if (ambrtc->is_limited) {
@@ -183,6 +184,21 @@ static int ambrtc_set_alarm(struct device *dev, struct rtc_wkalrm *alrm)
 	return ambrtc_set_alarm_or_time(ambrtc, AMBRTC_ALARM, alarm_sec);
 }
 
+static int ambrtc_alarm_irq_enable(struct device *dev, unsigned int enabled)
+{
+	return 0;
+}
+
+static irqreturn_t ambrtc_alarm_irq(int irq, void *dev_id)
+{
+	struct ambarella_rtc *ambrtc = (struct ambarella_rtc *)dev_id;
+
+	if(ambrtc->rtc)
+		rtc_update_irq(ambrtc->rtc, 1, RTC_IRQF | RTC_AF);
+
+	return IRQ_HANDLED;
+}
+
 static int ambrtc_ioctl(struct device *dev, unsigned int cmd,
 			     unsigned long arg)
 {
@@ -213,6 +229,7 @@ static const struct rtc_class_ops ambarella_rtc_ops = {
 	.set_mmss	= ambrtc_set_mmss,
 	.read_alarm	= ambrtc_read_alarm,
 	.set_alarm	= ambrtc_set_alarm,
+	.alarm_irq_enable = ambrtc_alarm_irq_enable,
 };
 
 static void ambrtc_check_power_lost(struct ambarella_rtc *ambrtc)
@@ -242,7 +259,9 @@ static int ambrtc_probe(struct platform_device *pdev)
 	struct ambarella_rtc *ambrtc;
 	struct resource *mem;
 	void __iomem *reg;
-        struct device_node *np = pdev->dev.of_node;
+	int ret;
+	unsigned int wakeup_support;
+	struct device_node *np = pdev->dev.of_node;
 
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (mem == NULL) {
@@ -262,16 +281,28 @@ static int ambrtc_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 
-	platform_set_drvdata(pdev, ambrtc);
+	ambrtc->irq = platform_get_irq(pdev, 0);
+	if (ambrtc->irq < 0) {
+		ambrtc->irq = -1;
+	} else {
+		ret = devm_request_irq(&pdev->dev, ambrtc->irq, ambrtc_alarm_irq, IRQF_SHARED,
+					"rtc alarm", ambrtc);
+		if (ret) {
+			dev_err(&pdev->dev, "could not request irq %d for rtc alarm\n", ambrtc->irq);
+			return ret;
+		}
+	}
 
 	ambrtc->reg = reg;
 	ambrtc->dev = &pdev->dev;
 	ambrtc->is_limited = !!of_find_property(pdev->dev.of_node,
 				"amb,is-limited", NULL);
-
+	platform_set_drvdata(pdev, ambrtc);
 	ambrtc_check_power_lost(ambrtc);
 
-        pdev->dev.power.can_wakeup = !!of_get_property(np, "rtc,wakeup", NULL);
+	wakeup_support = !!of_get_property(np, "rtc,wakeup", NULL);
+	if (wakeup_support)
+		device_set_wakeup_capable(&pdev->dev, 1);
 
 	ambrtc->rtc = devm_rtc_device_register(&pdev->dev, "rtc-ambarella",
 				     &ambarella_rtc_ops, THIS_MODULE);
@@ -298,6 +329,33 @@ static const struct of_device_id ambarella_rtc_dt_ids[] = {
 };
 MODULE_DEVICE_TABLE(of, ambarella_rtc_dt_ids);
 
+#ifdef CONFIG_PM_SLEEP
+static int ambarella_rtc_suspend(struct device *dev)
+{
+	struct ambarella_rtc *ambrtc = dev_get_drvdata(dev);
+
+	if (device_may_wakeup(dev)){
+		if (ambrtc->irq != -1)
+			enable_irq_wake(ambrtc->irq);
+	}
+
+	return 0;
+}
+
+static int ambarella_rtc_resume(struct device *dev)
+{
+	struct ambarella_rtc *ambrtc = dev_get_drvdata(dev);
+
+	if (device_may_wakeup(dev)) {
+		if (ambrtc->irq != -1)
+			disable_irq_wake(ambrtc->irq);
+	}
+	return 0;
+}
+#endif
+
+static SIMPLE_DEV_PM_OPS(ambarella_rtc_pm_ops, ambarella_rtc_suspend, ambarella_rtc_resume);
+
 static struct platform_driver ambarella_rtc_driver = {
 	.probe		= ambrtc_probe,
 	.remove		= ambrtc_remove,
@@ -305,6 +363,7 @@ static struct platform_driver ambarella_rtc_driver = {
 		.name	= "ambarella-rtc",
 		.owner	= THIS_MODULE,
 		.of_match_table = ambarella_rtc_dt_ids,
+		.pm	= &ambarella_rtc_pm_ops,
 	},
 };
 

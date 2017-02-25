@@ -250,8 +250,10 @@ static const struct soc_enum monomux =
 static const struct snd_kcontrol_new es8388_monomux_controls =
 	SOC_DAPM_VALUE_ENUM("Route", monomux);
 
+#if 0
 static const struct snd_kcontrol_new adc_switch_ctl =
 SOC_DAPM_SINGLE("Switch",ES8388_ADCCONTROL7, 2, 1, 1);
+#endif
 
 static const struct snd_soc_dapm_widget es8388_dapm_widgets[] = {
 	/* DAC Part */

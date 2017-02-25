@@ -4,12 +4,29 @@
  * History:
  *   Dec 29, 2014 - [binwang] created file
  *
- * Copyright (C) 2014-2018, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 /*! @file am_api_image.h
@@ -72,62 +89,11 @@ struct am_ae_config_s
      */
     uint32_t enable_bits;
 
-    /*!
-     * - 0: spot
-     * - 1: center(default)
-     * - 2: average
-     * - 3: custom
-     */
-    uint8_t ae_metering_mode;
-
-    /*!
-     * - 0: day mode, colorful(default)
-     * - 1: night mode, black&white
-     */
-    uint8_t day_night_mode;
-
-    /*!
-     * - 0: off,
-     * - 1: auto(default)
-     */
-    uint8_t slow_shutter_mode;
-
-    /*!
-     * - 0: 50Hz (China, EU)
-     * - 1: 60Hz (US, TW)(default)
-     */
-    uint8_t anti_flicker_mode;
-
     /*! percentage of ae target to use, [25,400], default value is 100
      * - < 100 (get darker picture)
      * - > 100 (get brighter picture)
      */
-    uint8_t ae_target_ratio;
-
-    /*!
-     * - 0: off(default)
-     * - 1: on
-     */
-    uint8_t backlight_comp_enable;
-
-    /*!
-     * - 0: off(default)
-     * - 1: weak
-     * - 2: normal
-     * - 3: strong
-     */
-    uint8_t local_exposure;
-
-    /*!
-     * - 0: disabled(default)
-     * - 1: enabled
-     */
-    uint8_t dc_iris_enable;
-
-    /*!
-     * maximum sensor analog gain, minimum sensor analog gain usually is 0 dB
-     */
-    uint16_t sensor_gain_max;
+    uint32_t ae_target_ratio;
 
     /*! minimum sensor shutter time */
     uint32_t sensor_shutter_min;
@@ -154,6 +120,57 @@ struct am_ae_config_s
      *  - lumavalue[1]CFA luma
      */
     uint32_t luma_value[2];
+
+    /*!
+     * - 0: spot
+     * - 1: center(default)
+     * - 2: average
+     * - 3: custom
+     */
+    uint8_t ae_metering_mode;
+
+    /*!
+     * - 0: day mode, colorful(default)
+     * - 1: night mode, black&white
+     */
+    uint8_t day_night_mode;
+
+    /*!
+     * - 0: off,
+     * - 1: auto(default)
+     */
+    uint8_t slow_shutter_mode;
+
+    /*!
+     * - 0: 50Hz (China, EU)
+     * - 1: 60Hz (US, TW)(default)
+     */
+    uint8_t anti_flicker_mode;
+
+    /*!
+     * - 0: off(default)
+     * - 1: on
+     */
+    uint8_t backlight_comp_enable;
+
+    /*!
+     * - 0: off(default)
+     * - 1: weak
+     * - 2: normal
+     * - 3: strong
+     */
+    uint8_t local_exposure;
+
+    /*!
+     * - 0: disabled(default)
+     * - 1: enabled
+     */
+    uint8_t dc_iris_enable;
+
+    /*!
+     * maximum sensor analog gain, minimum sensor analog gain usually is 0 dB
+     */
+    uint8_t sensor_gain_max;
 
     /*!
      * - 0: off
@@ -310,6 +327,7 @@ enum AM_IMAGE_STYLE_CONFIG_BIT
   AM_IMAGE_STYLE_CONFIG_BRIGHTNESS = 4,
   AM_IMAGE_STYLE_CONFIG_CONTRAST = 5,
   AM_IMAGE_STYLE_CONFIG_BLACK_LEVEL = 6,
+  AM_IMAGE_STYLE_CONFIG_AUTO_CONTRAST_MODE = 7,
 };
 
 /*! @struct am_image_style_config_s
@@ -325,6 +343,12 @@ struct am_image_style_config_s
      * @sa AM_IMAGE_STYLE_CONFIG_BIT
      */
     uint32_t enable_bits;
+
+    /*!
+     * - 0:(default, disable) range[0,128]
+     * - 1: weakest, 128: strongest
+     */
+    int32_t auto_contrast_mode;
 
     /*!
      * - 0: default style(lab style)
@@ -382,6 +406,13 @@ struct am_image_style_config_s
     uint8_t reserved;
 };
 /*! @} */
+
+struct am_image_3A_info_s
+{
+    am_ae_config_s ae;
+    am_af_config_s af;
+    am_awb_config_s awb;
+};
 
 /*! @} */
 #endif /* AM_API_IMAGE_H_ */

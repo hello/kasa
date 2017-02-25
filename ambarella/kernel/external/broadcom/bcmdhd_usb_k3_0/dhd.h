@@ -78,6 +78,9 @@ enum dhd_bus_state {
 	DHD_BUS_DATA		/* Ready for frame transfers */
 };
 
+/* max sequential rxcntl timeouts to set HANG event */
+#define MAX_CNTL_TIMEOUT  2
+
 #if defined(NDISVER) && (NDISVER >= 0x0600)
 /* Firmware requested operation mode */
 #define STA_MASK			0x0001
@@ -366,6 +369,7 @@ typedef struct dhd_pub {
 	uint16 pkt_filter_ports[WL_PKT_FILTER_PORTS_MAX];
 #endif /* PKT_FILTER_SUPPORT */
 #endif /* defined(CUSTOM_PLATFORM_NV_TEGRA) */
+	struct dhd_conf *conf;	/* Bus module handle */
 } dhd_pub_t;
 #if defined(CUSTOMER_HW4)
 #define MAX_RESCHED_CNT 600
@@ -533,7 +537,7 @@ inline static void MUTEX_UNLOCK_SOFTAP_SET(dhd_pub_t * dhdp)
 #define DHD_OS_WAKE_LOCK_TIMEOUT(pub)
 #define DHD_OS_WAKE_LOCK_RX_TIMEOUT_ENABLE(pub, val)	UNUSED_PARAMETER(val)
 #define DHD_OS_WAKE_LOCK_CTRL_TIMEOUT_ENABLE(pub, val)	UNUSED_PARAMETER(val)
-#define DHD_OS_WAKE_LOCK_CTRL_TIMEOUT_CANCEL(pub, val)
+#define DHD_OS_WAKE_LOCK_CTRL_TIMEOUT_CANCEL(pub)
 #endif 
 #define DHD_PACKET_TIMEOUT_MS	1000
 #define DHD_EVENT_TIMEOUT_MS	1500
@@ -546,7 +550,7 @@ void dhd_net_if_lock(struct net_device *dev);
 void dhd_net_if_unlock(struct net_device *dev);
 
 #if defined(MULTIPLE_SUPPLICANT)
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 25)) && defined(OEM_ANDROID) && 0
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 25)) && defined(OEM_ANDROID)
 extern struct mutex _dhd_sdio_mutex_lock_;
 #endif
 #endif /* MULTIPLE_SUPPLICANT */
@@ -780,8 +784,16 @@ extern uint dhd_watchdog_ms;
 #if defined(DHD_DEBUG)
 /* Console output poll interval */
 extern uint dhd_console_ms;
-extern uint wl_msg_level;
 #endif /* defined(DHD_DEBUG) */
+extern uint android_msg_level;
+extern uint config_msg_level;
+extern uint dbus_msglevel;
+#ifdef WL_WIRELESS_EXT
+extern uint iw_msg_level;
+#endif
+#ifdef WL_CFG80211
+extern uint wl_dbg_level;
+#endif
 
 extern uint dhd_slpauto;
 
@@ -907,6 +919,7 @@ extern uint dhd_force_tx_queueing;
 #define MOD_PARAM_PATHLEN	2048
 extern char fw_path[MOD_PARAM_PATHLEN];
 extern char nv_path[MOD_PARAM_PATHLEN];
+extern char conf_path[MOD_PARAM_PATHLEN];
 
 #define MOD_PARAM_INFOLEN	512
 #ifdef SOFTAP

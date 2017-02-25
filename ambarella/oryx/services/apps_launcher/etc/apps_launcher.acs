@@ -1,70 +1,119 @@
---Applications to be launched by AppsLauncher
---please check oryx/include/services/am_service_impl.h to know the definition
---of each type
---Api Proxy will do the API routing based on type value
---type 0 is used by system, type 9 currently is only for debugging and cannot
---be used now.
---Known dependency:
---img_svc should init before video_svc (and video_svc will check)
+--[[
+Copyright (c) 2016 Ambarella, Inc.
 
+This file and its contents ("Software") are protected by intellectual
+property rights including, without limitation, U.S. and/or foreign
+copyrights. This Software is also the confidential and proprietary
+information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+disclose, distribute, modify, or otherwise prepare derivative works of this
+Software or any portion thereof except pursuant to a signed license agreement
+or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+In the absence of such an agreement, you agree to promptly notify and return
+this Software to Ambarella, Inc.
+
+THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+
+Applications to be launched by AppsLauncher
+please check oryx/include/services/am_service_impl.h to know the definition
+of each type
+Api Proxy will do the API routing based on type value
+type 0 is used by system, type 9 currently is only for debugging and cannot
+be used now.
+Known dependency:
+img_svc should init before video_svc (and video_svc will check)
+--]]
 apps = {
+  backup_config = true,
+
   {
+    name = "Image Service",
     filename ="img_svc",
     type = 4,
     enable  = true
   },
-    {
+  {
+    name = "Media Service",
     filename ="media_svc",
     type = 5,
     enable  = true
   },
   {
-    filename ="video_svc",
-    type = 8,
-    enable  = true,
-  -- video_svc handles motion event to do SmartAVC (bitrate adjustment)
-    event_handle_motion = true
-  },
-  {
+    name = "Audio Control Service",
     filename ="audio_svc",
     type = 2,
     enable  = true
   },
   {
+    name = "Video Control Service",
+    filename ="video_svc",
+    type = 8,
+    enable  = true,
+ -- video_svc handles motion event to do SmartAVC (bitrate adjustment)
+    event_handle_motion = true
+  },
+  {
+    name = "Event Service",
     filename ="event_svc",
     type = 3,
     enable  = true
   },
   {
+    name = "Network Control Service",
     filename ="net_svc",
     type = 6,
     enable  = true
   },
   {
+    name = "System Service",
     filename ="sys_svc",
     type = 7,
     enable  = true,
-  -- sys_svc needs to handle button to do wifi setup and etc
-    event_handle_button = true,
-  -- sys_svc may handle motion event to turn on light(LED)
-    event_handle_motion = true,
-  -- sys_svc may handle audio event to light on  light(LED)
-    event_handle_audio = true,
   },
   {
+    name = "User Service",
   -- usr_svc is an example and place holder, but by default disabled
     filename ="usr_svc",
-    type = 11,
+    type = 14,
     enable = false,
   },
   {
+    name = "RTSP Service",
     filename ="rtsp_svc",
     type = 9,
     enable = true,
   },
   {
+    name = "SIP Service",
     filename ="sip_svc",
     type = 10,
+    enable = false,
+  },
+  {
+    name = "Playback Service",
+    filename ="playback_svc",
+    type = 11,
+    enable = true,
+  },
+  {
+    name = "Video Edit Service",
+    filename ="video_edit_svc",
+    type = 12,
+    enable = false,
+  },
+  {
+    name = "EFM Source Service",
+    filename ="efm_src_svc",
+    type = 13,
     enable = true,
   },
 }

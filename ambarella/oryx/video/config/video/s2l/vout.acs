@@ -1,0 +1,55 @@
+--[[
+Copyright (c) 2016 Ambarella, Inc.
+
+This file and its contents ("Software") are protected by intellectual
+property rights including, without limitation, U.S. and/or foreign
+copyrights. This Software is also the confidential and proprietary
+information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+disclose, distribute, modify, or otherwise prepare derivative works of this
+Software or any portion thereof except pursuant to a signed license agreement
+or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+In the absence of such an agreement, you agree to promptly notify and return
+this Software to Ambarella, Inc.
+
+THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+--]]
+--set 1st VOUT to be HDMI , set 2nd VOUT to be off
+--now that 1st VOUT is defined to be VOUT-B which is usually connected to
+--preview-B, and physically it is CVBS or HDMI
+--type   (string)   "hdmi"|"cvbs"|"none"
+--video_type (string) "yuv601"|"yuv656"|"yuv1120"|"rgb601"|"rgb656"|"rgb1120"
+--mode   (string)   "720p"|"1080p"|"480p"|....
+--flip   (string)   "none"|"v-flip"|"h-flip"|"both-flip"|"auto"
+--rotate (string)   "none"|"rotate-90"
+--fps    (string)   "auto"|"30"|"29.97"|"60"|"25"...
+
+vout = {
+  {
+    --first VOUT, VOUT-B (HDMI/CVBS)
+    type    = "none",
+    video_type = "none",
+    mode    = "480p",
+    flip    = "none",
+    rotate  = "none",
+    fps     = "auto" },
+  {
+    --second VOUT, VOUT-A (LCD)
+    type    = "none",
+    video_type = "none",
+    mode    = "none",
+    flip    = "none",
+    rotate  = "none",
+    fps     = "none" }
+}
+
+return vout

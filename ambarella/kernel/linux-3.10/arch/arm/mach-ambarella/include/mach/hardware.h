@@ -35,12 +35,6 @@
 #if defined(CONFIG_PLAT_AMBARELLA_CORTEX)
 #include <plat/cortex.h>
 #endif
-
-/* ==========================================================================*/
-#define	AMBA_DEV_MAJOR			(248)
-#define	AMBA_DEV_MINOR_PUBLIC_START	(128)
-#define	AMBA_DEV_MINOR_PUBLIC_END	(240)
-
 /* ==========================================================================*/
 #ifndef __ASSEMBLER__
 

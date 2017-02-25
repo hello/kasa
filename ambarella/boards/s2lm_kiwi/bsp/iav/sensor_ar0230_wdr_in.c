@@ -4,13 +4,33 @@
  * History:
  *    2014/08/11 - [Cao Rongrong] created file
  *
- * Copyright (C) 2012-2016, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 
 struct vin_reg_16_16 {
 	u16 addr;
@@ -760,7 +780,7 @@ static h264_encode_t h264_encode = {
 	.res_rate_min = 40,
 	.alpha = 0,
 	.beta = 0,
-	.en_loop_filter = 2,
+	.en_loop_filter = 1,
 	.max_upsampling_rate = 1,
 	.slow_shutter_upsampling_rate = 0,
 	.frame_cropping_flag = 1,
@@ -875,11 +895,11 @@ static ipcam_real_time_encode_param_setup_t ipcam_real_time_encode_param_setup =
 	.user3_direct_bias = 0
 };
 
-#if defined(AMBOOT_IAV_DEBUG_DSP_CMD)
+#if defined(CONFIG_S2LMKIWI_DSP_LOG_CAPTURE)
 static dsp_debug_level_setup_t dsp_debug_level_setup =  {
 	.cmd_code = DSP_DEBUG_LEVEL_SETUP,
 	.module = 0,
-	.debug_level = 3,
+	.debug_level = 1,
 	.coding_thread_printf_disable_mask = 0
 };
 #endif
@@ -1007,12 +1027,15 @@ static int iav_boot_encode(void)
 	add_dsp_cmd(&h264_encode, sizeof(h264_encode));
 	add_dsp_cmd(&ipcam_real_time_encode_param_setup,
 		sizeof(ipcam_real_time_encode_param_setup));
-
-#if defined(AMBOOT_IAV_DEBUG_DSP_CMD)
-	add_dsp_cmd(&dsp_debug_level_setup, sizeof(dsp_debug_level_setup));
-#endif
-
 	putstr_debug("iav_boot_encode");
 	return 0;
 }
+
+#if defined(CONFIG_S2LMKIWI_DSP_LOG_CAPTURE)
+static int iav_boot_dsplog(void)
+{
+	add_dsp_cmd(&dsp_debug_level_setup, sizeof(dsp_debug_level_setup));
+	return 0;
+}
+#endif
 

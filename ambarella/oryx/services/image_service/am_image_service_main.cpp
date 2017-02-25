@@ -4,12 +4,29 @@
  * History:
  *   2014-9-12 - [lysun] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co,Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -22,50 +39,89 @@
 #include "am_pid_lock.h"
 #include "am_service_frame_if.h"
 #include "am_image_quality_if.h"
+#include "am_signal.h"
+#include "am_api_image.h"
+#include "am_timer.h"
+#include "commands/am_api_cmd_media.h"
 
-#include <signal.h>
-
-enum
-{
-  IPC_API_PROXY = 0,
-  IPC_COUNT
-};
 AM_SERVICE_STATE   g_service_state = AM_SERVICE_STATE_NOT_INIT;
 AMIImageQualityPtr g_image_quality = nullptr;
 AMIServiceFrame   *g_service_frame = nullptr;
-static AMIPCBase *g_ipc_base_obj[] = { NULL };
+AMIPCSyncCmdServer g_ipc;
+AMTimer           *g_timer = nullptr;
+am_image_3A_info_s g_image_3A;
+am_image_3A_info_s g_image_3A_prev;
 
-static void sigstop(int arg) //ignore signal, do real quit job in clean_up()
-{
-  INFO("img_svc received signal\n");
-}
+#define IMAGE_3A_NOTIFY_TIMER    4000
 
-static int create_control_ipc()
+static bool image_3A_notify(void *data)
 {
-  AMIPCSyncCmdServer *ipc = new AMIPCSyncCmdServer();
-  if (ipc && ipc->create(AM_IPC_IMAGE_NAME) < 0) {
-    ERROR("receiver create failed \n");
-    delete ipc;
-    return -1;
+  am_service_result_t ae_result;
+  am_service_result_t awb_result;
+  am_service_notify_payload payload;
+  memset(&payload, 0, sizeof(am_service_notify_payload));
+  SET_BIT(payload.dest_bits, AM_SERVICE_TYPE_MEDIA);
+  payload.msg_id = AM_IPC_MW_CMD_MEDIA_UPDATE_3A_INFO;
+  payload.data_size = sizeof(am_image_3A_info_s);
+
+  memset(&g_image_3A, 0, sizeof(g_image_3A));
+  memset(&ae_result, 0, sizeof(ae_result));
+  ON_IMAGE_AE_SETTING_GET(nullptr, 0, &ae_result, sizeof(ae_result));
+  if (ae_result.ret != 0) {
+    ERROR("get ae setting failed");
   } else {
-    g_ipc_base_obj[IPC_API_PROXY] = ipc;
+    memcpy(&g_image_3A.ae, ae_result.data, sizeof(am_ae_config_s));
   }
 
-  ipc->REGISTER_MSG_MAP(API_PROXY_TO_IMAGE_SERVICE);
-  ipc->complete();
-  DEBUG("IPC create done for API_PROXY TO IMAGE_SERVICE, name is %s\n",
-        AM_IPC_IMAGE_NAME);
+  memset(&awb_result, 0, sizeof(awb_result));
+  ON_IMAGE_AWB_SETTING_GET(nullptr, 0, &awb_result, sizeof(awb_result));
+  if (awb_result.ret != 0) {
+    ERROR("get awb setting failed");
+  } else {
+    memcpy(&g_image_3A.awb, awb_result.data, sizeof(am_awb_config_s));
+  }
 
-  return 0;
+  if ((g_image_3A.ae.sensor_gain != g_image_3A_prev.ae.sensor_gain)
+     || (g_image_3A.ae.sensor_shutter != g_image_3A_prev.ae.sensor_shutter)
+     || (g_image_3A.ae.ae_metering_mode != g_image_3A_prev.ae.ae_metering_mode)
+     || (g_image_3A.awb.wb_mode != g_image_3A_prev.awb.wb_mode)) {
+    memcpy(&g_image_3A_prev, &g_image_3A, sizeof(am_image_3A_info_s));
+    memcpy(payload.data, &g_image_3A, payload.data_size);
+    g_ipc.notify(AM_IPC_SERVICE_NOTIF, &payload,
+                 payload.header_size() + payload.data_size);
+  } else {
+    INFO("image 3A info does not changed, no need to notify media_svc");
+  }
+  return true;
 }
 
-int clean_up(void)
+static int image_3a_notify_start()
 {
-  for (uint32_t i = 0; i < sizeof(g_ipc_base_obj) / sizeof(g_ipc_base_obj[0]);
-      ++ i) {
-    delete g_ipc_base_obj[i];
+  int ret = 0;
+  do {
+    g_timer = AMTimer::create("3A_notify.timer",
+                         IMAGE_3A_NOTIFY_TIMER,
+                         image_3A_notify,
+                         nullptr);
+    if (!g_timer) {
+      ERROR("AMTimer create failed");
+      ret = -1;
+      break;
+    }
+    if (!g_timer->start()) {
+      ERROR("AMTimer start failed");
+      ret = -1;
+      break;
+    }
+  } while (0);
+  return ret;
+}
+
+static void image_3a_notify_stop()
+{
+  if (g_timer) {
+    g_timer->stop();
   }
-  return 0;
 }
 
 static void user_input_callback(char ch)
@@ -83,10 +139,15 @@ static void user_input_callback(char ch)
 int main(int argc, char *argv[])
 {
   int ret = 0;
+
+  signal(SIGINT,  SIG_IGN);
+  signal(SIGQUIT, SIG_IGN);
+  signal(SIGTERM, SIG_IGN);
+  register_critical_error_signal_handler();
   do {
     AMPIDLock lock;
 
-    g_service_frame = AMIServiceFrame::create("Image.Service");
+    g_service_frame = AMIServiceFrame::create(argv[0]);
     if (AM_UNLIKELY(!g_service_frame)) {
       ERROR("Failed to create service framework object for Image.Service!");
       ret = -1;
@@ -101,9 +162,7 @@ int main(int argc, char *argv[])
       g_service_state = AM_SERVICE_STATE_ERROR;
       break;
     }
-    signal(SIGINT, sigstop);
-    signal(SIGQUIT, sigstop);
-    signal(SIGTERM, sigstop);
+
     if (AM_UNLIKELY((argc > 1) && is_str_equal(argv[1], "debug"))) {
       NOTICE("Running Image Service in debug mode, press 'q' to exit!");
       g_service_frame->set_user_input_callback(user_input_callback);
@@ -111,9 +170,18 @@ int main(int argc, char *argv[])
       if (lock.try_lock() < 0) {
         ERROR("Unable to lock PID, Event.Service should be running already");
         ret = -4;
+        g_service_state = AM_SERVICE_STATE_ERROR;
         break;
+      } else if (g_ipc.create(AM_IPC_IMAGE_NAME) < 0) {
+        ret = -5;
+        g_service_state = AM_SERVICE_STATE_ERROR;
+        break;
+      } else {
+        g_ipc.REGISTER_MSG_MAP(API_PROXY_TO_IMAGE_SERVICE);
+        g_ipc.complete();
+        DEBUG("IPC create done for API_PROXY TO IMAGE_SERVICE, name is %s\n",
+              AM_IPC_IMAGE_NAME);
       }
-      create_control_ipc();
     }
     if (!g_image_quality->start()) {
       ERROR("Image Service: start failed\n");
@@ -121,10 +189,20 @@ int main(int argc, char *argv[])
     } else {
       g_service_state = AM_SERVICE_STATE_STARTED;
     }
-    NOTICE("Entering Event.Service main loop!");
+
+    if (g_image_quality->need_notify()) {
+      if (image_3a_notify_start() != 0) {
+        WARN("image_3a_notify_start failed");
+      }
+    }
+
+    NOTICE("Entering Image.Service main loop!");
     g_service_frame->run(); /* block here */
+
+    if (g_image_quality->need_notify()) {
+      image_3a_notify_stop();
+    }
     g_image_quality = nullptr;
-    clean_up();
     ret = 0;
   }while (0);
 

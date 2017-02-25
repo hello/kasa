@@ -11,16 +11,6 @@
 * it under the terms of the GNU General Public License as published by
 * the Free Software Foundation; either version 2 of the License, or
 * (at your option) any later version.
-*
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-* GNU General Public License for more details.
-*
-* You should have received a copy of the GNU General Public License
-* along with this program; if not, write to the
-* Free Software Foundation, Inc., 59 Temple Place - Suite 330,
-* Boston, MA  02111-1307, USA.
 */
 
 
@@ -33,34 +23,40 @@
  *
  */
 
-//#define DEBUG 1
-// #define VERBOSE
+#include <linux/kernel.h>
+#include <linux/delay.h>
+#include <linux/sched.h>
+#include <linux/slab.h>
+#include <linux/mutex.h>
+#include <linux/errno.h>
+#include <linux/init.h>
+#include <linux/timer.h>
+#include <linux/list.h>
+#include <linux/interrupt.h>
 
-#include <linux/utsname.h>
+#include <linux/usb/composite.h>
 #include <linux/device.h>
 #include <linux/cdev.h>
 #include <linux/fs.h>
+#include <linux/module.h>
 #include <asm/uaccess.h>
-
-#include <linux/usb/ch9.h>
-#include <linux/usb/gadget.h>
 
 #include "gadget_chips.h"
 
 #include <mach/hardware.h>
 
-#include "usbstring.c"
-#include "config.c"
-#include "epautoconf.c"
+USB_GADGET_COMPOSITE_OPTIONS();
 
-#define DRIVER_VERSION		"1 Jan 2009"
+#define DRIVER_VERSION		"15 July 2016"
 
-static const char shortname [] = "g_amb_stream";
-static const char longname [] = "Ambarella Data Streaming Gadget";
+static const char shortname[] = "g_amb_stream";
+static const char longname[] = "Ambarella Data Streaming Gadget";
 
-
+/* ==========================================================================*/
+#define	AMBA_DEV_MAJOR			(248)
+#define	AMBA_DEV_MINOR_PUBLIC_START	(128)
+#define	AMBA_DEV_MINOR_PUBLIC_END	(240)
 /*-------------------------------------------------------------------------*/
-
 #ifdef DEBUG
 #define AMB_DBG(dev,fmt,args...) \
 	dev_printk(KERN_DEBUG , &(dev)->gadget->dev , fmt , ## args)
@@ -74,8 +70,14 @@ static const char longname [] = "Ambarella Data Streaming Gadget";
 
 #define AMB_INFO(dev,fmt,args...) \
 	dev_printk(KERN_INFO , &(dev)->gadget->dev , fmt , ## args)
+/*-------------------------------------------------------------------------*/
+#define AMB_GADGET_MAJOR			AMBA_DEV_MAJOR
+#define AMB_GADGET_MINOR_START		(AMBA_DEV_MINOR_PUBLIC_START + 0)
+/*-------------------------------------------------------------------------*/
+static struct cdev ag_cdev;
 
-
+/* big enough to hold our biggest descriptor */
+#define USB_BUFSIZ	256
 /*-------------------------------------------------------------------------*/
 #define AG_NOTIFY_INTERVAL		5	/* 1 << 5 == 32 msec */
 #define AG_NOTIFY_MAXPACKET		8
@@ -126,56 +128,42 @@ struct amb_notify g_port = {
 };
 
 /*-------------------------------------------------------------------------*/
-
 #define AMB_DATA_STREAM_MAGIC	'u'
 #define AMB_DATA_STREAM_WR_RSP	_IOW(AMB_DATA_STREAM_MAGIC, 1, struct amb_rsp *)
 #define AMB_DATA_STREAM_RD_CMD	_IOR(AMB_DATA_STREAM_MAGIC, 1, struct amb_cmd *)
 #define AMB_DATA_STREAM_STATUS_CHANGE	_IOW(AMB_DATA_STREAM_MAGIC, 2, struct amb_notify *)
-
 /*-------------------------------------------------------------------------*/
-
-#define AMB_GADGET_MAJOR		AMBA_DEV_MAJOR
-#define AMB_GADGET_MINOR_START		(AMBA_DEV_MINOR_PUBLIC_START + 0)
-
-static struct cdev ag_cdev;
-
-/* big enough to hold our biggest descriptor */
-#define USB_BUFSIZ	256
-
 struct amb_dev {
 	spinlock_t		lock;
 	wait_queue_head_t	wq;
 	struct mutex		mtx;
 
-	u8			config;
-
+	int 				config;
 	struct usb_gadget	*gadget;
-	struct usb_request	*ctrl_req;
 	struct usb_request	*notify_req;
 
 	struct usb_ep		*in_ep;
 	struct usb_ep		*out_ep;
 	struct usb_ep		*notify_ep;
-	/* ep descriptor */
-	struct usb_endpoint_descriptor *in_ep_desc;
-	struct usb_endpoint_descriptor *out_ep_desc;
-	struct usb_endpoint_descriptor *notify_ep_desc;
 
 	struct list_head		in_idle_list;	/* list of idle write requests */
 	struct list_head		in_queue_list;	/* list of queueing write requests */
 	struct list_head		out_req_list;	/* list of bulk out requests */
 
+	struct usb_function		func;
+
 	int			open_count;
 	int			error;
+	char		interface;
 };
 
 struct amb_dev *ag_device;
-
+static dev_t ag_dev_id;
+static struct class *ag_class;
+/*-------------------------------------------------------------------------*/
 static void notify_worker(struct work_struct *work);
 static DECLARE_WORK(notify_work, notify_worker);
-
 /*-------------------------------------------------------------------------*/
-
 static unsigned int buflen = (48*1024);
 module_param (buflen, uint, S_IRUGO);
 MODULE_PARM_DESC(buflen, "buffer length, default=48K");
@@ -183,34 +171,28 @@ MODULE_PARM_DESC(buflen, "buffer length, default=48K");
 static unsigned int qdepth = 5;
 module_param (qdepth, uint, S_IRUGO);
 MODULE_PARM_DESC(qdepth, "bulk transfer queue depth, default=5");
-
 /*-------------------------------------------------------------------------*/
-
 /*
  * DESCRIPTORS ... most are static, but strings and (full)
  * configuration descriptors are built on demand.
  */
 
-#define STRING_MANUFACTURER		25
-#define STRING_PRODUCT			42
-#define STRING_SERIAL			101
-#define STRING_SOURCE_SINK		250
+#define STRING_SOURCE_SINK		USB_GADGET_FIRST_AVAIL_IDX
 
 #define DRIVER_VENDOR_ID	0x4255		/* Ambarella */
 #define DRIVER_PRODUCT_ID	0x0001
+
+#define DEV_CONFIG_VALUE		1
 
 static struct usb_device_descriptor ag_device_desc = {
 	.bLength =		sizeof ag_device_desc,
 	.bDescriptorType =	USB_DT_DEVICE,
 
-	.bcdUSB =		__constant_cpu_to_le16 (0x0200),
+	.bcdUSB =		cpu_to_le16 (0x0200),
 	.bDeviceClass =		USB_CLASS_VENDOR_SPEC,
 
-	.idVendor =		__constant_cpu_to_le16 (DRIVER_VENDOR_ID),
-	.idProduct =		__constant_cpu_to_le16 (DRIVER_PRODUCT_ID),
-	.iManufacturer =	STRING_MANUFACTURER,
-	.iProduct =		STRING_PRODUCT,
-	.iSerialNumber =	STRING_SERIAL,
+	.idVendor =		cpu_to_le16 (DRIVER_VENDOR_ID),
+	.idProduct =		cpu_to_le16 (DRIVER_PRODUCT_ID),
 	.bNumConfigurations =	1,
 };
 
@@ -219,18 +201,9 @@ static struct usb_config_descriptor amb_bulk_config = {
 	.bDescriptorType =	USB_DT_CONFIG,
 
 	.bNumInterfaces =	1,
-	.bConfigurationValue =	1,
+	.bConfigurationValue =	DEV_CONFIG_VALUE,
 	.iConfiguration =	STRING_SOURCE_SINK,
 	.bmAttributes =		USB_CONFIG_ATT_ONE | USB_CONFIG_ATT_SELFPOWER,
-	.bMaxPower =		1,	/* self-powered */
-};
-
-
-static struct usb_otg_descriptor otg_descriptor = {
-	.bLength =		sizeof otg_descriptor,
-	.bDescriptorType =	USB_DT_OTG,
-
-	.bmAttributes =		USB_OTG_SRP,
 };
 
 /* one interface in each configuration */
@@ -242,7 +215,6 @@ static struct usb_interface_descriptor amb_data_stream_intf = {
 	.bInterfaceClass =	USB_CLASS_VENDOR_SPEC,
 	.iInterface =		STRING_SOURCE_SINK,
 };
-
 
 /* two full speed bulk endpoints; their use is config-dependent */
 
@@ -267,12 +239,11 @@ static struct usb_endpoint_descriptor fs_intr_in_desc = {
 	.bDescriptorType =	USB_DT_ENDPOINT,
 	.bEndpointAddress =	USB_DIR_IN,
 	.bmAttributes =		USB_ENDPOINT_XFER_INT,
-	.wMaxPacketSize =	__constant_cpu_to_le16(AG_NOTIFY_MAXPACKET),
+	.wMaxPacketSize =	cpu_to_le16(AG_NOTIFY_MAXPACKET),
 	.bInterval =		1 << AG_NOTIFY_INTERVAL,
 };
 
-static const struct usb_descriptor_header *fs_amb_data_stream_function [] = {
-	(struct usb_descriptor_header *) &otg_descriptor,
+static struct usb_descriptor_header *fs_amb_data_stream_function[] = {
 	(struct usb_descriptor_header *) &amb_data_stream_intf,
 	(struct usb_descriptor_header *) &fs_bulk_out_desc,
 	(struct usb_descriptor_header *) &fs_bulk_in_desc,
@@ -280,16 +251,13 @@ static const struct usb_descriptor_header *fs_amb_data_stream_function [] = {
 	NULL,
 };
 
-
-//#ifdef	CONFIG_USB_GADGET_DUALSPEED
-
 static struct usb_endpoint_descriptor hs_bulk_in_desc = {
 	.bLength =		USB_DT_ENDPOINT_SIZE,
 	.bDescriptorType =	USB_DT_ENDPOINT,
 
 	/* bEndpointAddress will be copied from fs_bulk_in_desc during amb_bind() */
 	.bmAttributes =		USB_ENDPOINT_XFER_BULK,
-	.wMaxPacketSize =	__constant_cpu_to_le16 (512),
+	.wMaxPacketSize =	cpu_to_le16 (512),
 };
 
 static struct usb_endpoint_descriptor hs_bulk_out_desc = {
@@ -297,7 +265,7 @@ static struct usb_endpoint_descriptor hs_bulk_out_desc = {
 	.bDescriptorType =	USB_DT_ENDPOINT,
 
 	.bmAttributes =		USB_ENDPOINT_XFER_BULK,
-	.wMaxPacketSize =	__constant_cpu_to_le16 (512),
+	.wMaxPacketSize =	cpu_to_le16 (512),
 };
 
 static struct usb_endpoint_descriptor hs_intr_in_desc = {
@@ -305,7 +273,7 @@ static struct usb_endpoint_descriptor hs_intr_in_desc = {
 	.bDescriptorType =	USB_DT_ENDPOINT,
 	.bEndpointAddress =	USB_DIR_IN,
 	.bmAttributes =		USB_ENDPOINT_XFER_INT,
-	.wMaxPacketSize =	__constant_cpu_to_le16(AG_NOTIFY_MAXPACKET),
+	.wMaxPacketSize =	cpu_to_le16(AG_NOTIFY_MAXPACKET),
 	.bInterval =		AG_NOTIFY_INTERVAL + 4,
 };
 
@@ -313,14 +281,13 @@ static struct usb_qualifier_descriptor dev_qualifier = {
 	.bLength =		sizeof dev_qualifier,
 	.bDescriptorType =	USB_DT_DEVICE_QUALIFIER,
 
-	.bcdUSB =		__constant_cpu_to_le16 (0x0200),
+	.bcdUSB =		cpu_to_le16 (0x0200),
 	.bDeviceClass =		USB_CLASS_VENDOR_SPEC,
 
 	.bNumConfigurations =	1,
 };
 
-static const struct usb_descriptor_header *hs_amb_data_stream_function [] = {
-	(struct usb_descriptor_header *) &otg_descriptor,
+static struct usb_descriptor_header *hs_amb_data_stream_function[] = {
 	(struct usb_descriptor_header *) &amb_data_stream_intf,
 	(struct usb_descriptor_header *) &hs_bulk_in_desc,
 	(struct usb_descriptor_header *) &hs_bulk_out_desc,
@@ -328,36 +295,39 @@ static const struct usb_descriptor_header *hs_amb_data_stream_function [] = {
 	NULL,
 };
 
+static struct usb_otg_descriptor otg_descriptor = {
+	.bLength =		sizeof otg_descriptor,
+	.bDescriptorType =	USB_DT_OTG,
+	.bmAttributes =		USB_OTG_SRP,
+};
 
-/* maxpacket and other transfer characteristics vary by speed. */
-#define ep_desc(g,hs,fs) (((g)->speed==USB_SPEED_HIGH)?(hs):(fs))
-
-//#else
-
-/* if there's no high speed support, maxpacket doesn't change. */
-//#define ep_desc(g,hs,fs) fs
-
-//#endif	/* !CONFIG_USB_GADGET_DUALSPEED */
-
-static char manufacturer [50];
-static char serial [40];
+static const struct usb_descriptor_header *otg_desc[] = {
+	(struct usb_descriptor_header *) &otg_descriptor,
+	NULL,
+};
+/*-------------------------------------------------------------------------*/
+static char serial[40] = "123456789ABC";
 
 /* static strings, in UTF-8 */
-static struct usb_string		strings [] = {
-	{ STRING_MANUFACTURER, manufacturer, },
-	{ STRING_PRODUCT, longname, },
-	{ STRING_SERIAL, serial, },
-	{ STRING_SOURCE_SINK, "bulk in and out data", },
+static struct usb_string		strings[] = {
+	[USB_GADGET_MANUFACTURER_IDX].s = "",
+	[USB_GADGET_PRODUCT_IDX].s = longname,
+	[USB_GADGET_SERIAL_IDX].s = serial,
+	[STRING_SOURCE_SINK].s = "bulk in and out data",
 	{  }			/* end of list */
 };
 
-static struct usb_gadget_strings	stringtab = {
+static struct usb_gadget_strings	stringtab_dev = {
 	.language	= 0x0409,	/* en-us */
 	.strings	= strings,
 };
 
-/*-------------------------------------------------------------------------*/
+static struct usb_gadget_strings	*dev_strings[] = {
+	&stringtab_dev,
+	NULL,
+};
 
+/*-------------------------------------------------------------------------*/
 /* add a request to the tail of a list */
 void req_put(struct amb_dev *dev,
 		struct list_head *head, struct usb_request *req)
@@ -724,7 +694,7 @@ static int ag_write(struct file *file, const char __user *buf,
 	return len;
 }
 
-static struct file_operations ag_fops = {
+static const struct file_operations ag_fops = {
 	.owner = THIS_MODULE,
 	.unlocked_ioctl = ag_ioctl,
 	.open = ag_open,
@@ -732,7 +702,6 @@ static struct file_operations ag_fops = {
 	.write = ag_write,
 	.release = ag_release
 };
-
 
 static void amb_notify_complete (struct usb_ep *ep, struct usb_request *req);
 
@@ -762,47 +731,10 @@ static void notify_worker(struct work_struct *work)
 		req->zero = !(req->length % dev->notify_ep->maxpacket);
 		spin_unlock_irqrestore(&dev->lock, flags);
 
-		rval = usb_ep_queue (dev->notify_ep, req, GFP_ATOMIC);
+		rval = usb_ep_queue(dev->notify_ep, req, GFP_ATOMIC);
 		if (rval < 0)
 			AMB_DBG(dev, "status buf queue --> %d\n", rval);
 	}
-}
-
-static int amb_config_buf (struct usb_gadget *gadget,
-		u8 *buf, u8 type, unsigned index)
-{
-	int len;
-	const struct usb_descriptor_header **function;
-
-//#ifdef CONFIG_USB_GADGET_DUALSPEED
-	int hs = (gadget->speed == USB_SPEED_HIGH);
-//#endif
-
-	/* one configuration will always be index 0 */
-	if (index > 0)
-		return -EINVAL;
-
-//#ifdef CONFIG_USB_GADGET_DUALSPEED
-	if (type == USB_DT_OTHER_SPEED_CONFIG)
-		hs = !hs;
-	if (hs)
-		function = hs_amb_data_stream_function;
-	else
-//#endif
-		function = fs_amb_data_stream_function;
-
-	/* for now, don't advertise srp-only devices */
-	if (!gadget->is_otg)
-		function++;
-
-	len = usb_gadget_config_buf (&amb_bulk_config,
-			buf, USB_BUFSIZ, function);
-	if (len < 0)
-		return len;
-
-	((struct usb_config_descriptor *) buf)->bDescriptorType = type;
-
-	return len;
 }
 
 static struct usb_request *amb_alloc_buf_req (struct usb_ep *ep,
@@ -810,12 +742,12 @@ static struct usb_request *amb_alloc_buf_req (struct usb_ep *ep,
 {
 	struct usb_request	*req;
 
-	req = usb_ep_alloc_request (ep, kmalloc_flags);
+	req = usb_ep_alloc_request(ep, kmalloc_flags);
 	if (req) {
 		req->length = length;
 		req->buf = kmalloc(length, kmalloc_flags);
 		if (!req->buf) {
-			usb_ep_free_request (ep, req);
+			usb_ep_free_request(ep, req);
 			req = NULL;
 		}
 	}
@@ -829,7 +761,7 @@ static void amb_free_buf_req (struct usb_ep *ep, struct usb_request *req)
 			kfree(req->buf);
 			req->buf = NULL;
 		}
-		usb_ep_free_request (ep, req);
+		usb_ep_free_request(ep, req);
 	}
 }
 
@@ -853,7 +785,7 @@ static void amb_bulk_in_complete (struct usb_ep *ep, struct usb_request *req)
 		break;
 	case -ESHUTDOWN:		/* disconnect from host */
 		dev->error = 1;
-		amb_free_buf_req (ep, req);
+		amb_free_buf_req(ep, req);
 		break;
 	default:
 		AMB_ERROR(dev, "%s complete --> %d, %d/%d\n", ep->name,
@@ -891,7 +823,7 @@ static void amb_bulk_out_complete (struct usb_ep *ep, struct usb_request *req)
 		break;
 	case -ESHUTDOWN:		/* disconnect from host */
 		dev->error = 1;
-		amb_free_buf_req (ep, req);
+		amb_free_buf_req(ep, req);
 		break;
 	default:
 		AMB_ERROR(dev, "%s complete --> %d, %d/%d\n", ep->name,
@@ -911,9 +843,9 @@ static void amb_bulk_out_complete (struct usb_ep *ep, struct usb_request *req)
 
 static void amb_notify_complete (struct usb_ep *ep, struct usb_request *req)
 {
+	struct amb_dev	*dev = ep->driver_data;
 	int				status = req->status;
-	struct amb_dev			*dev = ep->driver_data;
-	unsigned long 			flags;
+	unsigned long	flags;
 
 	spin_lock_irqsave(&dev->lock, flags);
 	req->context = NULL;
@@ -929,7 +861,7 @@ static void amb_notify_complete (struct usb_ep *ep, struct usb_request *req)
 		usb_ep_fifo_flush(ep);
 		break;
 	case -ESHUTDOWN:		/* disconnect from host */
-		amb_free_buf_req (ep, req);
+		amb_free_buf_req(ep, req);
 		break;
 	default:
 		AMB_ERROR(dev, "%s complete --> %d, %d/%d\n", ep->name,
@@ -938,7 +870,7 @@ static void amb_notify_complete (struct usb_ep *ep, struct usb_request *req)
 	}
 	spin_unlock_irqrestore(&dev->lock, flags);
 }
-static struct usb_endpoint_descriptor	*desc_bak;
+
 static void amb_start_notify (struct amb_dev *dev)
 {
 	struct usb_request *req = dev->notify_req;
@@ -948,16 +880,13 @@ static void amb_start_notify (struct amb_dev *dev)
 	/* flush old status
 	 * FIXME iff req->context != null just dequeue it
 	 */
-	usb_ep_disable(dev->notify_ep);
-	if (!dev->notify_ep->desc) {
-		dev->notify_ep->desc = desc_bak;
-	}
-	usb_ep_enable(dev->notify_ep);
+	//usb_ep_disable(dev->notify_ep);
+	//usb_ep_enable(dev->notify_ep);
 
 	event = req->buf;
-	event->bNotifyType = __constant_cpu_to_le16(PORT_NOTIFY_IDLE);
-	event->port_id = __constant_cpu_to_le16 (0);
-	event->value = __constant_cpu_to_le32 (0);
+	event->bNotifyType = cpu_to_le16(PORT_NOTIFY_IDLE);
+	event->port_id = cpu_to_le16 (0);
+	event->value = cpu_to_le32 (0);
 	event->status = DEVICE_NOT_OPEN;
 
 	req->length = AG_NOTIFY_MAXPACKET;
@@ -965,20 +894,121 @@ static void amb_start_notify (struct amb_dev *dev)
 	req->context = dev;
 	req->zero = !(req->length % dev->notify_ep->maxpacket);
 
-	value = usb_ep_queue (dev->notify_ep, req, GFP_ATOMIC);
+	value = usb_ep_queue(dev->notify_ep, req, GFP_ATOMIC);
 	if (value < 0)
 		AMB_DBG (dev, "status buf queue --> %d\n", value);
+}
+/*-------------------------------------------------------------------------*/
+static void amb_cfg_unbind(struct usb_configuration *c)
+{
+	device_destroy(ag_class, ag_dev_id);
+}
+
+static struct usb_configuration amb_config_driver = {
+	.label			= "AMB Stream Gadget",
+	.unbind			= amb_cfg_unbind,
+	.bConfigurationValue	= 1,
+	//.iConfiguration	=	STRING_SOURCE_SINK,
+	.bmAttributes	= USB_CONFIG_ATT_ONE | USB_CONFIG_ATT_SELFPOWER,
+	.MaxPower		= 1,
+};
+
+static int amb_set_stream_config(struct amb_dev *dev)
+{
+	int		result = 0, i;
+	struct usb_gadget	*gadget = dev->gadget;
+	struct usb_ep *ep;
+	struct usb_request *req;
+
+	/* one endpoint writes data in (to the host) */
+	result = config_ep_by_speed(gadget, &(dev->func), dev->in_ep);
+	if (result)
+		goto exit;
+	result = usb_ep_enable(dev->in_ep);
+	if (result != 0) {
+		AMB_ERROR(dev, "%s: can't enable %s, result=%d\n",
+			__func__, dev->in_ep->name, result);
+		goto exit;
+	}
+
+	/* one endpoint reads data out (from the host) */
+	result = config_ep_by_speed(gadget, &(dev->func), dev->out_ep);
+	if (result)
+		goto exit;
+	result = usb_ep_enable(dev->out_ep);
+	if (result != 0) {
+		AMB_ERROR(dev, "%s: can't enable %s, result=%d\n",
+			__func__, dev->out_ep->name, result);
+		usb_ep_disable(dev->in_ep);
+		goto exit;
+	}
+
+	/* one endpoint report status  (to the host) */
+	result = config_ep_by_speed(gadget, &(dev->func), dev->notify_ep);
+	if (result)
+		goto exit;
+	result = usb_ep_enable(dev->notify_ep);
+	if (result != 0) {
+		AMB_ERROR(dev, "%s: can't enable %s, result=%d\n",
+			__func__, dev->notify_ep->name, result);
+		usb_ep_disable(dev->out_ep);
+		usb_ep_disable(dev->in_ep);
+		dev->out_ep->desc = NULL;
+		dev->in_ep->desc = NULL;
+		goto exit;
+	}
+
+	/* allocate and queue read requests */
+	ep = dev->out_ep;
+	ep->driver_data = dev;
+	for (i = 0; i < qdepth && result == 0; i++) {
+		req = amb_alloc_buf_req(ep, buflen, GFP_ATOMIC);
+		if (req) {
+			req->complete = amb_bulk_out_complete;
+			result = usb_ep_queue(ep, req, GFP_ATOMIC);
+			if (result < 0) {
+				AMB_ERROR(dev, "%s: can't queue bulk out request, "
+					"rval = %d\n", __func__, result);
+			}
+		} else {
+			AMB_ERROR(dev, "%s: can't allocate bulk in requests\n", __func__);
+			result = -ENOMEM;
+			goto exit;
+		}
+	}
+
+	/* allocate write requests, and put on free list */
+	ep = dev->in_ep;
+	ep->driver_data = dev;
+	for (i = 0; i < qdepth; i++) {
+		req = amb_alloc_buf_req(ep, buflen, GFP_ATOMIC);
+		if (req) {
+			req->complete = amb_bulk_in_complete;
+			req_put(dev, &dev->in_idle_list, req);
+		} else {
+			AMB_ERROR(dev, "%s: can't allocate bulk in requests\n", __func__);
+			result = -ENOMEM;
+			goto exit;
+		}
+	}
+
+	ep = dev->notify_ep;
+	ep->driver_data = dev;
+	if (dev->notify_ep) {
+		dev->notify_req = amb_alloc_buf_req(ep,
+						AG_NOTIFY_MAXPACKET,GFP_ATOMIC);
+		amb_start_notify(dev);
+	}
+
+exit:
+	/* caller is responsible for cleanup on error */
+	return result;
 }
 
 static void amb_reset_config (struct amb_dev *dev)
 {
 	struct usb_request *req;
 	unsigned long flags;
-
-	if (dev == NULL) {
-		pr_err("amb_reset_config: NULL device pointer\n");
-		return;
-	}
 
 	if (dev->config == 0)
 		return;
@@ -1021,329 +1051,136 @@ static void amb_reset_config (struct amb_dev *dev)
 	usb_ep_disable(dev->out_ep);
 }
 
-static int amb_set_stream_config (struct amb_dev *dev, gfp_t gfp_flags)
+static int amb_set_interface(struct amb_dev *dev, unsigned number)
 {
-	int			result = 0, i;
-	struct usb_gadget	*gadget = dev->gadget;
-	struct usb_endpoint_descriptor	*d;
+	int result = 0;
+
+	/* Free the current interface */
+	//amb_reset_config(dev);
+
+	result = amb_set_stream_config(dev);
+
+	if (!result) {
+		dev->interface = number;
+		dev->config = 1;
+	}
+	return result;
+}
+
+static int __init amb_func_bind(struct usb_configuration *c,
+								struct usb_function *f)
+{
+	struct amb_dev *dev = container_of(f, struct amb_dev, func);
+	struct usb_composite_dev *cdev = c->cdev;
 	struct usb_ep *ep;
-	struct usb_request *req;
+	int id;
+	int ret = 0;
 
-	/* one endpoint writes data in (to the host) */
-	d = ep_desc (gadget, &hs_bulk_in_desc, &fs_bulk_in_desc);
-	dev->in_ep->desc = d;
-	result = usb_ep_enable(dev->in_ep);
-	if (result < 0) {
-		AMB_ERROR(dev, "%s: can't enable %s, result=%d\n",
-			__func__, dev->in_ep->name, result);
-		goto exit;
+	id = usb_interface_id(c, f);
+	if (id < 0)
+		return id;
+	amb_data_stream_intf.bInterfaceNumber = id;
+
+	/* allocate bulk endpoints */
+	ep = usb_ep_autoconfig(cdev->gadget, &fs_bulk_in_desc);
+	if (!ep) {
+autoconf_fail:
+		ERROR(cdev, "%s: can't autoconfigure on %s\n",
+			f->name, cdev->gadget->name);
+		return -ENODEV;
 	}
+	ep->driver_data = dev;	/* claim the endpoint */
+	dev->in_ep = ep;
 
-	/* one endpoint reads data out (from the host) */
-	d = ep_desc (gadget, &hs_bulk_out_desc, &fs_bulk_out_desc);
-	dev->out_ep->desc = d;
-	result = usb_ep_enable(dev->out_ep);
-	if (result < 0) {
-		AMB_ERROR(dev, "%s: can't enable %s, result=%d\n",
-			__func__, dev->out_ep->name, result);
-		usb_ep_disable(dev->in_ep);
-		goto exit;
+	ep = usb_ep_autoconfig(cdev->gadget, &fs_bulk_out_desc);
+	if (!ep) {
+		goto autoconf_fail;
 	}
+	ep->driver_data = dev;	/* claim the endpoint */
+	dev->out_ep = ep;
 
-	/* one endpoint report status  (to the host) */
-	desc_bak = d = ep_desc (gadget, &hs_intr_in_desc, &fs_intr_in_desc);
-	dev->notify_ep->desc = d;
-	result = usb_ep_enable(dev->notify_ep);
-	if (result < 0) {
-		AMB_ERROR(dev, "%s: can't enable %s, result=%d\n",
-			__func__, dev->notify_ep->name, result);
-		usb_ep_disable(dev->out_ep);
-		usb_ep_disable(dev->in_ep);
-		goto exit;
+	ep = usb_ep_autoconfig(cdev->gadget, &fs_intr_in_desc);
+	if (!ep) {
+		goto autoconf_fail;
 	}
+	dev->notify_ep = ep;
+	ep->driver_data = dev;	/* claim the endpoint */
 
-	/* allocate and queue read requests */
-	ep = dev->out_ep;
-	for (i = 0; i < qdepth && result == 0; i++) {
-		req = amb_alloc_buf_req(ep, buflen, GFP_ATOMIC);
-		if (req) {
-			req->complete = amb_bulk_out_complete;
-			result = usb_ep_queue(ep, req, GFP_ATOMIC);
-			if (result < 0) {
-				AMB_ERROR(dev, "%s: can't queue bulk out request, "
-					"rval = %d\n", __func__, result);
-			}
-		} else {
-			AMB_ERROR(dev, "%s: can't allocate bulk in requests\n", __func__);
-			result = -ENOMEM;
-			goto exit;
-		}
-	}
-
-	/* allocate write requests, and put on free list */
-	ep = dev->in_ep;
-	for (i = 0; i < qdepth; i++) {
-		req = amb_alloc_buf_req(ep, buflen, GFP_ATOMIC);
-		if (req) {
-			req->complete = amb_bulk_in_complete;
-			req_put(dev, &dev->in_idle_list, req);
-		} else {
-			AMB_ERROR(dev, "%s: can't allocate bulk in requests\n", __func__);
-			result = -ENOMEM;
-			goto exit;
-		}
-	}
-
-	if (dev->notify_ep) {
-		dev->notify_req = amb_alloc_buf_req(dev->notify_ep,
-			AG_NOTIFY_MAXPACKET, GFP_ATOMIC);
-		amb_start_notify(dev);
-	}
-
-exit:
-	/* caller is responsible for cleanup on error */
-	return result;
-}
-
-
-static int amb_set_config (struct amb_dev *dev, unsigned number, gfp_t gfp_flags)
-{
-	int			result = 0;
-	struct usb_gadget	*gadget = dev->gadget;
-
-	if (number == dev->config)
-		return 0;
-
-	amb_reset_config (dev);
-
-	switch (number) {
-	case 1:
-		result = amb_set_stream_config(dev, gfp_flags);
-		break;
-	default:
-		result = -EINVAL;
-		/* FALL THROUGH */
-	case 0:
-		return result;
-	}
-
-	if (!result && (!dev->in_ep || !dev->out_ep))
-		result = -ENODEV;
-	if (result)
-		amb_reset_config (dev);
-	else {
-		char *speed;
-
-		switch (gadget->speed) {
-		case USB_SPEED_LOW:	speed = "low"; break;
-		case USB_SPEED_FULL:	speed = "full"; break;
-		case USB_SPEED_HIGH:	speed = "high"; break;
-		default: 		speed = "?"; break;
-		}
-
-		dev->config = number;
-		AMB_INFO(dev, "%s speed config #%d: \n", speed, number);
-
-		AMB_INFO(dev, "bulk_out address = 0x%02x, bulk_in address = 0x%02x,"
-			" intr_in address = 0x%02x\n",
-			dev->out_ep->desc->bEndpointAddress,
-			dev->in_ep->desc->bEndpointAddress,
-			dev->notify_ep->desc->bEndpointAddress);
-	}
-	return result;
-}
-
-static void amb_setup_complete (struct usb_ep *ep, struct usb_request *req)
-{
-#ifdef DEBUG
-	struct amb_dev *dev;
-
-	dev = ep->driver_data;
-
-	if (req->status || req->actual != req->length) {
-		AMB_DBG(dev, "setup complete --> %d, %d/%d\n",
-			req->status, req->actual, req->length);
-	}
-#endif
-}
-
-static int amb_setup (struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
-{
-	struct amb_dev		*dev = get_gadget_data (gadget);
-	struct usb_request	*req = dev->ctrl_req;
-	int			value = -EOPNOTSUPP;
-	u16			w_index = le16_to_cpu(ctrl->wIndex);
-	u16			w_value = le16_to_cpu(ctrl->wValue);
-	u16			w_length = le16_to_cpu(ctrl->wLength);
-
-	req->zero = 0;
-	switch (ctrl->bRequest) {
-
-	case USB_REQ_GET_DESCRIPTOR:
-		if (ctrl->bRequestType != USB_DIR_IN)
-			goto unknown;
-
-		switch (w_value >> 8) {
-		case USB_DT_DEVICE:
-			value = min (w_length, (u16) sizeof ag_device_desc);
-			memcpy (req->buf, &ag_device_desc, value);
-			break;
-//#ifdef CONFIG_USB_GADGET_DUALSPEED
-		case USB_DT_DEVICE_QUALIFIER:
-			if (!gadget_is_dualspeed(gadget))
-				break;
-			value = min (w_length, (u16) sizeof dev_qualifier);
-			memcpy (req->buf, &dev_qualifier, value);
-			break;
-
-		case USB_DT_OTHER_SPEED_CONFIG:
-			if (!gadget_is_dualspeed(gadget))
-				break;
-			/* fall through */
-//#endif /* CONFIG_USB_GADGET_DUALSPEED */
-		case USB_DT_CONFIG:
-			value = amb_config_buf (gadget, req->buf,
-					w_value >> 8,
-					w_value & 0xff);
-			if (value >= 0)
-				value = min (w_length, (u16) value);
-			break;
-
-		case USB_DT_STRING:
-			/* wIndex == language code.
-			 * this driver only handles one language, you can
-			 * add string tables for other languages, using
-			 * any UTF-8 characters
-			 */
-			value = usb_gadget_get_string (&stringtab,
-					w_value & 0xff, req->buf);
-			if (value >= 0)
-				value = min (w_length, (u16) value);
-			break;
-		}
-		break;
-
-	/* currently two configs, two speeds */
-	case USB_REQ_SET_CONFIGURATION:
-		if (ctrl->bRequestType != 0)
-			goto unknown;
-		value = amb_set_config (dev, w_value, GFP_ATOMIC);
-		break;
-
-	case USB_REQ_GET_CONFIGURATION:
-		if (ctrl->bRequestType != USB_DIR_IN)
-			goto unknown;
-		*(u8 *)req->buf = dev->config;
-		value = min (w_length, (u16) 1);
-		break;
-
-	case USB_REQ_SET_INTERFACE:
-		if (ctrl->bRequestType != USB_RECIP_INTERFACE)
-			goto unknown;
-		if (dev->config && w_index == 0 && w_value == 0) {
-			u8		config = dev->config;
-
-			/* resets interface configuration, forgets about
-			 * previous transaction state (queued bufs, etc)
-			 * and re-inits endpoint state (toggle etc)
-			 * no response queued, just zero status == success.
-			 * if we had more than one interface we couldn't
-			 * use this "reset the config" shortcut.
-			 */
-			amb_set_config (dev, config, GFP_ATOMIC);
-			value = 0;
-		}
-		break;
-	case USB_REQ_GET_INTERFACE:
-		if (ctrl->bRequestType != (USB_DIR_IN|USB_RECIP_INTERFACE))
-			goto unknown;
-		if (!dev->config)
-			break;
-		if (w_index != 0) {
-			value = -EDOM;
-			break;
-		}
-		*(u8 *)req->buf = 0;
-		value = min (w_length, (u16) 1);
-		break;
-
-	default:
-unknown:
-		AMB_DBG(dev, "unknown control req%02x.%02x v%04x i%04x l%d\n",
-			ctrl->bRequestType, ctrl->bRequest,
-			w_value, w_index, w_length);
-	}
-
-	/* respond with data transfer before status phase? */
-	if (value >= 0) {
-		req->length = value;
-		req->zero = value < w_length;
-		value = usb_ep_queue (gadget->ep0, req, GFP_ATOMIC);
-		if (value < 0) {
-			AMB_DBG(dev, "ep_queue --> %d\n", value);
-			req->status = 0;
-			amb_setup_complete (gadget->ep0, req);
-		}
-	}
-
-	/* device either stalls (value < 0) or reports success */
-	return value;
-}
-
-static void amb_disconnect (struct usb_gadget *gadget)
-{
-	struct amb_dev		*dev = get_gadget_data (gadget);
-
-	amb_reset_config (dev);
-
-	/* a more significant application might have some non-usb
-	 * activities to quiesce here, saving resources like power
-	 * or pushing the notification up a network stack.
+	/* support all relevant hardware speeds... we expect that when
+	 * hardware is dual speed, all bulk-capable endpoints work at
+	 * both speeds
 	 */
+	hs_bulk_in_desc.bEndpointAddress = fs_bulk_in_desc.bEndpointAddress;
+	hs_bulk_out_desc.bEndpointAddress = fs_bulk_out_desc.bEndpointAddress;
+	hs_intr_in_desc.bEndpointAddress = fs_intr_in_desc.bEndpointAddress;
 
-	/* next we may get setup() calls to enumerate new connections;
-	 * or an unbind() during shutdown (including removing module).
-	 */
+	ret = usb_assign_descriptors(f, fs_amb_data_stream_function,
+				hs_amb_data_stream_function, NULL);
+	if (ret)
+		goto fail;
+
+	printk("AMB STREAM: %s speed IN/%s OUT/%s NOTIFY/%s\n",
+			gadget_is_dualspeed(c->cdev->gadget) ? "dual" : "full",
+			dev->in_ep->name, dev->out_ep->name,dev->notify_ep->name);
+	return 0;
+fail:
+	usb_free_all_descriptors(f);
+	if (dev->in_ep)
+		dev->in_ep->driver_data = NULL;
+	if (dev->out_ep)
+		dev->out_ep->driver_data = NULL;
+	if (dev->notify_ep)
+		dev->notify_ep->driver_data = NULL;
+
+	printk("%s: can't bind, err %d\n", f->name, ret);
+	return ret;
 }
 
-static void __exit amb_unbind (struct usb_gadget *gadget)
+static void amb_func_unbind(struct usb_configuration *c,
+							struct usb_function *f)
 {
-	struct amb_dev		*dev = get_gadget_data (gadget);
-
-	AMB_DBG(dev, "unbind\n");
-
-	/* we've already been disconnected ... no i/o is active */
-	if (dev->ctrl_req) {
-		dev->ctrl_req->length = USB_BUFSIZ;
-		amb_free_buf_req (gadget->ep0, dev->ctrl_req);
-		dev->ctrl_req = NULL;
-	}
-
-	kfree (dev);
-	set_gadget_data (gadget, NULL);
-	ag_device = NULL;
+	usb_free_all_descriptors(f);
 }
 
-static int __ref amb_bind (struct usb_gadget *gadget,
-		struct usb_gadget_driver *driver)
+static int amb_func_set_alt(struct usb_function *f,
+							unsigned inf, unsigned alt)
 {
+	struct amb_dev *dev = container_of(f, struct amb_dev, func);
+	int ret = -ENOTSUPP;
+
+	if (!alt)
+		ret = amb_set_interface(dev, inf);
+	return ret;
+}
+
+static void amb_func_disable(struct usb_function *f)
+{
+	struct amb_dev *dev = container_of(f, struct amb_dev, func);
+	unsigned long flags;
+
+	spin_lock_irqsave(&dev->lock, flags);
+	amb_reset_config(dev);
+	spin_unlock_irqrestore(&dev->lock, flags);
+}
+
+static int __init amb_bind_config(struct usb_configuration *c)
+{
+	struct usb_gadget	*gadget = c->cdev->gadget;
 	struct amb_dev		*dev;
-	struct usb_ep		*ep;
-//	int			gcnum;
+	struct device		*pdev;
+	int status = -ENOMEM;
 
-//	gcnum = usb_gadget_controller_number (gadget);
-//	if (gcnum >= 0)
-//		ag_device_desc.bcdDevice = cpu_to_le16 (0x0200 + gcnum);
-//	else {
-//		pr_warn("%s: controller '%s' not recognized\n",
-//			shortname, gadget->name);
-//		ag_device_desc.bcdDevice = __constant_cpu_to_le16 (0x9999);
-//	}
+	usb_ep_autoconfig_reset(gadget);
 
-	/* ok, we made sense of the hardware ... */
-	dev = kzalloc(sizeof(*dev), GFP_KERNEL);
+	dev = kzalloc(sizeof(struct amb_dev), GFP_KERNEL);
 	if (!dev)
 		return -ENOMEM;
+
+	dev->func.name = shortname;
+	dev->func.bind = amb_func_bind;
+	dev->func.unbind = amb_func_unbind;
+	dev->func.set_alt = amb_func_set_alt;
+	dev->func.disable = amb_func_disable;
 
 	spin_lock_init (&dev->lock);
 	mutex_init(&dev->mtx);
@@ -1353,103 +1190,105 @@ static int __ref amb_bind (struct usb_gadget *gadget,
 	INIT_LIST_HEAD(&dev->out_req_list);
 
 	dev->gadget = gadget;
-	dev->config = 0;
 	dev->error = 0;
 	ag_device = dev;
-	set_gadget_data (gadget, dev);
 
-	/* configure the endpoints */
-	usb_ep_autoconfig_reset (gadget);
-
-	ep = usb_ep_autoconfig (gadget, &fs_bulk_in_desc);
-	if (!ep) {
-		AMB_ERROR(dev, "amb_bind: cannot get bulk-in endpoint\n");
-		return -ENODEV;
+	status = usb_add_function(c, &dev->func);
+	if (status) {
+		kfree(dev);
+		return status;
 	}
-	ep->driver_data = dev;	/* claim the endpoint */
-	dev->in_ep = ep;
 
-	ep = usb_ep_autoconfig (gadget, &fs_bulk_out_desc);
-	if (!ep) {
-		AMB_ERROR(dev, "amb_bind: cannot get bulk-out endpoint\n");
-		return -ENODEV;
+	/* Setup the sysfs files for the gadget. */
+	pdev = device_create(ag_class, NULL, ag_dev_id,
+				  NULL, "amb_gadget");
+	if (IS_ERR(pdev)) {
+		status = PTR_ERR(pdev);
+		ERROR(dev, "Failed to create device: amb_gadget\n");
+		goto fail;
 	}
-	ep->driver_data = dev;	/* claim the endpoint */
-	dev->out_ep = ep;
 
-	ep = usb_ep_autoconfig(gadget, &fs_intr_in_desc);
-	if (!ep) {
-		AMB_ERROR(dev, "amb_bind: cannot use notify endpoint\n");
-		return -ENODEV;
-	}
-	dev->notify_ep = ep;
-	ep->driver_data = dev;	/* claim the endpoint */
-
-	/* preallocate control response and buffer */
-	dev->ctrl_req = amb_alloc_buf_req (gadget->ep0, USB_BUFSIZ, GFP_KERNEL);
-	if (dev->ctrl_req == NULL) {
-		AMB_ERROR(dev, "%s: No memory\n", __func__);
-		amb_unbind (gadget);
-		return -ENOMEM;
-	}
-	dev->ctrl_req->complete = amb_setup_complete;
-	gadget->ep0->driver_data = dev;
-
-	ag_device_desc.bMaxPacketSize0 = gadget->ep0->maxpacket;
-
-	if (gadget_is_dualspeed(gadget)) {
-		/* assume ep0 uses the same value for both speeds ... */
-		dev_qualifier.bMaxPacketSize0 = ag_device_desc.bMaxPacketSize0;
-
-		/* and that all endpoints are dual-speed */
-		hs_bulk_in_desc.bEndpointAddress = fs_bulk_in_desc.bEndpointAddress;
-		hs_bulk_out_desc.bEndpointAddress = fs_bulk_out_desc.bEndpointAddress;
-		hs_intr_in_desc.bEndpointAddress = fs_intr_in_desc.bEndpointAddress;
-	}
+	usb_gadget_set_selfpowered(gadget);
 
 	if (gadget->is_otg) {
-		otg_descriptor.bmAttributes |= USB_OTG_HNP,
-		amb_bulk_config.bmAttributes |= USB_CONFIG_ATT_WAKEUP;
+		otg_descriptor.bmAttributes |= USB_OTG_HNP;
+		amb_config_driver.descriptors = otg_desc;
+		amb_config_driver.bmAttributes |= USB_CONFIG_ATT_WAKEUP;
 	}
+#if 0
+	spin_lock_init (&dev->lock);
+	mutex_init(&dev->mtx);
+	init_waitqueue_head(&dev->wq);
+	INIT_LIST_HEAD(&dev->in_idle_list);
+	INIT_LIST_HEAD(&dev->in_queue_list);
+	INIT_LIST_HEAD(&dev->out_req_list);
 
-	usb_gadget_set_selfpowered (gadget);
+	dev->gadget = gadget;
+	dev->error = 0;
+	ag_device = dev;
+#endif
+	return 0;
 
-	gadget->ep0->driver_data = dev;
+fail:
+	amb_cfg_unbind(c);
+	return status;
+}
 
-	strlcpy (serial, "123456789ABC", sizeof serial);
-	snprintf (manufacturer, sizeof manufacturer, "%s %s with %s",
-		init_utsname()->sysname, init_utsname()->release,
-		gadget->name);
+static int amb_unbind(struct usb_composite_dev *cdev)
+{
+#if 0
+	struct usb_gadget	*gadget = cdev->gadget;
+	struct amb_dev		*dev = get_gadget_data (gadget);
 
-	AMB_INFO(dev, "%s, version: " DRIVER_VERSION "\n", longname);
+	kfree (dev);
+	set_gadget_data(gadget, NULL);
+	ag_device = NULL;
+#else
+#endif
+	return 0;
+}
+
+/*-------------------------------------------------------------------------*/
+static int __init amb_bind(struct usb_composite_dev *cdev)
+{
+	int ret;
+	ret = usb_string_ids_tab(cdev, strings);
+	if (ret < 0)
+		return ret;
+
+	ag_device_desc.iManufacturer = strings[USB_GADGET_MANUFACTURER_IDX].id;
+	ag_device_desc.iProduct = strings[USB_GADGET_PRODUCT_IDX].id;
+	ag_device_desc.iSerialNumber = strings[USB_GADGET_SERIAL_IDX].id;
+	amb_config_driver.iConfiguration = strings[STRING_SOURCE_SINK].id;
+
+	ret = usb_add_config(cdev, &amb_config_driver, amb_bind_config);
+	if (ret < 0)
+		return ret;
+
+	usb_composite_overwrite_options(cdev, &coverwrite);
+	INFO(cdev, "%s, version: " DRIVER_VERSION "\n", longname);
 
 	return 0;
 }
 
-static __refdata struct usb_gadget_driver amb_gadget_driver = {
-	.max_speed	= USB_SPEED_HIGH,
-	.function	= (char *) longname,
-	.bind			=	amb_bind,
-	.unbind		= __exit_p(amb_unbind),
-	.setup		= amb_setup,
-	.disconnect	= amb_disconnect,
-
-	.driver 	= {
-		.name		= (char *) shortname,
-		.owner		= THIS_MODULE,
-	},
+static __refdata struct usb_composite_driver amb_gadget_driver = {
+	.name		=	shortname,
+	.dev		=	&ag_device_desc,
+	.strings	=	dev_strings,
+	.max_speed	=	USB_SPEED_HIGH,
+	.bind		=	amb_bind,
+	.unbind		=	amb_unbind,
 };
 
 static int __init amb_gadget_init(void)
 {
 	int rval = 0;
-	dev_t dev_id;
 
-	rval = usb_gadget_probe_driver(&amb_gadget_driver);
-	if (rval) {
-		pr_err("amb_gadget_init: cannot register gadget driver, "
-			"rval=%d\n", rval);
-		goto out0;
+	ag_class = class_create(THIS_MODULE, "amb_stream_gadget");
+	if (IS_ERR(ag_class)) {
+		rval = PTR_ERR(ag_class);
+		pr_err("unable to create usb_gadget class %d\n", rval);
+		return rval;
 	}
 
 	if (buflen >= 65536) {
@@ -1458,8 +1297,8 @@ static int __init amb_gadget_init(void)
 		goto out1;
 	}
 
-	dev_id = MKDEV(AMB_GADGET_MAJOR, AMB_GADGET_MINOR_START);
-	rval = register_chrdev_region(dev_id, 1, "amb_gadget");
+	ag_dev_id = MKDEV(AMB_GADGET_MAJOR, AMB_GADGET_MINOR_START);
+	rval = register_chrdev_region(ag_dev_id, 1, "amb_gadget");
 	if(rval < 0){
 		pr_err("amb_gadget_init: register devcie number error!\n");
 		goto out1;
@@ -1467,16 +1306,23 @@ static int __init amb_gadget_init(void)
 
 	cdev_init(&ag_cdev, &ag_fops);
 	ag_cdev.owner = THIS_MODULE;
-	rval = cdev_add(&ag_cdev, dev_id, 1);
+	rval = cdev_add(&ag_cdev, ag_dev_id, 1);
 	if (rval) {
 		pr_err("amb_gadget_init: cdev_add failed\n");
-		unregister_chrdev_region(dev_id, 1);
+		unregister_chrdev_region(ag_dev_id, 1);
 		goto out1;
 	}
 
+	rval = usb_composite_probe(&amb_gadget_driver);
+	if (rval) {
+		pr_err("amb_gadget_init: cannot register gadget driver, "
+			"rval=%d\n", rval);
+		class_destroy(ag_class);
+		goto out0;
+	}
 out1:
 	if(rval)
-		usb_gadget_unregister_driver(&amb_gadget_driver);
+		class_destroy(ag_class);
 out0:
 	return rval;
 }
@@ -1484,16 +1330,13 @@ module_init (amb_gadget_init);
 
 static void __exit amb_gadget_exit (void)
 {
-	dev_t dev_id;
+	usb_composite_unregister(&amb_gadget_driver);
 
-	usb_gadget_unregister_driver (&amb_gadget_driver);
-
-	dev_id = MKDEV(AMB_GADGET_MAJOR, AMB_GADGET_MINOR_START);
-	unregister_chrdev_region(dev_id, 1);
+	unregister_chrdev_region(ag_dev_id, 1);
 	cdev_del(&ag_cdev);
+	class_destroy(ag_class);
 }
 module_exit (amb_gadget_exit);
-
 
 MODULE_AUTHOR ("Cao Rongrong <rrcao@ambarella.com>");
 MODULE_LICENSE ("GPL");

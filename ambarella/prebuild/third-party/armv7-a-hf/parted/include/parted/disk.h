@@ -1,6 +1,6 @@
 /*
     libparted - a library for manipulating disk partitions
-    Copyright (C) 1999-2002, 2007-2012 Free Software Foundation, Inc.
+    Copyright (C) 1999-2002, 2007-2014 Free Software Foundation, Inc.
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -72,10 +72,13 @@ enum _PedPartitionFlag {
         PED_PARTITION_BIOS_GRUB=12,
         PED_PARTITION_APPLE_TV_RECOVERY=13,
         PED_PARTITION_DIAG=14,
-        PED_PARTITION_LEGACY_BOOT=15
+        PED_PARTITION_LEGACY_BOOT=15,
+        PED_PARTITION_MSFT_DATA=16,
+        PED_PARTITION_IRST=17,
+        PED_PARTITION_ESP=18
 };
 #define PED_PARTITION_FIRST_FLAG        PED_PARTITION_BOOT
-#define PED_PARTITION_LAST_FLAG         PED_PARTITION_LEGACY_BOOT
+#define PED_PARTITION_LAST_FLAG         PED_PARTITION_ESP
 
 enum _PedDiskTypeFeature {
         PED_DISK_TYPE_EXTENDED=1,       /**< supports extended partitions */

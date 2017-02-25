@@ -4,14 +4,33 @@
  * History:
  *	2013/02/25 - [Cao Rongrong] created file
  *
- * Copyright (C) 2012-2016, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 #include <asm/uaccess.h>
 #include "iav.h"
 
@@ -59,48 +78,87 @@ struct iav_system_load G_system_load[IAV_CHIP_ID_S2L_NUM] =
 {
 	[IAV_CHIP_ID_S2L_22M - IAV_CHIP_ID_S2LM_FIRST] = {
 		.system_load = SYS_ENC_LOAD_S2L_22M,
+		.vin_pps = SYS_VIN_PPS_S2L_22M,
 		.desc = "720p60",
 		.max_enc_num = IAV_STREAM_MAX_NUM_ALL,
+		.vin_pps_desc = "3MP30",
 	},
 	[IAV_CHIP_ID_S2L_33M - IAV_CHIP_ID_S2LM_FIRST] = {
 		.system_load = SYS_ENC_LOAD_S2L_33M,
+		.vin_pps = SYS_VIN_PPS_S2L_33M,
 		.desc = "1080p31 + 480p30 + CIFp30",
 		.max_enc_num = IAV_STREAM_MAX_NUM_ALL,
+		.vin_pps_desc = "4MP30",
 	},
 	[IAV_CHIP_ID_S2L_55M - IAV_CHIP_ID_S2LM_FIRST] = {
 		.system_load = SYS_ENC_LOAD_S2L_55M,
+		.vin_pps = SYS_VIN_PPS_S2L_55M,
 		.desc = "3Mp30 + 480p30",
 		.max_enc_num = IAV_STREAM_MAX_NUM_ALL,
+		.vin_pps_desc = "6MP30",
 	},
 	[IAV_CHIP_ID_S2L_99M - IAV_CHIP_ID_S2LM_FIRST] = {
 		.system_load = SYS_ENC_LOAD_S2L_99M,
+		.vin_pps = SYS_VIN_PPS_S2L_99M,
 		.desc = "5Mp20 + 480p20",
 		.max_enc_num = IAV_STREAM_MAX_NUM_ALL,
+		.vin_pps_desc = "8MP30",
 	},
 	[IAV_CHIP_ID_S2L_63 - IAV_CHIP_ID_S2LM_FIRST] = {
 		.system_load = SYS_ENC_LOAD_S2L_63,
+		.vin_pps = SYS_VIN_PPS_S2L_63,
 		.desc = "3Mp30 + 480p30",
 		.max_enc_num = IAV_STREAM_MAX_NUM_ALL,
+		.vin_pps_desc = "8MP30",
 	},
 	[IAV_CHIP_ID_S2L_66 - IAV_CHIP_ID_S2LM_FIRST] = {
 		.system_load = SYS_ENC_LOAD_S2L_66,
+		.vin_pps = SYS_VIN_PPS_S2L_66,
 		.desc = "5Mp30 + 480p30",
 		.max_enc_num = IAV_STREAM_MAX_NUM_ALL,
+		.vin_pps_desc = "6MP60",
 	},
 	[IAV_CHIP_ID_S2L_88 - IAV_CHIP_ID_S2LM_FIRST] = {
 		.system_load = SYS_ENC_LOAD_S2L_88,
+		.vin_pps = SYS_VIN_PPS_S2L_88,
 		.desc = "5Mp30 + 480p30",
 		.max_enc_num = IAV_STREAM_MAX_NUM_ALL,
+		.vin_pps_desc = "6MP60",
 	},
 	[IAV_CHIP_ID_S2L_99 - IAV_CHIP_ID_S2LM_FIRST] = {
 		.system_load = SYS_ENC_LOAD_S2L_99,
+		.vin_pps = SYS_VIN_PPS_S2L_99,
 		.desc = "1080p110",
 		.max_enc_num = IAV_STREAM_MAX_NUM_ALL,
+		.vin_pps_desc = "6MP60",
 	},
 	[IAV_CHIP_ID_S2L_TEST - IAV_CHIP_ID_S2LM_FIRST] = {
 		.system_load = SYS_ENC_LOAD_S2L_TEST,
+		.vin_pps = SYS_VIN_PPS_S2L_TEST,
 		.desc = "5Mp20 + 480p20",
 		.max_enc_num = IAV_STREAM_MAX_NUM_ALL,
+		.vin_pps_desc = "8MP30",
+	},
+	[IAV_CHIP_ID_S2L_22 - IAV_CHIP_ID_S2LM_FIRST] = {
+		.system_load = SYS_ENC_LOAD_S2L_22,
+		.vin_pps = SYS_VIN_PPS_S2L_22,
+		.desc = "1080p25",
+		.max_enc_num = IAV_STREAM_MAX_NUM_ALL,
+		.vin_pps_desc = "6MP30",
+	},
+	[IAV_CHIP_ID_S2L_33MEX - IAV_CHIP_ID_S2LM_FIRST] = {
+		.system_load = SYS_ENC_LOAD_S2L_33M,
+		.vin_pps = SYS_VIN_PPS_S2L_33M,
+		.desc = "1080p31 + 480p30 + CIFp30",
+		.max_enc_num = IAV_STREAM_MAX_NUM_ALL,
+		.vin_pps_desc = "4MP30",
+	},
+	[IAV_CHIP_ID_S2L_33EX - IAV_CHIP_ID_S2LM_FIRST] = {
+		.system_load = SYS_ENC_LOAD_S2L_33M,
+		.vin_pps = SYS_VIN_PPS_S2L_33M,
+		.desc = "1080p31 + 480p30 + CIFp30",
+		.max_enc_num = IAV_STREAM_MAX_NUM_ALL,
+		.vin_pps_desc = "4MP30",
 	},
 };
 
@@ -129,10 +187,11 @@ struct iav_enc_limitation G_encode_limit[DSP_ENCODE_MODE_TOTAL_NUM] =
 		.pm_mctf_supported = 1,
 		.wcr_supported = 0,
 		.idsp_upsample_supported = 1,
-		.me0_supported = ME0_SCALE_OFF,
+		.me0_supported = ME0_SCALE_16X,
 		.enc_raw_rgb_supported = 0,
 		.enc_raw_yuv_supported = 1,
 		.enc_from_mem_supported = 1,
+		.long_ref_b_supported = 1,
 	},
 
 	[DSP_MULTI_REGION_WARP_MODE] = {
@@ -162,6 +221,7 @@ struct iav_enc_limitation G_encode_limit[DSP_ENCODE_MODE_TOTAL_NUM] =
 		.enc_raw_rgb_supported = 0,
 		.enc_raw_yuv_supported = 0,
 		.enc_from_mem_supported = 0,
+		.long_ref_b_supported = 0,
 	},
 
 	[DSP_BLEND_ISO_MODE] = {
@@ -191,6 +251,7 @@ struct iav_enc_limitation G_encode_limit[DSP_ENCODE_MODE_TOTAL_NUM] =
 		.enc_raw_rgb_supported = 1,
 		.enc_raw_yuv_supported = 0,
 		.enc_from_mem_supported = 1,
+		.long_ref_b_supported = 0,
 	},
 
 	[DSP_SINGLE_REGION_WARP_MODE] = {
@@ -220,6 +281,7 @@ struct iav_enc_limitation G_encode_limit[DSP_ENCODE_MODE_TOTAL_NUM] =
 		.enc_raw_rgb_supported = 0,
 		.enc_raw_yuv_supported = 0,
 		.enc_from_mem_supported = 0,
+		.long_ref_b_supported = 0,
 	},
 
 	[DSP_ADVANCED_ISO_MODE] = {
@@ -249,6 +311,7 @@ struct iav_enc_limitation G_encode_limit[DSP_ENCODE_MODE_TOTAL_NUM] =
 		.enc_raw_rgb_supported = 1,
 		.enc_raw_yuv_supported = 0,
 		.enc_from_mem_supported = 1,
+		.long_ref_b_supported = 1,
 	},
 
 	[DSP_HDR_LINE_INTERLEAVED_MODE] = {
@@ -274,10 +337,11 @@ struct iav_enc_limitation G_encode_limit[DSP_ENCODE_MODE_TOTAL_NUM] =
 		.pm_mctf_supported = 1,
 		.wcr_supported = 0,
 		.idsp_upsample_supported = 1,
-		.me0_supported = ME0_SCALE_OFF,
+		.me0_supported = ME0_SCALE_16X,
 		.enc_raw_rgb_supported = 0,
 		.enc_raw_yuv_supported = 0,
 		.enc_from_mem_supported = 0,
+		.long_ref_b_supported = 0,
 	},
 
 	[DSP_HISO_VIDEO_MODE] = {
@@ -307,6 +371,7 @@ struct iav_enc_limitation G_encode_limit[DSP_ENCODE_MODE_TOTAL_NUM] =
 		.enc_raw_rgb_supported = 1,
 		.enc_raw_yuv_supported = 0,
 		.enc_from_mem_supported = 0,
+		.long_ref_b_supported = 0,
 	},
 };
 
@@ -329,6 +394,7 @@ struct iav_system_config G_system_config[DSP_ENCODE_MODE_TOTAL_NUM] =
 		.enc_raw_rgb = 0,
 		.enc_raw_yuv = 0,
 		.enc_from_mem = 0,
+		.long_ref_b_frame = 0,
 	},
 
 	[DSP_MULTI_REGION_WARP_MODE] = {
@@ -348,6 +414,7 @@ struct iav_system_config G_system_config[DSP_ENCODE_MODE_TOTAL_NUM] =
 		.enc_raw_rgb = 0,
 		.enc_raw_yuv = 0,
 		.enc_from_mem = 0,
+		.long_ref_b_frame = 0,
 	},
 
 	[DSP_BLEND_ISO_MODE] = {
@@ -367,6 +434,7 @@ struct iav_system_config G_system_config[DSP_ENCODE_MODE_TOTAL_NUM] =
 		.enc_raw_rgb = 0,
 		.enc_raw_yuv = 0,
 		.enc_from_mem = 0,
+		.long_ref_b_frame = 0,
 	},
 
 	[DSP_SINGLE_REGION_WARP_MODE] = {
@@ -380,13 +448,13 @@ struct iav_system_config G_system_config[DSP_ENCODE_MODE_TOTAL_NUM] =
 		.lens_warp = 0,
 		.vout_swap = 0,
 		.iso_type = ISO_TYPE_LOW,
-
 		.idsp_upsample_type = IDSP_UPSAMPLE_TYPE_OFF,
 		.me0_scale = ME0_SCALE_OFF,
 		.mctf_pm = 1,
 		.enc_raw_rgb = 0,
 		.enc_raw_yuv = 0,
 		.enc_from_mem = 0,
+		.long_ref_b_frame = 0,
 	},
 
 	[DSP_ADVANCED_ISO_MODE] = {
@@ -406,6 +474,7 @@ struct iav_system_config G_system_config[DSP_ENCODE_MODE_TOTAL_NUM] =
 		.enc_raw_rgb = 0,
 		.enc_raw_yuv = 0,
 		.enc_from_mem = 0,
+		.long_ref_b_frame = 0,
 	},
 
 	[DSP_HDR_LINE_INTERLEAVED_MODE] = {
@@ -425,6 +494,7 @@ struct iav_system_config G_system_config[DSP_ENCODE_MODE_TOTAL_NUM] =
 		.enc_raw_rgb = 0,
 		.enc_raw_yuv = 0,
 		.enc_from_mem = 0,
+		.long_ref_b_frame = 0,
 	},
 
 	[DSP_HISO_VIDEO_MODE] = {
@@ -444,6 +514,7 @@ struct iav_system_config G_system_config[DSP_ENCODE_MODE_TOTAL_NUM] =
 		.enc_raw_rgb = 0,
 		.enc_raw_yuv = 0,
 		.enc_from_mem = 0,
+		.long_ref_b_frame = 0,
 	},
 };
 

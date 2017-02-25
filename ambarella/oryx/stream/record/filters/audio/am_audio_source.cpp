@@ -4,12 +4,29 @@
  * History:
  *   2014-12-2 - [ypchang] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -96,62 +113,189 @@ AMIPacketPin* AMAudioSource::get_output_pin(uint32_t index)
 
 AM_STATE AMAudioSource::start()
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   AM_STATE state = AM_STATE_ERROR;
   bool started = (NULL != m_audio_capture);
-
-  m_packet_pool->enable(true);
-  if (AM_LIKELY(started)) {
-    started = false;
-    if (AM_LIKELY(!m_audio_disabled)) {
-      for (uint32_t i = 0; i < m_aconfig->audio_type_num; ++ i) {
-        if (AM_LIKELY(m_audio_codec[i].is_valid())) {
-          if (AM_LIKELY(m_audio_codec[i].
-                        start(m_aconfig->real_time.enabled,
-                              m_aconfig->real_time.priority))) {
-            started = true;
-          } else {
-            ERROR("Failed to start %s", m_audio_codec[i].m_name.c_str());
+  do {
+    if (!m_codec_enable) {
+      NOTICE("The codec is not enabled in %s", m_name);
+      state = AM_STATE_OK;
+      break;
+    }
+    m_packet_pool->enable(true);
+    if (AM_LIKELY(started)) {
+      started = false;
+      if (AM_LIKELY(!m_audio_disabled)) {
+        for (uint32_t i = 0; i < m_aconfig->audio_type_num; ++ i) {
+          if (AM_LIKELY(m_audio_codec[i].is_valid())) {
+            if (AM_LIKELY(m_audio_codec[i].
+                          start(m_aconfig->real_time.enabled,
+                                m_aconfig->real_time.priority))) {
+              started = true;
+            } else {
+              ERROR("Failed to start %s", m_audio_codec[i].m_name.c_str());
+            }
           }
         }
       }
+      m_audio_capture->set_echo_cancel_enabled(m_aconfig->enable_aec);
+      m_started = (m_audio_disabled || (started && m_audio_capture->
+          start(m_aconfig->initial_volume)));
+      m_run = m_started.load();
+      m_abort = false;
+      if (AM_UNLIKELY(!m_started.load() && !m_audio_disabled &&
+                      !(started && m_audio_capture->
+                          start(m_aconfig->initial_volume)))) {
+        m_event->signal();
+        m_abort = true;
+      }
     }
-    m_started = m_audio_disabled || (started && m_audio_capture->start());
-    m_run = m_started;
-    m_abort = false;
-    if (AM_UNLIKELY(!m_started && !m_audio_disabled &&
-                    !(started && m_audio_capture->
-                        start(m_aconfig->initial_volume)))) {
-      m_event->signal();
-      m_abort = true;
-    }
-  }
-  state = m_started ? AM_STATE_OK : AM_STATE_ERROR;
-
+    state = m_started ? AM_STATE_OK : AM_STATE_ERROR;
+  } while(0);
   return state;
 }
 
 AM_STATE AMAudioSource::stop()
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AM_STATE state = AM_STATE_OK;
+  AUTO_MEM_LOCK(m_lock);
 
-  if (AM_LIKELY(m_started)) {
+  if (AM_LIKELY(m_started.load())) {
     m_started = false;
-    m_run = false;
     m_abort = false;
-    if (AM_LIKELY(!m_audio_disabled)) {
+    if (AM_LIKELY(!m_audio_disabled.load())) {
       m_audio_capture->stop();
       for (uint32_t i = 0; i < m_aconfig->audio_type_num; ++ i) {
         m_audio_codec[i].stop();
       }
     }
     m_packet_pool->enable(false);
-    m_event->signal();
   } else {
     NOTICE("%s is already stopped!", m_name);
   }
+  if (AM_LIKELY(m_run)) {
+    m_run = false;
+    m_event->signal();
+    state = inherited::stop();
+  }
 
-  return inherited::stop();
+  return state;
+}
+
+AM_STATE AMAudioSource::enable_codec(AM_AUDIO_TYPE type, bool enable)
+{
+  AM_STATE ret = AM_STATE_OK;
+  bool need_start = false;
+  bool need_stop = false;
+  AMAudioCodecObj *obj = nullptr;
+  do {
+    if (m_audio_disabled) {
+      ERROR("There are no codecs in %s", m_name);
+      ret = AM_STATE_ERROR;
+      break;
+    }
+    obj = get_codec_by_type(type);
+    if (!obj) {
+      ERROR("Failed to find %s codec in %s", audio_type_to_string(type).c_str(),
+            m_name);
+      ret = AM_STATE_ERROR;
+      break;
+    }
+    if (enable) {//true
+      if (obj->is_running()) {
+        NOTICE("%s is already running in %s.", audio_type_to_string(type).c_str(),
+               m_name);
+        break;
+      } else { // not running
+        NOTICE("Starting %s codec in %s", audio_type_to_string(type).c_str(),
+               m_name);
+        need_start = true;
+      }
+    } else {//false
+      if (obj->is_running()) {
+        NOTICE("Stopping %s codec in %s", audio_type_to_string(type).c_str(),
+               m_name);
+        need_stop = true;
+      } else { //not running
+        NOTICE("%s is already stopped in %s", audio_type_to_string(type).c_str(),
+               m_name);
+        break;
+      }
+    }
+    if (need_start) {
+      if (!m_codec_enable) {
+        m_packet_pool->enable(true);
+      }
+      bool started = false;
+      if (AM_LIKELY(obj->is_valid())) {
+        if (AM_LIKELY(obj->start(m_aconfig->real_time.enabled,
+                                 m_aconfig->real_time.priority))) {
+          started = true;
+        } else {
+          ERROR("Failed to start %s in %s", obj->m_name.c_str(), m_name);
+        }
+      }
+      if (!m_codec_enable) {
+        m_started = (started && m_audio_capture->start(m_aconfig->initial_volume));
+        if (AM_UNLIKELY((!m_started.load()) && (!started))) {
+          ERROR("Start audio capture failed!");
+          m_abort = true;
+          m_event->signal();
+        }
+        m_codec_enable = true;
+        ret = m_started ? AM_STATE_OK : AM_STATE_ERROR;
+      }
+    }
+    if (need_stop) {
+      if (obj->is_valid() && obj->is_running()) {
+        obj->stop();
+      }
+      bool all_stopped = true;
+      for (uint32_t i = 0; i < m_aconfig->audio_type_num; ++ i) {
+        if (m_audio_codec[i].is_running()) {
+          all_stopped = false;
+          break;
+        }
+      }
+      if (all_stopped) {
+        m_started = false;
+        m_audio_capture->stop();
+        m_packet_pool->enable(false);
+        m_codec_enable = false;
+      }
+    }
+  } while(0);
+  return ret;
+}
+
+uint32_t AMAudioSource::get_audio_number()
+{
+  return m_aconfig ? m_aconfig->audio_type_num : 0;
+}
+
+uint32_t AMAudioSource::get_audio_sample_rate()
+{
+  return m_src_audio_info.sample_rate;
+}
+
+void AMAudioSource::set_stream_id(uint32_t base)
+{
+  if (AM_LIKELY(!m_audio_disabled)) {
+    uint32_t id = base;
+    for (uint32_t i = 0; i < m_aconfig->audio_type_num; ++ i) {
+      if (AM_LIKELY(m_audio_codec[i].is_valid())) {
+        m_audio_codec[i].set_stream_id(id);
+        ++ id;
+      }
+    }
+  }
+}
+
+void AMAudioSource::set_aec_enabled(bool enabled)
+{
+  if (AM_LIKELY(m_aconfig)) {
+    m_aconfig->enable_aec = enabled;
+  }
 }
 
 uint32_t AMAudioSource::version()
@@ -161,11 +305,13 @@ uint32_t AMAudioSource::version()
 
 void AMAudioSource::abort()
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   if (AM_LIKELY(m_started)) {
     m_started = false;
-    m_run = false;
     m_abort = true;
+  }
+  if (AM_LIKELY(m_run)) {
+    m_run = false;
     m_event->signal();
   }
 }
@@ -179,11 +325,11 @@ void AMAudioSource::on_run()
   m_run = true;
   post_engine_msg(engine_msg);
 
-  while (m_run) {
+  while (m_run.load()) {
     /* todo: Add audio codec encoder's statistics codes */
     m_event->wait();
   }
-  if (AM_UNLIKELY(m_abort)) {
+  if (AM_UNLIKELY(m_abort.load())) {
     m_audio_capture->stop();
     engine_msg.code = AMIEngine::ENG_MSG_ABORT;
     post_engine_msg(engine_msg);
@@ -266,6 +412,10 @@ AM_STATE AMAudioSource::load_audio_codec()
             m_audio_codec[i].m_audio_source = this;
           }
         }
+        for (uint32_t i = 0; i < m_aconfig->audio_type_num; ++ i) {
+          m_audio_codec[i].m_multiple = m_src_audio_info.chunk_size /
+              m_audio_codec[i].m_codec_required_info.chunk_size;
+        }
         INFO("The least common multiple of all the codec's chunk size is %u",
              m_src_audio_info.chunk_size);
       }
@@ -311,14 +461,11 @@ void AMAudioSource::audio_capture(AudioPacket *data)
           packet->add_ref();
           ++ count;
           m_audio_codec[i].push_queue(packet);
-        } else if (m_audio_codec[i].is_valid()) {
-          m_audio_codec[i].clear();
         }
       }
       packet->release();
       if (AM_UNLIKELY(!count)) {
-        ERROR("All the audio encoder are stopped! ABORT!");
-        abort();
+        WARN("All the audio encoder are stopped! audio capture should be stopped!");
       }
     } else {
       ERROR("Failed to allocate packet! Dropping %u bytes of data!",
@@ -338,11 +485,14 @@ bool AMAudioSource::set_audio_parameters()
               m_audio_capture->set_chunk_bytes(m_src_audio_info.chunk_size) &&
               m_audio_capture->set_sample_format(
                   AM_AUDIO_SAMPLE_FORMAT(m_src_audio_info.sample_format)));
-  m_audio_capture->set_echo_cancel_enabled(m_aconfig->enable_aec);
   if (AM_LIKELY(ret)) {
     m_src_audio_info.sample_size = m_audio_capture->get_sample_size();
     m_src_audio_info.pkt_pts_increment =
         (uint32_t)m_audio_capture->get_chunk_pts();
+    for (uint32_t i = 0; i < m_aconfig->audio_type_num; ++ i) {
+      m_audio_codec[i].m_codec_required_info.pkt_pts_increment =
+          m_src_audio_info.pkt_pts_increment / m_audio_codec[i].m_multiple;
+    }
   } else {
     ERROR("Failed to set audio parameters!");
   }
@@ -362,21 +512,20 @@ void AMAudioSource::send_packet(AMPacket *packet)
   }
 }
 
+AMAudioCodecObj* AMAudioSource::get_codec_by_type(AM_AUDIO_TYPE type)
+{
+  AMAudioCodecObj *obj = nullptr;
+  for (uint32_t i = 0; i < m_aconfig->audio_type_num; ++ i) {
+    if (m_audio_codec[i].get_type() == type) {
+      obj = &m_audio_codec[i];
+      break;
+    }
+  }
+  return obj;
+}
+
 AMAudioSource::AMAudioSource(AMIEngine *engine) :
-    inherited(engine),
-    m_aconfig(nullptr),
-    m_config(nullptr),
-    m_audio_codec(nullptr),
-    m_audio_capture(nullptr),
-    m_packet_pool(nullptr),
-    m_lock(nullptr),
-    m_event(nullptr),
-    m_input_num(0),
-    m_output_num(0),
-    m_run(false),
-    m_started(false),
-    m_abort(false),
-    m_audio_disabled(false)
+    inherited(engine)
 {
   memset(&m_src_audio_info, 0, sizeof(m_src_audio_info));
   m_outputs.clear();
@@ -386,7 +535,6 @@ AMAudioSource::~AMAudioSource()
 {
   destroy_audio_codec();
   AM_DESTROY(m_audio_capture);
-  AM_DESTROY(m_lock);
   AM_DESTROY(m_event);
   for (uint32_t i = 0; i < m_outputs.size(); ++ i) {
     AM_DESTROY(m_outputs[i]);
@@ -418,21 +566,14 @@ AM_STATE AMAudioSource::init(const std::string& config,
       state = AM_STATE_ERROR;
       break;
     }
-
-    m_lock = AMSpinLock::create();
-    if (AM_UNLIKELY(!m_lock)) {
-      ERROR("Failed to create lock!");
-      state = AM_STATE_ERROR;
-      break;
-    }
-
+    m_codec_enable = m_aconfig->codec_enable;
     m_event = AMEvent::create();
     if (AM_UNLIKELY(!m_event)) {
       ERROR("Failed to create event!");
       state = AM_STATE_ERROR;
       break;
     }
-    state = inherited::init((const char*)m_aconfig->name.c_str(),
+    state = inherited::init(m_aconfig->name.c_str(),
                             m_aconfig->real_time.enabled,
                             m_aconfig->real_time.priority);
     if (AM_LIKELY(AM_STATE_OK != state)) {
@@ -520,4 +661,51 @@ AM_STATE AMAudioSource::init(const std::string& config,
   }while(0);
 
   return state;
+}
+
+std::string AMAudioSource::audio_type_to_string(AM_AUDIO_TYPE type)
+{
+  std::string type_string;
+  switch (type) {
+    case AM_AUDIO_NULL : {
+      type_string = "AM_AUDIO_NULL";
+    } break;
+    case AM_AUDIO_LPCM : {
+      type_string = "AM_AUDIO_LPCM";
+    } break;
+    case AM_AUDIO_BPCM : {
+      type_string = "AM_AUDIO_BPCM";
+    } break;
+    case AM_AUDIO_G711A : {
+      type_string = "AM_AUDIO_G711A";
+    } break;
+    case AM_AUDIO_G711U : {
+      type_string = "AM_AUDIO_G711U";
+    } break;
+    case AM_AUDIO_G726_40 : {
+      type_string = "AM_AUDIO_G726_40";
+    } break;
+    case AM_AUDIO_G726_32 : {
+      type_string = "AM_AUDIO_G726_32";
+    } break;
+    case AM_AUDIO_G726_24 : {
+      type_string = "AM_AUDIO_G726_24";
+    } break;
+    case AM_AUDIO_G726_16 : {
+      type_string = "AM_AUDIO_G726_16";
+    } break;
+    case AM_AUDIO_AAC : {
+      type_string = "AM_AUDIO_AAC";
+    } break;
+    case AM_AUDIO_OPUS : {
+      type_string = "AM_AUDIO_OPUS";
+    } break;
+    case AM_AUDIO_SPEEX : {
+      type_string = "AM_AUDIO_SPEEX";
+    } break;
+    default : {
+      type_string = "Invalid audio type";
+    } break;
+  }
+  return type_string;
 }

@@ -4,25 +4,43 @@
  * History:
  *   2015-1-20 - [ccjing] created file
  *
- * Copyright (C) 2008-2015, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 #include "am_base_include.h"
 #include "am_define.h"
 #include "am_log.h"
 
+#include "am_io.h"
 #include "am_file.h"
 #include "am_thread.h"
-#include "am_mutex.h"
 #include "am_record_msg.h"
 #include "am_playback_msg.h"
 #include "am_media_service_instance.h"
 #include "am_api_media.h"
+#include "am_image_quality_data.h"
 
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -59,14 +77,14 @@ AMMediaService* AMMediaService::create(media_callback media_callback)
   if(AM_UNLIKELY(result && !result->init(media_callback))) {
     ERROR("Failed to create media service.");
     delete result;
-    result = NULL;
+    result = nullptr;
   }
   return result;
 }
 
 bool AMMediaService::start_media()
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   do {
     if (AM_UNLIKELY(m_is_started)) {
       NOTICE("Already started!");
@@ -79,19 +97,27 @@ bool AMMediaService::start_media()
       m_is_started = false;
       break;
     }
-    if(AM_UNLIKELY(m_record->is_recording())) {
-      NOTICE("Record is already started.");
-    } else if(!m_record->start()) {
-      ERROR("Failed to start record.");
-      m_is_started = false;
-      if (m_run) {
-        write(SERVICE_CTRL_WRITE, "s", 1);
+    if (m_record != nullptr) {
+      if(AM_UNLIKELY(m_record->is_recording())) {
+        NOTICE("Record is already started.");
+      } else if(!m_record->start()) {
+        ERROR("Failed to start record.");
+        m_is_started = false;
+        if (m_run) {
+          ssize_t ret = am_write(SERVICE_CTRL_WRITE, "s", 1, 10);
+          if (AM_UNLIKELY(ret != 1)) {
+            ERROR("Failed to send stop command to control thread! %s",
+                  strerror(errno));
+          }
+        }
+        NOTICE("Thread %s is already running, destroy it!",
+               m_socket_thread->name());
+        m_socket_thread->destroy();
+        m_socket_thread = nullptr;
+        break;
       }
-      NOTICE("Thread %s is already running, destroy it!",
-             m_socket_thread->name());
-      m_socket_thread->destroy();
-      m_socket_thread = NULL;
-      break;
+    } else {
+      NOTICE("The stream record is not enabled in media service.");
     }
     m_is_started = true;
   }while(0);
@@ -101,49 +127,69 @@ bool AMMediaService::start_media()
 
 bool AMMediaService::stop_media()
 {
-  AUTO_SPIN_LOCK(m_lock);
   bool ret = true;
-  if (m_run) {
-    write(SERVICE_CTRL_WRITE, "s", 1);
+
+  if (AM_LIKELY(m_is_started)) {
+    AUTO_MEM_LOCK(m_lock);
+    if (m_run) {
+      ssize_t ret = am_write(SERVICE_CTRL_WRITE, "s", 1, 10);
+      if (AM_UNLIKELY(ret != 1)) {
+        ERROR("Failed to send stop command to control thread! %s",
+              strerror(errno));
+      }
+    }
+    if(m_socket_thread) {
+      m_socket_thread->destroy();
+      m_socket_thread = nullptr;
+    }
+    if (m_record != nullptr) {
+      if(AM_UNLIKELY(!m_record->stop())) {
+        ERROR("Failed to stop record.");
+        ret = false;
+      }
+    } else {
+      NOTICE("The stream record is not enabled in media service");
+    }
+    if (m_playback != nullptr) {
+      for (uint32_t i = 0; i < PLAYER_NUM; ++ i) {
+        if(AM_UNLIKELY(!m_playback[i]->stop())) {
+          ERROR("Failed to stop playback[%u].", i);
+          ret = false;
+        }
+      }
+    } else {
+      NOTICE("The playback is not enabled in media service");
+    }
+    m_is_started = false;
   }
-  if(m_socket_thread) {
-    m_socket_thread->destroy();
-    m_socket_thread = NULL;
-  }
-  if(AM_UNLIKELY(!m_record->stop())) {
-    ERROR("Failed to stop record.");
-    ret = false;
-  }
-  if(AM_UNLIKELY(!m_playback->stop())) {
-    ERROR("Failed to stop playback.");
-    ret = false;
-  }
-  m_is_started = false;
 
   return ret;
 }
 
-bool AMMediaService::send_event()
+bool AMMediaService::send_event(AMEventStruct& event)
 {
   bool ret = false;
-
-  if (m_record->is_recording()) {
-    if (m_record->is_ready_for_event()) {
-      if (m_record->send_event()) {
-        ret = true;
+  if (m_record != nullptr) {
+    if (m_record->is_recording()) {
+      if (m_record->is_ready_for_event(event)) {
+        if (m_record->send_event(event)) {
+          ret = true;
+        } else {
+          NOTICE("record send event failed.");
+        }
       } else {
-        NOTICE("record send event failed.");
+        NOTICE("record is not ready for event.");
       }
     } else {
-      NOTICE("record is not ready for event.");
+      NOTICE("record is not recording.");
+    }
+    if (!ret) {
+      ERROR("Failed to send event!");
     }
   } else {
-    NOTICE("record is not recording.");
+    ERROR("The stream record is not enable in media service.");
+    ret = false;
   }
-  if (!ret) {
-    ERROR("Failed to send event!");
-  }
-
   return ret;
 }
 
@@ -152,39 +198,97 @@ void AMMediaService::destroy()
   delete this;
 }
 
-AMIPlaybackPtr& AMMediaService::get_playback_instance()
+AM_PLAYER_INSTANCE_ID AMMediaService::get_valid_playback_id()
 {
-  return m_playback;
+  AM_PLAYER_INSTANCE_ID id = PLAYER_NULL;
+  if (m_playback != nullptr) {
+    AUTO_MEM_LOCK(m_playback_lock);
+    for (int32_t i = 0; i < PLAYER_NUM; ++ i) {
+      if ((m_playback_ref[i] == 0) && (!m_playback[i]->is_paused()) &&
+          (!m_playback[i]->is_playing())) {
+        if (m_playback[i]->is_idle()) {
+          if (!m_playback[i]->stop()) {
+            ERROR("The playback status is idle, failed to stop it.");
+            continue;
+          }
+        }
+        id = AM_PLAYER_INSTANCE_ID(i);
+        m_playback_ref[i] = 1;
+        break;
+      }
+    }
+  } else {
+    ERROR("The Playback is not enabled in media service.");
+  }
+  return id;
+}
+
+AMIPlaybackPtr AMMediaService::get_playback_instance(AM_PLAYER_INSTANCE_ID id)
+{
+  AMIPlaybackPtr player = nullptr;
+  do {
+    if (m_playback == nullptr) {
+      ERROR("Playback is not enabled in media service.");
+      break;
+    }
+    if ((id <= PLAYER_NULL) || (id >= PLAYER_NUM)) {
+      ERROR("The playback instance id is invalid.");
+      break;
+    }
+    player = m_playback[id];
+  } while(0);
+  return player;
+}
+
+bool AMMediaService::release_playback_instance(AM_PLAYER_INSTANCE_ID id)
+{
+  bool ret = true;
+  do {
+    if (m_playback == nullptr) {
+      ERROR("Playback is not enabled in media service.");
+      ret = false;
+      break;
+    }
+    if ((id <= PLAYER_NULL) || (id >= PLAYER_NUM)) {
+      ERROR("The playback instance id is invalid.");
+      ret = false;
+      break;
+    }
+    AUTO_MEM_LOCK(m_playback_lock);
+    if (!m_playback[id]->is_playing()) {
+      INFO("Playback status is not playing now, stop it.");
+      if (!m_playback[id]->stop()) {
+        ERROR("Failed to stop playback instance[%d].", id);
+        continue;
+      }
+    }
+    m_playback_ref[id] = 0;
+    NOTICE("release playback instance id is %d", id);
+  } while(0);
+  return ret;
 }
 
 AMIRecordPtr& AMMediaService::get_record_instance()
 {
+  if (m_record == nullptr) {
+    ERROR("Stream record is not enabled in media service.");
+  }
   return m_record;
 }
 
-AMMediaService::AMMediaService() :
-    m_media_callback(nullptr),
-    m_playback(nullptr),
-    m_record(nullptr),
-    m_unix_socket_fd(-1),
-    m_run(false),
-    m_is_started(false),
-    m_socket_thread(nullptr),
-    m_lock(nullptr)
-{
-  SERVICE_CTRL_READ = -1;
-  SERVICE_CTRL_WRITE = -1;
-  for(uint32_t i = 0; i < AM_MEDIA_SERVICE_CLIENT_PROTO_NUM; ++i) {
-    m_client_proto_fd[i] = -1;
-  }
-}
+AMMediaService::AMMediaService()
+{}
 
 AMMediaService::~AMMediaService()
 {
   stop_media();
-  AM_DESTROY(m_lock);
-  m_playback = nullptr;
   m_record   = nullptr;
+  if (m_playback != nullptr) {
+    for (uint32_t i = 0; i < PLAYER_NUM; ++ i) {
+      m_playback[i] = nullptr;
+    }
+    delete[] m_playback;
+  }
   if (AM_LIKELY(SERVICE_CTRL_READ >= 0)) {
     close(SERVICE_CTRL_READ);
   }
@@ -195,44 +299,46 @@ AMMediaService::~AMMediaService()
 
 bool AMMediaService::init(media_callback media_callback)
 {
-  bool ret = true;
+  bool ret = false;
   do{
     if(AM_UNLIKELY(pipe(m_service_ctrl) < 0)) {
       PERROR("pipe");
-      ret = false;
       break;
     }
     m_media_callback = media_callback;
     if(AM_UNLIKELY(!m_media_callback)) {
-      WARN("Media callback function is not set!");
+      NOTICE("Media callback function is not set!");
     }
+#ifdef BUILD_AMBARELLA_ORYX_MEDIA_SERVICE_RECORD
     m_record = AMIRecord::create();
     if(AM_UNLIKELY(!m_record)) {
       ERROR("Failed to create record.");
-      ret = false;
       break;
     } else if(AM_UNLIKELY(!(m_record->init()))) {
       ERROR("Failed to initialize record.");
-      ret = false;
       break;
     }
-    m_lock = AMSpinLock::create();
-    if (AM_UNLIKELY(!m_lock)) {
-      ERROR("Failed to create lock!");
+    m_record->set_msg_callback(record_engine_callback, nullptr);
+#endif
+#ifdef BUILD_AMBARELLA_ORYX_MEDIA_SERVICE_PLAYBACK
+    m_playback = new AMIPlaybackPtr[PLAYER_NUM];
+    if (!m_playback) {
+      ERROR("Failed to malloc memory in media service");
       break;
     }
-    m_record->set_msg_callback(record_engine_callback, NULL);
-    m_playback = AMIPlayback::create();
-    if(AM_UNLIKELY(!m_playback)) {
-      ERROR("Failed to create playback.");
-      ret = false;
-      break;
-    } else if(AM_UNLIKELY(!(m_playback->init()))) {
-      ERROR("Failed to initialize playback.");
-      ret = false;
-      break;
+    for (uint32_t i = 0; i < PLAYER_NUM; ++ i) {
+      m_playback[i] = AMIPlayback::create();
+      if(AM_UNLIKELY(!m_playback[i])) {
+        ERROR("Failed to create playback[%u].", i);
+        break;
+      } else if(AM_UNLIKELY(!(m_playback[i]->init()))) {
+        ERROR("Failed to initialize playback.");
+        break;
+      }
+      m_playback[i]->set_msg_callback(playback_engine_callback, nullptr);
     }
-    m_playback->set_msg_callback(playback_engine_callback, NULL);
+#endif
+    ret = true;
   }while(0);
 
   return ret;
@@ -288,6 +394,12 @@ void AMMediaService::playback_engine_callback(AMPlaybackMsg& msg)
       break;
     case AM_PLAYBACK_MSG_TIMEOUT:
       NOTICE("Timeout!");
+      break;
+    case AM_PLAYBACK_MSG_EOF:
+      NOTICE("One file is finished playing!");
+      break;
+    case AM_PLAYBACK_MSG_IDLE :
+      NOTICE("Play list empty, enter idle status!");
       break;
     case AM_PLAYBACK_MSG_NULL:
     default:
@@ -394,7 +506,7 @@ void AMMediaService::socket_thread_main_loop()
         m_client_proto_fd[i] = -1;
       }
     }
-    if(AM_LIKELY(select(max_fd + 1, &fdset, NULL, NULL, NULL) > 0)) {
+    if(AM_LIKELY(select(max_fd + 1, &fdset, nullptr, nullptr, nullptr) > 0)) {
       if(FD_ISSET(SERVICE_CTRL_READ, &fdset)) {
         char cmd[1] = { 0 };
         if(AM_UNLIKELY(read(SERVICE_CTRL_READ, cmd, sizeof(cmd)) < 0)) {
@@ -630,34 +742,95 @@ bool AMMediaService::process_client_msg(int fd,
             }
           }break;
           case AM_MEDIA_SERVICE_MSG_AUDIO_INFO :{
-            AMMediaServiceMsgAudioINFO* msg_info = &(client_msg.msg_info);
-            AMPlaybackUri uri;
-            uri.type = AM_PLAYBACK_URI_RTP;
-            uri.media.rtp.audio_format = msg_info->audio_format;
-            uri.media.rtp.channel = msg_info->channel;
-            uri.media.rtp.sample_rate = msg_info->sample_rate;
-            uri.media.rtp.udp_port = msg_info->udp_port;
-            uri.media.rtp.ip_domain = msg_info->ip_domain;
-            if(!m_playback->add_uri(uri)) {
-              ERROR("Failed to add uri.");
-              break;
-            } else {
-              if(m_playback->is_playing() || m_playback->is_paused()) {
-                NOTICE("Playback is playing other audio, please stop it first.");
+            AM_PLAYER_INSTANCE_ID id = PLAYER_NULL;
+            if (AM_LIKELY((id = get_valid_playback_id()) != PLAYER_NULL)) {
+              if(AM_UNLIKELY(!send_playback_id(proto, id))) {
+                ERROR("Failed to send playback id to %s",
+                       fd_to_proto_string(fd).c_str());
+                ret = false;
               } else {
-                if(AM_UNLIKELY(!m_playback->play())) {
-                  ERROR("Failed to start playing");
-                  break;
-                }
+                INFO("Send playback id %d to %s successfully!", id,
+                     fd_to_proto_string(fd).c_str());
               }
+              AMMediaServiceMsgAudioINFO* msg_info = &(client_msg.msg_info);
+              AMPlaybackUri uri;
+              uri.type = AM_PLAYBACK_URI_RTP;
+              uri.media.rtp.audio_type = msg_info->audio_format;
+              uri.media.rtp.channel = msg_info->channel;
+              uri.media.rtp.sample_rate = msg_info->sample_rate;
+              uri.media.rtp.udp_port = msg_info->udp_port;
+              uri.media.rtp.ip_domain = msg_info->ip_domain;
+              if (!m_playback[id]->add_uri(uri)) {
+                ERROR("Failed to add uri.");
+                ret = false;
+                break;
+              }
+              if (!m_playback[id]->play()) {
+                ERROR("Failed to start playing!");
+                ret = false;
+                break;
+              }
+            } else {
+              ERROR("Failed to get valid player.");
+              ret = false;
             }
           }break;
-          case AM_MEDIA_SERVICE_MSG_STOP :{
-            INFO("Media service receives stop message from sip service.");
-            if(!m_playback->stop()) {
-              ERROR("Failed to stop playing.");
+          case AM_MEDIA_SERVICE_MSG_UDS_URI: {
+            AM_PLAYER_INSTANCE_ID id = PLAYER_NULL;
+            if (AM_LIKELY((id = get_valid_playback_id()) != PLAYER_NULL)) {
+              if(AM_UNLIKELY(!send_playback_id(proto, id))) {
+                ERROR("Failed to send playback id to %s",
+                       fd_to_proto_string(fd).c_str());
+                ret = false;
+              } else {
+                INFO("Send playback id %d to %s successfully!", id,
+                     fd_to_proto_string(fd).c_str());
+              }
+              AMMediaServiceMsgUdsURI *uds_uri = &(client_msg.msg_uds);
+              AMPlaybackUri uri;
+              uri.type = AM_PLAYBACK_URI_UNIX_DOMAIN;
+              uri.media.unix_domain.audio_type = uds_uri->audio_type;
+              uri.media.unix_domain.sample_rate = uds_uri->sample_rate;
+              uri.media.unix_domain.channel = uds_uri->channel;
+              strncpy(uri.media.unix_domain.name, uds_uri->name,
+                      sizeof(uri.media.unix_domain.name));
+              if (!m_playback[id]->add_uri(uri)) {
+                ERROR("Failed to add uri.");
+                ret = false;
+                break;
+              }
+              if (!m_playback[id]->play()) {
+                ERROR("Failed to start playing!");
+                ret = false;
+                break;
+              }
             } else {
-              INFO("Stop playback successfully.");
+              ERROR("Failed to get valid player.");
+              ret = false;
+            }
+          } break;
+          case AM_MEDIA_SERVICE_MSG_STOP :{
+            AMMediaServiceMsgSTOP *msg_stop = &(client_msg.msg_stop);
+            INFO("Media service receives stop playback %d message from %s",
+                 msg_stop->playback_id, fd_to_proto_string(fd).c_str());
+            if (m_playback == nullptr) {
+              ERROR("Playback is not enabled in media service.");
+              ret = false;
+              break;
+            }
+            if (msg_stop->playback_id !=  PLAYER_NULL) {
+              if(!m_playback[msg_stop->playback_id]->stop()) {
+                ERROR("Failed to stop playing.");
+                ret = false;
+              } else {
+                INFO("Stop playback %d successfully.", msg_stop->playback_id);
+                if (!release_playback_instance(AM_PLAYER_INSTANCE_ID(
+                                               msg_stop->playback_id))) {
+                  ERROR("Failed to release playback instance. id is %d",
+                         msg_stop->playback_id);
+                  ret = false;
+                }
+              }
             }
           } break;
           default: {
@@ -716,4 +889,34 @@ bool AMMediaService::send_ack(AM_MEDIA_SERVICE_CLIENT_PROTO proto)
     }
   }while(0);
   return (ret && (send_ret == sizeof(ack)) && (count < 5));
+}
+
+bool AMMediaService::send_playback_id(AM_MEDIA_SERVICE_CLIENT_PROTO proto,
+                                      int32_t id)
+{
+  bool ret = true;
+  int count = 0;
+  int send_ret = 0;
+  AMMediaServiceMsgPlaybackID msg_id;
+  msg_id.base.type = AM_MEDIA_SERVICE_MSG_PLAYBACK_ID;
+  msg_id.base.length = sizeof(AMMediaServiceMsgPlaybackID);
+  msg_id.playback_id = id;
+  do {
+    if(AM_UNLIKELY(m_client_proto_fd[proto] < 0)) {
+      ERROR("the fd of %s is below zero.");
+      ret = false;
+      break;
+    }
+    while((++ count < 5) && (sizeof(AMMediaServiceMsgPlaybackID) !=
+       (send_ret = write(m_client_proto_fd[proto], &msg_id, sizeof(msg_id))))) {
+      if(AM_LIKELY((errno != EAGAIN) &&
+                   (errno != EWOULDBLOCK) &&
+                   (errno != EINTR))) {
+        ret = false;
+        PERROR("write");
+        break;
+      }
+    }
+  } while(0);
+  return (ret && (send_ret == sizeof(msg_id)) && (count < 5));
 }

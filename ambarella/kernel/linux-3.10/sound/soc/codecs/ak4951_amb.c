@@ -55,12 +55,14 @@ struct ak4951_priv {
 	unsigned int sysclk;
 	unsigned int clkid;
 	struct regmap *regmap;
-	struct snd_soc_codec codec;
 	struct i2c_client* i2c_clt;
 	u8 reg_cache[AK4951_MAX_REGISTERS];
 	int onStereo;
 	int mic;
+	u8 fmt;
 };
+
+struct ak4951_priv *ak4951_data;
 
 /*
  * ak4951 register
@@ -448,7 +450,7 @@ struct snd_ctl_elem_value  *ucontrol)
 
 static const struct snd_kcontrol_new ak4951_snd_controls[] = {
 	SOC_SINGLE_TLV("Mic Gain Control",
-			AK4951_02_SIGNAL_SELECT1, 0, 0x47, 0, mgain_tlv),
+			AK4951_02_SIGNAL_SELECT1, 0, 0x07, 0, mgain_tlv),
 	SOC_SINGLE_TLV("Input Digital Volume",
 			AK4951_0D_LCH_INPUT_VOLUME_CONTROL, 0, 0xF1, 0, ivol_tlv),
 	SOC_SINGLE_TLV("Speaker Output Volume",
@@ -785,37 +787,89 @@ static int ak4951_hw_params(struct snd_pcm_substream *substream,
 	default:
 		break;
 	}
-	switch (rate) {
-	case 8000:
-		fs |= AK4951_FS_8KHZ;
-		break;
-	case 11025:
-		fs |= AK4951_FS_11_025KHZ;
-		break;
-	case 12000:
-		fs |= AK4951_FS_12KHZ;
-		break;
-	case 16000:
-		fs |= AK4951_FS_16KHZ;
-		break;
-	case 22050:
-		fs |= AK4951_FS_22_05KHZ;
-		break;
-	case 24000:
-		fs |= AK4951_FS_24KHZ;
-		break;
-	case 32000:
-		fs |= AK4951_FS_32KHZ;
-		break;
-	case 44100:
-		fs |= AK4951_FS_44_1KHZ;
-		break;
-	case 48000:
-		fs |= AK4951_FS_48KHZ;
-		break;
 
-	default:
-		return -EINVAL;
+	if(ak4951->clkid == AK4951_BCLK_IN) {
+		switch (rate) {
+			case 8000:
+				fs |= AK4951_BICK_FS_8KHZ;
+				break;
+			case 11025:
+				fs |= AK4951_BICK_FS_11_025KHZ;
+				break;
+			case 12000:
+				fs |= AK4951_BICK_FS_12KHZ;
+				break;
+			case 16000:
+				fs |= AK4951_BICK_FS_16KHZ;
+				break;
+			case 22050:
+				fs |= AK4951_BICK_FS_22_05KHZ;
+				break;
+			case 24000:
+				fs |= AK4951_BICK_FS_24KHZ;
+				break;
+			case 32000:
+				fs |= AK4951_BICK_FS_32KHZ;
+				break;
+			case 44100:
+				fs |= AK4951_BICK_FS_44_1KHZ;
+				break;
+			case 48000:
+				fs |= AK4951_BICK_FS_48KHZ;
+				break;
+
+			default:
+				return -EINVAL;
+		}
+
+	} else {
+		switch (rate) {
+			case 8000:
+				fs |= AK4951_MCKI_FS_8KHZ;
+				break;
+			case 11025:
+				fs |= AK4951_MCKI_FS_11_025KHZ;
+				break;
+			case 12000:
+				fs |= AK4951_MCKI_FS_12KHZ;
+				break;
+			case 16000:
+				fs |= AK4951_MCKI_FS_16KHZ;
+				break;
+			case 22050:
+				fs |= AK4951_MCKI_FS_22_05KHZ;
+				break;
+			case 24000:
+				fs |= AK4951_MCKI_FS_24KHZ;
+				break;
+			case 32000:
+				fs |= AK4951_MCKI_FS_32KHZ;
+				break;
+			case 44100:
+				fs |= AK4951_MCKI_FS_44_1KHZ;
+				break;
+			case 48000:
+				fs |= AK4951_MCKI_FS_48KHZ;
+				break;
+
+			default:
+				return -EINVAL;
+		}
+	}
+
+	switch (params_format(params)) {
+		case SNDRV_PCM_FORMAT_S16_LE:
+			ak4951->fmt = 2 << 4;
+			break;
+		case SNDRV_PCM_FORMAT_S24_LE:
+			ak4951->fmt = 3 << 4;
+			break;
+		case SNDRV_PCM_FORMAT_S32_LE:
+			ak4951->fmt = 3 << 4;
+			break;
+		default:
+			dev_err(codec->dev, "Can not support the format");
+			return -EINVAL;
 	}
 	snd_soc_write(codec, AK4951_06_MODE_CONTROL2, fs);
 
@@ -827,29 +881,28 @@ static int ak4951_set_pll(u8 *pll, int clk_id,int freq)
 	if (clk_id == AK4951_MCLK_IN_BCLK_OUT){
 		switch (freq) {
 		case 11289600:
-			*pll |= (2 << 4);
-			break;
-		case 12288000:
-			*pll |= (3 << 4);
-			break;
-		case 12000000:
 			*pll |= (4 << 4);
 			break;
-		case 24000000:
+		case 12288000:
 			*pll |= (5 << 4);
 			break;
-		case 13500000:
+		case 12000000:
 			*pll |= (6 << 4);
 			break;
-		case 27000000:
+		case 24000000:
 			*pll |= (7 << 4);
+			break;
+		case 13500000:
+			*pll |= (0xC << 4);
+			break;
+		case 27000000:
+			*pll |= (0xD << 4);
 			break;
 		default:
 			break;
 		}
-	}else if  (clk_id == AK4951_BCLK_IN) {
-		*pll |= (0 << 4);
 	}
+
 	return 0;
 }
 
@@ -876,7 +929,7 @@ static int ak4951_set_dai_sysclk(struct snd_soc_dai *dai, int clk_id,
 	}else if (clk_id == AK4951_BCLK_IN) {
 		pllpwr |= AK4951_PMPLL;
 		pllpwr &= (~AK4951_M_S);
-		ak4951_set_pll(&pll, clk_id, freq);
+		pll |= ak4951->fmt;
 	}else if (clk_id == AK4951_MCLK_IN_BCLK_OUT) {
 		pllpwr |= AK4951_PMPLL;
 		pllpwr |= AK4951_M_S;
@@ -913,7 +966,7 @@ static int ak4951_set_dai_fmt(struct snd_soc_dai *dai, unsigned int fmt)
             break;
         case SND_SOC_DAIFMT_CBM_CFM:
 			akdbgprt("\t[AK4951] %s(Master)\n",__FUNCTION__);
-            mode |= (AK4951_M_S);
+            mode |= AK4951_M_S;
             //format |= (AK4951_BCKO);
             break;
         case SND_SOC_DAIFMT_CBS_CFM:
@@ -1011,7 +1064,7 @@ static int ak4951_set_bias_level(struct snd_soc_codec *codec,
 				SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_88200 |\
 				SNDRV_PCM_RATE_96000)
 
-#define AK4951_FORMATS		(SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE)
+#define AK4951_FORMATS		(SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S32_LE)
 
 static struct snd_soc_dai_ops ak4951_dai_ops = {
 	.hw_params	= ak4951_hw_params,
@@ -1043,11 +1096,12 @@ struct snd_soc_dai_driver ak4951_dai[] = {
 
 static int ak4951_probe(struct snd_soc_codec *codec)
 {
-	struct ak4951_priv *ak4951 = snd_soc_codec_get_drvdata(codec);
+	struct ak4951_priv *ak4951 = ak4951_data;
 	int ret = 0;
 
 	akdbgprt("\t[AK4951] %s(%d)\n",__FUNCTION__,__LINE__);
 	codec->control_data = ak4951->regmap;
+	snd_soc_codec_set_drvdata(codec, ak4951);
 	ret = snd_soc_codec_set_cache_io(codec, 8, 8, SND_SOC_REGMAP);
 	if (ret != 0) {
 		dev_err(codec->dev, "Failed to set cache I/O: %d\n", ret);
@@ -1087,11 +1141,12 @@ static int ak4951_probe(struct snd_soc_codec *codec)
 	snd_soc_update_bits(codec,AK4951_08_DIGITL_MIC,0x01,0x00);//AMIC
 	snd_soc_update_bits(codec,AK4951_1D_DIGITAL_FILTER_MODE,0x02,0x02);//ADC output
 	snd_soc_update_bits(codec,AK4951_1D_DIGITAL_FILTER_MODE,0x01,0x01);//ALC output
-	snd_soc_update_bits(codec,AK4951_02_SIGNAL_SELECT1,0x47,0x42);//Mic Gain 0x10100110
+	snd_soc_update_bits(codec,AK4951_02_SIGNAL_SELECT1,0x47,0x00);//Mic Gain 0x10100110
 	snd_soc_update_bits(codec,AK4951_0D_LCH_INPUT_VOLUME_CONTROL,0xff,0xb0);//Lch gain
 	snd_soc_update_bits(codec,AK4951_0E_RCH_INPUT_VOLUME_CONTROL,0xff,0xb0);//Lch gain
 	snd_soc_write(codec, AK4951_0B_ALC_MODE_CONTROL1, 0x20);	//enable ALC
-
+	snd_soc_write(codec, AK4951_1B_DIGITAL_FILTER_SELECT1, 0x07); //enable HPF1
+	snd_soc_write(codec, AK4951_0C_ALC_MODE_CONTROL2, 0xF1);
 	/*Enable LIN3*/
 	//snd_soc_update_bits(codec,AK4951_03_SIGNAL_SELECT2,0x0f,0x0a);// LIN3 RIN3
     return ret;
@@ -1111,6 +1166,13 @@ static int ak4951_remove(struct snd_soc_codec *codec)
 
 static int ak4951_suspend(struct snd_soc_codec *codec)
 {
+	struct ak4951_priv *ak4951 = snd_soc_codec_get_drvdata(codec);
+	int i;
+
+	for(i = 0; i < 7; i++) {
+		ak4951->reg_cache[i] = snd_soc_read(codec, i);
+	}
+
 	ak4951_set_bias_level(codec, SND_SOC_BIAS_OFF);
 
 	return 0;
@@ -1118,8 +1180,14 @@ static int ak4951_suspend(struct snd_soc_codec *codec)
 
 static int ak4951_resume(struct snd_soc_codec *codec)
 {
+	struct ak4951_priv *ak4951 = snd_soc_codec_get_drvdata(codec);
+	int i;
 
-	ak4951_set_bias_level(codec, SND_SOC_BIAS_STANDBY);
+	for(i = 0; i < 7; i++) {
+		snd_soc_write(codec, i, ak4951->reg_cache[i]);
+	}
+
+	ak4951_set_bias_level(codec, codec->dapm.bias_level);
 
 	return 0;
 }
@@ -1160,7 +1228,6 @@ static int ak4951_i2c_probe(struct i2c_client *i2c,
 	struct ak4951_priv *ak4951;
 	enum of_gpio_flags flags;
 	int rst_pin;
-	struct snd_soc_codec *codec;
 	int ret = 0;
 
 	akdbgprt("\t[AK4951] %s(%d)\n",__FUNCTION__,__LINE__);
@@ -1176,7 +1243,6 @@ static int ak4951_i2c_probe(struct i2c_client *i2c,
 	ak4951->i2c_clt = i2c;
 	ak4951->rst_pin = rst_pin;
 	ak4951->rst_active = !!(flags & OF_GPIO_ACTIVE_LOW);
-	codec = &ak4951->codec;
 	i2c_set_clientdata(i2c, ak4951);
 	ak4951->regmap = devm_regmap_init_i2c(i2c, &ak4951_regmap);
 	if (IS_ERR(ak4951->regmap)) {
@@ -1184,6 +1250,8 @@ static int ak4951_i2c_probe(struct i2c_client *i2c,
 		dev_err(&i2c->dev, "regmap_init() failed: %d\n", ret);
 		return ret;
 	}
+
+	ak4951_data = ak4951;
 
 	ret = snd_soc_register_codec(&i2c->dev,
 			&soc_codec_dev_ak4951, &ak4951_dai[0], ARRAY_SIZE(ak4951_dai));

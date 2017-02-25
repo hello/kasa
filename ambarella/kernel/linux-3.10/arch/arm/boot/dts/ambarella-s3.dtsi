@@ -18,6 +18,9 @@
 		serial1 = &uart1;
 		nand = &nand0;
 		spinor = &spinor0;
+		sd0 = &sdmmc0;
+		sd1 = &sdmmc1;
+		sd2 = &sdmmc2;
 		i2c0 = &i2c0;
 		i2c1 = &i2c1;
 		i2c2 = &i2c2;
@@ -442,10 +445,15 @@
 			      <0xe0011000 0x1000>;
 		};
 
-		dma@e0005000 {
+		dma: dma@e0005000 {
 			compatible = "ambarella,dma";
 			reg = <0xe0005000 0x1000>;
 			interrupts = <69 0x4>;
+			#dma-cells = <2>;
+			dma-channels = <8>;
+			dma-requests = <14>;
+			dma-trans-type = <1 1 0 0 1 1 1 1>; /* 0-memcpy ,1-slave*/
+			dma-channel-sel = <0 1 0 0 8 9 11 10>;
 			amb,copy-align = <0>;
 			/* support pause/resume/stop */
 			amb,support-prs;
@@ -496,9 +504,11 @@
 			reg = <0xe001a000 0x1000>;
 			pinctrl-names = "default";
 			pinctrl-0 = <&i2s0_pins>;
-			bclk_reverse = <0>;
 			amb,i2s-channels = <2>;
 			amb,default-mclk = <12288000>;
+			dmas = <&dma 5 1>,
+				   <&dma 4 1>;
+			dma-names = "tx", "rx";
 		};
 
 		udc@e0006000 {
@@ -522,7 +532,7 @@
 			amb,usbphy = <&usbphy>;
 		};
 
-		sdmmc0@e0002000 {
+		sdmmc0: sdmmc0@e0002000 {
 			compatible = "ambarella,sdmmc";
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -530,7 +540,8 @@
 			      <0xe0001000 0x80>; /* fio reg address */
 			interrupts = <77 0x4>;
 			amb,clk-name = "gclk_sd";
-			amb,wait-tmo = <2500>; /* in millisecond */
+			amb,wait-tmo = <10000>; /* in millisecond */
+			amb,switch_vol_tmo = <100>;
 			amb,max-blk-size = <131072>; /* valid value: 4K<<n */
 			pinctrl-names = "default";
 			pinctrl-0 = <&sdmmc0_pins_8bit>;
@@ -545,7 +556,7 @@
 			};
 		};
 
-		sdmmc1@e000c000 {
+		sdmmc1: sdmmc1@e000c000 {
 			compatible = "ambarella,sdmmc";
 			reg = <0xe000c000 0x1000>,
 			      <0xe0001000 0x80>; /* fio reg address */
@@ -553,7 +564,8 @@
 			#size-cells = <0>;
 			interrupts = <76 0x4>;
 			amb,clk-name = "gclk_sdio";
-			amb,wait-tmo = <2500>; /* in millisecond */
+			amb,wait-tmo = <10000>; /* in millisecond */
+			amb,switch_vol_tmo = <100>;
 			amb,max-blk-size = <131072>; /* valid value: 4K<<n */
 			pinctrl-names = "default";
 			pinctrl-0 = <&sdmmc1_pins_4bit>;
@@ -569,7 +581,7 @@
 			};
 		};
 
-		sdmmc2@e001f000 {
+		sdmmc2: sdmmc2@e001f000 {
 			compatible = "ambarella,sdmmc";
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -577,7 +589,8 @@
 			      <0xe0001000 0x80>; /* fio reg address */
 			interrupts = <75 0x4>;
 			amb,clk-name = "gclk_sdxc";
-			amb,wait-tmo = <2500>; /* in millisecond */
+			amb,wait-tmo = <10000>; /* in millisecond */
+			amb,switch_vol_tmo = <100>;
 			amb,max-blk-size = <131072>; /* valid value: 4K<<n */
 			pinctrl-names = "default";
 			pinctrl-0 = <&sdmmc2_pins_8bit>;
@@ -616,6 +629,9 @@
 			pinctrl-names = "default";
 			pinctrl-0 = <&spi0_pins>;
 			amb,clk-freq = <54000000>;
+			dmas = <&dma 0 1>,
+				   <&dma 1 1>;
+			dma-names = "tx", "rx";
 		};
 
 		spi1: spi@e0021000 {
@@ -672,6 +688,10 @@
 			amb,owner-mask;
 			amb,owner-invert;
 		};
+	};
+
+	iav {
+		compatible = "ambarella,iav";
 	};
 
 	bogus_bus {

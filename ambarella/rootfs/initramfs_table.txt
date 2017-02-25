@@ -72,6 +72,7 @@
 /dev/ttyP	c	666	0	0	57	0	0	1	4
 /dev/ttyS	c	666	0	0	4	64	0	1	4
 /dev/fb		c	640	0	5	29	0	0	1	4
+/dev/fuse	c	666 0	0	10	229	-	-	-
 /dev/ttySAC	c	666	0	0	204	64	0	1	4
 /dev/psaux	c	666	0	0	10	1	0	0	-
 /dev/ppp	c	666	0	0	108	0	-	-	-
@@ -87,7 +88,7 @@
 /dev/ambad	c	666	0	0	248	248	-	-	-
 /dev/dsplog	c	666	0	0	248	249	-	-	-
 /dev/rtc0	c	640	0	0	254	0	-	-	-
-/dev/mmc	b	640	0	0	179	0	0	1	4
+#/dev/mmc	b	640	0	0	179	0	0	1	4
 /dev/watchdog	c	640	0	0	10	130	-	-	-
 /dev/ttygs	c	666	0	0	127	0	0	1	4
 

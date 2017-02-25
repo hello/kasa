@@ -54,6 +54,7 @@ typedef struct _GUnixMountMonitorClass GUnixMountMonitorClass;
 #define G_UNIX_MOUNT_MONITOR_CLASS(k)    (G_TYPE_CHECK_CLASS_CAST((k), G_TYPE_UNIX_MOUNT_MONITOR, GUnixMountMonitorClass))
 #define G_IS_UNIX_MOUNT_MONITOR(o)       (G_TYPE_CHECK_INSTANCE_TYPE ((o), G_TYPE_UNIX_MOUNT_MONITOR))
 #define G_IS_UNIX_MOUNT_MONITOR_CLASS(k) (G_TYPE_CHECK_CLASS_TYPE ((k), G_TYPE_UNIX_MOUNT_MONITOR))
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(GUnixMountMonitor, g_object_unref)
 
 GLIB_AVAILABLE_IN_ALL
 void           g_unix_mount_free                    (GUnixMountEntry    *mount_entry);
@@ -118,6 +119,9 @@ GList *        g_unix_mounts_get                    (guint64            *time_re
 GLIB_AVAILABLE_IN_ALL
 GUnixMountEntry *g_unix_mount_at                    (const char         *mount_path,
 						     guint64            *time_read);
+GLIB_AVAILABLE_IN_2_52
+GUnixMountEntry *g_unix_mount_for                   (const char         *file_path,
+                                                     guint64            *time_read);
 GLIB_AVAILABLE_IN_ALL
 gboolean       g_unix_mounts_changed_since          (guint64             time);
 GLIB_AVAILABLE_IN_ALL
@@ -125,9 +129,11 @@ gboolean       g_unix_mount_points_changed_since    (guint64             time);
 
 GLIB_AVAILABLE_IN_ALL
 GType              g_unix_mount_monitor_get_type       (void) G_GNUC_CONST;
-GLIB_AVAILABLE_IN_ALL
+GLIB_AVAILABLE_IN_2_44
+GUnixMountMonitor *g_unix_mount_monitor_get            (void);
+GLIB_DEPRECATED_IN_2_44_FOR(g_unix_mount_monitor_get)
 GUnixMountMonitor *g_unix_mount_monitor_new            (void);
-GLIB_AVAILABLE_IN_ALL
+GLIB_DEPRECATED_IN_2_44
 void               g_unix_mount_monitor_set_rate_limit (GUnixMountMonitor *mount_monitor,
                                                         int                limit_msec);
 

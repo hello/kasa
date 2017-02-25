@@ -1,17 +1,34 @@
-/*******************************************************************************
+/*
  * test_efm.c
  *
  * History:
  *  2015/07/01 - [Zhaoyang Chen] created file
  *
- * Copyright (C) 2015-2019, Ambarella ShangHai Co,Ltd
+ * Copyright (C) 2015 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
  *
- ******************************************************************************/
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -489,7 +506,7 @@ static void sigstop(int sig)
 
 static int generate_me1_file(void)
 {
-	u32 pitch, height, luma_size, me1_size, result;
+	u32 width, height, luma_size, me1_size, result;
 	int i, j, k, l;
 	u8 *start;
 
@@ -501,16 +518,16 @@ static int generate_me1_file(void)
 	}
 
 	me1_from_file = 1;
-	pitch = efm_pool_info.yuv_pitch;
+	width = efm_pool_info.yuv_size.width;
 	height = efm_pool_info.yuv_size.height;
-	luma_size = pitch * height;
+	luma_size = width * height;
 	luma_buf = (u8 *)malloc(luma_size);
 	if (luma_buf == NULL) {
 		return -1;
 	}
-	pitch = efm_pool_info.me1_pitch;
+	width = efm_pool_info.me1_size.width;
 	height = efm_pool_info.me1_size.height;
-	me1_size = pitch * height;
+	me1_size = width * height;
 	me1_buf = (u8 *)malloc(me1_size);
 	if (me1_buf == NULL) {
 		if (luma_buf != NULL) {
@@ -520,29 +537,22 @@ static int generate_me1_file(void)
 	}
 
 	for (i = 0; i < frame_num; ++i) {
-		if (efm_pool_info.yuv_pitch == efm_pool_info.yuv_size.width) {
-			read(fd_yuv, luma_buf, luma_size);
-		} else {
-			// read to buffer line by line
-			for (j = 0; j < efm_pool_info.yuv_size.height; j++) {
-				read(fd_yuv, luma_buf + j * efm_pool_info.yuv_pitch,
-					frame_size.width);
-			}
-		}
+		read(fd_yuv, luma_buf, luma_size);
+
 		// ignore chroma;
 		lseek(fd_yuv, luma_size >> 1, SEEK_CUR);
-		pitch = efm_pool_info.yuv_pitch;
+		width = efm_pool_info.yuv_size.width;
 		for (j = 0; j < efm_pool_info.me1_size.height; j++) {
 			for (k = 0; k < efm_pool_info.me1_size.width; k++) {
 				result = 0;
-				start = luma_buf + j * 4 * pitch + k * 4;
+				start = luma_buf + j * 4 * width + k * 4;
 				for (l = 0; l < 4; l++) {
-					result += start[l * pitch] + start[l * pitch + 1] +
-						start[l * pitch + 2] + start[l * pitch + 3];
+					result += start[l * width] + start[l * width + 1] +
+						start[l * width + 2] + start[l * width + 3];
 				}
-				me1_buf[j * efm_pool_info.me1_pitch + k] = (result + 8) >> 4;
+				me1_buf[j * efm_pool_info.me1_size.width + k] = (result + 8) >> 4;
 			}
-			write(fd_me1, me1_buf + j * efm_pool_info.me1_pitch,
+			write(fd_me1, me1_buf + j * efm_pool_info.me1_size.width,
 				efm_pool_info.me1_size.width);
 		}
 	}
@@ -569,6 +579,7 @@ int prepare_yuv_params(void)
 	struct iav_srcbuf_setup setup;
 	u32 single_size, total_size, state;
 	int ret = 0;
+	struct stat statbuff;
 
 	AM_IOCTL(fd_iav, IAV_IOC_GET_IAV_STATE, &state);
 	if ((state != IAV_STATE_PREVIEW) &&
@@ -612,7 +623,11 @@ int prepare_yuv_params(void)
 		}
 		// Fix Me:  Assume YUV420 always
 		single_size = frame_size.width * frame_size.height * 3 >> 1;
-		total_size = lseek(fd_yuv, 0L, SEEK_END);
+		if (fstat(fd_yuv, &statbuff) < 0) {
+			perror("fstat");
+			return -1;
+		}
+		total_size = statbuff.st_size;
 		lseek(fd_yuv, 0L, SEEK_SET);
 		if (frame_num == -1) {
 			frame_num = total_size / single_size;
@@ -778,7 +793,7 @@ static int fill_yuv_from_file(struct iav_efm_request_frame *request)
 	} else {
 		luma_addr = dsp_efm_yuv_mem + request->yuv_luma_offset;
 		chroma_addr = dsp_efm_yuv_mem + request->yuv_chroma_offset;
-		me1_addr = dsp_efm_yuv_mem + request->me1_offset;
+		me1_addr = dsp_efm_me1_mem + request->me1_offset;
 	}
 	if (efm_pool_info.yuv_pitch == efm_pool_info.yuv_size.width) {
 		// just copy to dest buffer when pitch is the same as width
@@ -823,7 +838,7 @@ static int fill_yuv_from_file(struct iav_efm_request_frame *request)
 		} else {
 		// copy to dest buffer line by line
 			for (i = 0; i < efm_pool_info.me1_size.height; i++) {
-				read(fd_yuv, me1_addr + i * efm_pool_info.me1_pitch,
+				read(fd_me1, me1_addr + i * efm_pool_info.me1_pitch,
 					efm_pool_info.me1_size.width);
 			}
 		}

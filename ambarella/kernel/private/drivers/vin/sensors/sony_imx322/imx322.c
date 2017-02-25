@@ -4,14 +4,33 @@
  * History:
  *    2014/08/15 - [Long Zhao] Create
  *
- * Copyright (C) 2004-2014, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 #include <linux/module.h>
 #include <linux/ambpriv_device.h>
 #include <linux/interrupt.h>
@@ -45,7 +64,7 @@ struct imx322_priv {
 
 #include "imx322_table.c"
 
-static int imx322_write_reg( struct vin_device *vdev, u32 subaddr, u32 data)
+static int imx322_write_reg(struct vin_device *vdev, u32 subaddr, u32 data)
 {
 	struct imx322_priv *imx322;
 	u8 pbuf[3];
@@ -98,7 +117,7 @@ static int imx322_write_reg( struct vin_device *vdev, u32 subaddr, u32 data)
 	return 0;
 }
 
-static int imx322_read_reg( struct vin_device *vdev, u32 subaddr, u32 *data)
+static int imx322_read_reg(struct vin_device *vdev, u32 subaddr, u32 *data)
 {
 	struct imx322_priv *imx322;
 	u8 pbuf[2];
@@ -110,7 +129,7 @@ static int imx322_read_reg( struct vin_device *vdev, u32 subaddr, u32 *data)
 
 	imx322 = (struct imx322_priv *)vdev->priv;
 
-	pbuf[0] = ((subaddr & 0xff00) >> 8) | 0x80;;
+	pbuf[0] = ((subaddr & 0xff00) >> 8) | 0x80;
 	pbuf[1] = subaddr & 0xff;
 
 	config.cfs_dfs = 8;
@@ -138,7 +157,7 @@ static int imx322_read_reg( struct vin_device *vdev, u32 subaddr, u32 *data)
 	imx322 = (struct imx322_priv *)vdev->priv;
 	client = imx322->control_data;
 
-	pbuf0[0] = (subaddr &0xff00) >> 8;
+	pbuf0[0] = (subaddr & 0xff00) >> 8;
 	pbuf0[1] = subaddr & 0xff;
 
 	msgs[0].len = 2;
@@ -152,7 +171,7 @@ static int imx322_read_reg( struct vin_device *vdev, u32 subaddr, u32 *data)
 	msgs[1].len = 1;
 
 	rval = i2c_transfer(client->adapter, msgs, 2);
-	if (rval < 0){
+	if (rval < 0) {
 		vin_error("failed(%d): [0x%x]\n", rval, subaddr);
 		return rval;
 	}
@@ -167,7 +186,7 @@ static int imx322_set_vin_mode(struct vin_device *vdev, struct vin_video_format 
 {
 	struct vin_device_config imx322_config;
 
-	memset(&imx322_config, 0, sizeof (imx322_config));
+	memset(&imx322_config, 0, sizeof(imx322_config));
 
 	imx322_config.interface_type = SENSOR_PARALLEL_LVCMOS;
 	imx322_config.sync_mode = SENSOR_SYNC_MODE_MASTER;
@@ -221,7 +240,7 @@ static int imx322_update_hv_info(struct vin_device *vdev)
 	imx322_read_reg(vdev, IMX322_HMAX_MSB, &val_high);
 	imx322_read_reg(vdev, IMX322_HMAX_LSB, &val_low);
 	pinfo->line_length = ((val_high & 0x3F) << 8) + val_low;
-	if(unlikely(!pinfo->line_length)) {
+	if (unlikely(!pinfo->line_length)) {
 		vin_error("line length is 0!\n");
 		return -EIO;
 	}
@@ -253,9 +272,11 @@ static int imx322_set_format(struct vin_device *vdev, struct vin_video_format *f
 
 	regs = imx322_mode_regs[format->device_mode];
 	regs_num = ARRAY_SIZE(imx322_mode_regs[format->device_mode]);
-
-	for (i = 0; i < regs_num; i++)
+	for (i = 0; i < regs_num; i++) {
+		if (regs[i].addr == 0xffff)
+			break;
 		imx322_write_reg(vdev, regs[i].addr, regs[i].data);
+	}
 
 	rval = imx322_update_hv_info(vdev);
 	if (rval < 0)
@@ -301,14 +322,14 @@ static int imx322_set_shutter_row(struct vin_device *vdev, u32 row)
 	return 0;
 }
 
-static int imx322_shutter2row(struct vin_device *vdev, u32* shutter_time)
+static int imx322_shutter2row(struct vin_device *vdev, u32 *shutter_time)
 {
 	struct imx322_priv *pinfo = (struct imx322_priv *)vdev->priv;
 	u64 exposure_lines;
 	int rval = 0;
 
 	/* for fast boot, it may call set shutter time directly, so we must read line length/frame line */
-	if(unlikely(!pinfo->line_length)) {
+	if (unlikely(!pinfo->line_length)) {
 		rval = imx322_update_hv_info(vdev);
 		if (rval < 0)
 			return rval;
@@ -325,7 +346,7 @@ static int imx322_shutter2row(struct vin_device *vdev, u32* shutter_time)
 	return rval;
 }
 
-static int imx322_set_fps( struct vin_device *vdev, int fps)
+static int imx322_set_fps(struct vin_device *vdev, int fps)
 {
 	struct imx322_priv *pinfo = (struct imx322_priv *)vdev->priv;
 	u64 v_lines, vb_time;
@@ -334,8 +355,8 @@ static int imx322_set_fps( struct vin_device *vdev, int fps)
 	v_lines = DIV64_CLOSEST(v_lines, pinfo->line_length);
 	v_lines = DIV64_CLOSEST(v_lines, 512000000);
 
-	imx322_write_reg(vdev, IMX322_VMAX_MSB, (v_lines & 0x00FF00) >> 8);
-	imx322_write_reg(vdev, IMX322_VMAX_LSB, v_lines & 0x0000FF);
+	imx322_write_reg(vdev, IMX322_VMAX_MSB, (v_lines >> 8) & 0xFF);
+	imx322_write_reg(vdev, IMX322_VMAX_LSB, v_lines & 0xFF);
 
 	pinfo->frame_length_lines = v_lines;
 
@@ -346,7 +367,7 @@ static int imx322_set_fps( struct vin_device *vdev, int fps)
 	return 0;
 }
 
-static int imx322_set_agc_index( struct vin_device *vdev, int agc_idx)
+static int imx322_set_agc_index(struct vin_device *vdev, int agc_idx)
 {
 	if (agc_idx > IMX322_GAIN_MAX_DB) {
 		vin_warn("agc index %d exceeds maximum %d\n", agc_idx, IMX322_GAIN_MAX_DB);
@@ -358,13 +379,23 @@ static int imx322_set_agc_index( struct vin_device *vdev, int agc_idx)
 }
 
 static int imx322_set_mirror_mode(struct vin_device *vdev,
-		struct vindev_mirror *mirror_mode)
+	struct vindev_mirror *mirror_mode)
 {
 	u32 tmp_reg, readmode, bayer_pattern;
 
 	switch (mirror_mode->pattern) {
 	case VINDEV_MIRROR_AUTO:
 		return 0;
+
+	case VINDEV_MIRROR_HORRIZONTALLY_VERTICALLY:
+		readmode = IMX322_H_MIRROR | IMX322_V_FLIP;
+		bayer_pattern = VINDEV_BAYER_PATTERN_GB;
+		break;
+
+	case VINDEV_MIRROR_HORRIZONTALLY:
+		readmode = IMX322_H_MIRROR;
+		bayer_pattern = VINDEV_BAYER_PATTERN_GB;
+		break;
 
 	case VINDEV_MIRROR_VERTICALLY:
 		readmode = IMX322_V_FLIP;
@@ -376,23 +407,45 @@ static int imx322_set_mirror_mode(struct vin_device *vdev,
 		bayer_pattern = VINDEV_BAYER_PATTERN_GB;
 		break;
 
-	case VINDEV_MIRROR_HORRIZONTALLY_VERTICALLY:
-	case VINDEV_MIRROR_HORRIZONTALLY:
 	default:
 		vin_error("do not support cmd mirror mode\n");
 		return -EINVAL;
 	}
 
-	imx322_read_reg(vdev, IMX322_VREVERSE, &tmp_reg);
+	imx322_read_reg(vdev, IMX322_HVREVERSE, &tmp_reg);
 	tmp_reg &= ~IMX322_V_FLIP;
 	tmp_reg |= readmode;
-	imx322_write_reg(vdev, IMX322_VREVERSE, tmp_reg);
+	imx322_write_reg(vdev, IMX322_HVREVERSE, tmp_reg);
 
 	if (mirror_mode->bayer_pattern == VINDEV_BAYER_PATTERN_AUTO)
 		mirror_mode->bayer_pattern = bayer_pattern;
 
 	return 0;
 }
+
+#ifdef CONFIG_PM
+static int imx322_suspend(struct vin_device *vdev)
+{
+	u32 i, tmp;
+
+	for (i = 0; i < ARRAY_SIZE(pm_regs); i++) {
+		imx322_read_reg(vdev, pm_regs[i].addr, &tmp);
+		pm_regs[i].data = (u8)tmp;
+	}
+
+	return 0;
+}
+
+static int imx322_resume(struct vin_device *vdev)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(pm_regs); i++)
+		imx322_write_reg(vdev, pm_regs[i].addr, pm_regs[i].data);
+
+	return 0;
+}
+#endif
 
 static struct vin_ops imx322_ops = {
 	.init_device		= imx322_init_device,
@@ -404,6 +457,10 @@ static struct vin_ops imx322_ops = {
 	.set_mirror_mode	= imx322_set_mirror_mode,
 	.read_reg		= imx322_read_reg,
 	.write_reg		= imx322_write_reg,
+#ifdef CONFIG_PM
+	.suspend		= imx322_suspend,
+	.resume			= imx322_resume,
+#endif
 };
 
 #ifdef CONFIG_SENSOR_IMX322_SPI
@@ -416,7 +473,7 @@ static int imx322_drv_probe(struct ambpriv_device *ambdev)
 	struct imx322_priv *imx322;
 
 	vdev = ambarella_vin_create_device(ambdev->name,
-			SENSOR_IMX322, 	sizeof(struct imx322_priv));
+		SENSOR_IMX322, sizeof(struct imx322_priv));
 	if (!vdev)
 		return -ENOMEM;
 
@@ -490,7 +547,7 @@ static int imx322_probe(struct i2c_client *client,
 	struct imx322_priv *imx322;
 
 	vdev = ambarella_vin_create_device(client->name,
-			SENSOR_IMX322, sizeof(struct imx322_priv));
+		SENSOR_IMX322, sizeof(struct imx322_priv));
 	if (!vdev)
 		return -ENOMEM;
 

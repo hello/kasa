@@ -4,12 +4,29 @@
  * History:
  *   2014-9-16 - [lysun] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co,Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -67,11 +84,10 @@ void ON_SERVICE_DESTROY(void *msg_data,
                      void *result_addr,
                      int32_t result_max_size)
 {
-  INFO("system service destroy, cleanup\n");
-  PRINTF("ON IMAGE SERVICE DESTROY");
-  g_service_frame->quit(); /* make run() in main quit */
+  PRINTF("ON SYSTEM SERVICE DESTROY.");
   ((am_service_result_t*)result_addr)->ret = 0;
   ((am_service_result_t*)result_addr)->state = g_service_state;
+  g_service_frame->quit(); /* make run() in main quit */
 }
 
 void ON_SERVICE_START(void *msg_data,
@@ -79,7 +95,7 @@ void ON_SERVICE_START(void *msg_data,
                       void *result_addr,
                       int32_t result_max_size)
 {
-  INFO("system service start\n");
+  PRINTF("ON SYSTEM SERVICE START.");
   int ret = 0;
   am_service_result_t *service_result = (am_service_result_t *) result_addr;
   service_result->ret = ret;
@@ -90,7 +106,7 @@ void ON_SERVICE_STOP(void *msg_data,
                      void *result_addr,
                      int32_t result_max_size)
 {
-  INFO("system service stop\n");
+  PRINTF("ON SYSTEM SERVICE STOP.");
   int ret = 0;
   am_service_result_t *service_result = (am_service_result_t *) result_addr;
   service_result->ret = ret;
@@ -101,7 +117,7 @@ void ON_SERVICE_RESTART(void *msg_data,
                         void *result_addr,
                         int32_t result_max_size)
 {
-  INFO("system service restart\n");
+  PRINTF("ON SYSTEM SERVICE RESTART.");
   int ret = 0;
   am_service_result_t *service_result = (am_service_result_t *) result_addr;
   service_result->ret = ret;
@@ -112,15 +128,15 @@ void ON_SERVICE_STATUS(void *msg_data,
                        void *result_addr,
                        int32_t result_max_size)
 {
-  INFO("system service status\n");
+  PRINTF("ON SYSTEM SERVICE STATUS.");
   ((am_service_result_t*)result_addr)->ret = 0;
   ((am_service_result_t*)result_addr)->state = g_service_state;
 }
 
 void ON_FIRMWARE_VERSION_GET(void *msg_data,
-                     int32_t msg_data_size,
-                     void *result_addr,
-                     int32_t result_max_size)
+                             int32_t msg_data_size,
+                             void *result_addr,
+                             int32_t result_max_size)
 {
   INFO("system service firmware version get\n");
 
@@ -129,7 +145,7 @@ void ON_FIRMWARE_VERSION_GET(void *msg_data,
     return;
   }
 
-  if (result_max_size < (int32_t)sizeof(am_mw_firmware_version_all)) {
+  if (result_max_size < (int32_t)sizeof(am_service_result_t)) {
     ERROR("result_max_size is not correct.");
     return;
   }
@@ -138,15 +154,18 @@ void ON_FIRMWARE_VERSION_GET(void *msg_data,
   ifstream in_file;
   string line_str;
   int32_t num1, num2, num3;
+  int32_t status;
 
-  pfirmware_version = (am_mw_firmware_version_all *) result_addr;
+  pfirmware_version =
+      (am_mw_firmware_version_all *)(((am_service_result_t *)result_addr)->data);
   memset(pfirmware_version, 0, sizeof(am_mw_firmware_version_all));
 
   in_file.open("/proc/version", ios::in);
   if (in_file.is_open()) {
     while (!in_file.eof()) {
-      if(getline(in_file, line_str) > 0) {
-        if (3 == sscanf(line_str.c_str(), "Linux version %d.%d.%d+\n",
+      getline(in_file, line_str);
+      if (!line_str.empty()){
+        if (3 == sscanf(line_str.c_str(), "Linux version %d.%d.%d+",
                         &num1, &num2, &num3)) {
           pfirmware_version->linux_kernel_version.major = num1;
           pfirmware_version->linux_kernel_version.minor = num2;
@@ -169,7 +188,8 @@ void ON_FIRMWARE_VERSION_GET(void *msg_data,
     bool ver_f = false;
     bool date_f = false;
     while (!in_file.eof()) {
-      if(getline(in_file, line_str) > 0) {
+      getline(in_file, line_str);
+      if (!line_str.empty()){
         if(!ver_f && (line_str.find("VERSION_ID") != string::npos)) {
           if (3 == sscanf(line_str.c_str(),
                           "VERSION_ID=%d.%d.%d",
@@ -202,38 +222,43 @@ void ON_FIRMWARE_VERSION_GET(void *msg_data,
   /* generate version sha1, which is a unique firmware id,
    * just for unique purpose, even recompiling will make it different
    */
-  system("/usr/bin/sha1sum /proc/version  > /tmp/version_sha1");
-  in_file.open("/tmp/version_sha1", ios::in);
-  if (in_file.is_open()) {
-    if (!in_file.eof()) {
-      getline(in_file, line_str);
-      uint32_t pos = 0;
-      pos = line_str.find_first_of(" ");
-      if (pos == string::npos) {
-        pos = line_str.find_first_of('\t');
-      }
-
-      if (pos != string::npos) {
-        strncpy(pfirmware_version->linux_sha1,
-                line_str.substr(0, pos).c_str(),
-                LINUX_SHA1_LEN);
-        pfirmware_version->linux_sha1[LINUX_SHA1_LEN - 1] = '\0';
-      } else {
-        ERROR("Failed to read kernel version SHA1 string "
-            "from file /tmp/version_sha1.");
-      }
-    }
-    in_file.close();
+  status = system("/usr/bin/sha1sum /proc/version  > /tmp/version_sha1");
+  if (WEXITSTATUS(status)) {
+    ERROR("/usr/bin/sha1sum :failed");
   } else {
-    ERROR("Failed to open /tmp/version_sha1");
+
+    in_file.open("/tmp/version_sha1", ios::in);
+    if (in_file.is_open()) {
+      if (!in_file.eof()) {
+        getline(in_file, line_str);
+        uint32_t pos = 0;
+        pos = line_str.find_first_of(" ");
+        if (pos == string::npos) {
+          pos = line_str.find_first_of('\t');
+        }
+
+        if (pos != string::npos) {
+          strncpy(pfirmware_version->linux_sha1,
+                  line_str.substr(0, pos).c_str(),
+                  LINUX_SHA1_LEN);
+          pfirmware_version->linux_sha1[LINUX_SHA1_LEN - 1] = '\0';
+        } else {
+          ERROR("Failed to read kernel version SHA1 string "
+              "from file /tmp/version_sha1.");
+        }
+      }
+      in_file.close();
+    } else {
+      ERROR("Failed to open /tmp/version_sha1");
+    }
   }
 
 }
 
 void ON_SYSTEM_TEST(void *msg_data,
-                     int32_t msg_data_size,
-                     void *result_addr,
-                     int32_t result_max_size)
+                    int32_t msg_data_size,
+                    void *result_addr,
+                    int32_t result_max_size)
 {
 
   INFO("system service TEST FUNCTION OK\n");
@@ -247,46 +272,47 @@ void ON_SYSTEM_DATETIME_GET(void *msg_data,
 {
   INFO("system service: ON_SYSTEM_DATETIME_GET \n");
 
-  if (!result_addr) {
-    ERROR("result_addr is NULL.\n");
-    return;
-  }
+  do {
+    if (!result_addr) {
+      ERROR("result_addr is NULL.\n");
+      break;
+    }
+    if (result_max_size < (int32_t)sizeof(am_service_result_t)) {
+      ERROR("result_max_size is not correct.");
+      break;;
+    }
 
-  if (result_max_size < (int32_t)sizeof(am_mw_system_settings_datetime)) {
-    ERROR("result_max_size is not correct.");
-    return;
-  }
+    time_t now;
+    struct tm *timenow;
+    struct timezone tz;
+    struct timeval tv;
+    am_mw_system_settings_datetime mw_system_settings_datetime_get;
 
-  time_t now;
-  struct tm *timenow;
-  struct timezone tz;
-  struct timeval tv;
-  am_mw_system_settings_datetime mw_system_settings_datetime_get;
+    time(&now);
+    timenow = localtime(&now);
+    gettimeofday(&tv, &tz);
 
-  time(&now);
-  timenow = localtime(&now);
-  gettimeofday(&tv, &tz);
+    mw_system_settings_datetime_get.date.year = timenow->tm_year + 1900;
+    mw_system_settings_datetime_get.date.month = timenow->tm_mon + 1;
+    mw_system_settings_datetime_get.date.day = timenow->tm_mday;
+    mw_system_settings_datetime_get.time.hour = timenow->tm_hour;
+    mw_system_settings_datetime_get.time.minute = timenow->tm_min;
+    mw_system_settings_datetime_get.time.second = timenow->tm_sec;
+    //west is negtive , east is positive
+    mw_system_settings_datetime_get.time.timezone = (-tz.tz_minuteswest) / 60;
+    DEBUG("%d-%d-%d %d:%d:%d TZ:%d",
+          mw_system_settings_datetime_get.date.year,
+          mw_system_settings_datetime_get.date.month,
+          mw_system_settings_datetime_get.date.day,
+          mw_system_settings_datetime_get.time.hour,
+          mw_system_settings_datetime_get.time.minute,
+          mw_system_settings_datetime_get.time.second,
+          mw_system_settings_datetime_get.time.timezone);
 
-  mw_system_settings_datetime_get.date.year = timenow->tm_year + 1900;
-  mw_system_settings_datetime_get.date.month = timenow->tm_mon + 1;
-  mw_system_settings_datetime_get.date.day = timenow->tm_mday;
-  mw_system_settings_datetime_get.time.hour = timenow->tm_hour;
-  mw_system_settings_datetime_get.time.minute = timenow->tm_min;
-  mw_system_settings_datetime_get.time.second = timenow->tm_sec;
-  //west is negtive , east is positive
-  mw_system_settings_datetime_get.time.timezone = (-tz.tz_minuteswest) / 60;
-  DEBUG("%d-%d-%d %d:%d:%d TZ:%d",
-       mw_system_settings_datetime_get.date.year,
-       mw_system_settings_datetime_get.date.month,
-       mw_system_settings_datetime_get.date.day,
-       mw_system_settings_datetime_get.time.hour,
-       mw_system_settings_datetime_get.time.minute,
-       mw_system_settings_datetime_get.time.second,
-       mw_system_settings_datetime_get.time.timezone);
-
-  memcpy(result_addr,
-         &mw_system_settings_datetime_get,
-         sizeof(mw_system_settings_datetime_get));
+    memcpy(((am_service_result_t *)result_addr)->data,
+           &mw_system_settings_datetime_get,
+           sizeof(mw_system_settings_datetime_get));
+  } while (0);
 }
 
 void ON_SYSTEM_DATETIME_SET(void *msg_data,
@@ -316,7 +342,8 @@ void ON_SYSTEM_DATETIME_SET(void *msg_data,
       break;
     }
 
-    mw_system_settings_datetime_set=(am_mw_system_settings_datetime *)msg_data;
+    mw_system_settings_datetime_set=
+        (am_mw_system_settings_datetime *)msg_data;
     tmv.tm_sec = mw_system_settings_datetime_set->time.second;
     tmv.tm_min = mw_system_settings_datetime_set->time.minute;
     tmv.tm_hour = mw_system_settings_datetime_set->time.hour;
@@ -338,8 +365,8 @@ void ON_SYSTEM_DATETIME_SET(void *msg_data,
     }
   } while (0);
 
-  if ((result_max_size >= (int32_t)sizeof(ret)) && result_addr) {
-    memcpy(result_addr, &ret, sizeof(ret));
+  if ((result_max_size >= (int32_t)sizeof(am_service_result_t)) && result_addr) {
+    ((am_service_result_t *)result_addr)->ret = ret;
   }
 
   return;
@@ -351,18 +378,26 @@ void ON_LED_INDICATOR_GET(void *msg_data,
                           int32_t result_max_size)
 {
   am_mw_led_config mw_led_cfg;
+  am_service_result_t *ptr = NULL;
 
   INFO("system service: ON_LED_INDICATOR_GET \n");
   do {
     mw_led_cfg.gpio_id = -1;
 
-    if (!msg_data) {
-      ERROR("msg_data is NULL");
+    if (!result_addr) {
+      ERROR("result_addr NULL.\n");
       break;
     }
 
-    if (!result_addr) {
-      ERROR("result_addr NULL.\n");
+    if (result_max_size < (int32_t)sizeof(am_service_result_t)) {
+      ERROR("result_max_size is not correct.");
+      break;
+    }
+    ptr = (am_service_result_t *)result_addr;
+    ptr->ret = -1;
+
+    if (!msg_data) {
+      ERROR("msg_data is NULL");
       break;
     }
 
@@ -371,10 +406,8 @@ void ON_LED_INDICATOR_GET(void *msg_data,
       break;
     }
 
-    if (result_max_size < (int32_t)sizeof(am_mw_led_config)) {
-      ERROR("result_max_size is not correct.");
-      break;
-    }
+    AMLEDConfig led_cfg;
+    led_cfg.gpio_id = *((int32_t*)msg_data);
 
     if (!g_ledhandler) {
       g_ledhandler = AMILEDHandler::get_instance();
@@ -384,8 +417,6 @@ void ON_LED_INDICATOR_GET(void *msg_data,
       }
     }
 
-    AMLEDConfig led_cfg;
-    led_cfg.gpio_id = *((int32_t *)msg_data);
     INFO("gpio_id=%d\n", led_cfg.gpio_id);
     if(!g_ledhandler->get_led_state(led_cfg)) {
       INFO("Failed to get gpio%d state.", led_cfg.gpio_id);
@@ -398,9 +429,9 @@ void ON_LED_INDICATOR_GET(void *msg_data,
     mw_led_cfg.off_time = led_cfg.off_time;
     mw_led_cfg.on_time = led_cfg.on_time;
 
+    ptr->ret = 0;
+    memcpy(ptr->data, &mw_led_cfg, sizeof(mw_led_cfg));
   } while (0);
-
-  memcpy(result_addr, &mw_led_cfg, sizeof(mw_led_cfg));
 
 }
 
@@ -442,8 +473,8 @@ void ON_LED_INDICATOR_SET(void *msg_data,
     }
   } while (0);
 
-  if (result_addr && result_max_size >= (int32_t)sizeof(ret)) {
-    memcpy(result_addr, &ret, sizeof(ret));
+  if (result_addr && result_max_size >= (int32_t)sizeof(am_service_result_t)) {
+    ((am_service_result_t *)result_addr)->ret = ret;
   }
 }
 
@@ -475,7 +506,6 @@ void ON_LED_INDICATOR_UNINIT(void *msg_data,
         break;
       }
     }
-
     int32_t gpio_id = *((int32_t*)msg_data);
     if (gpio_id < 0) {
       INFO("Invalid gpio id.");
@@ -490,8 +520,8 @@ void ON_LED_INDICATOR_UNINIT(void *msg_data,
     }
   } while (0);
 
-  if (result_addr && result_max_size >= (int32_t)sizeof(ret)) {
-    memcpy(result_addr, &ret, sizeof(ret));
+  if (result_addr && result_max_size >= (int32_t)sizeof(am_service_result_t)) {
+    ((am_service_result_t *)result_addr)->ret = ret;
   }
 }
 
@@ -515,8 +545,8 @@ void ON_LED_INDICATOR_UNINIT_ALL(void *msg_data,
     g_ledhandler->deinit_all_led();
   } while (0);
 
-  if (result_addr && result_max_size >= (int32_t)sizeof(ret)) {
-    memcpy(result_addr, &ret, sizeof(ret));
+  if (result_addr && result_max_size >= (int32_t)sizeof(am_service_result_t)) {
+    ((am_service_result_t *)result_addr)->ret = ret;
   }
 }
 
@@ -535,7 +565,7 @@ void ON_FIRMWARE_UPGRADE_SET(void *msg_data,
 
   INFO("system service: ON_FIRMWARE_UPGRADE_SET \n");
   do {
-    if ((msg_data_size != (int32_t)sizeof(AMUpgradeArgs)) || !msg_data) {
+    if ((msg_data_size != (int32_t)sizeof(am_mw_fw_upgrade_args)) || !msg_data) {
       ERROR("msg_data is NULL or msg_data size error.");
       ret = 1;
       break;
@@ -556,11 +586,11 @@ void ON_FIRMWARE_UPGRADE_SET(void *msg_data,
       break;
     }
 
-    g_upgrade_fw->run_upgrade_thread(msg_data, msg_data_size);
+    g_upgrade_fw->run_upgrade_thread(msg_data, sizeof(AMUpgradeArgs));
   } while (0);
 
-  if (result_addr && result_max_size >= (int32_t)sizeof(ret)) {
-    memcpy(result_addr, &ret, sizeof(ret));
+  if (result_addr && result_max_size >= (int32_t)sizeof(am_service_result_t)) {
+    ((am_service_result_t *)result_addr)->ret = ret;
   }
 }
 
@@ -578,7 +608,7 @@ void ON_UPGRADE_STATUS_GET(void *msg_data,
       break;
     }
 
-    if (result_max_size < (int32_t)sizeof(am_mw_upgrade_status)) {
+    if (result_max_size < (int32_t)sizeof(am_service_result_t)) {
       ERROR("result_max_size is not correct.");
       break;
     }
@@ -593,7 +623,8 @@ void ON_UPGRADE_STATUS_GET(void *msg_data,
 
     upgrade_state.in_progress = g_upgrade_fw->is_in_progress();
     upgrade_state.state=(am_mw_upgrade_state)g_upgrade_fw->get_upgrade_status();
-    memcpy(result_addr, &upgrade_state, sizeof(upgrade_state));
+
+    memcpy(((am_service_result_t *)result_addr)->data, &upgrade_state, sizeof(upgrade_state));
   } while (0);
 }
 
@@ -622,14 +653,14 @@ static void ntp_thread()
   time_t s_time, e_time, time_inter;
 
   INFO("Enter ntp thread...");
-  s_time = time(NULL);
+  s_time = time(nullptr);
   time_inter = (((g_ntp_cfg.sync_time_day * 24) + g_ntp_cfg.sync_time_hour) * 60
       + g_ntp_cfg.sync_time_minute) * 60 + g_ntp_cfg.sync_time_second;
 
-//check network connection?
+  //check network connection?
   do_ntp();
   while (g_ntp_cfg.enable) {
-    e_time = time(NULL);
+    e_time = time(nullptr);
     if (((e_time - s_time) > time_inter) || (e_time < s_time)) {
       do_ntp();
       s_time = e_time;
@@ -646,15 +677,14 @@ void ON_NTP_GET(void *msg_data,
 {
   INFO("system service: ON_NTP_GET \n");
   do {
-    if (!result_addr) {
-      ERROR("result_addr NULL.\n");
+    if (!result_addr || result_max_size < (int32_t)sizeof(am_service_result_t)) {
+      ERROR("result_addr NULL or wrong result_max_size.\n");
       break;
     }
 
     int32_t i = 0, str_len;
     string ntp_set;
     char ntp_cfg[32] = {0};
-    char *p_str = (char *)result_addr;
     snprintf(ntp_cfg,
              sizeof(ntp_cfg) - 1,
              "%d,%d/%d/%d/%d,",
@@ -674,13 +704,7 @@ void ON_NTP_GET(void *msg_data,
     }
 
     str_len = ntp_set.length();
-    if (result_max_size < str_len + 1) {
-      ERROR("result_max_size is not enough.");
-      break;
-    }
-
-    memcpy(result_addr, ntp_set.c_str(), str_len);
-    p_str[str_len] = '\0';
+    memcpy(((am_service_result_t *)result_addr)->data, ntp_set.c_str(), str_len + 1);
   } while (0);
 }
 
@@ -699,17 +723,16 @@ void ON_NTP_SET(void *msg_data,
       break;
     }
 
-    if (msg_data_size < 9) {
-      ERROR("ntp settings format wrong.");
-      ret = 2;
-      break;
-    }
-
     string ntp_set, tmp_str;
     int32_t ntp_enble, day, hour, minute, second;
     uint32_t pos = string::npos;
 
     ntp_set = (char *)msg_data;
+    if (ntp_set.length() < 9) {
+      ERROR("ntp settings format wrong.");
+      ret = 2;
+      break;
+    }
     pos = ntp_set.find_last_of(",");
     if (pos == string::npos) {
       ERROR("ntp settings format wrong.");
@@ -760,7 +783,7 @@ void ON_NTP_SET(void *msg_data,
       g_ntp_cfg.enable = false;
       g_th_ntp->join();
       delete g_th_ntp;
-      g_th_ntp = NULL;
+      g_th_ntp = nullptr;
     }
 
     g_ntp_cfg.sync_time_day = day;
@@ -779,7 +802,7 @@ void ON_NTP_SET(void *msg_data,
         i < SERVER_NUM && (g_ntp_cfg.server[i].empty()); ++i);
 
     if (i == SERVER_NUM) {
-      ERROR("server addr is NULL");
+      ERROR("server addr is nullptr");
       ret = 3;
       break;
     }
@@ -793,7 +816,7 @@ void ON_NTP_SET(void *msg_data,
 
   } while (0);
 
-  if (result_addr && result_max_size >= (int32_t)sizeof(ret)) {
-    memcpy(result_addr, &ret, sizeof(ret));
+  if (result_addr && result_max_size >= (int32_t)sizeof(am_service_result_t)) {
+    ((am_service_result_t *)result_addr)->ret = ret;
   }
 }

@@ -51,11 +51,16 @@
  *     OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
  *     EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
 #include <linux/string.h>
 #include <basetypes.h>
 #include <ctype.h>
 
+#if __WORDSIZE == 64
+typedef unsigned long		uintptr_t;
+#else
 typedef unsigned int		uintptr_t;
+#endif
 
 /* conversion between little-endian and big-endian */
 #define uswap_16(x) \

@@ -4,19 +4,40 @@
  * History:
  *    2014/08/05 - [Long Zhao] Create
  *
- * Copyright (C) 2004-2014, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 static struct vin_video_pll imx123_plls[] = {
 	/* for QXGA */
 	{0, 27000000, 72000000},
 	/* for 1080p */
 	{0, 27000000, 74250000},
+	/* for 3M 2X DOL */
+	{0, 37125000, 49500000},
 };
 
 static struct vin_reg_16_8 imx123_pll_regs[][6] = {
@@ -35,6 +56,14 @@ static struct vin_reg_16_8 imx123_pll_regs[][6] = {
 		{0x316D, 0x09}, /* IMX123_INCKSEL4 */
 		{0x3170, 0x60}, /* IMX123_INCKSEL5 */
 		{0x3171, 0x16}, /* IMX123_INCKSEL6 */
+	},
+	{	/* for 3M 2X DOL */
+		{0x3061, 0xB1}, /* IMX123_INCKSEL1 */
+		{0x3062, 0x00}, /* IMX123_INCKSEL2 */
+		{0x316C, 0x20}, /* IMX123_INCKSEL3 */
+		{0x316D, 0x09}, /* IMX123_INCKSEL4 */
+		{0x3170, 0x61}, /* IMX123_INCKSEL5 */
+		{0x3171, 0x18}, /* IMX123_INCKSEL6 */
 	},
 };
 
@@ -84,29 +113,29 @@ static struct vin_reg_16_8 imx123_dual_gain_share_regs[] = {
 };
 
 static struct vin_reg_16_8 imx123_3m_2x_regs[] = {
-	/* 2X WDR setting QXGA 30 fps */
+	/* 2X WDR setting QXGA 40 fps */
 	{0x3007, 0x00}, /* WINMODE */
-	{0x3009, 0x01}, /* DRSEL from 120fps to 60fps */
+	{0x3009, 0x00}, /* DRSEL */
 	{0x300C, 0x14}, /* WDSEL */
 	{0x3044, 0x35}, /* ODBIT */
 	{0x3046, 0x44}, /* XVSMSKCNT/XHSMSKCNT */
-	{0x30C8, 0xC0}, /* {0x30C8, 0x90},HBLANK1, Tentative */
+	{0x30C8, 0xC0}, /* HBLANK1, Tentative */
 	{0x30C9, 0x40}, /* HBLANK1, Tentative */
 	{0x30CA, 0xCD}, /* HBLANK2, Tentative */
 	{0x30CB, 0x20}, /* HBLANK2, XVSMSKCNT_INT */
-	{0x3018, 0x40}, /* VMAX_LSB */
+	{0x3018, 0x72}, /* VMAX_LSB */
 	{0x3019, 0x06}, /* VMAX_MSB */
 	{0x301A, 0x00}, /* VMAX_HSB */
-	{0x301B, 0xEE}, /* HMAX_LSB from 120fps to 60fps */
-	{0x301C, 0x02}, /* HMAX_MSB from 120fps to 60fps */
+	{0x301B, 0x77}, /* HMAX_LSB */
+	{0x301C, 0x01}, /* HMAX_MSB */
 
-	/* SHS1 7h */
-	{0x301E, 0x07}, /* SHS1_LSB */
+	/* SHS1 3Ah */
+	{0x301E, 0x3A}, /* SHS1_LSB */
 	{0x301F, 0x00}, /* SHS1_MSB */
 	{0x3020, 0x00}, /* SHS1_HSB */
-	/* SHS2 2F0h */
-	{0x3021, 0xF0}, /* SHS2_LSB */
-	{0x3022, 0x02}, /* SHS2_MSB */
+	/* SHS2 E4h */
+	{0x3021, 0xE4}, /* SHS2_LSB */
+	{0x3022, 0x00}, /* SHS2_MSB */
 	{0x3023, 0x00}, /* SHS2_HSB */
 };
 
@@ -200,15 +229,15 @@ static struct vin_video_format imx123_formats[] = {
 		/* sensor mode */
 		.hdr_mode = AMBA_VIDEO_2X_HDR_MODE,
 		.device_mode	= 2,
-		.pll_idx	= 0,
+		.pll_idx	= 2,
 		.width		= IMX123_QXGA_H_PIXEL,
 		.height		= IMX123_QXGA_BRL * 2 + (IMX123_QXGA_2X_RHS1 - 2),
 		.format		= AMBA_VIDEO_FORMAT_PROGRESSIVE,
 		.type		= AMBA_VIDEO_TYPE_RGB_RAW,
 		.bits		= AMBA_VIDEO_BITS_12,
 		.ratio		= AMBA_VIDEO_RATIO_16_9,
-		.max_fps	= AMBA_VIDEO_FPS_25,
-		.default_fps	= AMBA_VIDEO_FPS_25,
+		.max_fps	= AMBA_VIDEO_FPS_30,
+		.default_fps	= AMBA_VIDEO_FPS_29_97,
 		.default_agc	= 0,
 		.default_shutter_time	= AMBA_VIDEO_FPS_60,
 		.default_bayer_pattern	= VINDEV_BAYER_PATTERN_RG,
@@ -295,7 +324,7 @@ static struct vin_video_format imx123_dual_gain_formats[] = {
 		/* sensor mode */
 		.hdr_mode = AMBA_VIDEO_2X_HDR_MODE,
 		.device_mode	= 1,
-		.pll_idx	= 0,
+		.pll_idx	= 1,
 		.width		= 1920,
 		.height		= 1080*2,
 		.format		= AMBA_VIDEO_FORMAT_PROGRESSIVE,

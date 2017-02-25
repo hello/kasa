@@ -4,12 +4,29 @@
 ## History:
 ##    2012/06/19 - [Cao Rongrong] Create
 ##
-## Copyright (C) 2012-2016, Ambarella, Inc.
+## Copyright (c) 2015 Ambarella, Inc.
 ##
-## All rights reserved. No Part of this file may be reproduced, stored
-## in a retrieval system, or transmitted, in any form, or by any means,
-## electronic, mechanical, photocopying, recording, or otherwise,
-## without the prior consent of Ambarella, Inc.
+## This file and its contents ("Software") are protected by intellectual
+## property rights including, without limitation, U.S. and/or foreign
+## copyrights. This Software is also the confidential and proprietary
+## information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+## disclose, distribute, modify, or otherwise prepare derivative works of this
+## Software or any portion thereof except pursuant to a signed license agreement
+## or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+## In the absence of such an agreement, you agree to promptly notify and return
+## this Software to Ambarella, Inc.
+##
+## THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+## INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+## MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+## IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+## INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+## (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+## LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+## INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+## CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+## ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+## POSSIBILITY OF SUCH DAMAGE.
 ##
 
 menu "Audio Packages"
@@ -77,6 +94,7 @@ config CONFIG_AMBARELLA_PULSEAUDIO_SUPPORT
   select CONFIG_AMBARELLA_ALSA_PLUGINS_PULSEAUDIO_SUPPORT
   select CONFIG_AMBARELLA_JSONC_SUPPORT
   select CONFIG_AMBARELLA_LIBOGG_SUPPORT
+  select CONFIG_AMBARELLA_SOXR_SUPPORT
   select CONFIG_AMBARELLA_LIBSNDFILE_SUPPORT
   select CONFIG_AMBARELLA_LIBTOOL_SUPPORT
   select CONFIG_AMBARELLA_SPEEX_SUPPORT
@@ -190,6 +208,12 @@ endmenu
 
 menu "Libraries"
 
+config CONFIG_AMBARELLA_7ZDEC_SUPPORT
+  bool "Add 7zip Decoder library into root_fs"
+  default n
+  help
+    Add 7zip decoder library into root_fs
+
 config CONFIG_AMBARELLA_LIBNL_1_SUPPORT
   bool "Add libnl-1 into root_fs"
   default n
@@ -272,6 +296,37 @@ config CONFIG_AMBARELLA_LOCALE_SUPPORT
   help
     Add locale support
 
+choice
+  bool "Default System Language"
+  depends on CONFIG_AMBARELLA_LOCALE_SUPPORT
+  default CONFIG_AMBARELLA_SYSTEM_LANGUAGE_ZH_CN
+
+  config CONFIG_AMBARELLA_SYSTEM_LANGUAGE_ZH_CN
+  bool "zh_CN.UTF-8"
+  help
+    Set system language to zh_CN.UTF-8
+
+  config CONFIG_AMBARELLA_SYSTEM_LANGUAGE_ZH_TW
+  bool "zh_TW.UTF-8"
+  help
+    Set system language to zh_TW.UTF-8
+
+  config CONFIG_AMBARELLA_SYSTEM_LANGUAGE_ZH_HK
+  bool "zh_HK.UTF-8"
+  help
+    Set system language to zh_HK.UTF-8
+
+  config CONFIG_AMBARELLA_SYSTEM_LANGUAGE_KO_KR
+  bool "ko_KR.UTF-8"
+  help
+    Set system language to ko_KR.UTF-8
+
+  config CONFIG_AMBARELLA_SYSTEM_LANGUAGE_JA_JP
+  bool "ja_JP.UTF-8"
+  help
+    Set system language to ja_JP.UTF-8
+endchoice
+
 config CONFIG_AMBARELLA_LOCALE_ZH_CN_SUPPORT
   bool "Add zh_CN support"
   depends on CONFIG_AMBARELLA_LOCALE_SUPPORT
@@ -327,9 +382,22 @@ config CONFIG_AMBARELLA_MXML_SUPPORT
 
 config CONFIG_AMBARELLA_CLEARSILVER_SUPPORT
   bool "Add clearsilver library into root_fs"
+  select CONFIG_AMBARELLA_ZLIB_SUPPORT
   default n
   help
     Add clearsilver library into root_fs
+
+config CONFIG_AMBARELLA_LIBEVENT_SUPPORT
+  bool "Add libevent library into root_fs"
+  default n
+  help
+    Add libevent library into root_fs
+
+config CONFIG_AMBARELLA_LIBEV_SUPPORT
+  bool "Add libev library into root_fs"
+  default n
+  help
+    Add libev library into root_fs
 
 config CONFIG_AMBARELLA_LIBNL_SUPPORT
   bool "Add libnl into root_fs"
@@ -415,6 +483,12 @@ config CONFIG_AMBARELLA_CA_CERTIFICATES_SUPPORT
   help
     CA Certificates files copied from desktop linux
 
+config CONFIG_AMBARELLA_LIBZRTPCPP_SUPPORT
+  bool "Add libzrtpcpp core library into root_fs"
+  default n
+  help
+    libzrtpcpp core library
+
 config CONFIG_AMBARELLA_JSONC_SUPPORT
   bool "Add Json-c library into root_fs"
   default n
@@ -427,20 +501,42 @@ config CONFIG_AMBARELLA_LIBOGG_SUPPORT
   help
     OGG library
 
+config CONFIG_AMBARELLA_LIBARCHIVE_SUPPORT
+  bool "Add libarchive into root_fs"
+  select CONFIG_AMBARELLA_LIBBZIP2_SUPPORT
+  select CONFIG_AMBARELLA_ZLIB_SUPPORT
+  default n
+  help
+    Libarchive
+
+config CONFIG_AMBARELLA_SOXR_SUPPORT
+  bool "Add soxr library into root_fs"
+  default n
+  help
+    soxr library
+
 config CONFIG_AMBARELLA_LIBG7XX_SUPPORT
   bool "Add g7xx audio codec library into root_fs"
   default n
   help
     G.711 G.722 G.726 audio codec library
 
+config CONFIG_AMBARELLA_LIBNE10_SUPPORT
+  depends on CONFIG_ARCH_S2 || CONFIG_ARCH_S2E || CONFIG_ARCH_S2L || CONFIG_ARCH_S3 || CONFIG_ARCH_S3L || CONFIG_ARCH_S5
+  bool "Add libNE10 into root_fs"
+  default n
+  help
+    Add libNE10 into root_fs
+
 config CONFIG_AMBARELLA_LIBOPUS_SUPPORT
   bool "Add Opus library into root_fs"
+  select CONFIG_AMBARELLA_LIBNE10_SUPPORT
   default n
   help
     Opus library
 
 config CONFIG_AMBARELLA_LIBOPUSFILE_SUPPORT
-  bool "Add Opus library into root_fs"
+  bool "Add libopusfile into root_fs"
   depends on CONFIG_AMBARELLA_LIBOPUS_SUPPORT
   select CONFIG_AMBARELLA_OPENSSL_SUPPORT
   default n
@@ -467,13 +563,6 @@ config CONFIG_AMBARELLA_AUDIOFILE_TOOLS_SUPPORT
   default n
   help
     AudioFile library tools
-
-config CONFIG_AMBARELLA_LIBVORBIS_SUPPORT
-  bool "Add Vorbis Library into root_fs"
-  select CONFIG_AMBARELLA_LIBOGG_SUPPORT
-  default n
-  help
-    Vorbis library
 
 config CONFIG_AMBARELLA_LIBSAMPLERATE_SUPPORT
   bool "Add libsamplerate library into root_fs"
@@ -527,19 +616,6 @@ config CONFIG_AMBARELLA_FFMPEG_SUPPORT
   help
     ffmpeg library, including libavformat libavcodec and libavutil
 
-config CONFIG_AMBARELLA_ORC_SUPPORT
-  bool "Add ORC library into root_fs"
-  default n
-  help
-    ORC library
-
-config CONFIG_AMBARELLA_ORC_UTILS_SUPPORT
-  bool "Add ORC utilities into root_fs"
-  depends on CONFIG_AMBARELLA_ORC_SUPPORT
-  default n
-  help
-    ORC library utilities
-
 config CONFIG_AMBARELLA_NCURSES_SUPPORT
   bool "Add ncurses library into root_fs"
   default n
@@ -576,6 +652,7 @@ config CONFIG_AMBARELLA_INIPARSER_SUPPORT
 
 config CONFIG_AMBARELLA_LIBSSH2_SUPPORT
   bool "Add libssh2 library into root_fs"
+  select CONFIG_AMBARELLA_OPENSSL_SUPPORT
   default n
   help
     libssh2 library
@@ -595,6 +672,19 @@ config CONFIG_AMBARELLA_LIBCURL_SUPPORT
   default n
   help
     libcurl library is used to handle url.
+
+config CONFIG_AMBARELLA_LIBPNG_SUPPORT
+  bool "Add libpng support into root_fs"
+  select CONFIG_AMBARELLA_ZLIB_SUPPORT
+  default n
+  help
+    Add libpng into root_fs
+
+config CONFIG_AMBARELLA_LIBEXIF_SUPPORT
+  bool "Add libexif into root_fs"
+  default n
+  help
+    Add libexif into root_fs
 
 config CONFIG_AMBARELLA_LIBJPEG_TURBO_SUPPORT
   bool "Add libjpeg-turbo support into root_fs"
@@ -628,19 +718,6 @@ config CONFIG_AMBARELLA_LIBDAEMON_SUPPORT
   help
     Add libdaemon library into root_fs
 
-config CONFIG_AMBARELLA_JRTPLIB_SUPPORT
-  select CONFIG_AMBARELLA_LIBJTHREAD_SUPPORT
-  bool "Add libjrtp library into root_fs"
-  default n
-  help
-    Add libjrtp library into root_fs
-
-config CONFIG_AMBARELLA_LIBJTHREAD_SUPPORT
-  bool "Add libjthread library into root_fs"
-  default n
-  help
-    Add libjthread library into root_fs
-
 config CONFIG_AMBARELLA_LIBICAL_SUPPORT
   bool "Add libical library into root_fs"
   default n
@@ -649,18 +726,26 @@ config CONFIG_AMBARELLA_LIBICAL_SUPPORT
 
 config CONFIG_AMBARELLA_LIBUSBX_SUPPORT
   bool "Add libusbx into root_fs"
-  depends on CONFIG_ARCH_I1 || CONFIG_ARCH_S2 || CONFIG_ARCH_S2L
+  depends on CONFIG_ARCH_I1 || CONFIG_ARCH_S2 || CONFIG_ARCH_S2L || CONFIG_ARCH_S3L || CONFIG_ARCH_S5
   default n
   help
     Add libusbx into root_fs
 
 config CONFIG_AMBARELLA_LIBUSB_COMPAT_SUPPORT
   bool "Add libusb-compat2 into root_fs"
-  depends on CONFIG_ARCH_I1 || CONFIG_ARCH_S2 || CONFIG_ARCH_S2L
+  depends on CONFIG_ARCH_I1 || CONFIG_ARCH_S2 || CONFIG_ARCH_S2L || CONFIG_ARCH_S3L || CONFIG_ARCH_S5
   select CONFIG_AMBARELLA_LIBUSBX_SUPPORT
   default n
   help
     Add libusb-compat2 into root_fs
+
+config CONFIG_AMBARELLA_LIBMTP_SUPPORT
+  bool "Add libmtp into root_fs"
+  depends on CONFIG_ARCH_I1 || CONFIG_ARCH_S2 || CONFIG_ARCH_S2L || CONFIG_ARCH_S3L || CONFIG_ARCH_S5
+  select CONFIG_AMBARELLA_LIBUSBX_SUPPORT
+  default n
+  help
+    Add libmtp into root_fs
 
 config CONFIG_AMBARELLA_READLINE_SUPPORT
   bool "Add readline library into root_fs"
@@ -680,6 +765,15 @@ config CONFIG_AMBARELLA_SBC_UTILS_SUPPORT
   default n
   help
     Add SBC utilities into root_fs
+
+config CONFIG_AMBARELLA_BIND_LIB_SUPPORT
+  bool "Add lite version of BIND suite libraries into root_fs"
+  select CONFIG_AMBARELLA_OPENSSL_SUPPORT
+  select CONFIG_AMBARELLA_LIBCAP_SUPPORT
+  select CONFIG_AMBARELLA_LIBXML2_SUPPORT
+  default n
+  help
+    Add lite version of BIND suite libraries into root_fs
 
 config CONFIG_AMBARELLA_LIBPCAP_SUPPORT
   bool "Add libpcap into root_fs"
@@ -722,10 +816,85 @@ config CONFIG_AMBARELLA_PAM_SUPPORT
     Add pam support into root_fs
 
 config CONFIG_AMBARELLA_OPENCV_SUPPORT
-  bool "Add opencv lib into root_fs"
+  bool "Add opencv support into root_fs"
+  select CONFIG_AMBARELLA_OPENCV_CORE_LIB_SUPPORT
   default n
   help
-    Add opencv lib into root_fs
+    Add opencv support into root_fs
+
+config CONFIG_AMBARELLA_OPENCV_CORE_LIB_SUPPORT
+  bool "Add opencv core library into root_fs"
+  depends on CONFIG_AMBARELLA_OPENCV_SUPPORT
+  default y
+  help
+    Add opencv core library into root_fs
+
+config CONFIG_AMBARELLA_OPENCV_IMGPROC_LIB_SUPPORT
+  bool "Add opencv imgproc library into root_fs"
+  depends on CONFIG_AMBARELLA_OPENCV_CORE_LIB_SUPPORT
+  default y
+  help
+    Add opencv imgproc library into root_fs
+
+config CONFIG_AMBARELLA_OPENCV_IMGCODECS_LIB_SUPPORT
+  bool "Add opencv imgcodecs library into root_fs"
+  depends on CONFIG_AMBARELLA_OPENCV_CORE_LIB_SUPPORT
+  select CONFIG_AMBARELLA_OPENCV_IMGPROC_LIB_SUPPORT
+  select CONFIG_AMBARELLA_ZLIB_SUPPORT
+  select CONFIG_AMBARELLA_LIBPNG_SUPPORT
+  select CONFIG_AMBARELLA_LIBJPEG_TURBO_SUPPORT
+  default y
+  help
+    Add opencv imgcodes library into root_fs
+
+config CONFIG_AMBARELLA_OPENCV_VIDEOIO_LIB_SUPPORT
+  bool "Add opencv videoio library into root_fs"
+  depends on CONFIG_AMBARELLA_OPENCV_CORE_LIB_SUPPORT
+  select CONFIG_AMBARELLA_OPENCV_IMGPROC_LIB_SUPPORT
+  default y
+  help
+    Add opencv videoio library into root_fs
+
+config CONFIG_AMBARELLA_OPENCV_VIDEO_LIB_SUPPORT
+  bool "Add opencv video library into root_fs"
+  depends on CONFIG_AMBARELLA_OPENCV_CORE_LIB_SUPPORT
+  select CONFIG_AMBARELLA_OPENCV_IMGPROC_LIB_SUPPORT
+  default n
+  help
+    Add opencv video library into root_fs
+
+config CONFIG_AMBARELLA_OPENCV_VIDEOSTAB_LIB_SUPPORT
+  bool "Add opencv videostab library into root_fs"
+  depends on CONFIG_AMBARELLA_OPENCV_CORE_LIB_SUPPORT
+  select CONFIG_AMBARELLA_OPENCV_IMGPROC_LIB_SUPPORT
+  select CONFIG_AMBARELLA_OPENCV_IMGCODECS_LIB_SUPPORT
+  select CONFIG_AMBARELLA_OPENCV_VIDEO_LIB_SUPPORT
+  select CONFIG_AMBARELLA_OPENCV_COREMISC_LIB_SUPPORT
+  default n
+  help
+    Add opencv videostab library into root_fs
+
+config CONFIG_AMBARELLA_OPENCV_COREMISC_LIB_SUPPORT
+  bool "Add opencv core misc library into root_fs"
+  depends on CONFIG_AMBARELLA_OPENCV_CORE_LIB_SUPPORT
+  default n
+  help
+    Add opencv photo, calib3d, features2d, flann, highgui, ml, photo, shape, stitching, objdetect, superres libraries into root_fs
+
+config CONFIG_AMBARELLA_OPENCV_CONTRIB_LIB_SUPPORT
+  bool "Add opencv 3rd contrib library into root_fs"
+  depends on CONFIG_AMBARELLA_OPENCV_SUPPORT
+  default n
+  help
+    Add opencv 3rd contrib library into root_fs
+
+config CONFIG_AMBARELLA_OPENCV_UTILS_SUPPORT
+  bool "Add opencv utilities into root_fs"
+  depends on CONFIG_AMBARELLA_OPENCV_SUPPORT
+  select CONFIG_AMBARELLA_OPENCV_CORE_LIB_SUPPORT
+  default n
+  help
+    Add opencv utilities into root_fs
 
 config CONFIG_AMBARELLA_GMP_SUPPORT
   bool "Add GMP lib into root_fs"
@@ -749,6 +918,7 @@ config CONFIG_AMBARELLA_LIBTASN1_UTILS_SUPPORT
 config CONFIG_AMBARELLA_NETTLE_SUPPORT
   bool "Add nettle libraries into root_fs"
   select CONFIG_AMBARELLA_GMP_SUPPORT
+  select CONFIG_AMBARELLA_LIBIDN_SUPPORT
   default n
   help
     Add nettle library
@@ -782,7 +952,8 @@ config CONFIG_AMBARELLA_LIBOSIP2_SUPPORT
 
 config CONFIG_AMBARELLA_LIBEXOSIP2_SUPPORT
   bool "Add libeXosip2 lib into root_fs"
-  select CONFIG_AMBARELLA_LIBOSIP2_SUPPORT
+  select CONFIG_AMBARELLA_LIBOSIP2_SUPPOR
+  select CONFIG_AMBARELLA_OPENSSL_SUPPORT
   default n
   help
     Add libeXosip2 lib into root_fs
@@ -826,24 +997,42 @@ endmenu
 menu "Network/BlueTooth Packages"
 
 menu "Wireless"
-config CONFIG_AMBARELLA_MARVELL_WIRELESS_SUPPORT
-  bool "Add Marvell wireless driver and FW into root_fs"
-  default n
-  select CONFIG_AMBARELLA_WIRELESS_TOOL_SUPPORT
-  help
-    Add Marvell wireless driver and FW into root_fs.
 
 source prebuild/third-party/noarch/atheros-wifi/AmbaConfig
 source prebuild/third-party/noarch/broadcom-wifi/AmbaConfig
+source prebuild/third-party/noarch/marvell-wifi/AmbaConfig
 source prebuild/third-party/noarch/realtek-wifi/AmbaConfig
+
+config CONFIG_ATHEROS_TOOL_SUPPORT
+  bool "Add Atheros wireless tools into root_fs"
+  default n
+  help
+    Add Broadcom wireless tools into root_fs.
 
 config CONFIG_BROADCOM_TOOL_SUPPORT
   bool "Add Broadcom wireless tools into root_fs"
-  depends on CONFIG_ARCH_I1 || CONFIG_ARCH_S2 || CONFIG_ARCH_S2L
   select CONFIG_AMBARELLA_LIBUSB_COMPAT_SUPPORT
   default n
   help
     Add Broadcom wireless tools into root_fs.
+
+config CONFIG_BROADCOM_GPS_SUPPORT
+  bool "Add Broadcom gps tools into root_fs"
+  default n
+  help
+    Add Broadcom gps tools into root_fs.
+
+config CONFIG_MARVELL_TOOL_SUPPORT
+  bool "Add Marvell wireless tools into root_fs"
+  default n
+  help
+    Add Marvell wireless tools into root_fs.
+
+config CONFIG_REALTEK_TOOL_SUPPORT
+  bool "Add Realtek wireless tools into root_fs"
+  default n
+  help
+    Add Realtek wireless tools into root_fs.
 
 config CONFIG_AMBARELLA_WIRELESS_TOOL_SUPPORT
   bool "Add wireless tools into root_fs"
@@ -893,16 +1082,32 @@ config CONFIG_AMBARELLA_IW_SUPPORT
 
 config CONFIG_AMBARELLA_DNSMASQ_SUPPORT
   bool "Add dnsmasq into root_fs"
+  select CONFIG_AMBARELLA_LIBIDN_SUPPORT
   default n
   help
     Add dnsmasq into root_fs
 
 config CONFIG_AMBARELLA_HOSTAPD_SUPPORT
   bool "Add hostapd into root_fs"
+
+choice
+  bool "hostapd Version"
+  depends on CONFIG_AMBARELLA_HOSTAPD_SUPPORT
+  default CONFIG_AMBARELLA_HOSTAPD_LATEST_SUPPORT
+
+config CONFIG_AMBARELLA_HOSTAPD_LATEST_SUPPORT
+  bool "hostapd_latest"
   select CONFIG_AMBARELLA_LIBNL_SUPPORT
-  default n
   help
-    Add hostapd into root_fs
+    Add hostapd_latest into root_fs
+
+config CONFIG_AMBARELLA_HOSTAPD_RTW_11967
+  bool "hostapd_8_kk_4.4_rtw_11967.20140818"
+  select CONFIG_AMBARELLA_LIBNL_SUPPORT
+  help
+    Add hostapd_8_kk_4.4_rtw_11967 into root_fs
+
+endchoice
 
 endmenu
 
@@ -916,17 +1121,8 @@ config CONFIG_AMBARELLA_NO_BLUETOOTH_SUPPORT
   help
     Don't install bluetooth utilities
 
-config CONFIG_AMBARELLA_BLUETOOTH4_TOOL_SUPPORT
-  bool "Bluetooth version 4.101"
-  select CONFIG_AMBARELLA_GLIB_SUPPORT
-  select CONFIG_AMBARELLA_DBUS_SUPPORT
-  select CONFIG_AMBARELLA_NCURSES_SUPPORT
-  select CONFIG_AMBARELLA_READLINE_SUPPORT
-  help
-    Add bluetooth tools into root_fs.
-
 config CONFIG_AMBARELLA_BLUETOOTH5_TOOL_SUPPORT
-  bool "Bluetooth version 5.23"
+  bool "Bluetooth version 5.xx"
   select CONFIG_AMBARELLA_GLIB_SUPPORT
   select CONFIG_AMBARELLA_DBUS_SUPPORT
   select CONFIG_AMBARELLA_NCURSES_SUPPORT
@@ -939,8 +1135,8 @@ endchoice
 
 config CONFIG_AMBARELLA_BLUETOOTH_USB_SUPPORT
   bool "Add support for USB bluetooth device"
-  depends on CONFIG_ARCH_I1 || CONFIG_ARCH_S2 || CONFIG_ARCH_S2L
-  depends on CONFIG_AMBARELLA_BLUETOOTH4_TOOL_SUPPORT || CONFIG_AMBARELLA_BLUETOOTH5_TOOL_SUPPORT
+  depends on CONFIG_ARCH_I1 || CONFIG_ARCH_S2 || CONFIG_ARCH_S2L || CONFIG_ARCH_S3L || CONFIG_ARCH_S5
+  depends on CONFIG_AMBARELLA_BLUETOOTH5_TOOL_SUPPORT
   select CONFIG_AMBARELLA_LIBUSBX_SUPPORT
   default y
   help
@@ -958,29 +1154,54 @@ config CONFIG_AMBARELLA_BLUEZ_TOOLS_SUPPORT
 endmenu
 
 menu "Network Utilities"
-choice
-  bool "Choose IPTables Version"
 
-config CONFIG_AMBARELLA_NO_IPTABLES_SUPPORT
-  bool "No IPTables Support"
-  help
-    Don't install iptables utilities
+choice 
+  bool "Network Management Service"
 
-config CONFIG_AMBARELLA_IPTABLES_2_6_38_SUPPORT
-  bool "Add iptables(with kernel 2.6.38) utilities into root_fs"
+config CONFIG_AMBARELLA_NO_NETWORK_MANAGEMENT
+  bool "No Network Management Service"
   help
-    iptables(with kernel 2.6.38) Utilities
+    No Network Management Service
 
-config CONFIG_AMBARELLA_IPTABLES_3_8_SUPPORT
-  bool "Add iptables(with kernel 3.8) utilities into root_fs"
+config CONFIG_AMBARELLA_NETWORKMANAGER_SUPPORT
+  bool "Add NetworkManager into root_fs"
+  select CONFIG_AMBARELLA_GLIB_SUPPORT
+  select CONFIG_AMBARELLA_DBUS_SUPPORT
+  select CONFIG_AMBARELLA_DBUS_GLIB_SUPPORT
+  select CONFIG_AMBARELLA_LIBNL_SUPPORT
+  select CONFIG_AMBARELLA_LIBNDP_SUPPORT
+  select CONFIG_AMBARELLA_GNUTLS_SUPPORT
+  select CONFIG_AMBARELLA_DNSMASQ_SUPPORT
+  select CONFIG_AMBARELLA_WPA_SUPPLICANT_SUPPORT
+  select CONFIG_AMBARELLA_DHCP_SUPPORT
+  select CONFIG_AMBARELLA_DHCP_TOOL_DHCLIENT
+  select CONFIG_AMBARELLA_DHCPCD_SUPPORT
+  select CONFIG_AMBARELLA_IW_SUPPORT
   help
-    iptables(with kernel 3.8) Utilities
+    NetworkManager
+
+config CONFIG_AMBARELLA_CONNMAN_SUPPORT
+  bool "Add connman into root_fs"
+  select CONFIG_AMBARELLA_IPTABLES_SUPPORT
+  select CONFIG_AMBARELLA_GLIB_SUPPORT
+  select CONFIG_AMBARELLA_DBUS_SUPPORT
+  select CONFIG_AMBARELLA_GNUTLS_SUPPORT
+  select CONFIG_AMBARELLA_WPA_SUPPLICANT_SUPPORT
+  help
+    connman
 
 endchoice
+
+config CONFIG_AMBARELLA_IPTABLES_SUPPORT
+  bool "Add iptables utilities and libraries into root_fs"
+  default n
+  help
+    iptables Utilities and libraries
 
 config CONFIG_AMBARELLA_DHCP_SUPPORT
   bool "Add DHCP utilities into root_fs"
   select CONFIG_AMBARELLA_DHCLIENT_SUPPORT
+  select CONFIG_AMBARELLA_BIND_LIB_SUPPORT
   default n
   help
     DHCP Utilities
@@ -1031,24 +1252,6 @@ config CONFIG_AMBARELLA_DHCPCD_SUPPORT
   default n
   help
     DHCPCD is another dhcp client
-
-config CONFIG_AMBARELLA_NETWORKMANAGER_SUPPORT
-  bool "Add NetworkManager into root_fs"
-  select CONFIG_AMBARELLA_GLIB_SUPPORT
-  select CONFIG_AMBARELLA_DBUS_SUPPORT
-  select CONFIG_AMBARELLA_DBUS_GLIB_SUPPORT
-  select CONFIG_AMBARELLA_LIBNL_SUPPORT
-  select CONFIG_AMBARELLA_LIBNDP_SUPPORT
-  select CONFIG_AMBARELLA_GNUTLS_SUPPORT
-  select CONFIG_AMBARELLA_DNSMASQ_SUPPORT
-  select CONFIG_AMBARELLA_WPA_SUPPLICANT_SUPPORT
-  select CONFIG_AMBARELLA_DHCP_SUPPORT
-  select CONFIG_AMBARELLA_DHCP_TOOL_DHCLIENT
-  select CONFIG_AMBARELLA_DHCPCD_SUPPORT
-  select CONFIG_AMBARELLA_IW_SUPPORT
-  default n
-  help
-    NetworkManager
 
 config CONFIG_AMBARELLA_SAMBA_SERVICE_SUPPORT
   bool "Add Samba Server Support"
@@ -1183,12 +1386,6 @@ config CONFIG_AMBARELLA_USTREAM_SUPPORT
   help
     USTREAM support
 
-config CONFIG_AMBARELLA_PPPD_SUPPORT
-  bool "Add PPPD support"
-  default n
-  help
-    PPPD support
-
 config CONFIG_AMBARELLA_ETHTOOL_SUPPORT
   bool "Add ethtool support"
   default n
@@ -1263,6 +1460,19 @@ config CONFIG_AMBARELLA_EXFAT_UTILS_SUPPORT
   help
     Add exfat utils support
 
+config CONFIG_SONY_SD_LIBRARY
+  bool "Add Sony SD Library"
+  default n
+  help
+    Add Sony SD Library
+
+config CONFIG_SONY_SD_LIBRARY_TEST
+  bool "Add Sony SD Test Program"
+  depends on CONFIG_SONY_SD_LIBRARY
+  default n
+  help
+    Add Sony SD Test Program
+
 endmenu
 
 menu "Script Language"
@@ -1272,17 +1482,8 @@ config CONFIG_AMBARELLA_LUA_SUPPORT
   help
     Add lua support
 
-config CONFIG_AMBARELLA_PERL_SUPPORT
-  bool "Add Perl support"
-  default n
-  help
-    Add perl support.
-
 config CONFIG_AMBARELLA_PYTHON_SUPPORT
   bool "Add python support"
-  select CONFIG_AMBARELLA_LIBFFI_SUPPORT
-  select CONFIG_AMBARELLA_EXPAT_SUPPORT
-  select CONFIG_AMBARELLA_ZLIB_SUPPORT
   default n
   help
     Add python support.
@@ -1290,253 +1491,48 @@ config CONFIG_AMBARELLA_PYTHON_SUPPORT
 menu "Python Modules"
   depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
 
-config CONFIG_AMBARELLA_PYTHON_FUTURE_SUPPORT
-  bool "Python module __future__"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  default n
+config CONFIG_AMBARELLA_PYTHON_BZIP2_SUPPORT
+  bool "Python module bzip2"
+  select CONFIG_AMBARELLA_LIBBZIP2_SUPPORT
+  default y
   help
-    Add Python module __future__
+    Add python module bzip2
 
-config CONFIG_AMBARELLA_PYTHON_BASE64_SUPPORT
-  bool "Python module base64"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  default n
+config CONFIG_AMBARELLA_PYTHON_CTYPES_SUPPORT
+  bool "Python module ctypes"
+  select CONFIG_AMBARELLA_LIBFFI_SUPPORT
+  default y
   help
-    Add Python module base64
+    Add python module ctypes
 
-config CONFIG_AMBARELLA_PYTHON_BASEHTTPSERVER_SUPPORT
-  bool "Python module BaseHTTPServer"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  default n
+config CONFIG_AMBARELLA_PYTHON_EXPAT_SUPPORT
+  bool "Python module expat"
+  select CONFIG_AMBARELLA_EXPAT_SUPPORT
+  default y
   help
-    Add Python module BaseHTTPServer
+    Add python module expat
 
-config CONFIG_AMBARELLA_PYTHON_BISECT_SUPPORT
-  bool "Python module bisect"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
+config CONFIG_AMBARELLA_PYTHON_SQLITE_SUPPORT
+  bool "Python module sqlite"
+  select CONFIG_AMBARELLA_SQLITE_SUPPORT
   default n
   help
-    Add Python module bisect
+    Add python module sqlite
 
-config CONFIG_AMBARELLA_PYTHON_COLLECTIONS_SUPPORT
-  bool "Python module collections"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  select CONFIG_AMBARELLA_PYTHON_KEYWORD_SUPPORT
-  select CONFIG_AMBARELLA_PYTHON_HEAPQ_SUPPORT
+config CONFIG_AMBARELLA_PYTHON_SSL_SUPPORT
+  bool "Python module ssl"
+  select CONFIG_AMBARELLA_OPENSSL_SUPPORT
   default n
   help
-    Add Python module collections
+    Add python module ssl
 
-config CONFIG_AMBARELLA_PYTHON_DISTUTILS_SUPPORT
-  bool "Python module distutuils"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  select CONFIG_AMBARELLA_PYTHON_DIS_SUPPORT
-  default n
+config CONFIG_AMBARELLA_PYTHON_ZLIB_SUPPORT
+  bool "Python module zlib"
+  select CONFIG_AMBARELLA_ZLIB_SUPPORT
+  default y
   help
-    Add Python module distutils
+    Add python module zlib
 
-config CONFIG_AMBARELLA_PYTHON_DIS_SUPPORT
-  bool "Python module dis"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  select CONFIG_AMBARELLA_PYTHON_OPCODE_SUPPORT
-  default n
-  help
-    Add Python module dis
-
-config CONFIG_AMBARELLA_PYTHON_DUMMY_THREAD_SUPPORT
-  bool "Python module dummy_thread"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  default n
-  help
-    Add Python module dummy_thread
-
-config CONFIG_AMBARELLA_PYTHON_DUMMY_THREADING_SUPPORT
-  bool "Python module dummy_threading"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  select CONFIG_AMBARELLA_PYTHON_DUMMY_THREAD_SUPPORT
-  select CONFIG_AMBARELLA_PYTHON_THREADING_SUPPORT
-  default n
-  help
-    Add Python module dummy_threading
-
-config CONFIG_AMBARELLA_PYTHON_FUNCTOOLS_SUPPORT
-  bool "Python module functools"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  default n
-  help
-    Add Python module functools
-
-config CONFIG_AMBARELLA_PYTHON_HASHLIB_SUPPORT
-  bool "Python module hashlib"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  default n
-  help
-    Add Python module hashlib
-
-config CONFIG_AMBARELLA_PYTHON_HEAPQ_SUPPORT
-  bool "Python module heapq"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  select CONFIG_AMBARELLA_PYTHON_BISECT_SUPPORT
-  default n
-  help
-    Add Python module heapq
-
-config CONFIG_AMBARELLA_PYTHON_HTTPLIB_SUPPORT
-  bool "Python module httplib"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  select CONFIG_AMBARELLA_PYTHON_URLPARSE_SUPPORT
-  select CONFIG_AMBARELLA_PYTHON_MIMETOOLS_SUPPORT
-  default n
-  help
-    Add Python module httplib
-
-config CONFIG_AMBARELLA_PYTHON_INSPECT_SUPPORT
-  bool "Python module inspect"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  select CONFIG_AMBARELLA_PYTHON_COLLECTIONS_SUPPORT
-  default n
-  help
-    Add Python module inspect
-
-config CONFIG_AMBARELLA_PYTHON_KEYWORD_SUPPORT
-  bool "Python module keyword"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  default n
-  help
-    Add Python module keyword
-
-config CONFIG_AMBARELLA_PYTHON_MIMETOOLS_SUPPORT
-  bool "Python module keyword"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  select CONFIG_AMBARELLA_PYTHON_TEMPFILE_SUPPORT
-  select CONFIG_AMBARELLA_PYTHON_RFC822_SUPPORT
-  default n
-  help
-    Add Python module mimetools
-
-config CONFIG_AMBARELLA_PYTHON_OPCODE_SUPPORT
-  bool "Python module opcode"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  default n
-  help
-    Add Python module opcode
-
-config CONFIG_AMBARELLA_PYTHON_RANDOM_SUPPORT
-  bool "Python module random"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  select CONFIG_AMBARELLA_PYTHON_FUTURE_SUPPORT
-  select CONFIG_AMBARELLA_PYTHON_HASHLIB_SUPPORT
-  default n
-  help
-    Add Python module random
-
-config CONFIG_AMBARELLA_PYTHON_RFC822_SUPPORT
-  bool "Python module rfc822"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  default n
-  help
-    Add Python module rfc822
-
-config CONFIG_AMBARELLA_PYTHON_SCHED_SUPPORT
-  bool "Python module sched"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  default n
-  help
-    Add Python module sched
-
-config CONFIG_AMBARELLA_PYTHON_SIMPLEXMLRPCSERVER_SUPPORT
-  bool "Python module SimpleXMLRPCServer"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  select CONFIG_AMBARELLA_PYTHON_SOCKET_SUPPORT
-  select CONFIG_AMBARELLA_PYTHON_HTTPLIB_SUPPORT
-  select CONFIG_AMBARELLA_PYTHON_XMLRPCLIB_SUPPORT
-  select CONFIG_AMBARELLA_PYTHON_SOCKETSERVER_SUPPORT
-  select CONFIG_AMBARELLA_PYTHON_BASEHTTPSERVER_SUPPORT
-  default n
-  help
-    Add Python module SimpleXMLRPCServer
-
-config CONFIG_AMBARELLA_PYTHON_SOCKET_SUPPORT
-  bool "Python module socket"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  select CONFIG_AMBARELLA_PYTHON_FUNCTOOLS_SUPPORT
-  default n
-  help
-    Add Python module socket
-
-config CONFIG_AMBARELLA_PYTHON_SOCKETSERVER_SUPPORT
-  bool "Python module SocketServer"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  select CONFIG_AMBARELLA_PYTHON_DUMMY_THREADING_SUPPORT
-  default n
-  help
-    Add Python module SocketServer
-
-config CONFIG_AMBARELLA_PYTHON_STRINGIO_SUPPORT
-  bool "Python module StringIO"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  default n
-  help
-    Add Python module StringIO
-
-config CONFIG_AMBARELLA_PYTHON_TELNETLIB_SUPPORT
-  bool "Python module telnetlib"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  default n
-  help
-    Add Python module telnetlib
-
-config CONFIG_AMBARELLA_PYTHON_TEMPFILE_SUPPORT
-  bool "Python module tempfile"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  select CONFIG_AMBARELLA_PYTHON_RANDOM_SUPPORT
-  default n
-  help
-    Add Python module tempfile
-
-config CONFIG_AMBARELLA_PYTHON_THREADING_SUPPORT
-  bool "Python module threading"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  default n
-  help
-    Add Python module threading
-
-config CONFIG_AMBARELLA_PYTHON_TOKENIZE_SUPPORT
-  bool "Python module tokenize"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  select CONFIG_AMBARELLA_PYTHON_TOKEN_SUPPORT
-  default n
-  help
-    Add Python module tokenize
-
-config CONFIG_AMBARELLA_PYTHON_TOKEN_SUPPORT
-  bool "Python module token"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  default n
-  help
-    Add Python module token
-
-config CONFIG_AMBARELLA_PYTHON_URLPARSE_SUPPORT
-  bool "Python module urlparse"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  default n
-  help
-    Add Python module urlparse
-
-config CONFIG_AMBARELLA_PYTHON_XMLLIB_SUPPORT
-  bool "Python module xmllib"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  default n
-  help
-    Add Python module xmllib
-
-config CONFIG_AMBARELLA_PYTHON_XMLRPCLIB_SUPPORT
-  bool "Python module xmlrpclib"
-  depends on CONFIG_AMBARELLA_PYTHON_SUPPORT
-  select CONFIG_AMBARELLA_PYTHON_BASE64_SUPPORT
-  default n
-  help
-    Add Python module xmlrpclib
 endmenu
 endmenu
 
@@ -1569,8 +1565,27 @@ config CONFIG_AMBARELLA_IOZONE_SUPPORT
   help
     iozone is a filesystem IO test application.
 
+config CONFIG_AMBARELLA_I2C_TOOLS_SUPPORT
+  bool "Add i2c-tools support"
+  default n
+  help
+    i2c-tools
+
+config CONFIG_AMBARELLA_EEPROM_TOOLS_SUPPORT
+  bool "Add eeprom tools"
+  depends on CONFIG_AMBARELLA_I2C_TOOLS_SUPPORT
+  default y
+  help
+    i2c-tools eepromer
+
 config CONFIG_AMBARELLA_IPERF_SUPPORT
   bool "Add iperf support"
+  default n
+  help
+    iperf is a network test application.
+
+config CONFIG_AMBARELLA_IPERF3_SUPPORT
+  bool "Add iperf3 support"
   default n
   help
     iperf is a network test application.
@@ -1649,12 +1664,6 @@ config CONFIG_AMBARELLA_GDBSERVER_SUPPORT
   help
     Add GDB Server support in file system.
 
-config CONFIG_AMBARELLA_GPROF_SUPPORT
-  bool "Add gprof into root_fs"
-  default n
-  help
-    Add gprof support in file system.
-
 config CONFIG_AMBARELLA_STRACE_SUPPORT
   bool "Add strace into root_fs"
   default n
@@ -1667,6 +1676,13 @@ config CONFIG_AMBARELLA_LTRACE_SUPPORT
   default n
   help
     Add ltrace support in file system.
+
+config CONFIG_AMBARELLA_VTABLE_DUMPER_SUPPORT
+  bool "Add vtable-dumper into root_fs"
+  select CONFIG_AMBARELLA_LIBELF_SUPPORT
+  default n
+  help
+    Add vtable-dumper into root_fs
 
 config CONFIG_AMBARELLA_VALGRIND_SUPPORT
   depends on CONFIG_CPU_CORTEXA9 || CONFIG_CPU_CORTEXA9_HF

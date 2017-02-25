@@ -1,17 +1,34 @@
-/*******************************************************************************
+/*
  * pm_pixel.c
  *
  * History:
  *  2015/04/01 - [Zhaoyang Chen] created file
  *
- * Copyright (C) 2015-2019, Ambarella ShangHai Co,Ltd
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
  *
- ******************************************************************************/
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -692,7 +709,6 @@ static int output_pmc_params(pmc_param_t* pmc_params)
 
 int init_pixel(void)
 {
-	int x, y;
 	pm_buffer_t* buf = &vproc.pm_record.buffer;
 
 	if (unlikely(!G_pixel_inited)) {
@@ -708,26 +724,13 @@ int init_pixel(void)
 				ERROR("Only support pixel level PM on VIN domain!\n");
 				break;
 			}
-			/*
-			 * For HDR mode, VIN size is smaller than actual buffer size
-			 */
-			if (vproc.vin.info.hdr_mode >= AMBA_VIDEO_2X_HDR_MODE) {
-				buf->domain_width = vproc.vin.info.max_act_width;
-				buf->domain_height = vproc.vin.info.max_act_height;
-				buf->active_win.width = vproc.vin.info.width;
-				buf->active_win.height = vproc.vin.info.height;
-				x = (buf->domain_width - buf->active_win.width) / 2;
-				y = (buf->domain_height - buf->active_win.height) / 2;
-				buf->active_win.x = x;
-				buf->active_win.y = y;
-			} else {
-				buf->domain_width = vproc.vin.info.width;
-				buf->domain_height = vproc.vin.info.height;
-				buf->active_win.width = buf->domain_width;
-				buf->active_win.height = buf->domain_height;
-				buf->active_win.x = 0;
-				buf->active_win.y = 0;
-			}
+			buf->domain_width = vproc.vin.info.width;
+			buf->domain_height = vproc.vin.info.height;
+			buf->active_win.width = buf->domain_width;
+			buf->active_win.height = buf->domain_height;
+			buf->active_win.x = 0;
+			buf->active_win.y = 0;
+
 			if (ioctl_get_srcbuf_format(IAV_SRCBUF_MN) < 0) {
 				break;
 			}

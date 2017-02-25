@@ -25,17 +25,15 @@
 #define __PLAT_AMBARELLA_UART_H__
 
 /* ==========================================================================*/
-#if (CHIP_REV == A5S) || (CHIP_REV == A7L) || (CHIP_REV == S2L) || (CHIP_REV == S3)
-#define	UART_INSTANCES			2
-#elif (CHIP_REV == A8) || (CHIP_REV == S2) || (CHIP_REV == S2E)
+#if (CHIP_REV == A8) || (CHIP_REV == S2) || (CHIP_REV == S2E)
 #define	UART_INSTANCES			4
 #else
-#define	UART_INSTANCES			1
+#define	UART_INSTANCES			2
 #endif
 
 /* ==========================================================================*/
 #define UART_OFFSET			0x5000
-#if (CHIP_REV == S2L) || (CHIP_REV == S3)
+#if (CHIP_REV == S2L) || (CHIP_REV == S3) || (CHIP_REV == S3L)
 #define UART1_OFFSET			0x32000
 #else
 #define UART1_OFFSET			0x1F000
@@ -49,7 +47,7 @@
 #endif
 
 #define UART0_BASE			(APB_BASE + UART_OFFSET)
-#if (CHIP_REV == S2L) || (CHIP_REV == S3)
+#if (CHIP_REV == S2L) || (CHIP_REV == S3) || (CHIP_REV == S3L)
 #define UART1_BASE			(AHB_BASE + UART1_OFFSET)
 #else
 #define UART1_BASE			(APB_BASE + UART1_OFFSET)

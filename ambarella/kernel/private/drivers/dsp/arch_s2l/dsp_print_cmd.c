@@ -4,14 +4,33 @@
  * History:
  *	2012/11/02 - [Cao Rongrong] Created file
  *
- * Copyright (C) 2012-2016, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 
 #include <config.h>
 #include "dsp.h"
@@ -119,6 +138,7 @@ void dsp_print_cmd(void *cmd)
 		dsp_put_cmd_dec(hdr_preblend_from_vin);
 		dsp_put_cmd_dec(hdr_num_exposures_minus_1);
 		dsp_put_cmd_dec(vout_swap);
+		dsp_put_cmd_dec(vin_overflow_protection);
 		break;
 	}
 	case SET_VIN_CAPTURE_WIN:
@@ -320,10 +340,18 @@ void dsp_print_cmd(void *cmd)
 		dsp_put_cmd_dec(stream_1_LT_enable);
 		dsp_put_cmd_dec(stream_2_LT_enable);
 		dsp_put_cmd_dec(stream_3_LT_enable);
+		dsp_put_cmd_dec(B_frame_enable_in_LT_gop);
+		dsp_put_cmd_dec(vca_preview_id);
+		dsp_put_cmd_dec(max_warp_region_input_height);
+		dsp_put_cmd_dec(vca_frame_num);
+		dsp_put_cmd_hex(vca_daddr_base);
+		dsp_put_cmd_hex(vca_daddr_size);
+		dsp_put_cmd_dec(enc_buf_extra_MB_row_at_top);
 		break;
 	}
 	case IPCAM_OSD_INSERT:
 	{
+#if 0
 		dsp_cast_cmd(ipcam_osd_insert_t);
 		dsp_put_cmd_id(IPCAM_OSD_INSERT);
 		dsp_put_cmd_hex(cmd_code);
@@ -332,7 +360,7 @@ void dsp_print_cmd(void *cmd)
 		dsp_put_cmd_dec(osd_num_regions);
 		dsp_put_cmd_dec(osd_enable_ex);
 		dsp_put_cmd_dec(osd_num_regions_ex);
-#if 0
+		dsp_put_cmd_dec(osd_insert_always);
 		dsp_put_cmd_hex(osd_clut_dram_address[0]);
 		dsp_put_cmd_hex(osd_buf_dram_address[0]);
 		dsp_put_cmd_dec(osd_buf_pitch[0]);
@@ -596,6 +624,10 @@ void dsp_print_cmd(void *cmd)
 		dsp_put_cmd_dec(rotate);
 		dsp_put_cmd_dec(chroma_format);
 		dsp_put_cmd_dec(custom_encoder_frame_rate);
+		dsp_put_cmd_hex(mvdump_daddr);
+		dsp_put_cmd_hex(mvdump_fifo_limit);
+		dsp_put_cmd_dec(mvdump_fifo_unit_sz);
+		dsp_put_cmd_dec(mvdump_dpitch);
 		break;
 	}
 	case JPEG_ENCODING_SETUP:
@@ -657,6 +689,7 @@ void dsp_print_cmd(void *cmd)
 		dsp_put_cmd_dec(log2_max_pic_order_cnt_lsb_minus4);
 		dsp_put_cmd_dec(sony_avc);
 		dsp_put_cmd_dec(gaps_in_frame_num_value_allowed_flag);
+		dsp_put_cmd_dec(custom_bitstream_restriction_cfg);
 		dsp_put_cmd_dec(height_mjpeg_h264_simultaneous);
 		dsp_put_cmd_dec(width_mjpeg_h264_simultaneous);
 		dsp_put_cmd_dec(vui_enable);
@@ -766,6 +799,7 @@ void dsp_print_cmd(void *cmd)
 		dsp_put_cmd_dec(scene_change_detect_on);
 		dsp_put_cmd_dec(flat_area_improvement_on);
 		dsp_put_cmd_dec(drop_frame);
+		dsp_put_cmd_dec(mvdump_enable);
 		dsp_put_cmd_dec(pic_size_control);
 		dsp_put_cmd_hex(quant_matrix_addr);
 		dsp_put_cmd_dec(P_IntraBiasAdd);
@@ -782,6 +816,12 @@ void dsp_print_cmd(void *cmd)
 		dsp_put_cmd_dec(user2_direct_bias);
 		dsp_put_cmd_dec(user3_intra_bias);
 		dsp_put_cmd_dec(user3_direct_bias);
+		dsp_put_cmd_dec(force_pskip_num_plus1);
+		dsp_put_cmd_dec(set_I_size);
+		dsp_put_cmd_dec(q_qp_reduce);
+		dsp_put_cmd_dec(qp_min_on_Q);
+		dsp_put_cmd_dec(qp_max_on_Q);
+		dsp_put_cmd_dec(log_q_num_per_gop_plus_1);
 		break;
 	}
 	case IPCAM_ENC_SYNC_CMD:
@@ -812,6 +852,7 @@ void dsp_print_cmd(void *cmd)
 		dsp_put_cmd_dec(output_scan_format);
 		dsp_put_cmd_dec(deinterlace_mode);
 		dsp_put_cmd_dec(disabled);
+		dsp_put_cmd_dec(skip_interval);
 		dsp_put_cmd_dec(cap_width);
 		dsp_put_cmd_dec(cap_height);
 		dsp_put_cmd_dec(input_win_offset_x);

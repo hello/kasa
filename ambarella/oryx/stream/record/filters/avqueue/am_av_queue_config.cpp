@@ -4,18 +4,36 @@
  *  History:
  *		Dec 29, 2014 - [Shupeng Ren] created file
  *
- * Copyright (C) 2007-2014, Ambarella, Inc.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "am_base_include.h"
 #include "am_define.h"
 #include "am_amf_types.h"
 #include "am_log.h"
+#include <map>
 
 #include "am_av_queue_config.h"
 #include "am_configure.h"
@@ -80,63 +98,62 @@ AVQueueConfig* AMAVQueueConfig::get_config(const std::string& conf)
       m_avqueue_config->packet_pool_size = 64;
     }
 
-    if (config["event_enable"].exists()) {
-      m_avqueue_config->event_enable =
-          config["event_enable"].get<bool>(false);
-    } else {
-      NOTICE("\"event_enable\" is not specified, use default!");
-            m_avqueue_config->event_enable = false;
-    }
-
-    if (config["event_stream_id"].exists()) {
-      m_avqueue_config->event_stream_id =
-          config["event_stream_id"].get<unsigned>(0);
-    } else {
-      NOTICE("\"event_stream_id\" is not specified, use default!");
-      m_avqueue_config->event_stream_id = 0;
-    }
-
-    if (config["event_history_duration"].exists()) {
-      m_avqueue_config->event_history_duration =
-          config["event_history_duration"].get<unsigned>(0);
-      if (m_avqueue_config->event_history_duration >
-      AM_AVQUEUE_MAX_HISTORY_DURATION) {
-        NOTICE("event history duration can't exceed %ds. Set to %ds!",
-               AM_AVQUEUE_MAX_HISTORY_DURATION,
-               AM_AVQUEUE_MAX_HISTORY_DURATION);
-        m_avqueue_config->event_history_duration =
-            AM_AVQUEUE_MAX_HISTORY_DURATION;
-      }
-    } else {
-      NOTICE("\"event_history_duration\" is not specified, use default!");
-      m_avqueue_config->event_history_duration = 0;
-    }
-
-    if (config["event_future_duration"].exists()) {
-      m_avqueue_config->event_future_duration =
-          config["event_future_duration"].get<unsigned>(0);
-    } else {
-      NOTICE("\"event_future_duration\" is not specified, use default!");
-      m_avqueue_config->event_future_duration = 0;
-    }
-
-    if (config["event_audio_type"].exists()) {
-      std::string audio_type = config["event_audio_type"].get<std::string>("aac");
-      if (is_str_equal(audio_type.c_str(), "aac")) {
-        m_avqueue_config->event_audio_type = AM_AUDIO_AAC;
-      } else if (is_str_equal(audio_type.c_str(), "opus")) {
-        m_avqueue_config->event_audio_type = AM_AUDIO_OPUS;
-      } else if (is_str_equal(audio_type.c_str(), "lpcm")) {
-        m_avqueue_config->event_audio_type = AM_AUDIO_LPCM;
-      } else if (is_str_equal(audio_type.c_str(), "bpcm")) {
-        m_avqueue_config->event_audio_type = AM_AUDIO_BPCM;
+    for (size_t i = 0; i < config["event"].length(); ++i) {
+      if (config["event"][i]["enable"].exists()) {
+        m_avqueue_config->event_config[i].enable =
+            config["event"][i]["enable"].get<bool>(false);
       } else {
-        m_avqueue_config->event_audio_type = AM_AUDIO_AAC;
+        NOTICE("\"event[%d] enable\" is not specified, use default!", i);
       }
-    } else {
-      NOTICE("\"event_future_duration\" is not specified, use default!");
-      m_avqueue_config->event_audio_type = AM_AUDIO_AAC;
+
+      if (config["event"][i]["video_id"].exists()) {
+        m_avqueue_config->event_config[i].video_id =
+            config["event"][i]["video_id"].get<int>(0);
+      } else {
+        NOTICE("\"event[%d] video_id\" is not specified, use default!", i);
+      }
+
+      if (config["event"][i]["audio_type"].exists()) {
+        string audio_type = config["event"][i]["audio_type"].get<string>("aac");
+        if (is_str_equal(audio_type.c_str(), "aac")) {
+          m_avqueue_config->event_config[i].audio_type = AM_AUDIO_AAC;
+        } else if (is_str_equal(audio_type.c_str(), "opus")) {
+          m_avqueue_config->event_config[i].audio_type = AM_AUDIO_OPUS;
+        } else if (is_str_equal(audio_type.c_str(), "lpcm")) {
+          m_avqueue_config->event_config[i].audio_type = AM_AUDIO_LPCM;
+        } else if (is_str_equal(audio_type.c_str(), "bpcm")) {
+          m_avqueue_config->event_config[i].audio_type = AM_AUDIO_BPCM;
+        } else {
+          m_avqueue_config->event_config[i].audio_type = AM_AUDIO_AAC;
+        }
+      } else {
+        NOTICE("\"event[%d] audio_type\" is not specified, use default!", i);
+      }
+
+      if (config["event"][i]["history_duration"].exists()) {
+        m_avqueue_config->event_config[i].history_duration =
+            config["event"][i]["history_duration"].get<unsigned>(0);
+        if (m_avqueue_config->event_config[i].history_duration >
+        AM_AVQUEUE_MAX_HISTORY_DURATION) {
+          NOTICE("event[%d] history duration can't exceed %ds. Set to %ds!",
+                 i,
+                 AM_AVQUEUE_MAX_HISTORY_DURATION,
+                 AM_AVQUEUE_MAX_HISTORY_DURATION);
+          m_avqueue_config->event_config[i].history_duration =
+              AM_AVQUEUE_MAX_HISTORY_DURATION;
+        }
+      } else {
+        NOTICE("\"event[%d] history_duration\" is not specified, use default!", i);
+      }
+
+      if (config["event"][i]["future_duration"].exists()) {
+        m_avqueue_config->event_config[i].future_duration =
+            config["event"][i]["future_duration"].get<unsigned>(0);
+      } else {
+        NOTICE("\"event[%d] future_duration\" is not specified, use default!", i);
+      }
     }
+
     avq_config = m_avqueue_config;
   } while (0);
 

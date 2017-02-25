@@ -4,35 +4,47 @@
 ## History:
 ##    2012/06/05 - [Cao Rongrong] Created file
 ##
-## Copyright (C) 2011-2015, Ambarella, Inc.
+## Copyright (C) 2015 Ambarella, Inc.
 ##
-## All rights reserved. No Part of this file may be reproduced, stored
-## in a retrieval system, or transmitted, in any form, or by any means,
-## electronic, mechanical, photocopying, recording, or otherwise,
-## without the prior consent of Ambarella, Inc.
+## This file and its contents ("Software") are protected by intellectual
+## property rights including, without limitation, U.S. and/or foreign
+## copyrights. This Software is also the confidential and proprietary
+## information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+## disclose, distribute, modify, or otherwise prepare derivative works of this
+## Software or any portion thereof except pursuant to a signed license agreement
+## or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+## In the absence of such an agreement, you agree to promptly notify and return
+## this Software to Ambarella, Inc.
+##
+## THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+## INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+## MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+## IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+## INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+## (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+## LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+## INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+## CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+## ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+## POSSIBILITY OF SUCH DAMAGE.
 ##
 
 ifeq ($(BUILD_AMBARELLA_UNIT_TESTS_PACKAGE), y)
 
 LOCAL_PATH	:= $(call my-dir)
-
+DEWARP_LIB_PATH	:= $(AMB_TOPDIR)/prebuild/ambarella/library/dewarp
 
 ###
 include $(CLEAR_VARS)
-ifeq ($(BUILD_AMBARELLA_DEWARP_PACKAGE), y)
 ifeq ($(BUILD_AMBARELLA_UTILITIES_PACKAGE), y)
 
 LOCAL_TARGET	:= test_ldc
 LOCAL_SRCS	:= $(LOCAL_PATH)/test_ldc.c
-LOCAL_CFLAGS	:= -I$(AMB_TOPDIR)/packages/dewarp/arch_$(AMBARELLA_ARCH) \
+LOCAL_CFLAGS	:= -I$(DEWARP_LIB_PATH)/include/arch_$(AMBARELLA_ARCH) \
 				-I$(AMB_TOPDIR)/packages/utils
 LOCAL_LDFLAGS	:= -lm -lrt -lpthread
 LOCAL_LIBS	:= libutils.so
-ifeq ($(BUILD_AMBARELLA_PACKAGES_PROPRIETARY_SOURCES), y)
-LOCAL_LDFLAGS	+= -L$(AMB_TOPDIR)/prebuild/dewarp -ldewarp
-else
-LOCAL_LDFLAGS	+= -L$(AMB_TOPDIR)/packages/dewarp/lib/arch_$(AMBARELLA_ARCH) -ldewarp
-endif
+LOCAL_LDFLAGS	+= -L$(DEWARP_LIB_PATH)/lib/arch_$(AMBARELLA_ARCH) -ldewarp
 
 include $(BUILD_APP)
 
@@ -41,14 +53,10 @@ include $(BUILD_APP)
 $(LOCAL_TARGET): $(LOCAL_MODULE)
 	@mkdir -p $(UNIT_TEST_PATH)/
 	@cp -dpRf $< $(UNIT_TEST_PATH)/
-ifneq ($(BUILD_AMBARELLA_PACKAGES_PROPRIETARY_SOURCES), y)
-	@cp -dpRf $(AMB_TOPDIR)/packages/dewarp/lib/arch_$(AMBARELLA_ARCH)/* $(FAKEROOT_DIR)/usr/lib/
-endif
 	@echo "Build $@ Done."
 
 $(call add-target-into-build, $(LOCAL_TARGET))
 
-endif
 endif
 
 ###
@@ -64,7 +72,7 @@ ifeq ($(BUILD_AMBARELLA_PACKAGES_PROPRIETARY_SOURCES), y)
 ifeq ($(CONFIG_IMGPROC_PACKAGE_DYNAMIC_LIB), y)
 LOCAL_LIBS	+= libimg_algo_s2l.so
 else
-LOCAL_LDFLAGS	+= -L$(AMB_TOPDIR)/prebuild/imgproc/img_lib -limg_algo_s2l
+LOCAL_LIBS	+= libimg_algo_s2l.a
 endif
 else
 LOCAL_LDFLAGS	+= -L$(AMB_TOPDIR)/prebuild/imgproc/img_lib -limg_algo_s2l
@@ -86,20 +94,15 @@ endif
 
 ###
 include $(CLEAR_VARS)
-ifeq ($(BUILD_AMBARELLA_DEWARP_PACKAGE), y)
 ifeq ($(BUILD_AMBARELLA_UTILITIES_PACKAGE), y)
 
 LOCAL_TARGET	:= test_dewarp
 LOCAL_SRCS	:= $(LOCAL_PATH)/test_dewarp.c
-LOCAL_CFLAGS	:= -I$(AMB_TOPDIR)/packages/dewarp/arch_$(AMBARELLA_ARCH) \
+LOCAL_CFLAGS	:= -I$(DEWARP_LIB_PATH)/include/arch_$(AMBARELLA_ARCH) \
 				-I$(AMB_TOPDIR)/packages/utils
 LOCAL_LDFLAGS	:= -lm -lrt -lpthread
 LOCAL_LIBS	:= libutils.so
-ifeq ($(BUILD_AMBARELLA_PACKAGES_PROPRIETARY_SOURCES), y)
-LOCAL_LDFLAGS	+= -L$(AMB_TOPDIR)/prebuild/dewarp -ldewarp
-else
-LOCAL_LDFLAGS	+= -L$(AMB_TOPDIR)/packages/dewarp/lib/arch_$(AMBARELLA_ARCH) -ldewarp
-endif
+LOCAL_LDFLAGS	+= -L$(DEWARP_LIB_PATH)/lib/arch_$(AMBARELLA_ARCH) -ldewarp
 
 include $(BUILD_APP)
 
@@ -108,14 +111,10 @@ include $(BUILD_APP)
 $(LOCAL_TARGET): $(LOCAL_MODULE)
 	@mkdir -p $(UNIT_TEST_PATH)/
 	@cp -dpRf $< $(UNIT_TEST_PATH)/
-ifneq ($(BUILD_AMBARELLA_PACKAGES_PROPRIETARY_SOURCES), y)
-	@cp -dpRf $(AMB_TOPDIR)/packages/dewarp/lib/arch_$(AMBARELLA_ARCH)/* $(FAKEROOT_DIR)/usr/lib/
-endif
 	@echo "Build $@ Done."
 
 $(call add-target-into-build, $(LOCAL_TARGET))
 
-endif
 endif
 
 ###
@@ -150,18 +149,43 @@ ifeq ($(BUILD_AMBARELLA_LBR_PACKAGE), y)
 
 include $(CLEAR_VARS)
 UTILS_PATH	:= $(AMB_TOPDIR)/app/smartcam/utils
-MDET_PATH	:= $(AMB_TOPDIR)/packages/smartcam/mdet_lib
+MDET_PATH	:= $(AMB_TOPDIR)/prebuild/ambarella/library/smartcam/mdet
 
 LOCAL_TARGET	:= test_lbr
 LOCAL_SRCS	:= $(LOCAL_PATH)/test_lbr.c $(UTILS_PATH)/arch_$(AMBARELLA_ARCH)/iav.c
 LOCAL_CFLAGS	:= -I$(AMB_TOPDIR)/packages/low_bitrate/include -I$(UTILS_PATH) -I$(MDET_PATH)/include
-LOCAL_LDFLAGS	:= -lm -lrt -lpthread
+LOCAL_LDFLAGS	:= -lpthread \
+                 -Wl,-rpath-link=$(PREBUILD_3RD_PARTY_DIR)/opencv/usr/lib \
+                 -Wl,-rpath-link=$(PREBUILD_3RD_PARTY_DIR)/zlib/usr/lib
 LOCAL_LIBS	:= liblbr.so
-ifeq ($(BUILD_AMBARELLA_PACKAGES_PROPRIETARY_SOURCES), y)
-LOCAL_LIBS	+= libmdet.so
-else
-LOCAL_LDFLAGS	+= -L$(MDET_PATH)/lib -lmdet
+LOCAL_LDFLAGS	+= -L$(MDET_PATH)/lib/arch_$(AMBARELLA_ARCH) -lmdet
+include $(BUILD_APP)
+
+.PHONY: $(LOCAL_TARGET)
+
+$(LOCAL_TARGET): $(LOCAL_MODULE)
+	@mkdir -p $(UNIT_TEST_PATH)/
+	@cp -dpRf $< $(UNIT_TEST_PATH)/
+	@echo "Build $@ Done."
+
+$(call add-target-into-build, $(LOCAL_TARGET))
+
 endif
+
+###
+include $(CLEAR_VARS)
+SMARTRC_PATH	:= $(AMB_TOPDIR)/prebuild/ambarella/library/smartrc/lib
+
+LOCAL_TARGET	:= test_smartrc
+LOCAL_SRCS	:= $(LOCAL_PATH)/test_smartrc.c
+LOCAL_CFLAGS	:= -I$(AMB_TOPDIR)/prebuild/ambarella/library/smartrc/include \
+					-I$(AMB_TOPDIR)/packages/data_transfer
+LOCAL_LDFLAGS	:= -lpthread
+LOCAL_LIBS	:=
+ifeq ($(BUILD_AMBARELLA_DATATX_PACKAGE), y)
+LOCAL_LIBS += libdatatx.a
+endif
+LOCAL_LDFLAGS	+= -L$(SMARTRC_PATH)/arch_$(AMBARELLA_ARCH) -lsmartrc
 
 include $(BUILD_APP)
 
@@ -169,15 +193,11 @@ include $(BUILD_APP)
 
 $(LOCAL_TARGET): $(LOCAL_MODULE)
 	@mkdir -p $(UNIT_TEST_PATH)/
-ifneq ($(BUILD_AMBARELLA_PACKAGES_PROPRIETARY_SOURCES), y)
-	@cp -dpRf $(MDET_PATH)/lib/* $(FAKEROOT_DIR)/usr/lib/
-endif
 	@cp -dpRf $< $(UNIT_TEST_PATH)/
 	@echo "Build $@ Done."
 
 $(call add-target-into-build, $(LOCAL_TARGET))
 
-endif
 ###
 
 ifeq ($(BUILD_AMBARELLA_MDMOTBUF_PACKAGE), y)
@@ -278,7 +298,7 @@ LOCAL_TARGET	:= test_digital_signature
 LOCAL_SRCS	:= $(LOCAL_PATH)/test_digital_signature.cpp
 LOCAL_LIBS	:= libdigisign.a
 LOCAL_CFLAGS	:= -I$(AMB_TOPDIR)/packages/security/digital_signature/
-LOCAL_LDFLAGS	:= 
+LOCAL_LDFLAGS	:=
 ifeq ($(CONFIG_DIGITAL_SIGNATURE_LIBRARY_NATIVE), y)
 LOCAL_LIBS	+= liblwcryptography.a
 LOCAL_LDFLAGS	+= -llwcryptography
@@ -327,6 +347,24 @@ $(call add-target-into-build, $(LOCAL_TARGET))
 
 endif
 
+###
+include $(CLEAR_VARS)
+
+LOCAL_TARGET	:= test_convert_openssl_key
+LOCAL_SRCS	:= $(LOCAL_PATH)/test_convert_openssl_key.cpp
+LOCAL_CFLAGS	:= -I$(PREBUILD_3RD_PARTY_DIR)/openssl/include/
+LOCAL_LDFLAGS	:= -L$(PREBUILD_3RD_PARTY_DIR)/openssl/usr/lib -lssl -lcrypto -ldl
+include $(BUILD_APP)
+
+.PHONY: $(LOCAL_TARGET)
+
+$(LOCAL_TARGET): $(LOCAL_MODULE)
+	@mkdir -p $(UNIT_TEST_PATH)/
+	@cp -dpRf $< $(UNIT_TEST_PATH)/
+	@echo "Build $@ Done."
+
+$(call add-target-into-build, $(LOCAL_TARGET))
+
 ifeq ($(BUILD_AMBARELLA_LW_MEDIA), y)
 
 ###
@@ -334,7 +372,7 @@ include $(CLEAR_VARS)
 
 LOCAL_TARGET	:= test_media
 LOCAL_SRCS	:= $(LOCAL_PATH)/test_media.cpp
-LOCAL_LIBS	:= liblwmedia.a
+LOCAL_LIBS	:= liblwmedia.so
 LOCAL_CFLAGS	:= -I$(AMB_TOPDIR)/packages/security/lw_media/include/
 LOCAL_LDFLAGS	:=
 ifeq ($(BUILD_AMBARELLA_LW_MEDIA_ALSA_LIBRARY), y)
@@ -349,7 +387,7 @@ ifeq ($(BUILD_AMBARELLA_LW_MEDIA_AMBA_AAC_LIBRARY), y)
 LOCAL_LDFLAGS += -L$(PREBUILD_3RD_PARTY_DIR)/aac/lib -laacdec -laacenc
 endif
 
-LOCAL_LIBS	:= liblwmedia.a
+LOCAL_LIBS	:= liblwmedia.so
 LOCAL_LDFLAGS += -lpthread -ldl -lrt -llwmedia
 include $(BUILD_APP)
 
@@ -367,7 +405,6 @@ endif
 endif
 
 ###
-ifeq ($(BUILD_AMBARELLA_EIS_PACKAGE), y)
 ifeq ($(BUILD_AMBARELLA_UTILITIES_PACKAGE), y)
 
 include $(CLEAR_VARS)
@@ -375,8 +412,8 @@ include $(CLEAR_VARS)
 LOCAL_TARGET	:= test_eis_warp
 LOCAL_SRCS	:= $(LOCAL_PATH)/test_eis_warp.c
 LOCAL_LIBS	:=
-LOCAL_CFLAGS	:= -I$(AMB_TOPDIR)/packages/eis/arch_$(AMBARELLA_ARCH) -I$(AMB_TOPDIR)/packages/utils/ -g -O0
-LOCAL_LDFLAGS	:= -lm -lrt -lpthread -L$(AMB_TOPDIR)/packages/eis/lib/arch_$(AMBARELLA_ARCH) -leis
+LOCAL_CFLAGS	:= -I$(AMB_TOPDIR)/prebuild/ambarella/library/eis/include/arch_$(AMBARELLA_ARCH) -I$(AMB_TOPDIR)/packages/utils/ -g
+LOCAL_LDFLAGS	:= -lm -lrt -lpthread -L$(AMB_TOPDIR)/prebuild/ambarella/library/eis/lib/arch_$(AMBARELLA_ARCH) -leis
 LOCAL_LIBS	+= libutils.so
 
 include $(BUILD_APP)
@@ -387,12 +424,11 @@ $(LOCAL_TARGET): PRIVATE_PATH:=$(LOCAL_PATH)
 $(LOCAL_TARGET): $(LOCAL_MODULE)
 	@mkdir -p $(UNIT_TEST_PATH)/data/
 	@cp -dpRf $< $(UNIT_TEST_PATH)/
-	@cp -dpRf $(AMB_TOPDIR)/packages/eis/lib/arch_$(AMBARELLA_ARCH)/* $(FAKEROOT_DIR)/usr/lib/
+	@cp -dpRf $(AMB_TOPDIR)/prebuild/ambarella/library/eis/lib/arch_$(AMBARELLA_ARCH)/* $(FAKEROOT_DIR)/usr/lib/
 	@echo "Build $@ Done."
 
 $(call add-target-into-build, $(LOCAL_TARGET))
 
-endif
 endif
 
 ###

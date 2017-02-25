@@ -4,16 +4,32 @@
  * History:
  *   2014-12-30 - [ypchang] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
-#include <unistd.h>
 #include "am_base_include.h"
 #include "am_define.h"
 #include "am_log.h"
@@ -24,10 +40,10 @@
 #include "am_amf_base.h"
 #include "am_amf_engine_frame.h"
 
-#include "am_record_engine_if.h"
 #include "am_record_engine.h"
 #include "am_record_engine_config.h"
-
+#include "am_gps_source_if.h"
+#include "am_gsensor_source_if.h"
 #include "am_audio_source_if.h"
 #include "am_video_source_if.h"
 #include "am_event_sender_if.h"
@@ -38,6 +54,12 @@
 #include "am_event.h"
 #include "am_thread.h"
 #include "am_plugin.h"
+
+#include <netinet/in.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <signal.h>
 
 AMIRecordEngine* AMIRecordEngine::create()
 {
@@ -71,7 +93,7 @@ void AMRecordEngine::destroy()
 
 AMIRecordEngine::AM_RECORD_ENGINE_STATUS AMRecordEngine::get_engine_status()
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   return m_status;
 }
 
@@ -154,11 +176,11 @@ bool AMRecordEngine::record()
 {
   bool ret = false;
   uint32_t count = 0;
-  while(!m_mainloop_run && (count < 30)) {
+  while(!m_mainloop_run.load() && (count < 30)) {
     m_sem->wait(100000);
     ++ count;
   }
-  if(AM_LIKELY(m_mainloop_run)) {
+  if(AM_LIKELY(m_mainloop_run.load())) {
     ret = send_engine_cmd(AM_ENGINE_CMD_START);
   } else {
     ERROR("The thread of engine is not running.");
@@ -170,7 +192,7 @@ bool AMRecordEngine::record()
 bool AMRecordEngine::stop()
 {
   bool ret = true;
-  if(AM_LIKELY(m_mainloop_run)) {
+  if(AM_LIKELY(m_mainloop_run.load())) {
     ret = send_engine_cmd(AM_ENGINE_CMD_STOP);
   } else {
     NOTICE("The engine is already stopped.");
@@ -178,28 +200,154 @@ bool AMRecordEngine::stop()
   return ret;
 }
 
-bool AMRecordEngine::start_file_recording()
-{
-  INFO("start file recording in engine.");
-  std::string filter_name = "file-muxer";
-  AMIMuxer *muxer = get_muxer_filter_by_name(filter_name);
-  if(!muxer) {
-    ERROR("failed to get file muxer filter.");
-  }
-  return (muxer ? muxer->start_file_recording() : false);
-}
-
-bool AMRecordEngine::stop_file_recording()
+bool AMRecordEngine::start_file_recording(uint32_t muxer_id_bit_map)
 {
   bool ret = true;
-  INFO("stop file recording in engine.");
-  std::string filter_name = "file-muxer";
-  AMIMuxer *muxer = get_muxer_filter_by_name(filter_name);
-  if(!muxer) {
-    ERROR("failed to get file muxer filter.");
-  } else {
-    ret = muxer->stop_file_recording();
-  }
+  do {
+    INFO("Start muxer%u file recording in engine.", muxer_id_bit_map);
+    AMFilterVector filter_vector = get_filter_vector_by_iid(IID_AMIMuxer);
+    for (auto &v : filter_vector) {
+      AMIMuxer *muxer = (AMIMuxer*)v;
+      if (muxer) {
+        if (!muxer->start_file_recording(muxer_id_bit_map)) {
+          ERROR("Failed to start file recording.");
+          ret = false;
+          break;
+        }
+      } else {
+        ERROR("Muxer is invalid.");
+      }
+    }
+  } while(0);
+  return ret;
+}
+
+bool AMRecordEngine::stop_file_recording(uint32_t muxer_id_bit_map)
+{
+  bool ret = true;
+  do {
+    INFO("Stop muxer%u file recording in engine.", muxer_id_bit_map);
+    AMFilterVector filter_vector = get_filter_vector_by_iid(IID_AMIMuxer);
+    for (auto &v : filter_vector) {
+      AMIMuxer *muxer = (AMIMuxer*)v;
+      if (muxer) {
+        if (!muxer->stop_file_recording(muxer_id_bit_map)) {
+          ERROR("Failed to stop file recording.");
+          ret = false;
+          break;
+        }
+      } else {
+        ERROR("Muxer is invalid.");
+      }
+    }
+  } while(0);
+  return ret;
+}
+
+bool AMRecordEngine::start_file_muxer()
+{
+  bool ret = false;
+  do {
+    AMFilterVector muxer =
+        get_filter_vector_by_iid(IID_AMIMuxer);
+    for (auto &v : muxer) {
+      if (((AMIMuxer*)v)->type() ==   AM_MUXER_TYPE_FILE) {
+        ret = ((AMIMuxer*)v)->start_send_normal_pkt();
+      }
+    }
+  } while(0);
+  return ret;
+}
+
+bool AMRecordEngine::set_recording_file_num(uint32_t muxer_id_bit_map,
+                                            uint32_t file_num)
+{
+  bool ret = true;
+  do {
+    INFO("Set recording file num :%u", file_num);
+    AMFilterVector filter_vector = get_filter_vector_by_iid(IID_AMIMuxer);
+    for (auto &v : filter_vector) {
+      AMIMuxer *muxer = (AMIMuxer*)v;
+      if (muxer) {
+        if (!muxer->set_recording_file_num(muxer_id_bit_map, file_num)) {
+          ERROR("Failed to set recording file num.");
+          ret = false;
+          break;
+        }
+      } else {
+        ERROR("Muxer is invalid.");
+      }
+    }
+  } while(0);
+  return ret;
+}
+
+bool AMRecordEngine::set_recording_duration(uint32_t muxer_id_bit_map,
+                                            int32_t duration)
+{
+  bool ret = true;
+  do {
+    INFO("Set recording duration :%u", duration);
+    AMFilterVector filter_vector = get_filter_vector_by_iid(IID_AMIMuxer);
+    for (auto &v : filter_vector) {
+      AMIMuxer *muxer = (AMIMuxer*)v;
+      if (muxer) {
+        if (!muxer->set_recording_duration(muxer_id_bit_map, duration)) {
+          ERROR("Failed to set recording duration.");
+          ret = false;
+          break;
+        }
+      } else {
+        ERROR("Muxer is invalid.");
+      }
+    }
+  } while(0);
+  return ret;
+}
+
+bool AMRecordEngine::set_file_duration(uint32_t muxer_id_bit_map,
+                                       int32_t file_duration,
+                                       bool apply_conf_file)
+{
+  bool ret = true;
+  do {
+    INFO("Set file duration :%u", file_duration);
+    AMFilterVector filter_vector = get_filter_vector_by_iid(IID_AMIMuxer);
+    for (auto &v : filter_vector) {
+      AMIMuxer *muxer = (AMIMuxer*)v;
+      if (muxer) {
+        if (!muxer->set_file_duration(muxer_id_bit_map, file_duration,
+                                      apply_conf_file)) {
+          ERROR("Failed to set file duration.");
+          ret = false;
+          break;
+        }
+      } else {
+        ERROR("Muxer is invalid.");
+      }
+    }
+  } while(0);
+  return ret;
+}
+
+bool AMRecordEngine::set_muxer_param(AMMuxerParam &param)
+{
+  bool ret = true;
+  do {
+    AMFilterVector filter_vector = get_filter_vector_by_iid(IID_AMIMuxer);
+    for (auto &v : filter_vector) {
+      AMIMuxer *muxer = (AMIMuxer*)v;
+      if (muxer) {
+        if (!muxer->set_muxer_param(param)) {
+          ERROR("Failed to set muxer param.");
+          ret = false;
+          break;
+        }
+      } else {
+        ERROR("Muxer is invalid.");
+      }
+    }
+  } while(0);
   return ret;
 }
 
@@ -209,19 +357,149 @@ void AMRecordEngine::set_app_msg_callback(AMRecordCallback callback, void *data)
   m_app_data     = data;
 }
 
-bool AMRecordEngine::is_ready_for_event()
+void AMRecordEngine::set_aec_enabled(bool enabled)
 {
-  AMIAVQueue *avqueue =
-      (AMIAVQueue*)get_filter_by_iid(IID_AMIAVQueue);
-  return avqueue ? avqueue->is_ready_for_event() : false;
+  AMFilterVector muxer = get_filter_vector_by_iid(IID_AMIAudioSource);
+  for (auto &v : muxer) {
+    ((AMIAudioSource*)v)->set_aec_enabled(enabled);
+  }
 }
 
-bool AMRecordEngine::send_event()
+bool AMRecordEngine::set_file_operation_callback(uint32_t muxer_id_bit_map,
+                                                 AM_FILE_OPERATION_CB_TYPE type,
+                                                 AMFileOperationCB callback)
+{
+  bool ret = true;
+  do {
+    AMFilterVector muxer = get_filter_vector_by_iid(IID_AMIMuxer);
+    for (auto &v : muxer) {
+      if (!(((AMIMuxer*)v)->set_file_operation_callback(
+          muxer_id_bit_map, type, callback))) {
+        ERROR("Failed to set file operation callback function to muxer.");
+        ret = false;
+        break;
+      }
+    }
+  } while(0);
+  return ret;
+}
+
+bool AMRecordEngine::update_image_3A_info(AMImage3AInfo *image_3A)
+{
+  bool ret = true;
+  AMFilterVector muxer = get_filter_vector_by_iid(IID_AMIMuxer);
+  for (auto &v : muxer) {
+    if (!((AMIMuxer*)v)->update_image_3a_info(image_3A)) {
+      ERROR("Failed to update image 3A info!");
+      ret = false;
+    }
+  }
+  return ret;
+}
+
+bool AMRecordEngine::is_ready_for_event(AMEventStruct& event)
+{
+  bool ret = false;
+  do {
+    AMIAVQueue *avqueue = (AMIAVQueue*)get_filter_by_iid(IID_AMIAVQueue);
+    if (avqueue) {
+      ret = avqueue->is_ready_for_event(event);
+    } else {
+      if ((event.attr == AM_EVENT_MJPEG) ||
+          (event.attr == AM_EVENT_PERIODIC_MJPEG)) {
+        ret = true;
+        break;
+      }
+      AMFilterVector muxer = get_filter_vector_by_iid(IID_AMIMuxer);
+      for (auto &v : muxer) {
+        AMIMuxer *muxer = (AMIMuxer*)v;
+        if (muxer && muxer->type() == AM_MUXER_TYPE_FILE) {
+          if (muxer->is_ready_for_event(event)) {
+            ret = true;
+            break;
+          }
+        }
+      }
+    }
+  } while(0);
+  return ret;
+}
+
+bool AMRecordEngine::send_event(AMEventStruct& event)
 {
   AMIEventSender *sender =
       (AMIEventSender*)get_filter_by_iid(IID_AMIEventSender);
-  INFO("begin to send event in record engine.");
-  return sender ? sender->send_event() : false;
+  std::string name;
+  switch(event.attr) {
+    case AM_EVENT_MJPEG : {
+      name = "AM_EVENT_MJPEG";
+      INFO("Send event in record engine, event attr is %s,"
+          " stream id is %u, pre num is %u, after num is %u, closest num is %u",
+          name.c_str(),event.mjpeg.stream_id, event.mjpeg.pre_cur_pts_num,
+          event.mjpeg.after_cur_pts_num, event.mjpeg.closest_cur_pts_num);
+    } break;
+    case AM_EVENT_H26X : {
+      name = "AM_EVENT_H26X";
+      INFO("Send event in record engine, event attr is %s,"
+          " stream id is %u, history duration is %u, future duration is %u",
+          name.c_str(),event.h26x.stream_id, event.h26x.history_duration,
+          event.h26x.future_duration);
+    } break;
+    case AM_EVENT_PERIODIC_MJPEG : {
+      name = "AM_EVENT_PERIODIC_MJPEG";
+      INFO("Send event in record engine, event attr is %s,"
+          " stream id is %u, inverval second is %u, start time is %u-%u-%u"
+          " end time is %u-%u-%u", name.c_str(), event.periodic_mjpeg.stream_id,
+          event.periodic_mjpeg.interval_second,
+          event.periodic_mjpeg.start_time_hour,
+          event.periodic_mjpeg.start_time_minute,
+          event.periodic_mjpeg.start_time_second,
+          event.periodic_mjpeg.end_time_hour,
+          event.periodic_mjpeg.end_time_minute,
+          event.periodic_mjpeg.end_time_second);
+    } break;
+    case AM_EVENT_STOP_CMD : {
+      name = "AM_EVENT_STOP_CMD";
+      INFO("Send event in record engine, event attr is %s, stream_id is %u",
+           name.c_str(), event.stop_cmd.stream_id);
+    } break;
+    default : {
+      ERROR("Event attr error.");
+    } break;
+  }
+  return sender ? sender->send_event(event) : false;
+}
+
+bool AMRecordEngine::enable_audio_codec(AM_AUDIO_TYPE type,
+                                        uint32_t sample_rate, bool enable)
+{
+  bool ret = false;
+  std::string filter_name;
+  do {
+    AMFilterVector audio_source_vector =
+        get_filter_vector_by_iid(IID_AMIAudioSource);
+    if (audio_source_vector.size() ==0) {
+      ERROR("Failed to get audio source filter.");
+      break;
+    }
+    bool find_filter = false;
+    for (auto &a : audio_source_vector) {
+      if (((AMIAudioSource*)a)->get_audio_sample_rate() == sample_rate) {
+        find_filter = true;
+        if (((AMIAudioSource*)a)->enable_codec(type, enable) == AM_STATE_OK) {
+          ret = true;
+        } else {
+          WARN("Failed to enable codec for audio type %u, sample rate %u",
+                type, sample_rate);
+        }
+      }
+    }
+    if (!find_filter) {
+      ERROR("Proper audio source filters are not found.");
+      break;
+    }
+  } while(0);
+  return ret;
 }
 
 void AMRecordEngine::static_app_msg_callback(void *context, AmMsg& msg)
@@ -245,12 +523,14 @@ void AMRecordEngine::msg_proc(AmMsg& msg)
     const char *name = get_filter_name_by_pointer((AMIInterface*)msg.p0);
     switch(msg.code) {
       case ENG_MSG_ERROR: {
-        NOTICE("Received error message from filter %s!");
+        NOTICE("Received error message from filter %s!",
+               name ? name : "Unknown");
         m_status = AM_RECORD_ENGINE_ERROR;
         post_app_msg(AM_RECORD_MSG_ERROR);
       }break;
       case ENG_MSG_EOS: {
-        /* todo: report EOS of stream */
+        NOTICE("Received EOS message from filter %s!",
+               name ? name : "Unknown");
       }break;
       case ENG_MSG_ABORT: {
         NOTICE("Received abort request from filter %s!",
@@ -292,14 +572,40 @@ bool AMRecordEngine::change_engine_status(
       }break;
       case AM_RECORD_ENGINE_RECORDING: {
         switch(targetStatus) {
-          case AM_RECORD_ENGINE_STOPPED: {
-            ((AMIAudioSource*)get_filter_by_iid(IID_AMIAudioSource))->stop();
-            ((AMIVideoSource*)get_filter_by_iid(IID_AMIVideoSource))->stop();
+          case AM_RECORD_ENGINE_STOPPED:
+          case AM_RECORD_ENGINE_ABORT: {
+            AMFilterVector asrcv =
+                get_filter_vector_by_iid(IID_AMIAudioSource);
+            AMFilterVector vsrcv =
+                get_filter_vector_by_iid(IID_AMIVideoSource);
+            AMIGsensorSource *gsensor_src =
+                (AMIGsensorSource*)get_filter_by_iid(IID_AMIGsensorSource);
+            AMIGpsSource *gps_src =
+                (AMIGpsSource*)get_filter_by_iid(IID_AMIGpsSource);
+            for (auto &a : asrcv) {
+              ((AMIAudioSource*)a)->stop();
+            }
+            for (auto &v : vsrcv) {
+              ((AMIVideoSource*)v)->stop();
+            }
+            if (gsensor_src) {
+              gsensor_src->stop();
+            }
+            if (gps_src) {
+              gps_src->stop();
+            }
             m_status = AM_RECORD_ENGINE_STOPPING;
+            /* Filter's stopping sequence is from the last created filter to
+             * the first created filter;
+             * Filter's creating sequence is defined in engine config ACS file
+             * in "filters" table, the very first one in the "filters" table is
+             * the first created filter.
+             */
             stop_all_filters();
             purge_all_filters();
             m_status = AM_RECORD_ENGINE_STOPPED;
-            post_app_msg(AM_RECORD_MSG_STOP_OK);
+            post_app_msg((targetStatus == AM_RECORD_ENGINE_ABORT) ?
+                AM_RECORD_MSG_ABORT : AM_RECORD_MSG_STOP_OK);
           }break;
           case AM_RECORD_ENGINE_RECORDING: {
             NOTICE("Already recording!");
@@ -314,40 +620,64 @@ bool AMRecordEngine::change_engine_status(
           case AM_RECORD_ENGINE_RECORDING: {
             m_status = AM_RECORD_ENGINE_STARTING;
             if (AM_LIKELY(AM_STATE_OK == run_all_filters())) {
-              AMIAudioSource *asrc =
-                  (AMIAudioSource*)get_filter_by_iid(IID_AMIAudioSource);
-              AMIVideoSource *vsrc =
-                  (AMIVideoSource*)get_filter_by_iid(IID_AMIVideoSource);
-              if (AM_LIKELY(asrc && vsrc)) {
-                ret = ((AM_STATE_OK == asrc->start()) &&
-                       (AM_STATE_OK == vsrc->start()));
-                if (AM_UNLIKELY(!ret)) {
+              AMFilterVector asrcv =
+                  get_filter_vector_by_iid(IID_AMIAudioSource);
+              AMFilterVector vsrcv =
+                  get_filter_vector_by_iid(IID_AMIVideoSource);
+              AMIGsensorSource *gsensor_src =
+                  (AMIGsensorSource*)get_filter_by_iid(IID_AMIGsensorSource);
+              AMIGpsSource *gps_src =
+                  (AMIGpsSource*)get_filter_by_iid(IID_AMIGpsSource);
+              if (AM_UNLIKELY(asrcv.empty() && vsrcv.empty())) {
+                ERROR("Both audio and video source filters are not loaded!");
+                m_status = AM_RECORD_ENGINE_ERROR;
+                post_app_msg(AM_RECORD_MSG_ERROR);
+              } else {
+                bool audio_ok = false;
+                bool video_ok = false;
+                for (auto &a : asrcv) {
+                  audio_ok = ((AM_STATE_OK == ((AMIAudioSource*)a)->start()) ||
+                              audio_ok);
+                }
+                for (auto &v : vsrcv) {
+                  video_ok = ((AM_STATE_OK == ((AMIVideoSource*)v)->start()) ||
+                              video_ok);
+                }
+
+                if (gsensor_src) {
+                  if (AM_STATE_OK != gsensor_src->start()) {
+                    ERROR("Failed to start gsensor source filter");
+                  }
+                }
+                if (gps_src) {
+                  if (AM_STATE_OK != gps_src->start()) {
+                    ERROR("Failed to start gps source filter");
+                  }
+                }
+                if (AM_LIKELY(!asrcv.empty() && !audio_ok)) {
+                  ERROR("Failed to start audio source!");
+                }
+                if (AM_LIKELY(!vsrcv.empty() && !video_ok)) {
+                  ERROR("Failed to start video source!");
+                }
+                if (AM_UNLIKELY((!asrcv.empty() && !audio_ok) ||
+                                (!vsrcv.empty() && !video_ok))) {
                   m_status = AM_RECORD_ENGINE_ERROR;
                   post_app_msg(AM_RECORD_MSG_ERROR);
-                  ret = true;
                 } else {
                   m_status = AM_RECORD_ENGINE_RECORDING;
                   post_app_msg(AM_RECORD_MSG_START_OK);
                 }
-              } else {
-                if (AM_LIKELY(!asrc)) {
-                  ERROR("Failed to get filter(IID_AMIAudioSource)!");
-                }
-                if (AM_LIKELY(!vsrc)) {
-                  ERROR("Failed to get filter(IID_AMIVideoSource)!");
-                }
-                m_status = AM_RECORD_ENGINE_STOPPED;
-                ret = false;
               }
             } else {
               ERROR("Failed to run all filters!");
               m_status = AM_RECORD_ENGINE_ERROR;
-              ret = true;
             }
           }break;
           case AM_RECORD_ENGINE_STOPPED: {
             NOTICE("Already stopped!");
           }break;
+          case AM_RECORD_ENGINE_ABORT:
           default: {
             ERROR("Invalid operation when engine is stopped!");
             m_status = AM_RECORD_ENGINE_ERROR;
@@ -410,15 +740,14 @@ bool AMRecordEngine::change_engine_status(
 }
 
 AMRecordEngine::AMRecordEngine() :
-    m_lock(NULL),
-    m_config(NULL),
-    m_engine_config(NULL),
-    m_engine_filter(NULL),
-    m_app_data(NULL),
-    m_thread(NULL),
-    m_event(NULL),
-    m_sem(NULL),
-    m_app_callback(NULL),
+    m_config(nullptr),
+    m_engine_config(nullptr),
+    m_engine_filter(nullptr),
+    m_app_data(nullptr),
+    m_thread(nullptr),
+    m_event(nullptr),
+    m_sem(nullptr),
+    m_app_callback(nullptr),
     m_status(AMIRecordEngine::AM_RECORD_ENGINE_STOPPED),
     m_graph_created(false),
     m_mainloop_run(false)
@@ -429,11 +758,10 @@ AMRecordEngine::AMRecordEngine() :
 
 AMRecordEngine::~AMRecordEngine()
 {
-  send_engine_cmd(AM_ENGINE_CMD_EXIT, false);
+  send_engine_cmd(AM_ENGINE_CMD_EXIT);
   clear_graph();/* Must be called in the destructor of sub-class */
   delete m_config;
   delete[] m_engine_filter;
-  AM_DESTROY(m_lock);
   AM_DESTROY(m_thread);
   AM_DESTROY(m_event);
   AM_DESTROY(m_sem);
@@ -451,14 +779,10 @@ AM_STATE AMRecordEngine::init(const std::string& config)
   AM_STATE state = AM_STATE_ERROR;
 
   do {
-    if (AM_UNLIKELY(pipe(m_msg_ctrl) == -1)) {
-      PERROR("pipe");
+    if (AM_UNLIKELY(socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP,
+                               m_msg_ctrl) < 0)) {
+      PERROR("socketpair");
       state = AM_STATE_ERROR;
-      break;
-    }
-    m_lock = AMSpinLock::create();
-    if (AM_UNLIKELY(NULL == m_lock)) {
-      ERROR("Failed to create spin lock!");
       break;
     }
     m_event = AMEvent::create();
@@ -519,6 +843,7 @@ AM_STATE AMRecordEngine::init(const std::string& config)
 AM_STATE AMRecordEngine::load_all_filters()
 {
   AM_STATE state = AM_STATE_OK;
+  uint32_t next_audio_stream_id_base = 0;
 
   delete[] m_engine_filter;
   m_engine_filter = new EngineFilter[m_engine_config->filter_num];
@@ -551,6 +876,12 @@ AM_STATE AMRecordEngine::load_all_filters()
                   m_engine_filter[i].filter.c_str());
             state = AM_STATE_ERROR;
             break;
+          }
+          AMIAudioSource *asrc = ((AMIAudioSource*)m_engine_filter[i].\
+              filter_obj->get_interface(IID_AMIAudioSource));
+          if (AM_LIKELY(asrc)) {
+            asrc->set_stream_id(next_audio_stream_id_base);
+            next_audio_stream_id_base += asrc->get_audio_number();
           }
         } else {
           ERROR("Invalid filter plugin: %s", filter.c_str());
@@ -637,6 +968,19 @@ void* AMRecordEngine::get_filter_by_iid(AM_REFIID iid)
   return filter;
 }
 
+AMFilterVector AMRecordEngine::get_filter_vector_by_iid(AM_REFIID iid)
+{
+  AMFilterVector filter_vector;
+  for (uint32_t i = 0; i < m_engine_config->filter_num; ++ i) {
+    void *filter = m_engine_filter[i].filter_obj->get_interface(iid);
+    if (AM_LIKELY(filter)) {
+      filter_vector.push_back(filter);
+    }
+  }
+
+  return filter_vector;
+}
+
 void AMRecordEngine::static_mainloop(void *data)
 {
   ((AMRecordEngine*)data)->mainloop();
@@ -645,16 +989,31 @@ void AMRecordEngine::static_mainloop(void *data)
 void AMRecordEngine::mainloop()
 {
   fd_set fdset;
+  sigset_t mask;
+  sigset_t mask_orig;
+
   int maxfd = MSG_R;
+
+  /* Block out interrupts */
+  sigemptyset(&mask);
+  sigaddset(&mask, SIGINT);
+  sigaddset(&mask, SIGTERM);
+  sigaddset(&mask, SIGQUIT);
+
+  if (AM_UNLIKELY(sigprocmask(SIG_BLOCK, &mask, &mask_orig) < 0)) {
+    PERROR("sigprocmask");
+  }
   m_mainloop_run = true;
   m_sem->signal();
 
-  while(m_mainloop_run) {
+  while(m_mainloop_run.load()) {
     char cmd[1] = {0};
     FD_ZERO(&fdset);
     FD_SET(MSG_R, &fdset);
 
-    if (AM_LIKELY(select(maxfd + 1, &fdset, NULL, NULL, NULL) > 0)) {
+    if (AM_LIKELY(pselect(maxfd + 1, &fdset,
+                          nullptr, nullptr,
+                          nullptr, &mask) > 0)) {
       if (AM_LIKELY(FD_ISSET(MSG_R, &fdset))) {
         if (AM_UNLIKELY(read(MSG_R, cmd, 1) < 0)) {
           ERROR("Failed to read command! ABORT!");
@@ -670,7 +1029,7 @@ void AMRecordEngine::mainloop()
     switch(cmd[0]) {
       case AM_ENGINE_CMD_ABORT : {
         DEBUG("Received ABORT!");
-        change_engine_status(AM_RECORD_ENGINE_STOPPED);
+        change_engine_status(AM_RECORD_ENGINE_ABORT);
         m_mainloop_run = false;
       }break;
       case AM_ENGINE_CMD_START : {
@@ -693,7 +1052,7 @@ void AMRecordEngine::mainloop()
 
 bool AMRecordEngine::send_engine_cmd(AM_RECORD_ENGINE_CMD cmd, bool block)
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   bool ret = true;
   char command = cmd;
   if (AM_UNLIKELY(write(MSG_W, &command, sizeof(command)) != sizeof(command))) {
@@ -715,3 +1074,4 @@ bool AMRecordEngine::send_engine_cmd(AM_RECORD_ENGINE_CMD cmd, bool block)
 
   return ret;
 }
+

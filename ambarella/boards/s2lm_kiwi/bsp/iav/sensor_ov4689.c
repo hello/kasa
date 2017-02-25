@@ -4,13 +4,33 @@
  * History:
  *    2014/08/11 - [Cao Rongrong] created file
  *
- * Copyright (C) 2012-2016, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 
 struct vin_reg_16_8 {
 	u16 addr;
@@ -443,7 +463,7 @@ static h264_encode_t h264_encode = {
 	.res_rate_min = 40,
 	.alpha = 0,
 	.beta = 0,
-	.en_loop_filter = 2,
+	.en_loop_filter = 1,
 	.max_upsampling_rate = 1,
 	.slow_shutter_upsampling_rate = 0,
 	.frame_cropping_flag = 1,
@@ -558,11 +578,11 @@ static ipcam_real_time_encode_param_setup_t ipcam_real_time_encode_param_setup =
 	.user3_direct_bias = 0,
 };
 
-#if defined(AMBOOT_IAV_DEBUG_DSP_CMD)
+#if defined(CONFIG_S2LMKIWI_DSP_LOG_CAPTURE)
 static dsp_debug_level_setup_t dsp_debug_level_setup =  {
 	.cmd_code = DSP_DEBUG_LEVEL_SETUP,
 	.module = 0,
-	.debug_level = 3,
+	.debug_level = 1,
 	.coding_thread_printf_disable_mask = 0
 };
 #endif
@@ -646,19 +666,58 @@ static inline void prepare_vin_vout_dsp_cmd(void)
 #endif
 }
 
+#ifdef CONFIG_S2LMKIWI_ENABLE_ADVANCED_ISO_MODE
+static inline void prepare_adv_iso_dsp_cmd(void)
+{
+#if defined(CONFIG_ISO_TYPE_MIDDLE)
+	system_setup_info.adv_iso_disabled = 1;
+#elif defined(CONFIG_ISO_TYPE_ADVANCED)
+	system_setup_info.adv_iso_disabled = 0;
+#endif
+	system_setup_info.mode_flags = 4;
+	video_preprocessing.Vert_WARP_enable = 1;
+	video_preprocessing.still_iso_config_daddr = (u32)DSP_STILL_ISO_CONFIG_START;
+	ipcam_video_system_setup.vwarp_blk_h = 59;
+	ipcam_video_system_setup.max_padding_width = 256;
+}
+#endif
+
+#ifdef CONFIG_S2LMKIWI_DSP_VCA
+static inline void prepare_vca_dump_cmd(void)
+{
+	ipcam_video_system_setup.preview_C_max_width = 352;
+	ipcam_video_system_setup.preview_C_max_height = 288;
+	ipcam_video_system_setup.vca_preview_id = 3;
+	ipcam_video_system_setup.vca_frame_num = 32;
+	ipcam_video_system_setup.vca_daddr_base = DSP_VCA_START;
+	ipcam_video_system_setup.vca_daddr_size = DSP_VCA_SIZE;
+	ipcam_video_capture_preview_size_setup.skip_interval = 0;
+	ipcam_video_capture_preview_size_setup.cap_width = 352;
+	ipcam_video_capture_preview_size_setup.cap_height = 288;
+
+	memset((void *)DSP_VCA_START, DSP_FASTDATA_INVALID, DSP_VCA_SIZE);
+}
+#endif
+
 static int iav_boot_preview(void)
 {
 	prepare_vin_vout_dsp_cmd();
+#ifdef CONFIG_S2LMKIWI_ENABLE_ADVANCED_ISO_MODE
+	prepare_adv_iso_dsp_cmd();
+#endif
+#ifdef CONFIG_S2LMKIWI_DSP_VCA
+	prepare_vca_dump_cmd();
+#endif
 
 	/* preview setup */
 	add_dsp_cmd(&chip_selection, sizeof(chip_selection));//NO
 	add_dsp_cmd(&system_setup_info, sizeof(system_setup_info));//YES
 	add_dsp_cmd(&set_vin_global_clk, sizeof(set_vin_global_clk));//YES
-	add_dsp_cmd(&set_vin_config, sizeof(set_vin_config));//NO
+	add_dsp_cmd(&set_vin_config, sizeof(set_vin_config));//YES
 	add_dsp_cmd(&set_vin_master_clk, sizeof(set_vin_master_clk));//NO
 	add_dsp_cmd(&sensor_input_setup, sizeof(sensor_input_setup));//NO
 	add_dsp_cmd(&video_preprocessing, sizeof(video_preprocessing));//YES
-	add_dsp_cmd(&set_warp_control, sizeof(set_warp_control));//NO
+	add_dsp_cmd(&set_warp_control, sizeof(set_warp_control));//YES
 	add_dsp_cmd(&ipcam_video_system_setup, sizeof(ipcam_video_system_setup));//YES
 	add_dsp_cmd(&ipcam_video_capture_preview_size_setup,
 		sizeof(ipcam_video_capture_preview_size_setup));// YES
@@ -676,12 +735,15 @@ static int iav_boot_encode(void)
 	add_dsp_cmd(&h264_encode, sizeof(h264_encode));//YES
 	add_dsp_cmd(&ipcam_real_time_encode_param_setup,
 		sizeof(ipcam_real_time_encode_param_setup));//YES
-
-#if defined(AMBOOT_IAV_DEBUG_DSP_CMD)
-	add_dsp_cmd(&dsp_debug_level_setup, sizeof(dsp_debug_level_setup));
-#endif
-
 	putstr_debug("iav_boot_encode");
 	return 0;
 }
+
+#if defined(CONFIG_S2LMKIWI_DSP_LOG_CAPTURE)
+static int iav_boot_dsplog(void)
+{
+	add_dsp_cmd(&dsp_debug_level_setup, sizeof(dsp_debug_level_setup));
+	return 0;
+}
+#endif
 

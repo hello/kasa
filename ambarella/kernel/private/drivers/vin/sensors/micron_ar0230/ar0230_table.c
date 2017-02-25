@@ -4,14 +4,33 @@
  * History:
  *    2014/11/18 - [Long Zhao] Create
  *
- * Copyright (C) 2004-2014, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 static struct vin_reg_16_16 ar0230_pll_regs[][6] = {
 	{
 		{0x302A, 0x0006}, /* VT_PIX_CLK_DIV  */
@@ -94,7 +113,11 @@ static struct vin_video_format ar0230_formats[] = {
 		.def_start_x	= 0,
 		.def_start_y	= 0,
 		.def_width	= 1920,
-		.def_height	= 1153 * 2,/* (1080+max T2+2) * 2 */
+#if USE_4X_RATIO
+		.def_height	= (1080+188+2)*2,/* (1080+max_T2+2)*2 */
+#else
+		.def_height	= (1080+74+2)*2,/* (1080+max_T2+2)*2 */
+#endif
 		.act_start_x	= 0,
 		.act_start_y	= 0,
 		.act_width	= 1920,
@@ -369,7 +392,6 @@ static struct vin_reg_16_16 ar0230_linear_share_regs[] = {
 
 static struct vin_reg_16_16 ar0230_hdr_share_regs[] = {
 	/* HDR 1080p30fps */
-	{0x301A, 0x0059}, /* RESET_REGISTER */
 	{0x3088, 0x8000}, /* SEQ_CTRL_PORT */
 	{0x3086, 0x4558}, /* SEQ_DATA_PORT */
 	{0x3086, 0x729B}, /* SEQ_DATA_PORT */
@@ -744,31 +766,6 @@ static struct vin_reg_16_16 ar0230_hdr_share_regs[] = {
 };
 
 static struct vin_reg_16_16 ar0230_2x_hdr_share_regs[] = {
-	{0x2436, 0x000E},
-	{0x320C, 0x0180},
-	{0x320E, 0x0300},
-	{0x3210, 0x0500},
-	{0x3204, 0x0B6D},
-	{0x30FE, 0x0080},
-	{0x3ED8, 0x7B99},
-	{0x3EDC, 0x9BA8},
-	{0x3EDA, 0x9B9B},
-	{0x3092, 0x006F},
-	{0x3EEC, 0x1C04},
-	{0x30BA, 0x779C},
-	{0x3EF6, 0xA70F},
-	{0x3044, 0x0410},
-	{0x3ED0, 0xFF44},
-	{0x3ED4, 0x031F},
-	{0x30FE, 0x0080},
-	{0x3EE2, 0x8866},
-	{0x3EE4, 0x6623},
-	{0x3EE6, 0x2263},
-	{0x30E0, 0x4283},
-	{0x30F0, 0x1283},
-	{0x30B0, 0x0000}, /* DIGITAL_TEST, 0x0000 */
-	{0x31AC, 0x100C}, /* DATA_FORMAT_BITS */
-	{0x301A, 0x0059},
 	{0x3088, 0x8000},
 	{0x3086, 0x4558},
 	{0x3086, 0x729B},
@@ -1055,14 +1052,65 @@ static struct vin_reg_16_16 ar0230_2x_hdr_share_regs[] = {
 	{0x3086, 0x444B},
 	{0x3086, 0x2C2C},
 	{0x3086, 0x2C2C},
+
+	{0x3ED6, 0x34B3},
+	{0x2436, 0x000E},
+	{0x320C, 0x0180},
+	{0x320E, 0x0300},
+	{0x3210, 0x0500},
+	{0x3204, 0x0B6D},
+	{0x30FE, 0x0080},
+	{0x3ED8, 0x7B99},
+	{0x3EDC, 0x9BA8},
+	{0x3EDA, 0x9B9B},
+	{0x3092, 0x006F},
+	{0x3EEC, 0x1C04},
+	{0x30BA, 0x779C},
+	{0x3EF6, 0xA70F},
+	{0x3044, 0x0410},
+	{0x3ED0, 0xFF44},
+	{0x3ED4, 0x031F},
+	{0x30FE, 0x0080},
+	{0x3EE2, 0x8866},
+	{0x3EE4, 0x6623},
+	{0x3EE6, 0x2263},
+	{0x30E0, 0x4283},
+	{0x30F0, 0x1283},
+	{0x3176, 0xFF80},
+	{0x3178, 0xFF80},
+	{0x317A, 0xFF80},
+	{0x317C, 0xFF80},
+	{0x3FD8, 0x0045},
+	{0x301A, 0x0058},
+	{0x30B0, 0x0118}, /* DIGITAL_TEST */
+	{0x31AC, 0x100C}, /* DATA_FORMAT_BITS */
+
+	{0x3002, 0x0000}, /* y_addr_start */
+	{0x3004, 0x0000}, /* x_addr_start */
+	{0x3006, 0x0437}, /* y_addr_end, 1079 */
+	{0x3008, 0x0787}, /* x_addr_end, 1927 */
+	{0x300A, 1271  }, /* 0x0489(1161) FRAME_LENGTH_LINES */
+	{0x300C, 1948  }, /* 0x07F0(2032) LINE_LENGTH_PCK */
+	{0x3012, 655   }, /* 0x0416(1046)coarse_integration_time */
+	{0x30A2, 0x0001}, /* x_odd_inc */
+	{0x30A6, 0x0001}, /* y_odd_inc */
+	{0x30AE, 0x0001}, /* x_odd_inc_cb */
+	{0x30A8, 0x0001}, /* y_odd_inc_cb */
+
+	{0x3040, 0x0000}, /* read mode */
+#if USE_4X_RATIO
+	{0x3082, 0x0000}, /* HDR 4x; 0: 4x; 4: 8x; 8: 16x; C: 32x */
+#else
 	{0x3082, 0x0008}, /* HDR 16x; 0: 4x; 4: 8x; 8: 16x; C: 32x */
+#endif
+	{0x31E0, 0x0200},
 	{0x2420, 0x0000},
 	{0x2440, 0x0004},
 	{0x2442, 0x0080},
-	{0x301E, 0x0000},
+	{0x301E, 0x00A8}, /* DATA_PEDESTAL */
 	{0x2450, 0x0000},
 	{0x320A, 0x0080},
-	{0x31D0, 0x0000},
+	{0x31D0, 0x0000}, /* COMPANDING */
 	{0x2400, 0x0002},
 	{0x2410, 0x0005},
 	{0x2412, 0x002D},
@@ -1075,48 +1123,45 @@ static struct vin_reg_16_16 ar0230_2x_hdr_share_regs[] = {
 	{0x3206, 0x0B08},
 	{0x3208, 0x1E13},
 	{0x3202, 0x0080},
-	{0x3200, 0x02  },
+	{0x3200, 0x0002},
 	{0x3190, 0x0000},
 	{0x318A, 0x0E74},
 	{0x318C, 0xC000},
+	{0x318E, 0x0200}, /* HDR_MC_CTRL3 */
 	{0x3192, 0x0400},
 	{0x3198, 0x183C},
 	{0x3060, 0x000B},
-	{0x3096, 0x0480},
-	{0x3098, 0x0480},
-	{0x3206, 0x0B08},
-	{0x3208, 0x1E13},
-	{0x3202, 0x0080},
-	{0x3200, 0x02  },
+	{0x3096, 0x0480}, /* ROW_NOISE_ADJUST_TOP */
+	{0x3098, 0x0480}, /* ROW_NOISE_ADJUST_BTM */
+	{0x3206, 0x0B08}, /* ADACD_NOISE_FLOOR1 */
+	{0x3208, 0x1E13}, /* ADACD_NOISE_FLOOR2 */
+	{0x3202, 0x0080}, /* ADACD_NOISE_MODEL1 */
+	{0x3200, 0x0002}, /* ADACD_CONTROL */
 	{0x3100, 0x0000}, /* DCG off */
+	{0x30BA, 0x779C}, /* DIGITAL_CTRL */
+
+	{0x318E, 0x0200}, /* HDR_MC_CTRL3 */
+	{0x3064, 0x1982}, /* SMIA_TEST */
 	{0x31AE, 0x0304}, /* HiSpi 4 lane */
 	{0x31C6, 0x8002}, /* HiSpi Steraming-S, 0x0402:HiSpi protocol Packetized-SP; MSB output */
-	{0x306E, 0x9010}, /* datapath_select */
-	{0x301A, 0x0058},
-	{0x318C, 0x0000},
-	{0x3200, 0x0000}, /* ADACD_CONTROL */
-	{0x31D0, 0x0000}, /* COMPANDING */
-	{0x2400, 0x0003},
-	{0x301E, 0x00A8},
-	{0x2450, 0x0000},
-	{0x320A, 0x0080},
-
-	{0x3004, 0x0000}, /* x_addr_start */
-	{0x3008, 0x0787}, /* x_addr_end, 1927 */
-	{0x3002, 0x0000}, /* y_addr_start */
-	{0x3006, 0x0437}, /* y_addr_end, 1079 */
-	{0x30A2, 0x0001}, /* x_odd_inc */
-	{0x30A6, 0x0001}, /* y_odd_inc */
-	{0x3040, 0x0000}, /* read mode */
-	{0x300A, 1222  }, /* 1125 FRAME_LENGTH_LINES Venkatesh 1180 */
-	{0x300C, 2024  }, /* 2200 2032 LINE_LENGTH_PCK Venkatesh */
-	{0x3012, 655   }, /* coarse_integration_time */
-	{0x305E, 0x0085}, /* min sesnor digital gain 1.04x */
-	{0x301A, 0x0058}, /* RESET_REGISTER */
+	{0x306E, 0x9010}, /* 0x9210, datapath_select, SLVS mode of HiSPi */
 	{0x3064, 0x1802}, /* SMIA_TEST */
 	{0x318E, 0x1200}, /* HDR_MC_CTRL3 */
 	{0x301A, 0x005C}, /* RESET_REGISTER */
 };
+
+#ifdef CONFIG_PM
+static struct vin_reg_16_16 pm_regs[] = {
+	{AR0230_COARSE_INTEGRATION_TIME, 0x0000},
+	{AR0230_AGAIN, 0x0000},
+	{AR0230_DGAIN, 0x0000},
+	{AR0230_DCG_CTL, 0x0000},
+	{AR0230_GR_GAIN, 0x0000},
+	{AR0230_GB_GAIN, 0x0000},
+	{AR0230_R_GAIN, 0x0000},
+	{AR0230_B_GAIN, 0x0000},
+};
+#endif
 
 /** AR0230 global gain table row size */
 #define AR0230_GAIN_ROWS		475

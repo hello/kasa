@@ -38,7 +38,7 @@
 #endif
 
 /* ==========================================================================*/
-#if (CHIP_REV == S2L) || (CHIP_REV == S3)
+#if (CHIP_REV == S2L) || (CHIP_REV == S3) || (CHIP_REV == S3L)
 #define RTC_OFFSET			0x15000
 #else
 #define RTC_OFFSET			0xD000

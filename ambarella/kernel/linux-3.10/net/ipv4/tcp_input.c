@@ -68,12 +68,18 @@
 #include <linux/module.h>
 #include <linux/sysctl.h>
 #include <linux/kernel.h>
+#include <linux/reciprocal_div.h>
 #include <net/dst.h>
 #include <net/tcp.h>
 #include <net/inet_common.h>
 #include <linux/ipsec.h>
 #include <asm/unaligned.h>
 #include <net/netdma.h>
+
+#ifdef CONFIG_WLAN_UPDATE_SEQ
+extern struct sock_sequence_update ipv4_update;
+struct tcphdr th_copy;
+#endif
 
 int sysctl_tcp_timestamps __read_mostly = 1;
 int sysctl_tcp_window_scaling __read_mostly = 1;
@@ -87,7 +93,7 @@ int sysctl_tcp_adv_win_scale __read_mostly = 1;
 EXPORT_SYMBOL(sysctl_tcp_adv_win_scale);
 
 /* rfc5961 challenge ack rate limiting */
-int sysctl_tcp_challenge_ack_limit = 100;
+int sysctl_tcp_challenge_ack_limit = 1000;
 
 int sysctl_tcp_stdurg __read_mostly;
 int sysctl_tcp_rfc1337 __read_mostly;
@@ -3076,10 +3082,11 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 			if (seq_rtt < 0) {
 				seq_rtt = ca_seq_rtt;
 			}
-			if (!(sacked & TCPCB_SACKED_ACKED))
+			if (!(sacked & TCPCB_SACKED_ACKED)) {
 				reord = min(pkts_acked, reord);
-			if (!after(scb->end_seq, tp->high_seq))
-				flag |= FLAG_ORIG_SACK_ACKED;
+				if (!after(scb->end_seq, tp->high_seq))
+					flag |= FLAG_ORIG_SACK_ACKED;
+			}
 		}
 
 		if (sacked & TCPCB_SACKED_ACKED)
@@ -3287,12 +3294,19 @@ static void tcp_send_challenge_ack(struct sock *sk)
 	static u32 challenge_timestamp;
 	static unsigned int challenge_count;
 	u32 now = jiffies / HZ;
+	u32 count;
 
 	if (now != challenge_timestamp) {
+		u32 half = (sysctl_tcp_challenge_ack_limit + 1) >> 1;
+
 		challenge_timestamp = now;
-		challenge_count = 0;
+		ACCESS_ONCE(challenge_count) = half +
+				  reciprocal_divide(prandom_u32(),
+					sysctl_tcp_challenge_ack_limit);
 	}
-	if (++challenge_count <= sysctl_tcp_challenge_ack_limit) {
+	count = ACCESS_ONCE(challenge_count);
+	if (count > 0) {
+		ACCESS_ONCE(challenge_count) = count - 1;
 		NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPCHALLENGEACK);
 		tcp_send_ack(sk);
 	}
@@ -5105,13 +5119,29 @@ discard:
  *	the rest is checked inline. Fast processing is turned on in
  *	tcp_data_queue when everything is OK.
  */
+
+#ifndef CONFIG_WLAN_UPDATE_SEQ
 int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			const struct tcphdr *th, unsigned int len)
+#else
+int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
+			const struct tcphdr *t, unsigned int len)
+#endif
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
+#ifdef CONFIG_WLAN_UPDATE_SEQ
+	struct tcphdr *th = &th_copy;
+	memcpy(th, t, sizeof(struct tcphdr));
+	if (sk == ipv4_update.sock) {
+		th->seq -= ipv4_update.ack_offset;
+		th->ack_seq -= ipv4_update.seq_offset;
+	}
+#endif
+
 	if (unlikely(sk->sk_rx_dst == NULL))
 		inet_csk(sk)->icsk_af_ops->sk_rx_dst_set(sk, skb);
+
 	/*
 	 *	Header prediction.
 	 *	The code loosely follows the one in the famous
@@ -5574,6 +5604,7 @@ discard:
 		}
 
 		tp->rcv_nxt = TCP_SKB_CB(skb)->seq + 1;
+		tp->copied_seq = tp->rcv_nxt;
 		tp->rcv_wup = TCP_SKB_CB(skb)->seq + 1;
 
 		/* RFC1323: The window in SYN & SYN/ACK segments is
@@ -5629,13 +5660,27 @@ reset_and_undo:
  *	address independent.
  */
 
+#ifndef CONFIG_WLAN_UPDATE_SEQ
 int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 			  const struct tcphdr *th, unsigned int len)
+#else
+int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
+			  const struct tcphdr *t, unsigned int len)
+#endif
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct request_sock *req;
 	int queued = 0;
+
+#ifdef CONFIG_WLAN_UPDATE_SEQ
+	struct tcphdr *th = &th_copy;
+	memcpy(th, t, sizeof(struct tcphdr));
+	if (sk == ipv4_update.sock) {
+		th->seq -= ipv4_update.ack_offset;
+		th->ack_seq -= ipv4_update.seq_offset;
+	}
+#endif
 
 	tp->rx_opt.saw_tstamp = 0;
 

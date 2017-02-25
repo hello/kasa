@@ -4,12 +4,29 @@
  * History:
  *	2013/09/04 - [Cao Rongrong] Created file
  *
- * Copyright (C) 2012-2016, Ambarella, Inc.
+ * Copyright (C) 2015 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -51,6 +68,17 @@ enum amba_vindev_bayer_pattern_e {
 	VINDEV_BAYER_PATTERN_BG			= 1,
 	VINDEV_BAYER_PATTERN_GR			= 2,
 	VINDEV_BAYER_PATTERN_GB			= 3,
+	/* RGB/IR CFA, IR instead of B */
+	VINDEV_BAYER_PATTERN_RG_GI		= 4,
+	VINDEV_BAYER_PATTERN_IG_GR		= 5,
+	VINDEV_BAYER_PATTERN_GR_IG		= 6,
+	VINDEV_BAYER_PATTERN_GI_RG		= 7,
+	/* RGB/IR CFA, IR instead of R */
+	VINDEV_BAYER_PATTERN_BG_GI		= 8,
+	VINDEV_BAYER_PATTERN_IG_GB		= 9,
+	VINDEV_BAYER_PATTERN_GB_IG		= 10,
+	VINDEV_BAYER_PATTERN_GI_BG		= 11,
+
 	VINDEV_BAYER_PATTERN_AUTO		= 255,
 };
 
@@ -111,6 +139,8 @@ enum {
 	SENSOR_IMX185				= 0x00003011,
 	SENSOR_IMX226				= 0x00003012,
 	SENSOR_IMX290				= 0x00003013,
+	SENSOR_IMX274				= 0x00003014,
+	SENSOR_IMX326				= 0x00003015,
 
 	/* Panasonic Sensor */
 	SENSOR_MN34041PL			= 0x00004000,
@@ -118,12 +148,16 @@ enum {
 	SENSOR_MN34220PL			= 0x00004002,
 	SENSOR_MN34210PL			= 0x00004003,
 	SENSOR_MN34227PL			= 0x00004004,
+	SENSOR_MN34420PL			= 0x00004005,
 
 	/*altera fpga vin in*/
 	SENSOR_ALTERA_FPGA			= 0x00005000,
 
 	/* Dummy Sensor */
 	SENSOR_AMBDS				= 0x00006000,
+
+	/* Customized Sensor */
+	SENSOR_CUSTOM_FIRST			= 0x00010000,
 
 	/* ADI Decoder */
 	DECODER_ADV7403				= 0x80000000,
@@ -227,21 +261,11 @@ struct vindev_reg {
 
 struct vindev_eisinfo {
 	unsigned int vsrc_id;
-	unsigned short cap_start_x;
-	unsigned short cap_start_y;
-	unsigned short cap_cap_w;
-	unsigned short cap_cap_h;
-	unsigned short source_width;
-	unsigned short source_height;
-	unsigned int current_fps;
-	unsigned int main_fps;
-	unsigned int current_shutter_time;
-	unsigned int row_time;
-	unsigned short vb_lines;
-	unsigned short sensor_cell_width;
-	unsigned short sensor_cell_height;
-	unsigned char column_bin;
-	unsigned char row_bin;
+	unsigned int vb_time; // ns
+	unsigned short sensor_cell_width; // um * 100
+	unsigned short sensor_cell_height; // um * 100
+	unsigned char column_bin; // binning pixels
+	unsigned char row_bin; // binning pixels
 };
 
 struct vindev_wdr_gain_info {
@@ -263,6 +287,9 @@ struct vindev_aaa_info {
 	unsigned int dual_gain_mode;
 	unsigned int line_time;
 	unsigned int vb_time;
+	unsigned int sht0_max;
+	unsigned int sht1_max;
+	unsigned int sht2_max;
 };
 
 struct vindev_dgain_ratio {

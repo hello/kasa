@@ -5,14 +5,33 @@
  *	2012/10/10 - [Cao Rongrong] created file
  *	2013/12/12 - [Jian Tang] modified file
  *
- * Copyright (C) 2012-2016, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 #include <config.h>
 #include <linux/module.h>
 #include <linux/ambpriv_device.h>
@@ -33,6 +52,7 @@
 #include <vout_api.h>
 #include <dsp_api.h>
 #include <vin_api.h>
+#include <dsplog_api.h>
 #include "iav.h"
 #include "iav_vin.h"
 #include "iav_vout.h"
@@ -47,12 +67,13 @@
 #endif
 
 struct amba_iav_vout_info G_voutinfo[] = {{0, 0,}, {0, 0,}};
+static struct iav_imgproc_info G_img_info;
 
 static int iav_state_proc_show(struct seq_file *m, void *v)
 {
 	struct ambarella_iav *iav;
 	struct iav_state_info info;
-	int chip, rval = 0;
+	int chip;
 
 	iav = (struct ambarella_iav *)m->private;
 
@@ -73,27 +94,30 @@ static int iav_state_proc_show(struct seq_file *m, void *v)
 	case AMBA_CHIP_ID_S2L_55M:
 	case AMBA_CHIP_ID_S2L_99M:
 	case AMBA_CHIP_ID_S2L_TEST:
-		rval += seq_printf(m, "AMBARELLA_CHIP=S2LM\n");
+	case AMBA_CHIP_ID_S2L_33MEX:
+		seq_printf(m, "AMBARELLA_CHIP=S2LM\n");
 		break;
 	case AMBA_CHIP_ID_S2L_63:
 	case AMBA_CHIP_ID_S2L_66:
 	case AMBA_CHIP_ID_S2L_88:
 	case AMBA_CHIP_ID_S2L_99:
-		rval += seq_printf(m, "AMBARELLA_CHIP=S2L\n");
+	case AMBA_CHIP_ID_S2L_22:
+	case AMBA_CHIP_ID_S2L_33EX:
+		seq_printf(m, "AMBARELLA_CHIP=S2L\n");
 		break;
 	default:
-		rval += seq_printf(m, "AMBARELLA_CHIP=UNKNOWN\n");
+		seq_printf(m, "AMBARELLA_CHIP=UNKNOWN\n");
 		break;
 	}
-	rval += seq_printf(m, "dsp_op_mode: %d\n", info.dsp_op_mode);
-	rval += seq_printf(m, "dsp_encode_state: %d\n", info.dsp_encode_state);
-	rval += seq_printf(m, "dsp_encode_mode: %d\n", info.dsp_encode_mode);
-	rval += seq_printf(m, "dsp_decode_state: %d\n", info.dsp_decode_state);
-	rval += seq_printf(m, "decode_state: %d\n", info.decode_state);
-	rval += seq_printf(m, "encode timecode: %d\n", info.encode_timecode);
-	rval += seq_printf(m, "encode pts: %d\n", info.encode_pts);
+	seq_printf(m, "dsp_op_mode: %d\n", info.dsp_op_mode);
+	seq_printf(m, "dsp_encode_state: %d\n", info.dsp_encode_state);
+	seq_printf(m, "dsp_encode_mode: %d\n", info.dsp_encode_mode);
+	seq_printf(m, "dsp_decode_state: %d\n", info.dsp_decode_state);
+	seq_printf(m, "decode_state: %d\n", info.decode_state);
+	seq_printf(m, "encode timecode: %d\n", info.encode_timecode);
+	seq_printf(m, "encode pts: %d\n", info.encode_pts);
 
-	return rval;
+	return 0;
 }
 
 static int iav_state_proc_open(struct inode *inode, struct file *file)
@@ -127,35 +151,35 @@ static int iav_img_ioctl(struct ambarella_iav *iav, unsigned int cmd, unsigned l
 	int rval = 0, enc_mode;
 	struct iav_rect * vin;
 	struct iav_system_config *config;
-	struct iav_imgproc_info info;
+	struct iav_imgproc_info *info;
 
-	memset(&info, 0, sizeof(info));
+	info = &G_img_info;
 
 	get_vin_win(iav, &vin, 1);
 
 	mutex_lock(&iav->iav_mutex);
 	enc_mode = iav->encode_mode;
 	config = &iav->system_config[enc_mode];
-	info.iav_state = iav->state;
-	info.vin_num = 1;
-	info.hdr_expo_num = config->expo_num;
-	info.cap_width = vin->width;
-	info.cap_height = vin->height;
-	info.hdr_mode = get_hdr_type(iav);
-	info.img_size = iav->mmap[IAV_BUFFER_IMG].size;
-	info.img_virt = iav->mmap[IAV_BUFFER_IMG].virt;
-	info.img_phys = iav->mmap[IAV_BUFFER_IMG].phys;
-	info.img_config_offset = IAV_DRAM_IMG_OFFET;
+	info->iav_state = iav->state;
+	info->vin_num = 1;
+	info->hdr_expo_num = config->expo_num;
+	info->cap_width = vin->width;
+	info->cap_height = vin->height;
+	info->hdr_mode = get_hdr_type(iav);
+	info->img_size = iav->mmap[IAV_BUFFER_IMG].size;
+	info->img_virt = iav->mmap[IAV_BUFFER_IMG].virt;
+	info->img_phys = iav->mmap[IAV_BUFFER_IMG].phys;
+	info->img_config_offset = IAV_DRAM_IMG_OFFET;
 	if (!iav->dsp_partition_mapped) {
-		info.dsp_virt = iav->mmap[IAV_BUFFER_DSP].virt;
-		info.dsp_phys = iav->mmap[IAV_BUFFER_DSP].phys;
+		info->dsp_virt = iav->mmap[IAV_BUFFER_DSP].virt;
+		info->dsp_phys = iav->mmap[IAV_BUFFER_DSP].phys;
 	} else {
-		info.dsp_virt = iav->mmap_dsp[IAV_DSP_SUB_BUF_RAW].virt;
-		info.dsp_phys = iav->mmap_dsp[IAV_DSP_SUB_BUF_RAW].phys;
+		info->dsp_virt = iav->mmap_dsp[IAV_DSP_SUB_BUF_RAW].virt;
+		info->dsp_phys = iav->mmap_dsp[IAV_DSP_SUB_BUF_RAW].phys;
 	}
-	info.iav_mutex = &iav->iav_mutex;
+	info->iav_mutex = &iav->iav_mutex;
 
-	rval = amba_imgproc_cmd(&info, cmd, args);
+	rval = amba_imgproc_cmd(info, cmd, args);
 	mutex_unlock(&iav->iav_mutex);
 
 	return rval;
@@ -337,10 +361,13 @@ static int iav_drv_probe(struct ambpriv_device *ambdev)
 	iav->mixer_b_enable = 1;
 	iav->osd_from_mixer_a = 1;
 	iav->osd_from_mixer_b = 0;
+	iav->vin_overflow_protection = 0;
 	iav->err_vsync_handling = 0;
 	iav->err_vsync_again = 0;
 	iav->err_vsync_lost = 0;
+	memset(&iav->dsplog_setup, 0, sizeof(struct iav_dsplog_setup));
 	mutex_init(&iav->iav_mutex);
+	mutex_init(&iav->enc_mutex);
 	spin_lock_init(&iav->iav_lock);
 
 	iav_init_source_buffer(iav);
@@ -399,7 +426,15 @@ static int iav_drv_probe(struct ambpriv_device *ambdev)
 		rval = iav_restore_dsp_cmd(iav);
 		if (rval < 0)
 			goto iav_init_err;
+
+		if (iav->probe_state == IAV_STATE_ENCODING) {
+			iav_sync_bsh_queue(iav);
+		}
 	}
+
+	rval = iav_init_isr(iav);
+	if (rval < 0)
+		goto iav_init_err;
 
 	return 0;
 
@@ -451,36 +486,52 @@ static int iav_drv_remove(struct ambpriv_device *ambdev)
 }
 
 
-static struct ambpriv_device *iav_device;
+struct ambpriv_device *iav_device;
 
 
 #ifdef CONFIG_PM
 static int iav_suspend(struct device *dev)
 {
 	struct ambarella_iav *iav = NULL;
-	struct vin_device *vdev;
+	struct vin_device *vdev = NULL;
 
 	iav = ambpriv_get_drvdata(iav_device);
 	vdev = iav->vinc[0]->dev_active;
 
-	// Imgproc suspend
-	amba_imgproc_suspend();
-	// DSP suspend
-	iav->dsp->suspend(iav->dsp);
 	if (iav->state == IAV_STATE_PREVIEW || iav->state == IAV_STATE_ENCODING) {
+		// Imgproc suspend
+		amba_imgproc_suspend(iav->encode_mode);
+	}
+
+	if (iav->dsp->suspend) {
+		// DSP suspend
+		iav->dsp->suspend(iav->dsp);
+	}
+
+	// DSP log suspends after DSP suspends
+	amba_dsplog_suspend();
+
+	if (vdev) {
 		// VIN suspend
 		vin_pm_suspend(vdev);
+	}
+	if (iav->state == IAV_STATE_PREVIEW || iav->state == IAV_STATE_ENCODING) {
 		// Vout Suspend
 		amba_vout_pm(AMBA_EVENT_PRE_PM);
 	}
+
+	hwtimer_suspend();
+
 	return 0;
 }
 
 static int iav_resume(struct device *dev)
 {
 	struct ambarella_iav *iav = NULL;
-	struct vin_device *vdev;
+	struct vin_device *vdev = NULL;
 	u32 stream_map = 0;
+	int i = 0;
+	int max_enc_stream_num = 0;
 
 	if (iav_device == NULL) {
 		iav_error("iav_device should not be NULL!\n");
@@ -490,15 +541,31 @@ static int iav_resume(struct device *dev)
 	iav = ambpriv_get_drvdata(iav_device);
 	vdev = iav->vinc[0]->dev_active;
 
+	hwtimer_resume();
 	if (iav->state == IAV_STATE_PREVIEW || iav->state == IAV_STATE_ENCODING) {
 		// Vout resume
 		amba_vout_pm(AMBA_EVENT_POST_PM);
+	}
+	if (vdev) {
 		// VIN resume
 		vin_pm_resume(vdev);
 	}
-	// DSP resume
-	iav->dsp->resume(iav->dsp);
+
+	// DSP log resumes before DSP resumes
+	amba_dsplog_resume();
+	// set DSP debug level last sent before suspending
+	if (iav->dsplog_setup.args[1]) {
+		iav_set_dsplog_debug_level(iav, &iav->dsplog_setup);
+	}
+
+	if (iav->dsp->resume) {
+		// DSP resume
+		iav->dsp->resume(iav->dsp);
+	}
+
 	// IAV resume
+	iav->resume_flag = 1;
+	iav->fast_resume = 1;
 	if (iav->dsp_enc_state == DSP_ENCODE_MODE) {
 		switch (iav->state) {
 		case IAV_STATE_IDLE:
@@ -510,10 +577,14 @@ static int iav_resume(struct device *dev)
 			iav->state = IAV_STATE_INIT;
 			iav->dsp_enc_state = DSP_UNKNOWN_MODE;
 			iav_boot_dsp_action(iav);
-			iav_enable_preview(iav, 1);
+			iav_enable_preview(iav);
 			iav->state = IAV_STATE_PREVIEW;
-			amba_imgproc_resume(iav->encode_mode,
-				iav->system_config[iav->encode_mode].expo_num);
+			amba_imgproc_resume(iav->encode_mode, iav->fast_resume);
+			if (iav->pm.enable) {
+				iav_pm_resume(iav, 1);
+			}
+			// wait one vsync to let DSP process 3A cmds last sent
+			wait_vcap_count(iav, 1);
 			break;
 		case IAV_STATE_ENCODING:
 			iav->state = IAV_STATE_INIT;
@@ -521,16 +592,28 @@ static int iav_resume(struct device *dev)
 			stream_map = iav_get_stream_map(iav);
 			iav_clear_stream_state(iav);
 			iav_boot_dsp_action(iav);
-			iav_enable_preview(iav, 1);
+			iav_enable_preview(iav);
 			iav->state = IAV_STATE_PREVIEW;
-			amba_imgproc_resume(iav->encode_mode,
-				iav->system_config[iav->encode_mode].expo_num);
+			amba_imgproc_resume(iav->encode_mode, iav->fast_resume);
 			iav_ioc_start_encode(iav, (void __user *)stream_map);
+			if (iav->pm.enable) {
+				iav_pm_resume(iav, 0);
+			}
+			max_enc_stream_num = iav->system_config[iav->encode_mode].max_stream_num;
+			for (i = 0; i < max_enc_stream_num; i++) {
+				if (iav->stream[i].osd.enable) {
+					iav_overlay_resume(iav, &iav->stream[i]);
+				}
+			}
+			// wait one vsync to let DSP process 3A cmds last sent
+			wait_vcap_count(iav, 1);
 			break;
 		default:
 			break;
 		}
 	}
+	iav->resume_flag = 0;
+	iav->fast_resume = 0;
 
 	return 0;
 }

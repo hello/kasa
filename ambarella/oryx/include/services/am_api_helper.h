@@ -1,29 +1,46 @@
 /*******************************************************************************
- * am_air_api_helper.h
+ * am_api_helper.h
  *
  * History:
- *   2014-9-28 - [lysun] created file
+ *   Jul 29, 2016 - [Shupeng Ren] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co,Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
-#ifndef AM_AIR_API_HELPER_H_
-#define AM_AIR_API_HELPER_H_
+#ifndef ORYX_INCLUDE_SERVICES_AM_API_HELPER_H_
+#define ORYX_INCLUDE_SERVICES_AM_API_HELPER_H_
 
-/*! @file am_api_helper.h
- *  @brief This file defines AMAPIHelper
- */
+#include <semaphore.h>
 
-#include <atomic>
-#include "am_pointer.h"
+#include "am_result.h"
+#include "am_mutex.h"
+#include "am_ipc_uds.h"
+#include "commands/am_service_impl.h"
+#include <memory>
 
 class AMAPIHelper;
-class AMIPCSyncCmdClient;
 
 /*! @defgroup airapi Air API
  *  @brief All Air APIs that can be used to interact with Oryx Services and
@@ -47,7 +64,7 @@ class AMIPCSyncCmdClient;
 /*! @typedef AMAPIHelperPtr
  *  @brief Smart pointer type used to manage AMAPIHelper pointer.
  */
-typedef AMPointer<AMAPIHelper> AMAPIHelperPtr;
+typedef std::shared_ptr<AMAPIHelper> AMAPIHelperPtr;
 
 /*! @class AMAPIHelper
  *  @brief Helper class used to interact with Oryx Services.
@@ -58,7 +75,17 @@ typedef AMPointer<AMAPIHelper> AMAPIHelperPtr;
  */
 class AMAPIHelper
 {
-    friend AMAPIHelperPtr;
+  public:
+    /*! @typedef AM_IPC_NOTIFY_CB
+     *  @brief   IPC notify callback function type,
+     *           which is used in AMAPIHelper::register_notify_cb
+     *
+     *  @param   msg_data      callback function data pointer
+     *  @param   msg_data_size callback function data size
+     *
+     *  @return  0 if success, otherwise return value less than 0.
+     */
+    typedef int (*AM_IPC_NOTIFY_CB)(const void *msg_data, int msg_data_size);
 
   public:
     /*!
@@ -86,9 +113,25 @@ class AMAPIHelper
     void method_call(uint32_t cmd_id,
                      void *msg_data,
                      int msg_data_size,
-                     void *result_addr,
-                     int result_max_size);
-  protected:
+                     am_service_result_t *result_addr,
+                     int result_max_size = sizeof(am_service_result_t));
+
+    /*!
+     * Register a notify callback to make service notify the client possible
+     *
+     * @param cb will be called by service
+     * @sa am_air_api.h
+     */
+    int register_notify_cb(AM_IPC_NOTIFY_CB cb);
+
+  private:
+    /*!
+     * Initializer function.
+     * @return AM_RESULT_OK if success, otherwise return value like AM_RESULT_ERR_*.
+     */
+    AM_RESULT construct();
+    static void on_notify_callback(int32_t context, int fd);
+
     /*!
      * Constructor.
      */
@@ -98,36 +141,16 @@ class AMAPIHelper
      * Destructor.
      */
     virtual ~AMAPIHelper();
-
-    /*!
-     * Initializer function.
-     * @return 0 if success, otherwise return value less than 0.
-     */
-    int construct();
-
-    /*!
-     * Decrease the reference counter of the class object, when reference
-     * counter reaches 0, destroy the object.
-     */
-    void release();
-
-    /*!
-     * Increase the reference counter of the class object.
-     */
-    void inc_ref();
+    AMAPIHelper(AMAPIHelper const &copy) = delete; //! Delete copy constructor
+    AMAPIHelper& operator=(AMAPIHelper const &copy) = delete; //! Delete assign
 
   private:
-    AMAPIHelper(AMAPIHelper const &copy) = delete;  //! Delete copy constructor
-    AMAPIHelper& operator=(AMAPIHelper const &copy) = delete;//! Delete assign
-
-  private:
-    AMIPCSyncCmdClient *m_air_api_ipc;
     static AMAPIHelper *m_instance;
-    std::atomic_int m_ref_counter;
+    static AMMemLock m_lock;
+    sem_t *m_sem = nullptr;
+    AM_IPC_NOTIFY_CB m_notify_cb = nullptr;
+    AMIPCClientUDSPtr m_client = nullptr;
+    AMIPCClientUDSPtr m_client_notify = nullptr;
 };
 
-/*!
- * @}
- */ /* End of Air API Helper Class */
-
-#endif /* AM_AIR_API_HELPER_H_ */
+#endif /* ORYX_INCLUDE_SERVICES_AM_API_HELPER_H_ */

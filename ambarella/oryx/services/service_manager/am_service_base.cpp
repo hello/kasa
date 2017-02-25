@@ -4,45 +4,58 @@
  * History:
  *   2014-9-12 - [lysun] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co,Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
-#include <stdio.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <string.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <sys/stat.h>
-#include <signal.h>
-#include <mutex>  //using C++11 recursive mutex
+#include "am_base_include.h"
 #include "am_log.h"
 #include "am_define.h"
 #include "am_ipc_sync_cmd.h"
 #include "am_service_base.h"
 #include "am_service_manager.h"
 
-//C++ 11 mutex (using non-recursive type)
+#include <sys/types.h>
+#include <sys/select.h>
+#include <sys/wait.h>
+#include <sys/stat.h>
+#include <signal.h>
+
 static std::mutex m_mtx;
 #define  DECLARE_MUTEX   std::lock_guard<std::mutex> lck (m_mtx);
+
+#define  WORKQ_CMD_POST   'p'
+#define  WORKQ_CMD_FLUSH  'f'
+#define  WORKQ_CMD_QUIT   'q'
 
 AMServiceBase::AMServiceBase(const char *service_name,
                              const char *full_pathname,
                              AM_SERVICE_CMD_TYPE type) :
-  m_service_pid(-1),
-  m_state(),
-  m_ipc(NULL),
-  m_type(type)
+  m_type(type),
+  m_name(service_name),
+  m_exe_filename(full_pathname)
 {
-  strncpy(m_name, service_name, AM_SERVICE_NAME_MAX_LENGTH);
-  m_name[AM_SERVICE_NAME_MAX_LENGTH - 1] = '\0';
-  strncpy(m_exe_filename, full_pathname, AM_SERVICE_EXE_FILENAME_MAX_LENGTH);
-  m_exe_filename[AM_SERVICE_EXE_FILENAME_MAX_LENGTH - 1] = '\0';
 }
 
 AMServiceBase::~AMServiceBase()
@@ -52,15 +65,9 @@ AMServiceBase::~AMServiceBase()
   }
 }
 
-int AMServiceBase::get_name(char *service_name, int max_len)
+const char* AMServiceBase::get_name()
 {
-  if ((!service_name) || (max_len < 1))
-    return -1;
-
-  strncpy(service_name, m_name, max_len - 1);
-  service_name[max_len - 1] = '\0';
-
-  return 0;
+  return m_name.empty() ? ((const char*)"Unknown") : m_name.c_str();
 }
 
 AM_SERVICE_CMD_TYPE AMServiceBase::get_type()
@@ -73,17 +80,14 @@ int AMServiceBase::init()
   DECLARE_MUTEX
   int ret = 0;
   am_service_result_t service_result;
-  //  INFO("AMServiceBase:init\n");
   do {
-    //check exe file name
-    if (strlen(m_exe_filename) == 0) {
+    if (m_exe_filename.empty()) {
       ERROR("AMServiceBase, empty exe filename\n");
       ret = -1;
       break;
     }
 
-    //check service name
-    if (strlen(m_name) == 0) {
+    if (m_name.empty()) {
       ERROR("AMServiceBase, empty service name\n");
       ret = -3;
       break;
@@ -95,17 +99,22 @@ int AMServiceBase::init()
       break;
     }
 
-    //create process
     if (create_process() < 0) {
-      ERROR("AMServiceBase, unable to create process %s\n", m_exe_filename);
+      ERROR("AMServiceBase, unable to create process %s\n",
+            m_exe_filename.c_str());
       ret = -2;
       break;
     }
 
-    //create IPC
     if (create_ipc() < 0) {
       ERROR("AMServiceBase, unable to create ipc\n");
       ret = -4;
+      break;
+    }
+
+    if (workq_create() < 0) {
+      ERROR("AMServiceBase, unable to create workq\n");
+      ret = -5;
       break;
     }
 
@@ -113,11 +122,11 @@ int AMServiceBase::init()
       //call init again if init result is not ready,
       //until init ready, then break at INIT_DONE
       if (m_ipc->method_call(AM_IPC_SERVICE_INIT,
-                             NULL,
+                             nullptr,
                              0,
                              &service_result,
                              sizeof(service_result)) < 0) {
-        ERROR("AMServiceBase, ipc call SERVICE INIT error \n");
+        ERROR("AMServiceBase, ipc call SERVICE INIT error!");
         ret = -5;
         break;
       }
@@ -125,21 +134,20 @@ int AMServiceBase::init()
       DEBUG("AMServiceBase,  method_call AM_IPC_SERVICE_INIT returns\n");
       if (service_result.ret < 0) {
         ERROR("AMService %s found init error from result %d\n",
-              m_name,
-              service_result.ret);
+              m_name.c_str(), service_result.ret);
         ret = -6;
         break;
       }
       if (service_result.state != AM_SERVICE_STATE_INIT_DONE
           && service_result.state != AM_SERVICE_STATE_STARTED) {
-        INFO("AMServiceBase: check service %s state not done\n", m_name);
+        INFO("AMServiceBase: check service %s state not done\n",
+             m_name.c_str());
         usleep(20 * 1000);
       } else {
         m_state = AM_SERVICE_STATE_INIT_DONE;
         break;
       }
     } while (1);
-
   } while (0);
 
   //init process is very special, must use method call to query init
@@ -153,7 +161,6 @@ int AMServiceBase::destroy()
   DECLARE_MUTEX
   int ret = 0;
   am_service_result_t service_result;
-  //  INFO("AMServiceBase:destroy\n");
   do {
     if (!m_ipc) {
       ERROR("AMServiceBase: destroy, ipc not setup yet\n ");
@@ -163,7 +170,7 @@ int AMServiceBase::destroy()
 
     //call destroy function
     if (m_ipc->method_call(AM_IPC_SERVICE_DESTROY,
-                           NULL,
+                           nullptr,
                            0,
                            &service_result,
                            sizeof(service_result)) < 0) {
@@ -179,9 +186,10 @@ int AMServiceBase::destroy()
       break;
     }
 
-    //destroy the ipc
+    workq_destroy();
+
     delete m_ipc;
-    m_ipc = NULL;
+    m_ipc = nullptr;
 
     //Hopefully, the destroy IPC will let child process to quit,
     //and we have blocked signals, so child process usually won't quit by signal
@@ -217,7 +225,7 @@ int AMServiceBase::start()
     }
 
     if (m_ipc->method_call(AM_IPC_SERVICE_START,
-                           NULL,
+                           nullptr,
                            0,
                            &service_result,
                            sizeof(service_result)) < 0) {
@@ -260,7 +268,7 @@ int AMServiceBase::stop()
       break;
     }
     if (m_ipc->method_call(AM_IPC_SERVICE_STOP,
-                           NULL,
+                           nullptr,
                            0,
                            &service_result,
                            sizeof(service_result)) < 0) {
@@ -294,7 +302,6 @@ int AMServiceBase::restart()
     }
 
     if ((m_state != AM_SERVICE_STATE_INIT_DONE)
-        && (m_state != AM_SERVICE_STATE_STOPPED)
         && (m_state != AM_SERVICE_STATE_STOPPED)) {
       ERROR("AMServiceBase: not ready to start from state%d\n", m_state);
       ret = -2;
@@ -302,9 +309,8 @@ int AMServiceBase::restart()
     }
 
     PRINTF("try to restart from state %d\n", m_state);
-
     if (m_ipc->method_call(AM_IPC_SERVICE_RESTART,
-                           NULL,
+                           nullptr,
                            0,
                            &service_result,
                            sizeof(service_result)) < 0) {
@@ -339,7 +345,7 @@ int AMServiceBase::status(AM_SERVICE_STATE *state)
     }
 
     if (m_ipc->method_call(AM_IPC_SERVICE_STATUS,
-                           NULL,
+                           nullptr,
                            0,
                            &service_result,
                            sizeof(service_result)) < 0) {
@@ -356,12 +362,184 @@ int AMServiceBase::status(AM_SERVICE_STATE *state)
     }
 
     PRINTF("AMServiceBase: service %s query state is %d, local state is %d\n",
-           m_name,
+           m_name.c_str(),
            service_result.state,
            m_state);
 
   } while (0);
   return ret;
+}
+
+void AMServiceBase::static_workq_thread(void *data)
+{
+  ((AMServiceBase*)data)->workq_thread();
+}
+
+void AMServiceBase::static_on_notif_callback(uintptr_t  context,
+                                             void      *msg_data,
+                                             int        msg_data_size,
+                                             void      *result_addr,
+                                             int        result_max_size)
+{
+  ((AMServiceBase*)context)->on_notif_callback(msg_data,
+                                               msg_data_size,
+                                               result_addr,
+                                               result_max_size);
+}
+
+void AMServiceBase::workq_thread()
+{
+  fd_set allset;
+  fd_set fdset;
+
+  int maxfd = WORKQ_CTRL_READ;
+  FD_ZERO(&allset);
+  FD_SET(WORKQ_CTRL_READ, &allset);
+
+  while (m_workq_loop) {
+    int ret_val = -1;
+    fdset = allset;
+    if ((ret_val = select(maxfd + 1 , &fdset, nullptr, nullptr, nullptr)) > 0) {
+      if (FD_ISSET(WORKQ_CTRL_READ, &fdset)) {
+        char      cmd[1] = {0};
+        uint32_t read_cnt = 0;
+        ssize_t read_ret = 0;
+        workq_ctx_t ctx;
+        do {
+          read_ret = read(WORKQ_CTRL_READ, &cmd, sizeof(cmd));
+        } while ((++ read_cnt < 5) && ((read_ret == 0) || ((read_ret < 0) &&
+                 ((errno == EAGAIN) || (errno == EWOULDBLOCK) ||
+                 (errno == EINTR)))));
+        if (AM_UNLIKELY(read_ret <= 0)) {
+          PERROR("read");
+        } else if (cmd[0] == WORKQ_CMD_POST) {
+          if (!m_workq_ctx_q.empty()) {
+            ctx = m_workq_ctx_q.front();
+            m_workq_ctx_q.pop_front();
+            if (workq_task_exec(&ctx, sizeof(ctx)) < 0) {
+              ERROR("workq_task_exec failed");
+            }
+          } else {
+            WARN("m_workq_ctx_list is empty");
+          }
+        } else if (cmd[0] == WORKQ_CMD_FLUSH) {
+          while (!m_workq_ctx_q.empty()) {
+            ctx = m_workq_ctx_q.front();
+            m_workq_ctx_q.pop_front();
+            if (workq_task_exec(&ctx, sizeof(ctx)) < 0) {
+              ERROR("workq_task_exec failed");
+            }
+          }
+        } else if (cmd[0] == WORKQ_CMD_QUIT) {
+          m_workq_loop = false;
+        } else {
+          ERROR("workq cmd unknown");
+        }
+      }
+    } else {
+      PERROR("select");
+    }
+  }
+}
+
+int AMServiceBase::workq_create()
+{
+  int ret = 0;
+  do {
+    if (pipe2(m_workq_ctrl_fd, O_CLOEXEC) < 0) {
+      PERROR("pipe2");
+      ret = -1;
+      break;
+    }
+    char thread_name[32] = {0};
+    snprintf(thread_name, sizeof(thread_name), "Notify.%-8s", m_name.c_str());
+    m_workq_loop = true;
+    m_workq_thread = AMThread::create(thread_name,
+                                      static_workq_thread,
+                                      this);
+    if (!m_workq_thread) {
+      ERROR("create workq_thread failed");
+      ret = -1;
+      break;
+    }
+  } while (0);
+  return ret;
+}
+
+void AMServiceBase::workq_destroy()
+{
+  workq_task_flush();
+  workq_task_quit();
+  AM_DESTROY(m_workq_thread);
+}
+
+int AMServiceBase::workq_task_flush()
+{
+  int ret = 0;
+  char cmd[1] = {WORKQ_CMD_FLUSH};
+  int count = 0;
+  while ((++ count < 5) && (1 != write(WORKQ_CTRL_WRITE, cmd, 1))) {
+    if (AM_LIKELY((errno != EAGAIN) &&
+                  (errno != EWOULDBLOCK) &&
+                  (errno != EINTR))) {
+      PERROR("write");
+      ret = -1;
+      break;
+    }
+  }
+  return ret;
+}
+
+int AMServiceBase::workq_task_quit()
+{
+  int ret = 0;
+  char cmd[1] = {WORKQ_CMD_QUIT};
+  int count = 0;
+  while ((++ count < 5) && (1 != write(WORKQ_CTRL_WRITE, cmd, 1))) {
+    if (AM_LIKELY((errno != EAGAIN) &&
+                  (errno != EWOULDBLOCK) &&
+                  (errno != EINTR))) {
+      PERROR("write");
+      ret = -1;
+      break;
+    }
+  }
+  return ret;
+}
+
+int AMServiceBase::workq_task_post(void *data, size_t len)
+{
+  int ret = 0;
+  workq_ctx_t *ctx = (workq_ctx_t*)data;
+  m_workq_ctx_q.push_back(*ctx);
+
+  char cmd[1] = {WORKQ_CMD_POST};
+  int count = 0;
+  while ((++ count < 5) && (1 != write(WORKQ_CTRL_WRITE, cmd, 1))) {
+    if (AM_LIKELY((errno != EAGAIN) &&
+                  (errno != EWOULDBLOCK) &&
+                  (errno != EINTR))) {
+      PERROR("write");
+      /* If POST command is failed to send, remove the last notification */
+      m_workq_ctx_q.pop_back();
+      ret = -1;
+      break;
+    }
+  }
+  return ret;
+}
+
+int AMServiceBase::workq_task_exec(void *data, size_t len)
+{
+  workq_ctx_t *ctx = (workq_ctx_t *)data;
+  am_service_notify_payload *payload = &ctx->payload;
+  AMServiceBase *service = ctx->service;
+  NOTICE("Notification handler of %s is being called in thread %s",
+         service->m_name.c_str(),
+         m_workq_thread->name());
+  return service->method_call(payload->msg_id,
+                       payload->data, payload->data_size,
+                       nullptr, 0);
 }
 
 int AMServiceBase::method_call(uint32_t cmd_id,
@@ -392,60 +570,58 @@ int AMServiceBase::method_call(uint32_t cmd_id,
   return ret;
 }
 
-//use strtok_r to parse the tokens
-static inline int parse_exec_cmd(char * cmdline, char *argv[])
-{
-  char str[AM_SERVICE_EXE_FILENAME_MAX_LENGTH + 1];
-  const char *delimiter = " ";    //delimiter is space
-  char *saveptr = NULL;
-  char *token = NULL;
-  char *start = str;
-
-  //copy, before strtok_r will modify str
-  strcpy(str, cmdline);
-  for (int i = 0; i < AM_SERVICE_MAX_APPS_ARGS_NUM; i ++) {
-    token = strtok_r(start, delimiter, &saveptr);
-    if (token == NULL) {
-      argv[i] = NULL;
-      //PRINTF("argv[%d] is %s\n", i,  argv[i]);
-      break;
-    } else {
-      argv[i] = token;
-      //PRINTF("argv[%d] is %s\n", i,  token);
-    }
-    start = NULL; //for the next token search
-  }
-
-  execvp(argv[0], argv);
-  //if it returns, means exec failed
-  PERROR("AMServiceBase:execvp\n");
-  exit(1);
-
-  return 0;
-}
-
 int AMServiceBase::create_process() //run all apps
 {
-  int pid = 0;
-  char *argv[AM_SERVICE_MAX_APPS_ARGS_NUM] =
-  {0};
   int ret = 0;
-  //  INFO("AMServiceBase:create_process %s\n", m_name);
-  do {
-    pid = fork();
-    if (pid < 0) {
-      PERROR("AMServiceBase: fork\n");
+
+  /* Preparing Child Process program and parameters */
+  const char *cmdline = m_exe_filename.c_str();
+  uint32_t cmdlen = strlen(cmdline);
+  char str[cmdlen + 1];  //copy, before strtok_r will modify str
+  const char *delimiter = " ";    //delimiter is space
+  char *argv[AM_SERVICE_MAX_APPS_ARGS_NUM] = {0};
+  char *saveptr = nullptr;
+  char *start = str;
+
+  strncpy(str, cmdline, cmdlen);
+  str[cmdlen] = '\0';
+  for (int i = 0; i < AM_SERVICE_MAX_APPS_ARGS_NUM; ++ i) {
+    argv[i] = strtok_r(start, delimiter, &saveptr);
+    start = nullptr; //for the next token search
+  }
+  NOTICE("Creating process %s", argv[0]);
+
+  m_service_pid = vfork();
+  switch(m_service_pid) {
+    case 0: { /* Child Process */
+      execvp(argv[0], argv);
+      ERROR("Failed to run %s: %s", cmdline, strerror(errno));
+      exit(1);
+    }break;
+    case -1 : {
+      ERROR("Fork service %s failed: %s", m_name.c_str(), strerror(errno));
       ret = -1;
-      break;
-    } else if (pid == 0) {
-      //it's the child
-      INFO("AMServiceBase::run  %s \n", m_exe_filename);
-      parse_exec_cmd(m_exe_filename, argv);
-    } else {
-      // it's the parent
-      m_service_pid = pid;
-    }
-  } while (0);
+    }break;
+    default: { /* Parent Process */
+      std::string sem_file = std::string("/dev/shm/sem.") + m_name;
+      uint32_t count = 0;
+
+      NOTICE("Waiting for service %s(%d) to start!",
+             m_name.c_str(), m_service_pid);
+
+      while ((0 != access(sem_file.c_str(), F_OK)) && (++ count < 200)) {
+        usleep(100 * 1000L);
+      }
+      if ((count >= 200) && (0 != access(sem_file.c_str(), F_OK))) {
+        ERROR("Service %s failed to create semphore: %s!",
+              m_name.c_str(), sem_file.c_str());
+        ret = -1;
+      } else {
+        NOTICE("%s(%d) has started, sem file %s is created! %ums",
+               m_name.c_str(), m_service_pid, sem_file.c_str(), count * 100);
+      }
+    }break;
+  }
 
   if (ret == 0) {
     m_state = AM_SERVICE_STATE_INIT_PROCESS_CREATED;
@@ -479,21 +655,18 @@ int AMServiceBase::wait_process()
 //otherwise,the client/server start may have connection problem.
 int AMServiceBase::cleanup_ipc()
 {
-  char ipc_msg_queue_name[AM_SERVICE_NAME_MAX_LENGTH + 1];
-
-  sprintf(ipc_msg_queue_name, "/%s", m_name);
+  std::string ipc_msg_queue_name = "/" + m_name;
   //clean up the message box, and also the semaphore
-  return AMIPCSyncCmdClient::cleanup(ipc_msg_queue_name);
+  return AMIPCSyncCmdClient::cleanup(ipc_msg_queue_name.c_str());
 }
 
 int AMServiceBase::create_ipc()
 {
   int ret = 0;
-  char ipc_msg_queue_name[AM_SERVICE_NAME_MAX_LENGTH + 1];
+  std::string ipc_msg_queue_name = "/" + m_name;
 
   do {
-    m_ipc = new AMIPCSyncCmdClient;
-    if (!m_ipc) {
+    if (!(m_ipc = new AMIPCSyncCmdClient())) {
       ret = -2;
       break;
     }
@@ -505,13 +678,12 @@ int AMServiceBase::create_ipc()
       break;
     }
 
-    sprintf(ipc_msg_queue_name, "/%s", m_name);
-    if (m_ipc->create(ipc_msg_queue_name) < 0) {
-      ERROR("AMServiceBase: ipc name %s created failed\n", ipc_msg_queue_name);
+    if (m_ipc->create(ipc_msg_queue_name.c_str()) < 0) {
+      ERROR("AMServiceBase: ipc name %s created failed\n",
+            ipc_msg_queue_name.c_str());
       ret = -1;
       break;
     }
-    //   INFO("AMServiceBase:create_ipc %s OK\n", m_name);
   } while (0);
 
   if (ret == 0) {
@@ -519,23 +691,19 @@ int AMServiceBase::create_ipc()
   } else {
     //if create ipc failed, then delete the object and clear mem
     delete m_ipc;
-    m_ipc = NULL;
+    m_ipc = nullptr;
   }
 
   return ret;
 }
 
-void AMServiceBase::on_notif_callback(uint32_t context,
-                                      void *msg_data,
+void AMServiceBase::on_notif_callback(void *msg_data,
                                       int msg_data_size,
                                       void *result_addr,
                                       int result_max_size)
 {
-  char buf[AM_SERVICE_NAME_MAX_LENGTH + 1] = {0};
-  AMServiceBase *pThis = (AMServiceBase*)context;
   am_service_notify_payload *payload = nullptr;
   AM_SERVICE_NOTIFY_RESULT result;
-  am_service_result_t service_result;
   if (msg_data
       && ((uint32_t)msg_data_size >=
           offsetof(am_service_notify_payload, data))) {
@@ -547,29 +715,38 @@ void AMServiceBase::on_notif_callback(uint32_t context,
     return;
   }
 
-  pThis->get_name(buf, AM_SERVICE_NAME_MAX_LENGTH);
   INFO("AMServiceBase: %s got notif from actual process, result = %d\n",
-        buf, result);
+        m_name.c_str(), result);
   AMServiceManagerPtr service_manager = AMServiceManager::get_instance();
   if (service_manager) {
     AM_SERVICE_MANAGER_STATE state = service_manager->get_state();
     if (state == AM_SERVICE_MANAGER_RUNNING) {
       AMServiceBase *service = nullptr;
+      //use AM_SERVICE_TYPE_GENERIC as notify BIT
+      if (TEST_BIT(payload->dest_bits, AM_SERVICE_TYPE_GENERIC)) {
+        if (m_notify_cb) {
+          m_notify_cb(m_notify_cb_data, msg_data, msg_data_size);
+        }
+      }
       for (uint32_t type = AM_SERVICE_TYPE_API_PROXY_SERVER;
           type < AM_SERVICE_TYPE_OTHERS; ++type) {
         if (payload->dest_bits && !TEST_BIT(payload->dest_bits, type)) {
           continue;
         }
-        if ((service =
-            service_manager->find_service(AM_SERVICE_CMD_TYPE(type)))) {
-          if (service == pThis) {
-            continue;
+        if ((service = service_manager->
+                       find_service(AM_SERVICE_CMD_TYPE(type))) &&
+            (service != this)) {
+          NOTICE("%s is sending notification to %s",
+                 m_name.c_str(), service->get_name());
+          workq_ctx_t wq_ctx;
+          wq_ctx.service = service;
+          memcpy(&wq_ctx.payload, payload, sizeof(*payload));
+          if (service->workq_task_post(&wq_ctx, sizeof(wq_ctx)) < 0) {
+            ERROR("Add notification to %s notification queue failed! "
+                  "One notification from %s is lost",
+                  service->get_name(),
+                  m_name.c_str());
           }
-          service->get_name(buf, AM_SERVICE_NAME_MAX_LENGTH);
-          INFO("Notify Service: %s", buf);
-          service->method_call(payload->msg_id,
-                               payload->data, payload->data_size,
-                               &service_result, sizeof(service_result));
         }
       }
     }
@@ -580,7 +757,7 @@ int AMServiceBase::register_msg_map()
 {
   int ret = 0;
   am_msg_handler_t msg_handler;
-  DEBUG("AMServiceBase:register_msg_map for %s\n", m_name);
+  DEBUG("AMServiceBase:register_msg_map for %s\n", m_name.c_str());
   do {
     if (!m_ipc) {
       ret = -1;
@@ -590,12 +767,12 @@ int AMServiceBase::register_msg_map()
     //register a special msg handler with this pointer as context
     memset(&msg_handler, 0, sizeof(msg_handler));
     msg_handler.msgid = AM_IPC_SERVICE_NOTIF;
-    msg_handler.callback = NULL;
+    msg_handler.callback = nullptr;
 
     //by using context callback, we can let the callback function
     //knows which instance of AMServiceBase should handle such message
-    msg_handler.context = (uint32_t) this;
-    msg_handler.callback_ct = AMServiceBase::on_notif_callback;
+    msg_handler.context = ((uintptr_t)this);
+    msg_handler.callback_ct = static_on_notif_callback;
 
     //register the single entry msg map
     if (m_ipc->register_msg_map(&msg_handler, 1) < 0) {
@@ -605,6 +782,13 @@ int AMServiceBase::register_msg_map()
     }
   } while (0);
 
-  DEBUG("AMServiceBase:register_msg_map OK for %s\n", m_name);
+  DEBUG("AMServiceBase:register_msg_map OK for %s\n", m_name.c_str());
   return ret;
+}
+
+int AMServiceBase::register_svc_notify_cb(void *proxy_ptr, AM_SVC_NOTIFY_CB cb)
+{
+  m_notify_cb_data = proxy_ptr;
+  m_notify_cb = cb;
+  return 0;
 }

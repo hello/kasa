@@ -29,6 +29,7 @@
 
 struct amb_i2s_priv {
 	struct clk *mclk;
+	bool dai_master;
 	u32 default_mclk;
 	u32 clock_reg;
 	u32 bclk_reverse;

@@ -4,14 +4,32 @@
  * History:
  *	2014/09/05 - [Jian Tang] created file
  *
- * Copyright (C) 2014-2018, Ambarella, Inc.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 
 #ifndef __DSPLOG_CAP_H__
 #define __DSPLOG_CAP_H__
@@ -34,10 +52,11 @@
 #include <semaphore.h>
 #include <unistd.h>
 #include "amba_debug.h"
+#include <stdint.h>
 
 /* include platform related config file */
 #include <config.h>
-#if defined(CONFIG_ARCH_S2L) || defined(CONFIG_ARCH_S3)
+#if defined(CONFIG_ARCH_S2L) || defined(CONFIG_ARCH_S3) || defined(CONFIG_ARCH_S3L) || defined(CONFIG_ARCH_S5) || defined(CONFIG_ARCH_S5L)
 #include "iav_ioctl.h"
 #include "iav_ucode_ioctl.h"
 #else
@@ -55,7 +74,7 @@
 #define	DSP_LOG_PORT			(2017)        /* use port 2017 for tcp transfer */
 #define	AMBA_DEBUG_DSP		(1 << 1)
 #define	MAX_LOG_READ_SIZE	(1 << 20)
-#define	DEFAULT_PINPONG_FILE_SIZE    (100 << 20)
+#define	DEFAULT_PINPONG_FILE_SIZE    (10 << 20)
 
 //#define	ENABLE_RT_SCHED
 
@@ -82,26 +101,20 @@ struct hint_s {
 	const char *str;
 };
 
-/* struct idsp_printf_s is compatible for all ARCH */
-typedef struct idsp_printf_s {
-	u32	seq_num;		/**< Sequence number */
-	u8	dsp_core;
-	u8	thread_id;
-	u16	reserved;
-	u32	format_addr;	/**< Address (offset) to find '%s' arg */
-	u32	arg1;		/**< 1st var. arg */
-	u32	arg2;		/**< 2nd var. arg */
-	u32	arg3;		/**< 3rd var. arg */
-	u32	arg4;		/**< 4th var. arg */
-	u32	arg5;		/**< 5th var. arg */
-} idsp_printf_t;
+typedef struct idsp_printf_base_s {
+	u32 seq_num; 		/**< Sequence number */
+	u32 reserved[7];
+} idsp_printf_base_t;
+
+#define IDSP_LOG_SIZE	(sizeof(idsp_printf_base_t))
 
 typedef struct dsplog_cap_s {
-	int		logdrv_fd;
 	char *	log_buffer;
-	int		datax_method;
 	char *	output_filename;
-	int		log_port;
+	int	logdrv_fd;
+	int	datax_method;
+	int	log_port;
+	int	reserved;
 } dsplog_cap_t;
 
 typedef struct {
@@ -114,6 +127,7 @@ typedef struct {
 	u32	core_offset;
 	u32	mdxf_offset;
 	u32	memd_offset;
+	u32	reserved;
 } dsplog_memory_block;
 
 typedef struct {
@@ -128,11 +142,6 @@ typedef struct {
 	u8	capture_current_flag;
 	u32	work_mode;
 
-	/* debug_level is supported on A5s / A7L / S2L */
-	u8	debug_level_flag;
-	u8	debug_level;
-	u8	module_id;
-	u8	module_id_last;
 	int	modules[DSP_MODULE_TOTAL_NUM];
 
 	u32	thread_bitmask_flag;
@@ -141,11 +150,21 @@ typedef struct {
 	/* debug_bitmask is only supported on iOne / S2 */
 	u32	debug_bitmask[DSP_MODULE_TOTAL_NUM];
 	u32	operation_add[DSP_MODULE_TOTAL_NUM];
+	/* debug_level is supported on A5s / A7L / S2L */
+	u8	debug_level_flag;
+	u8	debug_level;
+	u8	module_id;
+	u8	module_id_last;
 
 	u8	show_version_flag;
 	u8	show_ucode_flag;
 	u8	pinpong_flag;
 	u8	transfer_tcp_flag;
+
+	u8	capture_only_flag;
+	u8	reserved0;
+	u8	reserved1;
+	u8	reserved2;
 
 	/* file transfer method */
 	u32	transfer_method;
@@ -162,6 +181,9 @@ int get_dsp_bitmask(char *bitmask_str);
 int get_thread_bitmask(char *bitmask_str);
 int dsplog_setup(int fd_iav, dsplog_debug_obj *obj);
 void extra_usage(char *itself);
+int print_log(idsp_printf_base_t *record, u8 * pcode,
+	u8 * pmdxf, u8 * pmemd,  FILE *  write_file,
+	dsplog_memory_block *dsplog_mem);
 
 #endif	// __DSPLOG_CAP_H__
 

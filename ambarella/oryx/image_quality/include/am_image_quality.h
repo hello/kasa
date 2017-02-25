@@ -19,7 +19,6 @@
 #include "am_image_quality_if.h"
 #include <atomic>
 
-#define FILE_NAME_LENGTH 64
 
 enum AM_IQ_STATE
 {
@@ -38,10 +37,10 @@ class AMIQConfig
     virtual bool load_config();
     virtual bool save_config();
     virtual bool sync();
-    bool m_changed;
-    AMIQParam m_loaded;
     int32_t m_aeb_adj_file_flag[AM_FILE_TYPE_TOTAL_NUM];
     char m_aeb_adj_file_name[AM_FILE_TYPE_TOTAL_NUM][FILE_NAME_LENGTH];
+    bool m_changed;
+    AMIQParam m_loaded;
   protected:
     AMIQParam m_using;
 };
@@ -57,6 +56,7 @@ class AMImageQuality: public AMIImageQuality
     virtual bool save_config();
     virtual bool set_config(AM_IQ_CONFIG *config);
     virtual bool get_config(AM_IQ_CONFIG *config);
+    virtual bool need_notify();
   protected:
     static AMImageQuality *get_instance();
     virtual bool init();
@@ -81,7 +81,7 @@ class AMImageQuality: public AMIImageQuality
     bool set_anti_flick_mode(AM_ANTI_FLICK_MODE *anti_flicker_mode);
     bool set_ae_target_ratio(int32_t *ae_target_ratio);
     bool set_backlight_comp_enable(AM_BACKLIGHT_COMP_MODE *backlight_comp_enable);
-    bool set_local_exposure(AM_LOCAL_EXPOSURE_MODE *local_exposure);
+    bool set_local_exposure(uint32_t *local_exposure);
     bool set_dc_iris_enable(AM_DC_IRIS_MODE *dc_iris_enable);
     bool set_sensor_gain_max(uint32_t *sensor_gain_max);
     bool set_sensor_shutter_min(uint32_t *sensor_shutter_min);
@@ -100,6 +100,7 @@ class AMImageQuality: public AMIImageQuality
     bool set_hue(int32_t *hue);
     bool set_contrast(int32_t *contrast);
     bool set_sharpness(int32_t *sharpness);
+    bool set_auto_contrast_mode(int32_t *ac_mode);
 
     /*log level config*/
     bool get_log_level(AM_IQ_LOG_LEVEL *log_level);
@@ -110,7 +111,7 @@ class AMImageQuality: public AMIImageQuality
     bool get_anti_flick_mode(AM_ANTI_FLICK_MODE *anti_flicker_mode);
     bool get_ae_target_ratio(int32_t *ae_target_ratio);
     bool get_backlight_comp_enable(AM_BACKLIGHT_COMP_MODE *backlight_comp_enable);
-    bool get_local_exposure(AM_LOCAL_EXPOSURE_MODE *local_exposure);
+    bool get_local_exposure(uint32_t *local_exposure);
     bool get_dc_iris_enable(AM_DC_IRIS_MODE *dc_iris_enable);
     bool get_sensor_gain_max(uint32_t *sensor_gain_max);
     bool get_sensor_shutter_min(uint32_t *sensor_shutter_min);
@@ -130,7 +131,9 @@ class AMImageQuality: public AMIImageQuality
     bool get_hue(int32_t *hue);
     bool get_contrast(int32_t *contrast);
     bool get_sharpness(int32_t *sharpness);
-
+    bool get_auto_contrast_mode(int32_t *ac_mode);
+    /*load bin*/
+    bool load_adj_bin(const char *file_name);
   protected:
     static AMImageQuality *m_instance;
     AMIQConfig            *m_iq_config;

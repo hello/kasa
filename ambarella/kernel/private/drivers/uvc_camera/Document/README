@@ -1,0 +1,88 @@
+	UVC & UAC driver for linux
+	------------------------------------
+
+	Original by: Jorney Tu, Oct 2015
+	Last update: 2015-10-26
+
+UVC
+	USB video class
+UAC
+	USB audio class
+
+Specification
+
+UVC
+---
+	Solution support:
+	X： MJPG 1280 * 720 15ps (default)
+	Y： YUV  640 * 360  30ps
+
+UAC
+---
+	Support:
+	Sample Rate     : 48000 (default)
+	Channle    		: MONO
+	Sample Size   	: 16bit
+
+OS support
+---
+	windown7
+	windownxp
+	Ubuntu14.04    ; #define  LINUX  1 in config.h
+
+Player
+---
+	VLC(*2.2.1 version recommended)
+
+FIXME
+---
+  libcomposite.ko is needed, please refer to linux kernel
+  /dev/snd/pcmC0D0c is needed
+  /dev/iav is needed
+
+Steps
+---
+	* insmod ko
+		modprobe libcomposite
+		modprobe uac
+		modprobe audio
+		modprobe uvc
+		modprobe webcam
+
+	* VLC Player
+		please refer to device.PNG and format.PNG
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

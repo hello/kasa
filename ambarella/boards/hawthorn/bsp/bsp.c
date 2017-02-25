@@ -3,16 +3,35 @@
  *
  * Author: Anthony Ginger <hfjiang@ambarella.com>
  *
- * Copyright (C) 2004-2014, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
 
+
 #include <bldfunc.h>
-#include <bapi.h>
 #include <eth/network.h>
 #include <ambhw/gpio.h>
 #include <ambhw/idc.h>
@@ -21,7 +40,7 @@
 #include <dsp/dsp.h>
 
 /* ==========================================================================*/
-static void pca9539_set_gpio(u32 id, u32 set)
+static void pca9539_set_gpio(int i2c_id, u32 id, u32 set)
 {
 #if defined(CONFIG_AMBOOT_ENABLE_PCA953X)
 	u8 pca9539_adds = 0xE8;
@@ -34,7 +53,7 @@ static void pca9539_set_gpio(u32 id, u32 set)
 		pca9539_cfg_adds = 0x06;
 		pca9539_out_adds = 0x02;
 		pca9539_shift = id;
-	} else if (id < 15) {
+	} else if (id < 16) {
 		pca9539_cfg_adds = 0x07;
 		pca9539_out_adds = 0x03;
 		pca9539_shift = (id - 8);
@@ -42,24 +61,47 @@ static void pca9539_set_gpio(u32 id, u32 set)
 		return;
 	}
 
-	reg_val = idc_bld_pca953x_read(IDC_MASTER3,
+	reg_val = idc_bld_read_8_8(i2c_id,
 		pca9539_adds, pca9539_cfg_adds);
 	reg_val &= ~(0x1 << pca9539_shift);
-	idc_bld_pca953x_write(IDC_MASTER3,
+	idc_bld_write_8_8(i2c_id,
 		pca9539_adds, pca9539_cfg_adds, reg_val);
 
-	reg_val = idc_bld_pca953x_read(IDC_MASTER3,
+	reg_val = idc_bld_read_8_8(i2c_id,
 		pca9539_adds, pca9539_out_adds);
 	if (set) {
 		reg_val |= (0x1 << pca9539_shift);
 	} else {
 		reg_val &= ~(0x1 << pca9539_shift);
 	}
-	idc_bld_pca953x_write(IDC_MASTER3,
+	idc_bld_write_8_8(i2c_id,
 		pca9539_adds, pca9539_out_adds, reg_val);
 #endif
 }
 
+void pca9539_direction_input(int i2c_id, u32 id)
+{
+	u8 pca9539_adds = 0xE8;
+	u8 pca9539_cfg_adds;
+	u8 pca9539_shift;
+	u8 reg_val;
+
+	if (id < 8) {
+		pca9539_cfg_adds = 0x06;
+		pca9539_shift = id;
+	} else if (id < 16) {
+		pca9539_cfg_adds = 0x07;
+		pca9539_shift = (id - 8);
+	} else {
+		return;
+	}
+
+	reg_val = idc_bld_read_8_8(i2c_id,
+		pca9539_adds, pca9539_cfg_adds);
+	reg_val |= (0x1 << pca9539_shift);
+	idc_bld_write_8_8(i2c_id,
+		pca9539_adds, pca9539_cfg_adds, reg_val);
+}
 
 /* ==========================================================================*/
 int amboot_bsp_hw_init(void)
@@ -103,10 +145,6 @@ int amboot_bsp_entry(flpart_table_t *pptb)
 	u32 iav_status = IAV_STATE_IDLE;
 	/* Change the value after call dsp_boot() */
 	p_iav_status = (u32*)(DSP_STATUS_STORE_START);
-#endif
-
-#if defined(CONFIG_AMBOOT_BAPI_SUPPORT)
-	bld_bapi_set_fb_info(0, 0, 1920, 1080, 1920, 1080, 1, 8);
 #endif
 
 	/* setup sensor */
@@ -198,9 +236,9 @@ int amboot_bsp_sd_slot_init(int slot, int volt)
 		}
 
 		/* power off, then power on */
-		pca9539_set_gpio(gpio_pwr, 0);
+		pca9539_set_gpio(IDC_MASTER3, gpio_pwr, 0);
 		rct_timer_dly_ms(10);
-		pca9539_set_gpio(gpio_pwr, 1);
+		pca9539_set_gpio(IDC_MASTER3, gpio_pwr, 1);
 
 	} else {
 		if(slot == 0) {

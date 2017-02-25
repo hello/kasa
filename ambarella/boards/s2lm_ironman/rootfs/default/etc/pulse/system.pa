@@ -63,7 +63,7 @@ load-module module-echo-cancel rate=16000 aec_method=webrtc
 
 .ifexists module-dbus-protocol.so
 ### If you want to allow TCP connections, set access to "remote" or "local,remote".
-load-module module-dbus-protocol access=local,remote
+load-module module-dbus-protocol access=local
 .endif
 
 ### Automatically move streams to the default sink if the sink they are

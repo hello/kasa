@@ -28,9 +28,9 @@ config BUILD_WIFI_BLUETOOTH_MODULES
 	help
 
 if BUILD_WIFI_BLUETOOTH_MODULES
-source kernel/external/marvell/AmbaConfig
 source kernel/external/atheros/AmbaConfig
 source kernel/external/broadcom/AmbaConfig
+source kernel/external/marvell/AmbaConfig
 source kernel/external/realtek/AmbaConfig
 source kernel/external/compat/AmbaConfig
 endif

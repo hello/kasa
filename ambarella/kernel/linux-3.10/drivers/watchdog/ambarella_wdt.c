@@ -234,7 +234,8 @@ static int ambarella_wdt_suspend(struct platform_device *pdev,
 
 	ambwdt = platform_get_drvdata(pdev);
 
-	ambarella_wdt_stop(&ambwdt->wdd);
+	if (watchdog_active(&ambwdt->wdd))
+		ambarella_wdt_stop(&ambwdt->wdd);
 
 	dev_dbg(&pdev->dev, "%s exit with %d @ %d\n",
 				__func__, rval, state.event);
@@ -249,8 +250,10 @@ static int ambarella_wdt_resume(struct platform_device *pdev)
 
 	ambwdt = platform_get_drvdata(pdev);
 
-	if (ambwdt->enabled)
+	if (watchdog_active(&ambwdt->wdd)) {
 		ambarella_wdt_start(&ambwdt->wdd);
+		ambarella_wdt_keepalive(&ambwdt->wdd);
+	}
 
 	dev_dbg(&pdev->dev, "%s exit with %d\n", __func__, rval);
 

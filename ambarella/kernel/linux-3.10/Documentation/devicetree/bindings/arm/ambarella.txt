@@ -171,7 +171,10 @@ i) Reference
 Please see Documentation/devicetree/bindings/arm/cpus.txt
 
 ii) Properties
-- cpufreq_tbl: Table of frequencies gclk_cortex and pll_out_core could be transitioned
+- amb,core-div: this prop should be 1 or 2, this specified the divide of gclk_core from pll_out_core,
+  for s2e and s5, this value should be 1; and for s2l, s3l, this should be 2. If you don't add this prop,
+  the divide for gclk_core is 2 as default.
+- cpufreq_tbl: Table of frequencies gclk_cortex and gclk_core could be transitioned
   into, in the unit of nanoseconds.
 - clock-latency: Specify the possible maximum transition latency for clock, in
   unit of nanoseconds.
@@ -295,10 +298,21 @@ Required properties:
 - compatible: should be "ambarella,dma".
 - reg: specifies base physical address and size of the registers.
 - interrupts: the interrupt for the DMA controller.
+- #dma-cells: Must be at least 1. Used to provide DMA controller
+			specific information. See DMA client binding below for
+			more details.
+- dma-channels: 	Number of DMA channels supported by the controller.
+- dma-requests: 	Number of DMA requests signals supported by the
+			controller.
+- dma-trans-type:   specifies the dma channel use type.
+					0 for memcpy, 1 for slave.
 
 Optional properties:
 - amb,copy-align: specifies alignment requirement for previous chips.
 - amb,support-prs: should be specified for SoC that supports PAUSE/RESUME/STOP.
+- dma-channel-sel: should be specified for Soc that support dma channel sel.
+  different value is used for selecting the device.
+  e.g., 0 for ssi0_tx, 1 for ssi0_rx, 10 for i2s_tx, 11 for i2s_rx.
 
 ii) Example
 -----------
@@ -306,6 +320,11 @@ ii) Example
 		compatible = "ambarella,dma";
 		reg = <0xe0005000 0x1000>;
 		interrupts = <15 0x4>;
+		#dma-cells = <2>;
+		dma-channels = <8>;
+		dma-requests = <12>;
+		dma-trans-type = <1 1 0 0 1 1 1 1>; /* 0-memcpy ,1-slave*/
+		dma-channel-sel = <4 5 0 0 8 9 11 10>;
 	};
 
 
@@ -393,7 +412,6 @@ Required properties:
 - reg: specifies base physical address and size of the registers.
 - pinctrl-names: should contain only one value - "default".
 - pinctrl-0: pin control group to be used for this controller.
-- bclk_reverse: control i2s_clk(BCLK) to reverse.
 - amb,i2s-channels: should be one of these values: 2, 4, 6.
 - amb,default-mclk: specifies the initial mclk frequency in HZ.
 
@@ -404,7 +422,6 @@ ii) Example
 		reg = <0xe001a000 0x1000>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&i2s0_pins>;
-		bclk_reverse = <0>;
 		amb,i2s-channels = <2>;
 		amb,default-mclk = <12288000>;
 	};
@@ -487,19 +504,24 @@ Required properties:
 - amb,clk-name: specifies the PLL name of this SD controller, should be one
   of these strings: "gclk_sd", "gclk_sdio", "gclk_sdxc".
 - amb,wait-tmo: specifies the timeout in millisecond to wait for CMD complete.
+- amb,switch-vol-tmo: specifies the timeout to enable clk after switch voltage
+  from 3.3v to 1.8v.
 - amb,max-blk-size: specifies the maximal block size, should be multiple of 4k.
 
 Optional properties:
 - amb,dma-addr-fix: should be specified only for S2.
-- amb,soft-phy: should be specified for SD controllers supporting soft phy.
+- amb,soft-phy: should be specified for SD controllers to adjust timing base on
+  SD phy.
 - amb,phy-timing: an integer array which is used to specify the SD phy timing,
   the size of the array is different according to corresponding phy register
   for each chips or SD controllers, and the values are gotten by SD shmoo in
   Amboot.
-  For the SD controller supporting soft SD phy, like S2E SD0, the array is
-  orgnized as: <mode phy_ctrl0_val latency_ctrl_val>
+  For the SD controller to ajust timing base on SD controller, like S3L and later
+  chip, the array is orgnized as: <mode SD_DELAY_SEL_L SD_DELAY_SEL_H>;
+  For the SD controller to ajust timing base on SD phy, like S2E SD0, S2L, S3L, the
+  array is orgnized as: <mode phy_ctrl0_val latency_ctrl_val>;
   For the SD controller only supporting ms delay mux, like S2E SD1, the array
-  is orgnized as: <mode ms_delay_ctrl_mask ms_delay_ctrl_val>
+  is orgnized as: <mode ms_delay_ctrl_mask ms_delay_ctrl_val>;
   Here mode is the ORed value of SD card working modes like sdr104, ddr50 and
   etc., and the later 2 items are values written to corresponding phy registers.
   Following is the definition of each bits for mode:
@@ -521,6 +543,40 @@ Optional properties:
     #define MMC_TIMING_UHS_DDR50	7
     #define MMC_TIMING_MMC_HS200	8
 
+Example for ajusting timing base sd controller on s3l platform:
+		sdmmc0: sdmmc0@e0002000 {
+			compatible = "ambarella,sdmmc";
+			reg = <0xe0002000 0x1000>,
+			      <0xe0001000 0x80>;/* fio reg address */
+			amb,max-blk-size = <131072>; /* valid value: 4K<<n */
+			amb,soft-phy;
+			amb,phy-timing = <0x00000007 0x00000000 0x00000000>,/*HS 50M and 25M*/
+					/*sdr25 50M,sdr50 100M,sdr104 120M*/
+					<0x00000078 0x10410400 0x00904104>,
+					<0x00000080 0x38E38E00 0x0238E38E>;/*DDR50 50M*/
+			slot@0 {
+
+			};
+		};
+
+
+Example for ajusting timing base sd phy on s3l platform:
+		sdmmc0: sdmmc0@e0002000 {
+			compatible = "ambarella,sdmmc";
+			reg = <0xe0002000 0x1000>,
+			      <0xe0001000 0x80>;/* fio reg address */
+			      <0xec1704c0 0x8>;/*should specify the phy register*/
+
+			amb,soft-phy;
+			amb,phy-timing = <0x00000001 0x04070000 0x00000000>,
+					/*sdr12 24M,sdr25 50M,sdr50 100M*/
+					<0x00000038 0x00000003 0x00001111>,
+					<0x00000040 0x00000005 0x00002222>,/*sdr104 200M*/
+					<0x00000080 0x000C0005 0x00000000>;/*ddr50 50M*/
+			slot@0 {
+
+			};
+		};
 
 iii) Subnode
 ------------
@@ -597,7 +653,10 @@ Optional properties:
 - amb,dump-rx: specifies to dump Rx buffer, for debug purpose.
 - amb,dump-rx-free: specifies to free buffer after dumped.
 - amb,dump-rx-all: specifies to dump all buffers without filter.
-
+- amb,clk-src: specifies the clk source for gtx_clk, 0:external clk, 1:internal clk.
+- amb,clk-invert: specifies to invert the clk for ethernet, 0: no invert, 1: invert
+- amb,clk-dir: specifies the ref clk direction from PHY, 1: set direction of xx_enet_clk_rx as output from ambarella chip,
+  0: set direction of xx_enet_clk_rx as output from external phy.
 ii) Example
 -----------
 	mac0: ethernet@e000e000 {
@@ -631,11 +690,15 @@ Required properties:
 - reg: specifies base physical address and size of the registers.
 - interrupts: the interrupt for the SPI controller.
 - amb,clk-freq: specifies the PLL frequence in HZ.
-- amb,dma-used: use dma for TX/RX, should be specified if SPI channel supports dma mode.
-- amb,msb-first-only: HW only supports msb first tx/rx, for A5S/S2/S2E, please set this flag.
+- amb,msb-first-only: HW only supports msb first tx/rx, for A5S/S2/S2E, please
+  set this flag.
+- cs-gpios: gpios chip select. Please see Reference for detailed.
 
 Optional properties:
-- cs-gpios: gpios chip select. Please see Reference for detailed.
+- amb,dma-used: use dma for TX/RX, only can be specified if SPI channel
+  supports dma mode.
+- dmas: specify dma channel
+- dma-names: specify dma channel name.
 
 iii) Subnode
 ------------
@@ -768,8 +831,8 @@ should only have one group node pointed in there.
 Required subnode-properties:
 - reg: Should be the index of the group nodes for same function.
 - amb,pinmux-ids: an integer array. Each integer in the array specifies a pin
-  with given mux function, with pin id and mux and config packed as:
-    config << 16 | mux << 12 | pin id
+  with given mux function, with pin id and mux packed as:
+    mux << 12 | pin id
   Here mux means function of this pin, and pin id is identical to gpio id. For
   the SoC supporting IOMUX, like S2L, the maximal value of mux is 5. However,
   for the SoC not supporting IOMUX, like A5S, S2, the third or fourth function
@@ -777,8 +840,11 @@ Required subnode-properties:
   there is no real hardware pins mapping to the corresponding register address.
   So the registers for the "virtual pins" can be used for the selection of 3rd
   or 4th function for other real pins.
-  Further more, config is used to configure pull up/down and drive strength of
-  the pin, and it's orgnization is:
+- amb,pinconf-ids: an integer array. Each integer in the array specifies a pin
+  with given configuration, with pin id and config packed as:
+    config << 16 | pin id
+  Here config is used to configure pull up/down and drive strength of the pin,
+  and it's orgnization is:
   bit1~0: 00: pull down, 01: pull up, 1x: clear pull up/down
   bit2:   reserved
   bit3:   0: leave pull up/down as default value, 1: config pull up/down
@@ -807,8 +873,9 @@ v) Example
 
 		sdmmc0_pins_4bit: sdmmc0@1 {
 			reg = <1>;
-			amb,pinmux-ids = <0x00092039 0x00b0203a 0x00aa203b 0x0000203c
-					  0x00002049 0x0000204a 0x0000204b 0x0000204c>;
+			amb,pinmux-ids = <0x2039 0x203a 0x203b 0x203c
+							  0x2049 0x204a 0x204b 0x204c>;
+			amb,pinconf-ids = <0x090039 0xb0003a 0xaa003b 0x00003c>;
 		};
 	}
 
@@ -818,7 +885,7 @@ pin40(0x28), i.e., GPIO39 and GPIO40. And, pin39/pin40 use function 1.
 And, sdmmc0_pins_4bit defines a group of pins used by sd0 controller, according
 to the definition, sd0 uses 8 pins. And pin57 enables pull up, pin58 configure
 drive strength to 12mA, pin59 clear pull up/down and configure drive strength
-to 8mA, while other pins leave pull up/down and drive strength as default value.
+to 8mA, pin60 leave pull up/down and drive strength as default value.
 
 
 20) - GPIO node
@@ -1251,8 +1318,8 @@ It is a waster of power, so we do not use it.
 - amb,codec-dai-name: specifies the DAI name within the codec, it must be consistent with the codec driver.
 - amb,audio-routing: specifies the route map for audio codec.
 usage:
-	amb,audio-routing = "sink", source",/*This is route 0*/
-			 "sink", "source";/*This is route 1*/
+	amb,audio-routing = "sink", source",	/*This is route 0*/
+			    "sink", "source";	/*This is route 1*/
 	sink and source dapm widget should be based on codec driver and our board.
 	dapm widget on board:
 	"Mic internal": board internal Mic, used to connect Mic of codec.

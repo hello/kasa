@@ -3,14 +3,33 @@
  *
  * History:
  *	2014/07/25 - [Zhaoyang Chen] created file
- * Copyright (C) 2007-2016, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 #include <config.h>
 #include <linux/random.h>
 #include <linux/slab.h>
@@ -36,7 +55,7 @@ static struct ambarella_iav *g_iav = NULL;
  * calling this function and its upper function. */
 static int nl_send_msg(struct iav_nl_obj *nl_obj, struct nl_msg_data *msg)
 {
-#define RETRY_TIMES			(5)
+#define RETRY_TIMES			(10)
 #define TIMEOUT_JIFFY		msecs_to_jiffies(1000)
 	struct sk_buff *skb = NULL;
 	struct nlmsghdr *nlhdr = NULL;
@@ -48,16 +67,19 @@ static int nl_send_msg(struct iav_nl_obj *nl_obj, struct nl_msg_data *msg)
 
 	if (msg->type == NL_MSG_TYPE_SESSION) {
 		if (msg->dir != NL_MSG_DIR_STATUS) {
-			iav_error("NETLINK ERR: IAV can only send session status to app!\n");
+			iav_error("NETLINK ERR: IAV can only send session status to "
+				"app %d!\n", nl_obj->nl_user_pid);
 			return -1;
 		}
 	} else if (msg->type == NL_MSG_TYPE_REQUEST) {
 		if (msg->dir != NL_MSG_DIR_CMD) {
-			iav_error("NETLINK ERR: IAV can only send request cmd to app!\n");
+			iav_error("NETLINK ERR: IAV can only send request cmd to "
+				"app %d!\n", nl_obj->nl_user_pid);
 			return -1;
 		}
 	} else {
-		iav_error("NETLINK ERR: Unrecognized IAV msg type to app!\n");
+		iav_error("NETLINK ERR: Unrecognized IAV msg type to "
+			"app %d!\n", nl_obj->nl_user_pid);
 		return -1;
 	}
 
@@ -78,29 +100,29 @@ static int nl_send_msg(struct iav_nl_obj *nl_obj, struct nl_msg_data *msg)
 		nl_req = &nl_obj->nl_requests[msg->cmd];
 
 		mutex_unlock(&iav->iav_mutex);
-		iav_debug("NETLINK DBG: Send request cmd %d to app %d.\n",
+		iav_debug("NETLINK DBG: Send request cmd %u to app %d.\n",
 			msg->cmd, nl_obj->nl_user_pid);
 		// wait for the response of the command
 		while (retry > 0) {
 			rval = wait_event_interruptible_timeout(nl_req->wq_request,
-				nl_req->condition, TIMEOUT_JIFFY) ;
+				nl_req->responded, TIMEOUT_JIFFY) ;
 			if (rval > 0) {
 				break;
 			}
-			iav_debug("NETLINK DBG: receive ACK of request cmd %d from app %d error,"
-				" retry:%d\n", msg->cmd, nl_obj->nl_user_pid, retry);
+			iav_debug("NETLINK DBG: receive ACK of request cmd %u from app %d "
+				"error, retry:%d\n", msg->cmd, nl_obj->nl_user_pid, retry);
 			--retry;
 		}
 		mutex_lock(&iav->iav_mutex);
 
 		if (retry <= 0) {
-			iav_error("NETLINK ERR: send request cmd %d to app %d timeout\n",
+			iav_error("NETLINK ERR: send request cmd %u to app %d timeout\n",
 				msg->cmd, nl_obj->nl_user_pid);
 			return -1;
 		}
 	} else if (msg->type == NL_MSG_TYPE_SESSION) {
-		iav_debug("NETLINK DBG: Send session status %d to session cmd %d"
-			" of app %d.\n", msg->status, msg->cmd, nl_obj->nl_user_pid);
+		iav_debug("NETLINK DBG: Send session status %u to session cmd %u of "
+			"app %d.\n", msg->status, msg->cmd, nl_obj->nl_user_pid);
 	}
 
 	return 0;
@@ -118,10 +140,15 @@ int nl_send_request(struct iav_nl_obj *nl_obj, int cmd)
 	msg.cmd = cmd;
 	msg.status = 0;
 
-	nl_obj->nl_requests[cmd].condition = 0;
+	nl_obj->nl_requests[cmd].responded = 0;
 	ret = nl_send_msg(nl_obj, &msg);
 
 	return ret;
+}
+
+int is_nl_request_responded(struct iav_nl_obj *nl_obj, int cmd)
+{
+	return nl_obj->nl_requests[cmd].responded;
 }
 
 static int nl_process_session_cmd(struct iav_nl_obj *nl_obj,
@@ -158,7 +185,7 @@ static int nl_process_session_cmd(struct iav_nl_obj *nl_obj,
 		nl_obj->nl_user_pid = -1;
 		break;
 	default:
-		iav_debug("Unknown session cmd from app %d!\n", msg->pid);
+		iav_debug("Unknown session cmd from app %u!\n", msg->pid);
 		ret = -1;
 		break;
 	}
@@ -188,26 +215,26 @@ static int nl_process_request_status(struct iav_nl_obj *nl_obj,
 	int ret = 0;
 
 	if (msg->status == NL_CMD_STATUS_SUCCESS) {
-		iav_debug("NETLINK DBG: Request %d succeeded with netlink.\n",
-			msg->cmd);
+		iav_debug("NETLINK DBG: Request %u succeeded from app %u.\n",
+			msg->cmd, msg->pid);
 	} else if (msg->status == NL_CMD_STATUS_FAIL) {
-		iav_debug("NETLINK DBG: Request %d failed with netlink!\n",
-			msg->cmd);
+		iav_debug("NETLINK DBG: Request %u failed from app %u!\n",
+			msg->cmd, msg->pid);
 	} else {
-		iav_debug("NETLINK DBG: Incorrect status %d from netlink!\n",
-			msg->status);
+		iav_debug("NETLINK DBG: Incorrect status %u from app %u!\n",
+			msg->status, msg->pid);
 		ret = -1;
 	}
 
 	if (msg->cmd > nl_obj->nl_request_count) {
-		iav_debug("NETLINK DBG: Incorrect request cmd %d from netlink!\n",
-			msg->cmd);
+		iav_debug("NETLINK DBG: Incorrect request cmd %u from app %u!\n",
+			msg->cmd, msg->pid);
 		ret = -1;
 	}
 
 	if (!ret) {
 		nl_req = &nl_obj->nl_requests[msg->cmd];
-		nl_req->condition = 1;
+		nl_req->responded = 1;
 		wake_up_interruptible(&nl_req->wq_request);
 	}
 
@@ -239,7 +266,7 @@ static void nl_recv_msg_handler(struct sk_buff * skb)
 		if (NETLINK_CB(skb).portid == msg.pid) {
 			nl_obj = find_nl_obj(msg.port);
 			if (!nl_obj) {
-				iav_error("NETLINK ERR: Unknown msg, port %d, app %d!\n",
+				iav_error("NETLINK ERR: Unknown msg, port %u, app %u!\n",
 					msg.port, msg.pid);
 				continue;
 			}

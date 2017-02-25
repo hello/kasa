@@ -53,6 +53,7 @@ typedef struct _GOptionEntry   GOptionEntry;
 
 /**
  * GOptionFlags:
+ * @G_OPTION_FLAG_NONE: No flags. Since: 2.42.
  * @G_OPTION_FLAG_HIDDEN: The option doesn't appear in `--help` output.
  * @G_OPTION_FLAG_IN_MAIN: The option appears in the main section of the
  *     `--help` output, even if it is defined in a group.
@@ -79,6 +80,7 @@ typedef struct _GOptionEntry   GOptionEntry;
  */
 typedef enum
 {
+  G_OPTION_FLAG_NONE            = 0,
   G_OPTION_FLAG_HIDDEN		= 1 << 0,
   G_OPTION_FLAG_IN_MAIN		= 1 << 1,
   G_OPTION_FLAG_REVERSE		= 1 << 2,
@@ -93,8 +95,8 @@ typedef enum
  * @G_OPTION_ARG_NONE: No extra argument. This is useful for simple flags.
  * @G_OPTION_ARG_STRING: The option takes a string argument.
  * @G_OPTION_ARG_INT: The option takes an integer argument.
- * @G_OPTION_ARG_CALLBACK: The option provides a callback to parse the
- *     extra argument.
+ * @G_OPTION_ARG_CALLBACK: The option provides a callback (of type
+ *     #GOptionArgFunc) to parse the extra argument.
  * @G_OPTION_ARG_FILENAME: The option takes a filename as argument.
  * @G_OPTION_ARG_STRING_ARRAY: The option takes a string argument, multiple
  *     uses of the option are collected into an array of strings.
@@ -308,6 +310,12 @@ void		g_option_context_set_ignore_unknown_options (GOptionContext *context,
 GLIB_AVAILABLE_IN_ALL
 gboolean        g_option_context_get_ignore_unknown_options (GOptionContext *context);
 
+GLIB_AVAILABLE_IN_2_44
+void            g_option_context_set_strict_posix           (GOptionContext *context,
+                                                             gboolean        strict_posix);
+GLIB_AVAILABLE_IN_2_44
+gboolean        g_option_context_get_strict_posix           (GOptionContext *context);
+
 GLIB_AVAILABLE_IN_ALL
 void            g_option_context_add_main_entries (GOptionContext      *context,
 						   const GOptionEntry  *entries,
@@ -356,8 +364,12 @@ void	      g_option_group_set_parse_hooks	    (GOptionGroup       *group,
 GLIB_AVAILABLE_IN_ALL
 void	      g_option_group_set_error_hook	    (GOptionGroup       *group,
 						     GOptionErrorFunc	 error_func);
-GLIB_AVAILABLE_IN_ALL
+GLIB_DEPRECATED_IN_2_44
 void          g_option_group_free                   (GOptionGroup       *group);
+GLIB_AVAILABLE_IN_2_44
+GOptionGroup *g_option_group_ref                    (GOptionGroup       *group);
+GLIB_AVAILABLE_IN_2_44
+void          g_option_group_unref                  (GOptionGroup       *group);
 GLIB_AVAILABLE_IN_ALL
 void          g_option_group_add_entries            (GOptionGroup       *group,
 						     const GOptionEntry *entries);

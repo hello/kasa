@@ -44,6 +44,7 @@ static DEFINE_SPINLOCK(boot_lock);
 
 static u32 *cpux_jump_virt = NULL;
 extern void ambarella_secondary_startup(void);
+extern void ambvic_smp_softirq_init(void);
 
 
 /* Write pen_release in a way that is guaranteed to be visible to all
@@ -63,8 +64,8 @@ static void write_cpux_jump_addr(unsigned int cpu, int addr)
 	smp_wmb();
 	__cpuc_flush_dcache_area(
 		&cpux_jump_virt[cpu], sizeof(cpux_jump_virt[cpu]));
-	outer_clean_range(
-		__pa(&cpux_jump_virt[cpu]), __pa(&cpux_jump_virt[cpu] + 1));
+	outer_clean_range(ambarella_virt_to_phys((u32)&cpux_jump_virt[cpu]),
+			ambarella_virt_to_phys((u32)&cpux_jump_virt[cpu] + 1));
 }
 
 /* running on CPU1 */
@@ -78,7 +79,6 @@ static void __cpuinit ambarella_smp_secondary_init(unsigned int cpu)
 	spin_lock(&boot_lock);
 	spin_unlock(&boot_lock);
 }
-
 /* running on CPU0 */
 static int __cpuinit ambarella_smp_boot_secondary(unsigned int cpu,
 	struct task_struct *idle)
@@ -87,6 +87,8 @@ static int __cpuinit ambarella_smp_boot_secondary(unsigned int cpu,
 	unsigned long phys_cpu = cpu_logical_map(cpu);
 
 	BUG_ON(cpux_jump_virt == NULL);
+
+	scu_enable(scu_base);
 
 	/* Set synchronisation state between this boot processor
 	 * and the secondary one */
@@ -100,13 +102,19 @@ static int __cpuinit ambarella_smp_boot_secondary(unsigned int cpu,
 	 * "cpu" is Linux's internal ID. */
 	write_pen_release(phys_cpu);
 
+	write_cpux_jump_addr(cpu, virt_to_phys(ambarella_secondary_startup));
+
+#ifdef CONFIG_PLAT_AMBARELLA_SUPPORT_VIC
+	/* IPI interrupt on CPU1 may be unmasked, so this init is necessary */
+	ambvic_smp_softirq_init();
+#endif
+
 	/* Send the secondary CPU a soft interrupt, thereby causing
 	 * the boot monitor to read the system wide flags register,
 	 * and branch to the address found there. */
 	timeout = jiffies + (1 * HZ);
 	while (time_before(jiffies, timeout)) {
 		smp_rmb();
-		write_cpux_jump_addr(cpu, virt_to_phys(ambarella_secondary_startup));
 
 		arch_send_wakeup_ipi_mask(cpumask_of(cpu));
 
@@ -209,7 +217,7 @@ static inline void platform_do_lowpower(unsigned int cpu, int *spurious)
 	for (;;) {
 		wfi();
 
-		if (pen_release == cpu) {
+		if (pen_release == cpu_logical_map(cpu)) {
 			/* OK, proper wakeup, we're done */
 			break;
 		}

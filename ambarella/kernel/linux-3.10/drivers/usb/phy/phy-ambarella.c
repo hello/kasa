@@ -347,14 +347,10 @@ static int ambarella_init_host_phy(struct platform_device *pdev,
 static int ambarella_phy_init(struct usb_phy *phy)
 {
 	struct ambarella_phy *amb_phy = to_ambarella_phy(phy);
-	u32 ana_val;
+	u32 ana_val = 0x3006;
 
 	/* If there are 2 PHYs, no matter which PHY need to be initialized,
 	 * we initialize all of them at the same time */
-	if (amb_phy->host_phy_num < 2)
-		ana_val = 0x4;
-	else
-		ana_val = 0x1002;
 
 	if (!(amba_readl(amb_phy->ana_reg) & ana_val)) {
 		amba_setbitsl(amb_phy->ana_reg, ana_val);

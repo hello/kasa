@@ -4,12 +4,29 @@
  * History:
  *   2015-1-7 - [longli] created file
  *
- * Copyright (C) 2008-2015, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -27,13 +44,13 @@ static char error_buf[CURL_ERROR_SIZE];
 /* src_url: from where to download */
 AMDownload *AMDownload::create()
 {
-  AMDownload *dl_ptr = NULL;
+  AMDownload *dl_ptr = nullptr;
 
   INFO("AMDownload::create() \n");
   dl_ptr = new AMDownload();
   if (dl_ptr && !dl_ptr->construct()) {
     delete dl_ptr;
-    dl_ptr = NULL;
+    dl_ptr = nullptr;
     ERROR("AMDownload::Failed to create an instance of AMDownload\n");
   }
 
@@ -41,7 +58,7 @@ AMDownload *AMDownload::create()
 }
 
 AMDownload::AMDownload():
-    m_curl_handle(NULL),
+    m_curl_handle(nullptr),
     m_dl_percent(0),
     m_url(""),
     m_dst_file("")
@@ -51,7 +68,7 @@ AMDownload::AMDownload():
 AMDownload::~AMDownload()
 {
   curl_easy_cleanup(m_curl_handle);
-  m_curl_handle = NULL;
+  m_curl_handle = nullptr;
   curl_global_cleanup();
 }
 
@@ -184,7 +201,7 @@ bool AMDownload::set_url(const string &src_file, const string &dst_path)
 int32_t AMDownload::get_dl_file_size()
 {
   int32_t  file_size = -1;
-  CURL *handle_ptr = NULL;
+  CURL *handle_ptr = nullptr;
 
   do {
     if (m_url.empty()) {
@@ -212,7 +229,7 @@ int32_t AMDownload::get_dl_file_size()
 
   if (handle_ptr) {
     curl_easy_cleanup(handle_ptr);
-    handle_ptr = NULL;
+    handle_ptr = nullptr;
   }
 
   return file_size;
@@ -326,11 +343,11 @@ bool AMDownload::download()
 {
   bool ret = true;
   CURLcode retv;
-  FILE *fp = NULL;
+  FILE *fp = nullptr;
 
   do {
     fp = fopen(m_dst_file.c_str(), "wb");
-    if (fp == NULL) {
+    if (fp == nullptr) {
       NOTICE("%s open filed!\n", m_dst_file.c_str());
       ret = false;
       break;
@@ -379,7 +396,7 @@ bool AMDownload::construct()
     }
 
     m_curl_handle = curl_easy_init();
-    if (m_curl_handle == NULL) {
+    if (m_curl_handle == nullptr) {
       NOTICE("curl easy init failed!\n");
       ret = false;
       break;

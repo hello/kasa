@@ -4,12 +4,29 @@
  * History:
  *   2015-1-8 - [longli] created file
  *
- * Copyright (C) 2008-2015, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 #ifndef ORYX_UPGRADE_INCLUDE_AM_UPGRADE_H_
@@ -26,6 +43,7 @@ class AMFWUpgrade: public AMIFWUpgrade
 
   public:
     virtual bool set_mode(AM_UPGRADE_MODE mode) override;
+    virtual bool set_use_sdcard(const uint32_t flag) override;
     virtual bool set_fw_url(const std::string &fw_url,
                             const std::string &fw_save_path) override;
     virtual bool set_fw_path(const std::string &fw_path) override;
@@ -61,8 +79,10 @@ class AMFWUpgrade: public AMIFWUpgrade
     bool check_dl_file();
     bool get_partition_index_str(const std::string &partition_name,
                                  std::string &index_str);
-    AM_MOUNT_STATUS is_mounted(const std::string &partition_path,
-                               const std::string &mount_dst);
+    void get_ubi_node(const std::string &index_str, std::string &ubi_node);
+    AM_MOUNT_STATUS is_mounted(const std::string &mtd_index,
+                               const std::string &mount_dst,
+                               const std::string &mount_fs_type);
     AM_MOUNT_STATUS m_mount_partition(const std::string &partition_name,
                                       const std::string &mount_dst,
                                       const std::string &fs_type);
@@ -72,22 +92,23 @@ class AMFWUpgrade: public AMIFWUpgrade
     bool copy_fw_to_ADC();
     bool save_fw_path(const std::string &fw_path);
     bool set_upgrade_status(const AM_UPGRADE_STATUS state);
-    static void upgrade_thread(void *upgrade_args);
+    static void upgrade_thread(AMUpgradeArgs upgrade_args);
     AMFWUpgrade(AMFWUpgrade const &copy) = delete;
     AMFWUpgrade& operator=(AMFWUpgrade const &copy) = delete;
 
   private:
-    std::string         m_fw_path;
-    std::string         m_adc_dir;
-    std::atomic_int     m_ref_counter;
+    AMConfig           *m_config;
+    AMDownload         *m_updl;
     AM_UPGRADE_MODE     m_mode;
     AM_UPGRADE_STATUS   m_state;
-    AMConfig            *m_config;
-    AMDownload          *m_updl;
+    uint32_t            m_use_sdcard;
     bool                m_init;
     bool                m_dl_ready;
     bool                m_mounted;
     bool                m_in_progress;
+    std::string         m_fw_path;
+    std::string         m_adc_dir;
+    std::atomic_int     m_ref_counter;
     static AMFWUpgrade  *m_instance;
 };
 

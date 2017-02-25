@@ -4,15 +4,33 @@
  * History:
  *    2014/11/18 - [Long Zhao] Create
  *
- * Copyright (C) 2004-2014, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
  *
- * This file is produced by perl.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 #include <linux/module.h>
 #include <linux/ambpriv_device.h>
 #include <linux/interrupt.h>
@@ -22,6 +40,7 @@
 #include <iav_utils.h>
 #include <vin_api.h>
 #include "ar0230.h"
+#include "ar0230_table.c"
 
 static int bus_addr = (0 << 16) | (0x20 >> 1);
 module_param(bus_addr, int, 0644);
@@ -38,9 +57,7 @@ struct ar0230_priv {
 	u32 line_length;
 };
 
-#include "ar0230_table.c"
-
-static int ar0230_write_reg( struct vin_device *vdev, u32 subaddr, u32 data)
+static int ar0230_write_reg(struct vin_device *vdev, u32 subaddr, u32 data)
 {
 	int rval;
 	struct ar0230_priv *ar0230;
@@ -73,7 +90,7 @@ static int ar0230_write_reg( struct vin_device *vdev, u32 subaddr, u32 data)
 	return 0;
 }
 
-static int ar0230_read_reg( struct vin_device *vdev, u32 subaddr, u32 *data)
+static int ar0230_read_reg(struct vin_device *vdev, u32 subaddr, u32 *data)
 {
 	int rval = 0;
 	struct ar0230_priv *ar0230;
@@ -99,7 +116,7 @@ static int ar0230_read_reg( struct vin_device *vdev, u32 subaddr, u32 *data)
 	msgs[1].len = 2;
 
 	rval = i2c_transfer(client->adapter, msgs, 2);
-	if (rval < 0){
+	if (rval < 0) {
 		vin_error("failed(%d): [0x%x]\n", rval, subaddr);
 		return rval;
 	}
@@ -113,7 +130,7 @@ static int ar0230_set_vin_mode(struct vin_device *vdev, struct vin_video_format 
 {
 	struct vin_device_config ar0230_config;
 
-	memset(&ar0230_config, 0, sizeof (ar0230_config));
+	memset(&ar0230_config, 0, sizeof(ar0230_config));
 
 	ar0230_config.interface_type = SENSOR_SERIAL_LVDS;
 	ar0230_config.sync_mode = SENSOR_SYNC_MODE_MASTER;
@@ -181,7 +198,7 @@ static int ar0230_update_hv_info(struct vin_device *vdev)
 	struct ar0230_priv *pinfo = (struct ar0230_priv *)vdev->priv;
 
 	ar0230_read_reg(vdev, AR0230_LINE_LENGTH_PCK, &pinfo->line_length);
-	if(unlikely(!pinfo->line_length)) {
+	if (unlikely(!pinfo->line_length)) {
 		vin_error("line length is 0!\n");
 		return -EIO;
 	}
@@ -269,15 +286,15 @@ static int ar0230_set_shutter_row(struct vin_device *vdev, u32 row)
 	if (vdev->cur_format->hdr_mode == AMBA_VIDEO_INT_HDR_MODE) {
 		ar0230_read_reg(vdev, 0x3082, &t1t2_ratio);
 		t1t2_ratio = 1<<(((t1t2_ratio&0xC)>>2) + 2);
-		max_shutter_width = MIN( 70 * t1t2_ratio, pinfo->frame_length_lines -71);
+		max_shutter_width = MIN(70 * t1t2_ratio, pinfo->frame_length_lines - 71);
 
 		min_line = t1t2_ratio/2;
 		max_line = max_shutter_width;
 		num_line = clamp(num_line, min_line, max_line);
-	} else if (vdev->cur_format->hdr_mode == AMBA_VIDEO_LINEAR_MODE){
-		/* FIXME: shutter width: 1 ~ Frame format(V) */
+	} else if (vdev->cur_format->hdr_mode == AMBA_VIDEO_LINEAR_MODE) {
+		/* FIXME: shutter width: 1 ~ (Frame format(V) - 4) */
 		min_line = 1;
-		max_line = pinfo->frame_length_lines;
+		max_line = pinfo->frame_length_lines - 4;
 		num_line = clamp(num_line, min_line, max_line);
 	}
 
@@ -310,7 +327,8 @@ static int ar0230_set_wdr_shutter_row_group(struct vin_device *vdev,
 	shutter_short = shutter_long/t1t2_ratio;
 
 	/* shutter limitation check */
-	if(shutter_long + shutter_short + 2 > pinfo->frame_length_lines){
+	if ((shutter_long + shutter_short + 2 > pinfo->frame_length_lines) ||
+		(1080 + shutter_short + 2 > pinfo->frame_length_lines)) {
 		vin_error("shutter exceeds limitation! long:%d, short:%d, V:%d, ratio:%d\n",
 			shutter_long, shutter_short, pinfo->frame_length_lines, t1t2_ratio);
 		return -EPERM;
@@ -341,14 +359,14 @@ static int ar0230_get_wdr_shutter_row_group(struct vin_device *vdev,
 	return 0;
 }
 
-static int ar0230_shutter2row(struct vin_device *vdev, u32* shutter_time)
+static int ar0230_shutter2row(struct vin_device *vdev, u32 *shutter_time)
 {
 	u64 exposure_lines;
 	int rval = 0;
 	struct ar0230_priv *pinfo = (struct ar0230_priv *)vdev->priv;
 
 	/* for fast boot, it may call set shutter time directly, so we must read line length/frame line */
-	if(unlikely(!pinfo->line_length)) {
+	if (unlikely(!pinfo->line_length)) {
 		rval = ar0230_update_hv_info(vdev);
 		if (rval < 0)
 			return rval;
@@ -392,10 +410,10 @@ static int ar0230_convert_dgain_ratio(u16 old_dgain, u32 ratio, u16 *new_dgain)
 
 	tmp_dgain = (old_dgain * ratio)/1024;
 
-	if(tmp_dgain > 0x7FF){//dgain should be less than 15.992
+	if (tmp_dgain > 0x7FF) {/* dgain should be less than 15.992 */
 		tmp_dgain = 0x7FF;
-		vin_info("Waring: dgain value is too high!\n");
-	} else if ((ratio != 0)&&(tmp_dgain == 0)){//0<ratio<1/128, set to 1/128
+		vin_warn("dgain value is too high!\n");
+	} else if ((ratio != 0) && (tmp_dgain == 0)) {/* 0<ratio<1/128, set to 1/128 */
 		tmp_dgain = 1;
 	}
 	*new_dgain = tmp_dgain;
@@ -414,29 +432,29 @@ static int ar0230_set_dgain_ratio(struct vin_device *vdev, struct vindev_dgain_r
 	pinfo = (struct ar0230_priv *)vdev->priv;
 
 	/* r */
-	if(p_dgain_ratio->r_ratio == 0)
+	if (p_dgain_ratio->r_ratio == 0)
 		vin_warn("Warning:R dgain ratio is set to 0!\n");
 	ar0230_convert_dgain_ratio(pinfo->dgain_base, p_dgain_ratio->r_ratio, &new_dgain);
-	ar0230_write_reg(vdev, 0x305A, new_dgain);
+	ar0230_write_reg(vdev, AR0230_R_GAIN, new_dgain);
 	pinfo->dgain_r_ratio = p_dgain_ratio->r_ratio;
 
 	/* gr */
-	if(p_dgain_ratio->gr_ratio == 0)
+	if (p_dgain_ratio->gr_ratio == 0)
 		vin_warn("Warning:Gr dgain ratio is set to 0!\n");
 	ar0230_convert_dgain_ratio(pinfo->dgain_base, p_dgain_ratio->gr_ratio, &new_dgain);
-	ar0230_write_reg(vdev, 0x3056, new_dgain);
+	ar0230_write_reg(vdev, AR0230_GR_GAIN, new_dgain);
 
 	/* gb */
-	if(p_dgain_ratio->gb_ratio == 0)
+	if (p_dgain_ratio->gb_ratio == 0)
 		vin_warn("Warning:Gb dgain ratio is set to 0!\n");
 	ar0230_convert_dgain_ratio(pinfo->dgain_base, p_dgain_ratio->gb_ratio, &new_dgain);
-	ar0230_write_reg(vdev, 0x305C, new_dgain);
+	ar0230_write_reg(vdev, AR0230_GB_GAIN, new_dgain);
 
 	/* b */
-	if(p_dgain_ratio->b_ratio == 0)
+	if (p_dgain_ratio->b_ratio == 0)
 		vin_warn("Warning:B dgain ratio is set to 0!\n");
 	ar0230_convert_dgain_ratio(pinfo->dgain_base, p_dgain_ratio->b_ratio, &new_dgain);
-	ar0230_write_reg(vdev, 0x3058, new_dgain);
+	ar0230_write_reg(vdev, AR0230_B_GAIN, new_dgain);
 	pinfo->dgain_b_ratio = p_dgain_ratio->b_ratio;
 
 	return errCode;
@@ -445,25 +463,25 @@ static int ar0230_set_dgain_ratio(struct vin_device *vdev, struct vindev_dgain_r
 static int ar0230_get_dgain_ratio(struct vin_device *vdev, struct vindev_dgain_ratio *p_dgain_ratio)
 {
 	int errCode = 0;
-	u32 current_dgain=0, dgain_ratio;
+	u32 current_dgain = 0, dgain_ratio;
 
 	/* r */
-	ar0230_read_reg(vdev, 0x305A, &current_dgain);
+	ar0230_read_reg(vdev, AR0230_R_GAIN, &current_dgain);
 	dgain_ratio = current_dgain * (1024 / 128);
 	p_dgain_ratio->r_ratio = dgain_ratio;
 
 	/* gr */
-	ar0230_read_reg(vdev, 0x3056, &current_dgain);
+	ar0230_read_reg(vdev, AR0230_GR_GAIN, &current_dgain);
 	dgain_ratio = current_dgain * (1024 / 128);
 	p_dgain_ratio->gr_ratio = dgain_ratio;
 
 	/* gb */
-	ar0230_read_reg(vdev, 0x305C, &current_dgain);
+	ar0230_read_reg(vdev, AR0230_GB_GAIN, &current_dgain);
 	dgain_ratio = current_dgain * (1024 / 128);
 	p_dgain_ratio->gb_ratio = dgain_ratio;
 
 	/* b */
-	ar0230_read_reg(vdev, 0x3058, &current_dgain);
+	ar0230_read_reg(vdev, AR0230_B_GAIN, &current_dgain);
 	dgain_ratio = current_dgain * (1024 / 128);
 	p_dgain_ratio->b_ratio = dgain_ratio;
 
@@ -473,13 +491,6 @@ static int ar0230_get_dgain_ratio(struct vin_device *vdev, struct vindev_dgain_r
 static int ar0230_set_agc_index(struct vin_device *vdev, int agc_idx)
 {
 	int agc_max_index;
-
-#if 0
-	u8 md_q1[4] = {41,57,76,85};
-	u16 q1_idx;
-	u32 data_val;
-#endif
-
 	u16 new_dgain, again;
 	struct ar0230_priv *pinfo;
 
@@ -500,7 +511,7 @@ static int ar0230_set_agc_index(struct vin_device *vdev, int agc_idx)
 		ar0230_write_reg(vdev, 0x3206, 0x0B08);/* ADACD_NOISE_FLOOR1 */
 		ar0230_write_reg(vdev, 0x3208, 0x1E13);/* ADACD_NOISE_FLOOR2 */
 		ar0230_write_reg(vdev, 0x3202, 0x0080);/* ADACD_NOISE_MODEL1 */
-		if  (vdev->cur_format->hdr_mode != AMBA_VIDEO_LINEAR_MODE) {
+		if (vdev->cur_format->hdr_mode != AMBA_VIDEO_LINEAR_MODE) {
 			ar0230_write_reg(vdev, 0x3096, 0x0480);/* ROW_NOISE_ADJUST_TOP */
 			ar0230_write_reg(vdev, 0x3098, 0x0480);/* ROW_NOISE_ADJUST_BTM */
 		}
@@ -535,27 +546,19 @@ static int ar0230_set_agc_index(struct vin_device *vdev, int agc_idx)
 		ar0230_write_reg(vdev, AR0230_DCG_CTL,
 			AR0230_HDR_GAIN_TABLE[agc_idx][AR0230_GAIN_COL_DCG]);
 
-#if 0
-		q1_idx = (again&0x30)>>4;
-		ar0230_read_reg(vdev, 0x3198, &data_val);
-		data_val &= 0xff00;
-		data_val |= md_q1[q1_idx%4];
-		ar0230_write_reg(vdev, 0x3198, data_val);
-#endif
-
 		pinfo->dgain_base = AR0230_GAIN_TABLE[agc_idx][AR0230_GAIN_COL_DGAIN];
 
 		/* r dgain */
 		ar0230_convert_dgain_ratio(pinfo->dgain_base, pinfo->dgain_r_ratio, &new_dgain);
-		ar0230_write_reg(vdev, 0x305A, new_dgain);
+		ar0230_write_reg(vdev, AR0230_R_GAIN, new_dgain);
 
 		/* gr/gb dgain, ratio is fixed to 1 */
-		ar0230_write_reg(vdev, 0x3056, pinfo->dgain_base);
-		ar0230_write_reg(vdev, 0x305C, pinfo->dgain_base);
+		ar0230_write_reg(vdev, AR0230_GR_GAIN, pinfo->dgain_base);
+		ar0230_write_reg(vdev, AR0230_GB_GAIN, pinfo->dgain_base);
 
 		/* b dgain */
 		ar0230_convert_dgain_ratio(pinfo->dgain_base, pinfo->dgain_b_ratio, &new_dgain);
-		ar0230_write_reg(vdev, 0x3058, new_dgain);
+		ar0230_write_reg(vdev, AR0230_B_GAIN, new_dgain);
 	}
 
 	return 0;
@@ -604,7 +607,7 @@ static int ar0230_wdr_shutter2row(struct vin_device *vdev,
 }
 
 static int ar0230_set_mirror_mode(struct vin_device *vdev,
-		struct vindev_mirror *mirror_mode)
+	struct vindev_mirror *mirror_mode)
 {
 	u32 tmp_reg, readmode, bayer_pattern;
 
@@ -648,19 +651,61 @@ static int ar0230_set_mirror_mode(struct vin_device *vdev,
 	return 0;
 }
 
+static int ar0230_get_aaa_info(struct vin_device *vdev,
+	struct vindev_aaa_info *aaa_info)
+{
+	struct ar0230_priv *pinfo = (struct ar0230_priv *)vdev->priv;
+
+	aaa_info->sht0_max = pinfo->frame_length_lines - 4;
+	aaa_info->sht1_max = pinfo->frame_length_lines - vdev->cur_format->height - 2;
+	aaa_info->sht2_max = 0;
+
+	return 0;
+}
+
+#ifdef CONFIG_PM
+static int ar0230_suspend(struct vin_device *vdev)
+{
+	u32 i, tmp;
+
+	for (i = 0; i < ARRAY_SIZE(pm_regs); i++) {
+		ar0230_read_reg(vdev, pm_regs[i].addr, &tmp);
+		pm_regs[i].data = (u16)tmp;
+	}
+
+	return 0;
+}
+
+static int ar0230_resume(struct vin_device *vdev)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(pm_regs); i++) {
+		ar0230_write_reg(vdev, pm_regs[i].addr, pm_regs[i].data);
+	}
+
+	return 0;
+}
+#endif
+
 static struct vin_ops ar0230_ops = {
 	.init_device		= ar0230_init_device,
 	.set_pll			= ar0230_set_pll,
 	.set_format		= ar0230_set_format,
 	.set_shutter_row	= ar0230_set_shutter_row,
-	.shutter2row 		= ar0230_shutter2row,
+	.shutter2row		= ar0230_shutter2row,
 	.set_frame_rate	= ar0230_set_fps,
-	.set_agc_index	= ar0230_set_agc_index,
+	.set_agc_index		= ar0230_set_agc_index,
 	.set_mirror_mode	= ar0230_set_mirror_mode,
 	.set_dgain_ratio	= ar0230_set_dgain_ratio,
 	.get_dgain_ratio	= ar0230_get_dgain_ratio,
+	.get_aaa_info		= ar0230_get_aaa_info,
 	.read_reg			= ar0230_read_reg,
 	.write_reg		= ar0230_write_reg,
+#ifdef CONFIG_PM
+	.suspend		= ar0230_suspend,
+	.resume			= ar0230_resume,
+#endif
 
 	/* for wdr sensor */
 	.set_wdr_again_idx_gp = ar0230_set_wdr_again_idx_group,
@@ -672,7 +717,6 @@ static struct vin_ops ar0230_ops = {
 	.wdr_shutter2row = ar0230_wdr_shutter2row,
 };
 
-/*	< include init.c here for aptina sensor, which is produce by perl >  */
 /* ========================================================================== */
 static int ar0230_probe(struct i2c_client *client,
 	const struct i2c_device_id *id)

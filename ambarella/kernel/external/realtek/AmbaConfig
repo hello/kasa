@@ -12,6 +12,27 @@
 ## without the prior consent of Ambarella, Inc.
 ##
 
+config BUILD_REALTEK_WIFI_8723DS
+	bool "Realtek WiFi RTL8723DS (802.11n SDIO + BT Uart)"
+	default n
+	help
+		Build Realtek WiFi RTL8823DS
+		Verified on Kernel 3.10
+choice
+	prompt "RTL8723DS driver Version"
+	depends on BUILD_REALTEK_WIFI_8723DS
+	help
+		Select the RTL8723DS driver version.
+
+config BUILD_REALTEK_WIFI_8723DS_515_19247
+	bool "RTL8723DS v5.1.1.2_18132.20160706_BTCOEX20160510-0909"
+	help
+		Select RTL8723DS v5.1.1.2_18132.20160706_BTCOEX20160510-0909
+		Verified on Kernel 3.10
+
+endchoice ##prompt "RTL8723DS driver Version"
+
+##################################
 config BUILD_REALTEK_WIFI_8812AU
 	bool "Realtek WiFi RTL8812AU (802.11ac USB)"
 	default n
@@ -23,6 +44,18 @@ choice
 	depends on BUILD_REALTEK_WIFI_8812AU
 	help
 		Select the RTL8812AU driver version.
+
+config BUILD_REALTEK_WIFI_8812AU_515_19247
+	bool "RTL8812AU v5.1.5_19247.20160830"
+	help
+		Select RTL8812AU v5.1.5_19247.20160830
+		Verified on Kernel 3.10 and 4.4
+
+config BUILD_REALTEK_WIFI_8812AU_4320_16317p16683
+	bool "RTL8812AU v4.3.20_16317.20151231 + 20160108_pPWRbyRate_p16683"
+	help
+		Select RTL8812AU v4.3.20_16317.20151231p16683
+		Verified on Kernel 3.10
 
 config BUILD_REALTEK_WIFI_8812AU_438_12175
 	bool "RTL8812AU v4.3.8_12175.20140902"

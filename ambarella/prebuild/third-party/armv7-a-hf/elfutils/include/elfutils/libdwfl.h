@@ -1,5 +1,5 @@
 /* Interfaces for libdwfl.
-   Copyright (C) 2005-2010 Red Hat, Inc.
+   Copyright (C) 2005-2010, 2013 Red Hat, Inc.
    This file is part of elfutils.
 
    This file is free software; you can redistribute it and/or modify
@@ -40,6 +40,14 @@ typedef struct Dwfl_Module Dwfl_Module;
 
 /* Handle describing a line record.  */
 typedef struct Dwfl_Line Dwfl_Line;
+
+/* This holds information common for all the frames of one backtrace for
+   a partical thread/task/TID.  Several threads belong to one Dwfl.  */
+typedef struct Dwfl_Thread Dwfl_Thread;
+
+/* This holds everything we know about the state of the frame at a particular
+   PC location described by an FDE belonging to Dwfl_Thread.  */
+typedef struct Dwfl_Frame Dwfl_Frame;
 
 /* Callbacks.  */
 typedef struct
@@ -137,14 +145,21 @@ extern int dwfl_report_segment (Dwfl *dwfl, int ndx,
 extern Dwfl_Module *dwfl_report_module (Dwfl *dwfl, const char *name,
 					Dwarf_Addr start, Dwarf_Addr end);
 
-/* Report a module with start and end addresses computed from the ELF
-   program headers in the given file, plus BASE.  For an ET_REL file,
-   does a simple absolute section layout starting at BASE.
+/* Report a module to address BASE with start and end addresses computed
+   from the ELF program headers in the given file - see the table below.
    FD may be -1 to open FILE_NAME.  On success, FD is consumed by the
-   library, and the `find_elf' callback will not be used for this module.  */
+   library, and the `find_elf' callback will not be used for this module.
+	    ADD_P_VADDR  BASE
+   ET_EXEC  ignored      ignored
+   ET_DYN   false        absolute address where to place the file
+	    true         start address relative to ELF's phdr p_vaddr
+   ET_REL   ignored      absolute address where to place the file
+   ET_CORE  ignored      ignored
+   ET_DYN ELF phdr p_vaddr address can be non-zero if the shared library
+   has been prelinked by tool prelink(8).  */
 extern Dwfl_Module *dwfl_report_elf (Dwfl *dwfl, const char *name,
 				     const char *file_name, int fd,
-				     GElf_Addr base);
+				     GElf_Addr base, bool add_p_vaddr);
 
 /* Similar, but report the module for offline use.  All ET_EXEC files
    being reported must be reported before any relocatable objects.
@@ -342,15 +357,17 @@ extern int dwfl_linux_kernel_report_offline (Dwfl *dwfl, const char *release,
    This can follow a dwfl_report_offline call to bootstrap the
    DT_DEBUG method of following the dynamic linker link_map chain, in
    case the core file does not contain enough of the executable's text
-   segment to locate its PT_DYNAMIC in the dump.  This might call
-   dwfl_report_elf on file names found in the dump if reading some
-   link_map files is the only way to ascertain those modules' addresses.
-   Returns the number of modules reported, or -1 for errors.  */
-extern int dwfl_core_file_report (Dwfl *dwfl, Elf *elf);
+   segment to locate its PT_DYNAMIC in the dump.  In such case you need to
+   supply non-NULL EXECUTABLE, otherwise dynamic libraries will not be loaded
+   into the DWFL map.  This might call dwfl_report_elf on file names found in
+   the dump if reading some link_map files is the only way to ascertain those
+   modules' addresses.  Returns the number of modules reported, or -1 for
+   errors.  */
+extern int dwfl_core_file_report (Dwfl *dwfl, Elf *elf, const char *executable);
 
 /* Call dwfl_report_module for each file mapped into the address space of PID.
    Returns zero on success, -1 if dwfl_report_module failed,
-   or an errno code if opening the kernel binary failed.  */
+   or an errno code if opening the proc files failed.  */
 extern int dwfl_linux_proc_report (Dwfl *dwfl, pid_t pid);
 
 /* Similar, but reads an input stream in the format of Linux /proc/PID/maps
@@ -403,11 +420,19 @@ extern int dwfl_validate_address (Dwfl *dwfl,
    are found) for use with libelf.  If successful, fills in *BIAS
    with the difference between addresses within the loaded module
    and those in symbol tables or Dwarf information referring to it.  */
-extern Elf *dwfl_module_getelf (Dwfl_Module *, GElf_Addr *bias);
+extern Elf *dwfl_module_getelf (Dwfl_Module *, GElf_Addr *bias)
+  __nonnull_attribute__ (1, 2);
 
 /* Return the number of symbols in the module's symbol table,
    or -1 for errors.  */
 extern int dwfl_module_getsymtab (Dwfl_Module *mod);
+
+/* Return the index of the first global symbol in the module's symbol
+   table, or -1 for errors.  In each symbol table, all symbols with
+   STB_LOCAL binding precede the weak and global symbols.  This
+   function returns the symbol table index one greater than the last
+   local symbol.  */
+extern int dwfl_module_getsymtab_first_global (Dwfl_Module *mod);
 
 /* Fetch one entry from the module's symbol table.  On errors, returns
    NULL.  If successful, fills in *SYM and returns the string for st_name.
@@ -415,16 +440,79 @@ extern int dwfl_module_getsymtab (Dwfl_Module *mod);
    an absolute value based on the module's location, when the symbol is in
    an SHF_ALLOC section.  If SHNDXP is non-null, it's set with the section
    index (whether from st_shndx or extended index table); in case of a
-   symbol in a non-allocated section, *SHNDXP is instead set to -1.  */
+   symbol in a non-allocated section, *SHNDXP is instead set to -1.
+   Note that since symbols can come from either the main, debug or auxiliary
+   ELF symbol file (either dynsym or symtab) the section index can only
+   be reliably used to compare against special section constants like
+   SHN_UNDEF or SHN_ABS.  It is recommended to use dwfl_module_getsym_info
+   which doesn't have these deficiencies.  */
 extern const char *dwfl_module_getsym (Dwfl_Module *mod, int ndx,
 				       GElf_Sym *sym, GElf_Word *shndxp)
   __nonnull_attribute__ (3);
 
+/* Fetch one entry from the module's symbol table and the associated
+   address value.  On errors, returns NULL.  If successful, fills in
+   *SYM, *ADDR and returns the string for st_name.  This works like
+   gelf_getsym.  *ADDR is set to the st_value adjusted to an absolute
+   value based on the module's location, when the symbol is in an
+   SHF_ALLOC section.  For non-ET_REL files, if the arch uses function
+   descriptors, and the st_value points to one, *ADDR will be resolved
+   to the actual function entry address.  The SYM->ST_VALUE itself
+   isn't adjusted in any way.  Fills in ELFP, if not NULL, with the
+   ELF file the symbol originally came from.  Note that symbols can
+   come from either the main, debug or auxiliary ELF symbol file
+   (either dynsym or symtab).  If SHNDXP is non-null, it's set with
+   the section index (whether from st_shndx or extended index table);
+   in case of a symbol in a non-allocated section, *SHNDXP is instead
+   set to -1.  Fills in BIAS, if not NULL, with the difference between
+   addresses within the loaded module and those in symbol table of the
+   ELF file.  Note that the address associated with the symbol might
+   be in a different section than the returned symbol.  The section in
+   the main elf file in which returned ADDR falls can be found with
+   dwfl_module_address_section.  */
+extern const char *dwfl_module_getsym_info (Dwfl_Module *mod, int ndx,
+					    GElf_Sym *sym, GElf_Addr *addr,
+					    GElf_Word *shndxp,
+					    Elf **elfp, Dwarf_Addr *bias)
+  __nonnull_attribute__ (3, 4);
+
 /* Find the symbol that ADDRESS lies inside, and return its name.  */
 extern const char *dwfl_module_addrname (Dwfl_Module *mod, GElf_Addr address);
 
+/* Find the symbol associated with ADDRESS.  Return its name or NULL
+   when nothing was found.  If the architecture uses function
+   descriptors, and symbol st_value points to one, ADDRESS wil be
+   matched against either the adjusted st_value or the associated
+   function entry value as described in dwfl_module_getsym_info.  If
+   OFFSET is not NULL it will be filled in with the difference from
+   the start of the symbol (or function entry).  If SYM is not NULL it
+   is filled in with the symbol associated with the matched ADDRESS.
+   The SYM->ST_VALUE itself isn't adjusted in any way.  Fills in ELFP,
+   if not NULL, with the ELF file the symbol originally came from.
+   Note that symbols can come from either the main, debug or auxiliary
+   ELF symbol file (either dynsym or symtab).  If SHNDXP is non-null,
+   it's set with the section index (whether from st_shndx or extended
+   index table).  Fills in BIAS, if not NULL, with the difference
+   between addresses within the loaded module and those in symbol
+   table of the ELF file.  Note that the address matched against the
+   symbol might be in a different section than the returned symbol.
+   The section in the main elf file in ADDRESS falls can be found with
+   dwfl_module_address_section.  */
+extern const char *dwfl_module_addrinfo (Dwfl_Module *mod, GElf_Addr address,
+					 GElf_Off *offset, GElf_Sym *sym,
+					 GElf_Word *shndxp, Elf **elfp,
+					 Dwarf_Addr *bias)
+  __nonnull_attribute__ (3);
+
 /* Find the symbol that ADDRESS lies inside, and return detailed
-   information as for dwfl_module_getsym (above).  */
+   information as for dwfl_module_getsym (above).  Note that like
+   dwfl_module_getsym this function also adjusts SYM->ST_VALUE to an
+   absolute value based on the module's location.  ADDRESS is only
+   matched against this adjusted SYM->ST_VALUE.  This means that
+   depending on architecture this might only match symbols that
+   represent function descriptor addresses (and not function entry
+   addresses).  For these reasons it is recommended to use
+   dwfl_module_addrinfo instead.  */
 extern const char *dwfl_module_addrsym (Dwfl_Module *mod, GElf_Addr address,
 					GElf_Sym *sym, GElf_Word *shndxp)
   __nonnull_attribute__ (3);
@@ -556,6 +644,166 @@ extern int dwfl_module_register_names (Dwfl_Module *mod,
 extern Dwarf_CFI *dwfl_module_dwarf_cfi (Dwfl_Module *mod, Dwarf_Addr *bias);
 extern Dwarf_CFI *dwfl_module_eh_cfi (Dwfl_Module *mod, Dwarf_Addr *bias);
 
+
+typedef struct
+{
+  /* Called to iterate through threads.  Returns next TID (thread ID) on
+     success, a negative number on failure and zero if there are no more
+     threads.  dwfl_errno () should be set if negative number has been
+     returned.  *THREAD_ARGP is NULL on first call, and may be optionally
+     set by the implementation. The value set by the implementation will
+     be passed in on the next call to NEXT_THREAD.  THREAD_ARGP is never
+     NULL.  *THREAD_ARGP will be passed to set_initial_registers or
+     thread_detach callbacks together with Dwfl_Thread *thread.  This
+     method must not be NULL.  */
+  pid_t (*next_thread) (Dwfl *dwfl, void *dwfl_arg, void **thread_argp)
+    __nonnull_attribute__ (1);
+
+  /* Called to get a specific thread.  Returns true if there is a
+     thread with the given thread id number, returns false if no such
+     thread exists and will set dwfl_errno in that case.  THREAD_ARGP
+     is never NULL.  *THREAD_ARGP will be passed to
+     set_initial_registers or thread_detach callbacks together with
+     Dwfl_Thread *thread.  This method may be NULL and will then be
+     emulated using the next_thread callback. */
+  bool (*get_thread) (Dwfl *dwfl, pid_t tid, void *dwfl_arg,
+		      void **thread_argp)
+    __nonnull_attribute__ (1);
+
+  /* Called during unwinding to access memory (stack) state.  Returns true for
+     successfully read *RESULT or false and sets dwfl_errno () on failure.
+     This method may be NULL - in such case dwfl_thread_getframes will return
+     only the initial frame.  */
+  bool (*memory_read) (Dwfl *dwfl, Dwarf_Addr addr, Dwarf_Word *result,
+                       void *dwfl_arg)
+    __nonnull_attribute__ (1, 3);
+
+  /* Called on initial unwind to get the initial register state of the first
+     frame.  Should call dwfl_thread_state_registers, possibly multiple times
+     for different ranges and possibly also dwfl_thread_state_register_pc, to
+     fill in initial (DWARF) register values.  After this call, till at least
+     thread_detach is called, the thread is assumed to be frozen, so that it is
+     safe to unwind.  Returns true on success or false and sets dwfl_errno ()
+     on failure.  In the case of a failure thread_detach will not be called.
+     This method must not be NULL.  */
+  bool (*set_initial_registers) (Dwfl_Thread *thread, void *thread_arg)
+    __nonnull_attribute__ (1);
+
+  /* Called by dwfl_end.  All thread_detach method calls have been already
+     done.  This method may be NULL.  */
+  void (*detach) (Dwfl *dwfl, void *dwfl_arg)
+    __nonnull_attribute__ (1);
+
+  /* Called when unwinding is done.  No callback will be called after
+     this method has been called.  Iff set_initial_registers was called for
+     a TID and it returned success thread_detach will be called before the
+     detach method above.  This method may be NULL.  */
+  void (*thread_detach) (Dwfl_Thread *thread, void *thread_arg)
+    __nonnull_attribute__ (1);
+} Dwfl_Thread_Callbacks;
+
+/* PID is the process id associated with the DWFL state.  Architecture of DWFL
+   modules is specified by ELF, ELF must remain valid during DWFL lifetime.
+   Use NULL ELF to detect architecture from DWFL, the function will then detect
+   it from arbitrary Dwfl_Module of DWFL.  DWFL_ARG is the callback backend
+   state.  DWFL_ARG will be provided to the callbacks.  *THREAD_CALLBACKS
+   function pointers must remain valid during lifetime of DWFL.  Function
+   returns true on success, false otherwise.  */
+bool dwfl_attach_state (Dwfl *dwfl, Elf *elf, pid_t pid,
+                        const Dwfl_Thread_Callbacks *thread_callbacks,
+			void *dwfl_arg)
+  __nonnull_attribute__ (1, 4);
+
+/* Calls dwfl_attach_state with Dwfl_Thread_Callbacks setup for extracting
+   thread state from the ELF core file.  Returns the pid number extracted
+   from the core file, or -1 for errors.  */
+extern int dwfl_core_file_attach (Dwfl *dwfl, Elf *elf);
+
+/* Calls dwfl_attach_state with Dwfl_Thread_Callbacks setup for extracting
+   thread state from the proc file system.  Uses ptrace to attach and stop
+   the thread under inspection and detaches when thread_detach is called
+   and unwinding for the thread is done, unless ASSUME_PTRACE_STOPPED is
+   true.  If ASSUME_PTRACE_STOPPED is true the caller should make sure that
+   the thread is ptrace attached and stopped before unwinding by calling
+   either dwfl_thread_getframes or dwfl_getthread_frames.  Returns zero on
+   success, -1 if dwfl_attach_state failed, or an errno code if opening the
+   proc files failed.  */
+extern int dwfl_linux_proc_attach (Dwfl *dwfl, pid_t pid,
+				   bool assume_ptrace_stopped);
+
+/* Return PID for the process associated with DWFL.  Function returns -1 if
+   dwfl_attach_state was not called for DWFL.  */
+pid_t dwfl_pid (Dwfl *dwfl)
+  __nonnull_attribute__ (1);
+
+/* Return DWFL from which THREAD was created using dwfl_getthreads.  */
+Dwfl *dwfl_thread_dwfl (Dwfl_Thread *thread)
+  __nonnull_attribute__ (1);
+
+/* Return positive TID (thread ID) for THREAD.  This function never fails.  */
+pid_t dwfl_thread_tid (Dwfl_Thread *thread)
+  __nonnull_attribute__ (1);
+
+/* Return thread for frame STATE.  This function never fails.  */
+Dwfl_Thread *dwfl_frame_thread (Dwfl_Frame *state)
+  __nonnull_attribute__ (1);
+
+/* Called by Dwfl_Thread_Callbacks.set_initial_registers implementation.
+   For every known continuous block of registers <FIRSTREG..FIRSTREG+NREGS)
+   (inclusive..exclusive) set their content to REGS (array of NREGS items).
+   Function returns false if any of the registers has invalid number.  */
+bool dwfl_thread_state_registers (Dwfl_Thread *thread, int firstreg,
+                                  unsigned nregs, const Dwarf_Word *regs)
+  __nonnull_attribute__ (1, 4);
+
+/* Called by Dwfl_Thread_Callbacks.set_initial_registers implementation.
+   If PC is not contained among DWARF registers passed by
+   dwfl_thread_state_registers on the target architecture pass the PC value
+   here.  */
+void dwfl_thread_state_register_pc (Dwfl_Thread *thread, Dwarf_Word pc)
+  __nonnull_attribute__ (1);
+
+/* Iterate through the threads for a process.  Returns zero if all threads have
+   been processed by the callback, returns -1 on error, or the value of the
+   callback when not DWARF_CB_OK.  -1 returned on error will set dwfl_errno ().
+   Keeps calling the callback with the next thread while the callback returns
+   DWARF_CB_OK, till there are no more threads.  */
+int dwfl_getthreads (Dwfl *dwfl,
+		     int (*callback) (Dwfl_Thread *thread, void *arg),
+		     void *arg)
+  __nonnull_attribute__ (1, 2);
+
+/* Iterate through the frames for a thread.  Returns zero if all frames
+   have been processed by the callback, returns -1 on error, or the value of
+   the callback when not DWARF_CB_OK.  -1 returned on error will
+   set dwfl_errno ().  Some systems return error instead of zero on end of the
+   backtrace, for cross-platform compatibility callers should consider error as
+   a zero.  Keeps calling the callback with the next frame while the callback
+   returns DWARF_CB_OK, till there are no more frames.  On start will call the
+   set_initial_registers callback and on return will call the detach_thread
+   callback of the Dwfl_Thread.  */
+int dwfl_thread_getframes (Dwfl_Thread *thread,
+			   int (*callback) (Dwfl_Frame *state, void *arg),
+			   void *arg)
+  __nonnull_attribute__ (1, 2);
+
+/* Like dwfl_thread_getframes, but specifying the thread by its unique
+   identifier number.  Returns zero if all frames have been processed
+   by the callback, returns -1 on error (and when no thread with
+   the given thread id number exists), or the value of the callback
+   when not DWARF_CB_OK.  -1 returned on error will set dwfl_errno ().  */
+int dwfl_getthread_frames (Dwfl *dwfl, pid_t tid,
+			   int (*callback) (Dwfl_Frame *thread, void *arg),
+			   void *arg)
+  __nonnull_attribute__ (1, 3);
+
+/* Return *PC (program counter) for thread-specific frame STATE.
+   Set *ISACTIVATION according to DWARF frame "activation" definition.
+   Typically you need to substract 1 from *PC if *ACTIVATION is false to safely
+   find function of the caller.  ACTIVATION may be NULL.  PC must not be NULL.
+   Function returns false if it failed to find *PC.  */
+bool dwfl_frame_pc (Dwfl_Frame *state, Dwarf_Addr *pc, bool *isactivation)
+  __nonnull_attribute__ (1, 2);
 
 #ifdef __cplusplus
 }

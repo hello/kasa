@@ -4,12 +4,29 @@
  * History:
  *	2013/09/04 - [Cao Rongrong] Created file
  *
- * Copyright (C) 2012-2016, Ambarella, Inc.
+ * Copyright (C) 2015 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -119,6 +136,14 @@ enum amba_video_mode {
 	AMBA_VIDEO_MODE_2560_2048	= 49,		//2560x2048
 	AMBA_VIDEO_MODE_848_480		= 50,		//848x480
 	AMBA_VIDEO_MODE_3072_1728	= 51,		//3072x1728
+	AMBA_VIDEO_MODE_240_320		= 52,		//240x320
+	AMBA_VIDEO_MODE_5184_3888	= 53,		//5184x3888
+	AMBA_VIDEO_MODE_5184_2916	= 54,		//5184x2916
+	AMBA_VIDEO_MODE_1728_486		= 55,		//1728x486
+	AMBA_VIDEO_MODE_1080P_A		= 56,		//1920x1080, alias for another 1080p
+	AMBA_VIDEO_MODE_2432_2048	= 57,		//2432x2048
+	AMBA_VIDEO_MODE_2048_2048	= 58,		//2048x2048
+
 	AMBA_VIDEO_MODE_MISC_MAX,
 
 	/* Video Output Standard */
@@ -148,7 +173,14 @@ enum amba_video_mode {
 	AMBA_VIDEO_MODE_2160P25		= 0x00020017,	//3840x2160@25fps
 	AMBA_VIDEO_MODE_2160P30		= 0x00020018,	//3840x2160@30fps
 	AMBA_VIDEO_MODE_2160P60		= 0x00020019,	//3840x2160@60fps
+	AMBA_VIDEO_MODE_2160P12		= 0x0002001a,	//3840x2160@12fps
+	AMBA_VIDEO_MODE_2160P15		= 0x0002001b,	//3840x2160@15fps
+	AMBA_VIDEO_MODE_2560X1440P30	= 0x0002001c,	//2560x1440@30fps
+	AMBA_VIDEO_MODE_2560X1440P25	= 0x0002001d,	//2560x1440@25fps
 	AMBA_VIDEO_MODE_STANDARD_MAX,
+
+	/* Customized Video Output Standard */
+	AMBA_VIDEO_MODE_CUSTOM_FIRST	= 0x00040000,
 
 	AMBA_VIDEO_MODE_720P_PAL	= AMBA_VIDEO_MODE_720P50,
 	AMBA_VIDEO_MODE_1080I_PAL	= AMBA_VIDEO_MODE_1080I50,

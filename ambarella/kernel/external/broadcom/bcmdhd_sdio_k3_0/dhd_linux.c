@@ -129,6 +129,13 @@ static struct notifier_block dhd_notifier_ipv6 = {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)) && defined(CONFIG_PM_SLEEP)
 #include <linux/suspend.h>
 volatile bool dhd_mmc_suspend = FALSE;
+
+#ifdef HACK_TCPINFO_IN_RESUME
+volatile bool g_is_after_resume = FALSE;
+volatile tcpka_conn_sess_info_t g_tcp_info;
+volatile tcpka_conn_sess_info_t g_tcp_info_diff;
+#endif
+
 DECLARE_WAIT_QUEUE_HEAD(dhd_dpc_wait);
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)) && defined(CONFIG_PM_SLEEP) */
 
@@ -578,8 +585,7 @@ static int dhd_toe_set(dhd_info_t *dhd, int idx, uint32 toe_ol);
 static int dhd_wl_host_event(dhd_info_t *dhd, int *ifidx, void *pktdata,
                              wl_event_msg_t *event_ptr, void **data_ptr);
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)) && (LINUX_VERSION_CODE <= \
-	KERNEL_VERSION(2, 6, 39)) && defined(CONFIG_PM_SLEEP)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)) && defined(CONFIG_PM_SLEEP)
 static int dhd_sleep_pm_callback(struct notifier_block *nfb, unsigned long action, void *ignored)
 {
 	int ret = NOTIFY_DONE;
@@ -606,7 +612,7 @@ static struct notifier_block dhd_sleep_pm_notifier = {
 };
 extern int register_pm_notifier(struct notifier_block *nb);
 extern int unregister_pm_notifier(struct notifier_block *nb);
-#endif /* (LINUX_VERSION >= 2.6.27 && LINUX_VERSION <= 2.6.39 && CONFIG_PM_SLEEP */
+#endif /* (LINUX_VERSION >= 2.6.27 && CONFIG_PM_SLEEP */
 
 #if defined(DHDTHREAD) && defined(RXFRAME_THREAD)
 /* Request scheduling of the bus rx frame */
@@ -1483,12 +1489,97 @@ uint8 prio2fifo[8] = { 1, 0, 0, 1, 2, 2, 3, 3 };
 #define WME_PRIO2AC(prio)	wme_fifo2ac[prio2fifo[(prio)]]
 
 #endif /* PROP_TXSTATUS */
+
+uint32
+ip_cksum_partial(uint8 *val8, uint32 count, int j) {
+     uint32    sum, i;
+     uint16    *val16;
+
+     sum = 0;
+     val16 = (uint16 *) val8;
+     count /= 2;
+     for (i = 0; i < count; i++) {
+         if (j)
+             sum += *val16++;
+         else
+             sum += ntoh16(*val16++);
+     }
+     return (sum);
+}
+
+uint16
+ip_cksum(const uint16 *val16, uint32 count, int j, uint32 sum) {
+     while (count > 1) {
+         if (j)
+             sum += ntoh16(*val16++);
+         else
+             sum += *val16++;
+         count -= 2;
+     }
+     /*  Add left-over byte, if any */
+     if (count > 0)
+         sum += (*(uint8 *)val16);
+
+     /*  Fold 32-bit sum to 16 bits */
+     sum = (sum >> 16) + (sum & 0xffff);
+     sum += (sum >> 16);
+     return ((uint16)~sum);
+}
+
+int ip_tcp_cksum(uint8 *pkt_data, uint16 pkt_len)
+{
+	u16 lenght = 0;
+	u16 cksum = 0;
+	uint32 psum = 0;
+	uint8 *data = NULL;
+	struct tcp_pseudo_hdr tcp_ps = {0};
+
+	data = pkt_data;
+	if (!data) {
+		DHD_ERROR(("pkt data is NULL\n"));
+		return -1;
+	}
+
+	/* clean ip checksum */
+	data[24] = 0x00;
+	data[25] = 0x00;
+	/* clean tcp checksum */
+	data[50] = 0x00;
+	data[51] = 0x00;
+
+	/* ip checksum, 14 is the offset of IP Header */
+	cksum = (uint16) ip_cksum((uint16 *)&data[14], 20, 0, 0);
+	*(u16 *)&data[24] = cksum;
+
+	/* tcp checksum, 34 is the offset of TCP Header
+	 * this mem should be network-byte */
+	tcp_ps.source_address = (*(u32 *)&data[26]);
+	tcp_ps.dest_address = (*(u32 *)&data[30]);
+	tcp_ps.reserved = 0;
+	tcp_ps.protocol = IPPROTO_TCP;
+	lenght = (uint16)(pkt_len - 34);
+	tcp_ps.lenght = hton16(lenght);
+
+	psum = ip_cksum_partial((uint8 *)&tcp_ps, sizeof(struct tcp_pseudo_hdr), 1);
+	cksum = (uint16) ip_cksum((uint16 *)&data[34], lenght, 0, psum);
+	*(u16 *)&data[50] = cksum;
+
+	return 0;
+}
+
 int
 dhd_sendpkt(dhd_pub_t *dhdp, int ifidx, void *pktbuf)
 {
 	int ret = BCME_OK;
 	dhd_info_t *dhd = (dhd_info_t *)(dhdp->info);
 	struct ether_header *eh = NULL;
+
+#ifdef HACK_TCPINFO_IN_RESUME
+	static int is_first = 1;
+	uint8 *tx_data = NULL;
+	uint16 tx_protocol = 0;
+	tcpka_conn_sess_info_t tcp_info_cur;
+#endif
 
 	/* Reject if down */
 	if (!dhdp->up || (dhdp->busstate == DHD_BUS_DOWN)) {
@@ -1510,6 +1601,59 @@ dhd_sendpkt(dhd_pub_t *dhdp, int ifidx, void *pktbuf)
 		PKTFREE(dhd->pub.osh, pktbuf, TRUE);
 		return BCME_ERROR;
 	}
+
+#ifdef HACK_TCPINFO_IN_RESUME
+	if (g_is_after_resume) {
+		tx_data = (uint8 *)PKTDATA(dhdp->osh, pktbuf);
+		tx_protocol = (tx_data[12] << 8) | tx_data[13];
+		/* Find IP, TCP, tcp dst port 7877 */
+		if ((tx_protocol == ETHER_TYPE_IP) && (tx_data[23] == 0x06) &&
+			(tx_data[36] == 0x1e) && (tx_data[37] == 0xc5)) {
+			tcp_info_cur.tcpka_sess_ipid = hton16(*(u16 *)&tx_data[18]);
+			tcp_info_cur.tcpka_sess_seq = hton32(*(u32 *)&tx_data[38]);
+			tcp_info_cur.tcpka_sess_ack = hton32(*(u32 *)&tx_data[42]);
+
+			if (is_first) {
+				is_first = 0;
+				g_tcp_info_diff.tcpka_sess_ipid = g_tcp_info.tcpka_sess_ipid -
+					tcp_info_cur.tcpka_sess_ipid;
+				g_tcp_info_diff.tcpka_sess_seq = g_tcp_info.tcpka_sess_seq -
+					tcp_info_cur.tcpka_sess_seq;
+				g_tcp_info_diff.tcpka_sess_ack = g_tcp_info.tcpka_sess_ack -
+					tcp_info_cur.tcpka_sess_ack;
+
+				printk (KERN_DEBUG "%s(%d) ORG: ipid[%u], seq[%u], ack[%u]\n",
+					__FUNCTION__, __LINE__, tcp_info_cur.tcpka_sess_ipid,
+					tcp_info_cur.tcpka_sess_seq, tcp_info_cur.tcpka_sess_ack);
+				printk (KERN_DEBUG "%s(%d) FWGET: ipid[%u], seq[%u], ack[%u]\n",
+					__FUNCTION__, __LINE__, g_tcp_info.tcpka_sess_ipid,
+					g_tcp_info.tcpka_sess_seq, g_tcp_info.tcpka_sess_ack);
+				printk (KERN_DEBUG "%s(%d) DIFF: ipid[%u], seq[%u], ack[%u]\n",
+					__FUNCTION__, __LINE__, g_tcp_info_diff.tcpka_sess_ipid,
+					g_tcp_info_diff.tcpka_sess_seq, g_tcp_info_diff.tcpka_sess_ack);
+
+				*(u16 *)&tx_data[18] = hton16((u16)(g_tcp_info.tcpka_sess_ipid));
+				*(u32 *)&tx_data[38] = hton32(g_tcp_info.tcpka_sess_seq);
+				*(u32 *)&tx_data[42] = hton32(g_tcp_info.tcpka_sess_ack);
+			} else {
+				*(u16 *)&tx_data[18] = hton16((u16)(tcp_info_cur.tcpka_sess_ipid +
+					g_tcp_info_diff.tcpka_sess_ipid));
+				*(u32 *)&tx_data[38] = hton32( tcp_info_cur.tcpka_sess_seq +
+					g_tcp_info_diff.tcpka_sess_seq);
+				*(u32 *)&tx_data[42] = hton32( tcp_info_cur.tcpka_sess_ack +
+					g_tcp_info_diff.tcpka_sess_ack);
+			}
+			ip_tcp_cksum(tx_data, PKTLEN(dhdp->osh, pktbuf));
+			/*
+			printk (KERN_DEBUG "%s(%d): ipid[%u], seq[%u], ack[%u]; "\
+				"ip_cksum[0x%x], tcp_cksum[0x%x], tcp_len[%d]\n",
+				__FUNCTION__, __LINE__, hton16(*(u16 *)&tx_data[18]),
+				hton32(*(u32 *)&tx_data[38]), hton32(*(u32 *)&tx_data[42]),
+				hton16(*(u16 *)&tx_data[24]), hton16(*(u16 *)&tx_data[50]), lenght);
+			*/
+		}
+	}
+#endif
 
 	/* Look into the packet and update the packet priority */
 #ifndef PKTPRIO_OVERRIDE
@@ -1774,6 +1918,17 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 	uint16 protocol;
 #endif /* DHD_RX_DUMP */
 
+#ifdef HACK_TCPINFO_IN_RESUME
+	char *rx_data = NULL;
+	uint16 rx_protocol = 0;
+	tcpka_conn_sess_info_t tcp_info_cur;
+#endif
+
+#ifdef ADD_CKSUM_IN_RESUME
+	char *rx_data_cksum = NULL;
+	uint16 rx_protocol_cksum = 0;
+#endif
+
 	DHD_TRACE(("%s: Enter\n", __FUNCTION__));
 
 	for (i = 0; pktbuf && i < numpkt; i++, pktbuf = pnext) {
@@ -1848,6 +2003,48 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 		 */
 		eth = skb->data;
 		len = skb->len;
+
+#ifdef HACK_TCPINFO_IN_RESUME
+		if (g_is_after_resume) {
+			rx_data = skb->data;
+			rx_protocol = (rx_data[12] << 8) | rx_data[13];
+			/* Find IP, TCP, tcp src port 7877 */
+			if ((rx_protocol == ETHER_TYPE_IP) && (rx_data[23] == 0x06) &&
+				(rx_data[34] == 0x1e) && (rx_data[35] == 0xc5)) {
+				tcp_info_cur.tcpka_sess_ipid = hton16(*(u16 *)&rx_data[18]);
+				tcp_info_cur.tcpka_sess_seq = hton32(*(u32 *)&rx_data[38]);
+				tcp_info_cur.tcpka_sess_ack = hton32(*(u32 *)&rx_data[42]);
+
+				*(u16 *)&rx_data[18] = hton16((u16)(tcp_info_cur.tcpka_sess_ipid -
+					g_tcp_info_diff.tcpka_sess_ipid));
+				*(u32 *)&rx_data[38] = hton32( tcp_info_cur.tcpka_sess_seq -
+					g_tcp_info_diff.tcpka_sess_ack);
+				*(u32 *)&rx_data[42] = hton32( tcp_info_cur.tcpka_sess_ack -
+					g_tcp_info_diff.tcpka_sess_seq);
+
+				ip_tcp_cksum(rx_data, len);
+				/*
+				printk ("%s(%d), ipid[%u], seq[%u], ack[%u]; ip_cksum[0x%x], "\
+					"tcp_cksum[0x%x], tcp_len[%d]\n",
+					__FUNCTION__, __LINE__, hton16(*(u16 *)&rx_data[18]),
+					 hton32(*(u32 *)&rx_data[38]), hton32(*(u32 *)&rx_data[42]),
+					 hton16(*(u16 *)&rx_data[24]), hton16(*(u16 *)&rx_data[50]), lenght);
+				*/
+			}
+		}
+#endif
+
+#ifdef ADD_CKSUM_IN_RESUME
+		rx_data_cksum = skb->data;
+		rx_protocol_cksum = (rx_data_cksum[12] << 8) | rx_data_cksum[13];
+		/* Find IP, TCP */
+		if ((rx_protocol_cksum == ETHER_TYPE_IP) && (rx_data_cksum[23] == 0x06)) {
+			/* Find IP cksum is zero */
+			if (((rx_data_cksum[24] == 0x00) && (rx_data_cksum[25] == 0x00))) {
+				ip_tcp_cksum(rx_data_cksum, len);
+			}
+		}
+#endif
 
 #ifdef DHD_RX_DUMP
 		dump_data = skb->data;
@@ -3443,10 +3640,9 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 	 */
 	memcpy(netdev_priv(net), &dhd, sizeof(dhd));
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)) && (LINUX_VERSION_CODE <= \
-	KERNEL_VERSION(2, 6, 39)) && defined(CONFIG_PM_SLEEP)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)) && defined(CONFIG_PM_SLEEP)
 	register_pm_notifier(&dhd_sleep_pm_notifier);
-#endif /* (LINUX_VERSION >= 2.6.27 && LINUX_VERSION <= 2.6.39 && CONFIG_PM_SLEEP */
+#endif /* (LINUX_VERSION >= 2.6.27 && CONFIG_PM_SLEEP */
 
 #if defined(CONFIG_HAS_EARLYSUSPEND) && defined(DHD_USE_EARLYSUSPEND)
 	dhd->early_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN + 20;
@@ -4835,10 +5031,9 @@ void dhd_detach(dhd_pub_t *dhdp)
 	if (dhdp->pno_state)
 		dhd_pno_deinit(dhdp);
 #endif
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)) && (LINUX_VERSION_CODE <= \
-	KERNEL_VERSION(2, 6, 39)) && defined(CONFIG_PM_SLEEP)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)) && defined(CONFIG_PM_SLEEP)
 		unregister_pm_notifier(&dhd_sleep_pm_notifier);
-#endif /* (LINUX_VERSION >= 2.6.27 && LINUX_VERSION <= 2.6.39 && CONFIG_PM_SLEEP */
+#endif /* (LINUX_VERSION >= 2.6.27 && CONFIG_PM_SLEEP */
 
 	if (dhd->dhd_state & DHD_ATTACH_STATE_WAKELOCKS_INIT) {
 		DHD_TRACE(("wd wakelock count:%d\n", dhd->wakelock_wd_counter));
@@ -4896,6 +5091,83 @@ dhd_free(dhd_pub_t *dhdp)
 	}
 }
 
+#ifdef ADD_PROC_PM_STATE
+#define PROC_NAME_PM_STATE "wifi_pm_state"
+DECLARE_WAIT_QUEUE_HEAD(wifi_pm_state_waitq);
+cpu_state wifi_pm_state = CPU_UNKNOWN;
+
+static ssize_t wifi_pm_state_read(struct file *file, char __user *user,
+		size_t size, loff_t *ppos)
+{
+	ssize_t ret = 0;
+
+	wait_event_interruptible(wifi_pm_state_waitq, wifi_pm_state);
+	if (copy_to_user(user, &wifi_pm_state, sizeof(wifi_pm_state))) {
+		DHD_ERROR(("copy_to_user fail.\n"));
+		ret = -EFAULT;
+	}
+
+	return ret;
+}
+
+static ssize_t wifi_pm_state_write(struct file *file, const char __user *user,
+		size_t size, loff_t *ppos)
+{
+	ssize_t ret = 0;
+
+	if (size > 1) {
+		if (copy_from_user(&wifi_pm_state, user, size)) {
+			DHD_ERROR(("copy_from_user fail.\n"));
+			ret = -EFAULT;
+		}
+	}
+	ret = size;
+
+	return ret;
+}
+
+static unsigned int wifi_pm_state_poll(struct file *file, poll_table *wait)
+{
+	unsigned int mask = 0;
+
+	poll_wait(file, &wifi_pm_state_waitq, wait);
+
+	if(wifi_pm_state) {
+		mask |= POLLIN | POLLRDNORM;
+	}
+
+	return mask;
+}
+
+static const struct file_operations proc_wifi_pm_state_operations = {
+	.owner	= THIS_MODULE,
+	.read		= wifi_pm_state_read,
+	.write		= wifi_pm_state_write,
+	.poll		= wifi_pm_state_poll,
+};
+
+static int wifi_proc_pm_state_init(void)
+{
+	int ret = 0;
+	struct proc_dir_entry *state_entry;
+
+	state_entry = proc_create(PROC_NAME_PM_STATE, S_IRUSR,
+		get_ambarella_proc_dir(), &proc_wifi_pm_state_operations);
+
+	if (!state_entry) {
+		printk("WiFi PM: %s: Create state proc failed!\n", __func__);
+		ret = -EINVAL;
+	}
+
+	return ret;
+}
+
+static void wifi_proc_pm_state_exit(void)
+{
+	remove_proc_entry(PROC_NAME_PM_STATE, get_ambarella_proc_dir());
+}
+#endif /* ADD_PROC_PM_STATE */
+
 static void __exit
 dhd_module_cleanup(void)
 {
@@ -4910,6 +5182,11 @@ dhd_module_cleanup(void)
 
 	/* Call customer gpio to turn off power with WL_REG_ON signal */
 	dhd_customer_gpio_wlan_ctrl(WLAN_POWER_OFF);
+
+#ifdef ADD_PROC_PM_STATE
+	wifi_proc_pm_state_exit();
+#endif
+
 	printk("%s: Exit\n", __FUNCTION__);
 }
 
@@ -5031,6 +5308,10 @@ dhd_module_init(void)
 #if defined(WL_CFG80211)
 	wl_android_post_init();
 #endif /* defined(WL_CFG80211) */
+
+#ifdef ADD_PROC_PM_STATE
+	wifi_proc_pm_state_init();
+#endif
 
 	printk("%s: Exit error=%d\n", __FUNCTION__, error);
 	return error;

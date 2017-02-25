@@ -163,11 +163,7 @@ amb_ehci_err:
 static int ehci_ambarella_drv_remove(struct platform_device *pdev)
 {
 	struct usb_hcd *hcd = platform_get_drvdata(pdev);
-	struct ehci_ambarella_priv *priv;
 
-	priv = (struct ehci_ambarella_priv *)hcd_to_ehci(hcd)->priv;
-
-	usb_put_phy(priv->phy);
 	usb_remove_hcd(hcd);
 	usb_put_hcd(hcd);
 

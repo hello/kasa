@@ -32,20 +32,90 @@
 	.text
 
 ENTRY(ambarella_finish_suspend)
-	/*
-	 * Execute DSB and ISB instruction to ensure that all of the
-	 * memory accesses have been completed.
+	isb
+	dsb
+	mov r0, #0
+	ldr	r1, =(DRAMC_BASE + DRAM_DDRC_OFFSET)
+	ldr	r2, =ANA_PWR_REG
+
+	teq	r0, r0
+	bl _ambarella_finish_suspend
+	teq	pc,	r0
+	bl _ambarella_finish_suspend
+
+ENDPROC(ambarella_finish_suspend)
+
+	/* _ambarella_finish_suspend will be called twice. first is to makesure the
+	 * instructions loading in the I-Cache, and the second is to disconnect cpu
+	 * with dram, enter self refresh, and power down PWC.
 	 */
+ENTRY(_ambarella_finish_suspend)
+	ldrne	r3, [r1, #DDRC_CTL_OFFSET]
+	bicne	r3, r3, #0x1
+	strne	r3, [r1, #DDRC_CTL_OFFSET]
+	movne	r3, #0x80000000
+	strne	r3, [r1, #DDRC_SELF_REF_OFFSET]
+
+	movne	r3, #ANA_PWR_POWER_DOWN
+	strne	r3, [r2]
+	moveq	pc, lr
+	b		.
+
+ENDPROC(_ambarella_finish_suspend)
+
+ENTRY(ambarella_optimize_suspend)
 	dsb
 	isb
-	nop
 
-	/*
-	 * Following codes have to run from cache since
-	 * the DRAM is going to self refresh mode
-	 */
-	.align	L1_CACHE_SHIFT
-	ldr	r0, =(DRAMC_BASE + DRAM_DDRC_OFFSET)
+	mov	r1, #0
+	cmp	r0, r1
+	beq	suspend_with_pwc
+
+	mov	r1, r0
+	mov	r2, #0x1f
+	bic	r0, r2			/* r0 gpio bank base */
+	and	r1, r2			/* r1 gpio offset */
+
+	ldr	r2, ambarella_suspend_trigger_signal
+	lsl	r2, r1
+	str	r2, [r0, #0]
+
+	/* delay 100ms: 0x249F00 is about 0x250000 */
+	mov	r3, #0x250000
+
+	mov	r4,	#RCT_BUS_BASE
+	orr	r4, #RCT_OFFSET
+	orr	r4,	#RCT_TIMER_OFFSET
+	ldr	r5,	[r4]
+	add	r5, r5, r3
+rct_time_loop:
+	ldr	r6,	[r4]
+	cmp	r5, r6
+	bhi	rct_time_loop
+
+	ldr	r2, ambarella_suspend_trigger_signal
+	eor r2, r2, #1
+	lsl	r2, r1
+	str	r2, [r0, #0]
+
+	b	self_refresh
+
+suspend_with_pwc:
+	mov	r0,	#RCT_BUS_BASE
+	orr	r0, #RCT_OFFSET
+	orr	r0, #ANA_PWR_OFFSET
+
+	/* Generate the PD signal */
+	mov	r1, #ANA_PWR_POWER_DOWN
+	str	r1, [r0]
+
+self_refresh:
+	/* CPU use the delay interval between power-down signal PD
+	   and PWC_RSTOB to execute the following code */
+
+	mov	r0, #DRAMC_BASE
+	orr	r0, r0, #DRAM_DDRC_OFFSET
+
 	ldr	r1, [r0, #DDRC_CTL_OFFSET]
 	bic	r1, r1, #0x1
 	str	r1, [r0, #DDRC_CTL_OFFSET]
@@ -56,15 +126,17 @@ ENTRY(ambarella_finish_suspend)
 	tst	r1, #0x10000000
 	beq	1b
 
-	/* now turn off PWC */
-	ldr	r0, =ANA_PWR_REG
-	mov	r1, #ANA_PWR_POWER_DOWN
-	str	r1, [r0]
+	/* Wait for PWC_RSTOB signal to power down cpu */
+	b	.
 
-	/* never get here */
-2:	b	2b
+ENDPROC(ambarella_optimize_suspend)
 
-ENDPROC(ambarella_finish_suspend)
+.globl ambarella_suspend_trigger_signal
+ambarella_suspend_trigger_signal:
+	.word	0x00000000
+
+ENTRY(ambarella_optimize_suspend_sz)
+	.word 	. - ambarella_optimize_suspend
 
 #if (CHIP_REV == S3)
 #define	IOMUX_UART0_PIN_CFG	0x00000030
@@ -121,6 +193,13 @@ ENTRY(ambarella_cpu_resume)
 	ldr	r1, [r0, #GPIO_AFSEL_OFFSET]
 	orr	r1, #0x0000c000
 	str	r1, [r0, #GPIO_AFSEL_OFFSET]
+
+#if (CHIP_REV == S2E)
+	ldr	r0, =RCT_PHYS_BASE
+	mov r1, #UART_CLK_SRC_IDSP
+	str	r1, [r0, #UART_CLK_SRC_SEL_OFFSET]
+#endif
+
 #endif
 	/* jump to generic resume */
 	b	cpu_resume

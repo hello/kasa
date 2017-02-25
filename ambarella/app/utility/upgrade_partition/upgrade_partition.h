@@ -4,14 +4,33 @@
  * History:
  *    2014/05/27 - [Ken He] created file
  *
- * Copyright (C) 2014-2018, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- **/
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
+
 #ifndef __UPGRADE_PARTITION_H__
 #define __UPGRADE_PARTITION_H__
 
@@ -53,6 +72,7 @@
 #define CMD_LINE_SIZE		512
 #define MAC_SIZE		6
 #define SN_SIZE			32
+#define BOOT_COMMAND_MAX	256
 
 typedef __ARMCC_PACK__ struct flpart_s
 {
@@ -143,6 +163,18 @@ typedef __ARMCC_PACK__ struct fldev_s
 	uint32_t	dsp_addr;	/**< DSP download address */
 	char	dsp_file[32];	/**< DSP file name */
 	uint32_t	dsp_comp;	/**< DSP compressed? */
+
+	/* This section contains secure boot related settings */
+	u8	secure_boot_init;	/**< Secure boot initialized flag */
+	u8	need_generate_firmware_hw_signature;	/**< Secure boot flag, indicate the firmware need generate hw signature*/
+	u8	reserved0;
+	u8	reserved1;
+
+	u8	rsa_key_n[256 + 4];
+	u8	rsa_key_e[16];
+	//u8	cryptochip_sn[12];
+	u8	sn_signature[128];
+	char	bootcmd[BOOT_COMMAND_MAX];
 } __ATTRIB_PACK__ fldev_t;
 
 /**

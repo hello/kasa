@@ -5,131 +5,122 @@
  *   2015-01-04 - [Zhi He]      created file
  *   2015-04-02 - [Shupeng Ren] modified file
  *
- * Copyright (C) 2015, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
-#include <unistd.h>
-#include <sys/socket.h>
-#include <sys/un.h>
-#include <sys/ioctl.h>
-#include <sys/mman.h>
-#include "iav_ioctl.h"
-
-#include <list>
 
 #include "am_base_include.h"
 #include "am_define.h"
 #include "am_log.h"
+#include "am_io.h"
 #include "am_event.h"
 #include "am_mutex.h"
 #include "am_thread.h"
 #include "am_amf_types.h"
+#include "am_video_address_if.h"
 
 #include "am_export_if.h"
 #include "am_export_client_uds.h"
+
+#include <sys/types.h>
+#include <sys/socket.h>
 
 AMIExportClient* am_create_export_client_uds(AMExportConfig *config)
 {
   return AMExportClientUDS::create(config);
 }
 
-AMExportClientUDS::AMExportClientUDS() :
-  m_iav_fd(-1),
-  m_socket_fd(-1),
-  m_max_fd(-1),
-  m_run(false),
-  m_block(false),
-  m_is_connected(false),
-  m_bsb_size(0),
-  m_bsb_addr(nullptr),
-  m_event(nullptr),
-  m_mutex(nullptr),
-  m_cond(nullptr),
-  m_recv_thread(nullptr)
-{
-  m_config.need_sort = 0;
-  m_control_fd[0] = m_control_fd[1] = -1;
-}
+AMExportClientUDS::AMExportClientUDS()
+{}
 
 AMExportClientUDS::AMExportClientUDS(AMExportConfig *config) :
-  m_iav_fd(-1),
-  m_socket_fd(-1),
-  m_max_fd(-1),
-  m_run(false),
-  m_block(false),
-  m_is_connected(false),
-  m_bsb_size(0),
-  m_bsb_addr(nullptr),
-  m_event(nullptr),
-  m_mutex(nullptr),
-  m_cond(nullptr),
-  m_recv_thread(nullptr),
   m_config(*config)
-{
-  m_control_fd[0] = m_control_fd[1] = -1;
-}
+{}
 
 AMExportClientUDS::~AMExportClientUDS()
 {
   m_run = false;
   disconnect_server();
   m_event->signal();
-  unmap_bsb();
-    if (0 < m_control_fd[0]) {
-      close(m_control_fd[0]);
-      m_control_fd[0] = -1;
-    }
+  if (0 < m_control_fd[0]) {
+    close(m_control_fd[0]);
+    m_control_fd[0] = -1;
+  }
 
-    if (0 < m_control_fd[1]) {
-      close(m_control_fd[1]);
-      m_control_fd[1] = -1;
-    }
+  if (0 < m_control_fd[1]) {
+    close(m_control_fd[1]);
+    m_control_fd[1] = -1;
+  }
   AM_DESTROY(m_recv_thread);
   AM_DESTROY(m_cond);
   AM_DESTROY(m_mutex);
   AM_DESTROY(m_event);
+  m_video_address = nullptr;
 }
 
 AMExportClientUDS* AMExportClientUDS::create(AMExportConfig *config)
 {
   AMExportClientUDS *result = new AMExportClientUDS(config);
-  if (result && !result->init()) {
+  if (result && (result->init() != AM_RESULT_OK)) {
     delete result;
     result = nullptr;
   }
   return result;
 }
 
-bool AMExportClientUDS::init()
+AM_RESULT AMExportClientUDS::init()
 {
-  bool ret = false;
+  AM_RESULT ret = AM_RESULT_OK;
   do {
     if (!(m_event = AMEvent::create())) {
       ERROR("Failed to create event");
+      ret = AM_RESULT_ERR_MEM;
       break;
     }
 
     if (!(m_mutex = AMMutex::create())) {
       ERROR("Failed to create mutex!");
+      ret = AM_RESULT_ERR_MEM;
       break;
     }
 
     if (!(m_cond = AMCondition::create())) {
       ERROR("Failed to create condition!");
+      ret = AM_RESULT_ERR_MEM;
       break;
     }
 
     if (socketpair(AF_UNIX, SOCK_DGRAM, 0, m_control_fd) < 0) {
       ERROR("Failed to create control fd!");
+      ret = AM_RESULT_ERR_IO;
       break;
     }
 
-    if (!map_bsb()) {
+    if (!(m_video_address = AMIVideoAddress::get_instance())) {
+      ERROR("Failed to create m_video_address!");
+      ret = AM_RESULT_ERR_MEM;
       break;
     }
 
@@ -137,11 +128,11 @@ bool AMExportClientUDS::init()
                                            thread_entry,
                                            this))) {
       ERROR("Failed to create receive thread!");
+      ret = AM_RESULT_ERR_MEM;
       break;
     }
-
-    ret = true;
   } while (0);
+
   return ret;
 }
 
@@ -150,29 +141,32 @@ void AMExportClientUDS::destroy()
   delete this;
 }
 
-bool AMExportClientUDS::connect_server(const char* url)
+AM_RESULT AMExportClientUDS::connect_server(const char *url)
 {
-  bool ret = false;
+  AM_RESULT ret = AM_RESULT_OK;
   do {
     if (AM_UNLIKELY(!url)) {
       ERROR("Connect(url == NULL)");
-      break;;
+      ret = AM_RESULT_ERR_DATA_POINTER;
+      break;
     }
 
     if (m_is_connected) {
       NOTICE("already connected!");
-      ret = true;
+      ret = AM_RESULT_ERR_ALREADY;
       break;
     }
 
     if (access(url, F_OK)) {
       ERROR("Failed to access(%s, F_OK). server does not run?", url);
+      ret = AM_RESULT_ERR_FILE_EXIST;
       break;
     }
 
     if ((m_socket_fd = socket(PF_UNIX, SOCK_SEQPACKET, 0)) < 0) {
       ERROR("socket(PF_UNIX, SOCK_SEQPACKET, 0) failed");
-      break;;
+      ret = AM_RESULT_ERR_IO;
+      break;
     }
     memset(&m_addr, 0, sizeof(sockaddr_un));
 
@@ -180,22 +174,28 @@ bool AMExportClientUDS::connect_server(const char* url)
     snprintf(m_addr.sun_path, sizeof(m_addr.sun_path), "%s", url);
     if (connect(m_socket_fd, (sockaddr*)&m_addr, sizeof(sockaddr_un)) < 0) {
       ERROR("connect failed: %s", strerror(errno));
+      ret = AM_RESULT_ERR_CONN_REFUSED;
       break;
     }
 
-    if (write(m_socket_fd, &m_config, sizeof(m_config)) != sizeof(m_config) ) {
-      ERROR("Failed to write config to server!");
+    if (am_write(m_socket_fd, &m_config, sizeof(m_config)) != sizeof(m_config)) {
+      ERROR("Failed to write config to server!: %s", strerror(errno));
+      ret = AM_RESULT_ERR_IO;
       break;
     }
+    if (!check_sort_mode()) {
+      ret = AM_RESULT_ERR_INVALID;
+      ERROR("The sort mode has been set, please change");
+      break;
+    }
+
     FD_ZERO(&m_all_set);
     FD_ZERO(&m_read_set);
     FD_SET(m_control_fd[0], &m_all_set);
     FD_SET(m_socket_fd, &m_all_set);
-
     m_max_fd = AM_MAX(m_socket_fd, m_control_fd[0]);
     m_is_connected = true;
     m_event->signal();
-    ret = true;
   } while (0);
   return ret;
 }
@@ -204,12 +204,12 @@ void AMExportClientUDS::disconnect_server()
 {
   if (m_is_connected) {
     char write_char = 'q';
-    if (write(m_control_fd[1], &write_char, 1) != 1) {
+    if (am_write(m_control_fd[1], &write_char, 1) != 1) {
       ERROR("Write socketpair error!");
     } else {
       char read_char;
-      if (read(m_control_fd[1], &read_char, 1) != 1) {
-        ERROR("Read socketpair error!");
+      if (am_read(m_control_fd[1], &read_char, 1) != 1) {
+        ERROR("read socketpair error!");
       }
     }
   }
@@ -227,15 +227,38 @@ void AMExportClientUDS::disconnect_server()
   m_cond->signal();
 }
 
-bool AMExportClientUDS::receive(AMExportPacket *packet)
+AM_RESULT AMExportClientUDS::set_config(AMExportConfig *config)
 {
-  bool ret = false;
+  AM_RESULT ret = AM_RESULT_OK;
+  do {
+      if (!config) {
+        ERROR("config parameter is a null pointer!");
+        ret = AM_RESULT_ERR_DATA_POINTER;
+        break;
+      }
+      if (!m_is_connected) {
+        ERROR("No connection to server!");
+        ret = AM_RESULT_ERR_NO_CONN;
+        break;
+      }
+      am_write(m_socket_fd, config, sizeof(*config), 5);
+  } while (0);
+
+  return ret;
+}
+
+AM_RESULT AMExportClientUDS::receive(AMExportPacket *packet)
+{
+  AM_RESULT ret = AM_RESULT_OK;
   do {
     if (!packet) {
       ERROR("ReceivePacket(packet == NULL)");
+      ret = AM_RESULT_ERR_DATA_POINTER;
       break;
     }
     if (!m_is_connected) {
+      ERROR("No connection to server!");
+      ret = AM_RESULT_ERR_NO_CONN;
       break;
     }
     m_mutex->lock();
@@ -244,15 +267,20 @@ bool AMExportClientUDS::receive(AMExportPacket *packet)
       m_cond->wait(m_mutex);
       if (!m_is_connected) {
         m_mutex->unlock();
-        return false;
+        ERROR("Connection is broken for server quit!");
+        ret = AM_RESULT_ERR_SERVER_DOWN;
+        break;
       }
+    }
+    if (ret != AM_RESULT_OK) {
+      break;
     }
     m_block = false;
     *packet = m_packet_queue.front();
     m_packet_queue.pop_front();
     m_mutex->unlock();
-    ret = true;
   } while (0);
+
   return ret;
 }
 
@@ -299,17 +327,17 @@ bool AMExportClientUDS::get_data()
 
     if (FD_ISSET(m_control_fd[0], &m_read_set)) {
       char read_char = 0;
-      if (read(m_control_fd[0], &read_char, 1) == 1) {
+      if (am_read(m_control_fd[0], &read_char, 1) == 1) {
         if ((read_char == 'q') &&
-            (write(m_control_fd[0], &read_char, 1) == 1)) {
+            (am_write(m_control_fd[0], &read_char, 1) == 1)) {
           INFO("read command: %c, quit", read_char);
           break;
         }
       }
     } else if (FD_ISSET(m_socket_fd, &m_read_set)) {
-      int val = read(m_socket_fd, &packet, sizeof(AMExportPacket));
+      int val = am_read(m_socket_fd, &packet, sizeof(AMExportPacket));
       if (sizeof(AMExportPacket) != (uint32_t) val) {
-        NOTICE("Failed to read header, ret %d, server quit", val);
+        ERROR("Failed to read header, ret %d, server quit", val);
         m_is_connected = false;
         break;
       }
@@ -322,23 +350,27 @@ bool AMExportClientUDS::get_data()
           ERROR("Failed to new data!");
           break;
         }
-        val = read(m_socket_fd, packet.data_ptr, packet.data_size);
+        val = am_read(m_socket_fd, packet.data_ptr, packet.data_size);
         if (AM_UNLIKELY(packet.data_size != (uint32_t )val)) {
-          NOTICE("Failed to read data, ret %d, server quit", ret);
+          ERROR("Failed to read data, ret %d, server quit", ret);
           m_is_connected = false;
           break;
         }
       } else {
-        packet.data_ptr = m_bsb_addr + (uint32_t) packet.data_ptr;
+        AM_DATA_FRAME_TYPE type = AM_DATA_FRAME_TYPE_VIDEO;
+        AMAddress addr;
+        m_video_address->addr_get(type, (uint32_t)packet.data_ptr, addr);
+        packet.data_ptr = addr.data;
       }
 
       m_mutex->lock();
       while (m_packet_queue.size() > 64) {
         for (auto it = m_packet_queue.begin(); it != m_packet_queue.end();
             ++ it) {
-          if ((it->packet_type == AM_EXPORT_PACKET_TYPE_VIDEO_DATA) || (it->packet_type
-              == AM_EXPORT_PACKET_TYPE_AUDIO_DATA)) {
-            release((AMExportPacket*) it._M_node);
+          if ((it->packet_type == AM_EXPORT_PACKET_TYPE_VIDEO_DATA) ||
+              (it->packet_type == AM_EXPORT_PACKET_TYPE_AUDIO_DATA)) {
+            AMExportPacket data = *it;
+            release(&data);
             m_packet_queue.erase(it);
             WARN("Drop one packet!");
             break;
@@ -358,61 +390,20 @@ bool AMExportClientUDS::get_data()
   return ret;
 }
 
-bool AMExportClientUDS::map_bsb()
+bool AMExportClientUDS::check_sort_mode()
 {
-  bool      ret       = false;
-  uint8_t  *bsb_mem   = nullptr;
-  uint32_t  bsb_size;
+  char tem_check;
+  bool ret = true;
   do {
-    if ((m_iav_fd = open("/dev/iav", O_RDWR, 0)) < 0) {
-      PERROR("/dev/iav");
+    if ((am_read(m_socket_fd, &tem_check, sizeof(tem_check))) != 1) {
+      PERROR("read failed");
+      ret = false;
       break;
     }
-
-    iav_querybuf querybuf;
-    querybuf.buf = IAV_BUFFER_BSB;
-    if (ioctl(m_iav_fd, IAV_IOC_QUERY_BUF, &querybuf) < 0) {
-      PERROR("IAV_IOC_QUERY_BUF");
+    if (tem_check == 'Q') {
+      ret = false;
       break;
     }
-    bsb_size = querybuf.length;
-    if ((bsb_mem = (uint8_t*)mmap(nullptr,
-                                  bsb_size * 2,
-                                  PROT_READ,
-                                  MAP_SHARED,
-                                  m_iav_fd,
-                                  querybuf.offset)) == MAP_FAILED) {
-      PERROR("mmap");
-      break;
-    }
-    m_bsb_addr = bsb_mem;
-    m_bsb_size = bsb_size;
-    INFO("Map BSB, start = %p, size = 0x%x.",
-         m_bsb_addr, m_bsb_size);
-    ret = true;
-  } while (0);
-
-  return ret;
-}
-
-bool AMExportClientUDS::unmap_bsb()
-{
-  bool ret = false;
-
-  do {
-    if (m_bsb_addr) {
-      if (munmap(m_bsb_addr, m_bsb_size * 2) < 0) {
-        PERROR("munmap");
-        break;
-      }
-      m_bsb_addr = nullptr;
-    }
-    if (m_iav_fd > 0) {
-      close(m_iav_fd);
-      m_iav_fd = -1;
-    }
-    ret = true;
-  } while (0);
-
+  } while(0);
   return ret;
 }

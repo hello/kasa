@@ -4,12 +4,29 @@
  *  History:
  *    Nov 11, 2014 - [Dongge Wu] created file
  *
- * Copyright (C) 2007-2014, Ambarella, Inc.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include <stdio.h>
@@ -43,8 +60,7 @@
       } \
     } while (0)
 
-static AMAPIHelperPtr g_api_helper = NULL;
-static bool show_motion_detect_flag = false;
+static AMAPIHelperPtr g_api_helper = nullptr;
 static bool show_audio_alert_flag = false;
 static bool show_key_input_flag = false;
 static bool show_all_info_flag = false;
@@ -66,22 +82,6 @@ struct setting_option
     bool is_set;
 };
 
-struct md_roi_index
-{
-    bool is_set;
-    setting_option roi_index;
-};
-
-struct motion_detect_setting
-{
-    bool is_set;
-    setting_option enable;
-    setting_option threshold0;
-    setting_option threshold1;
-    setting_option level_change_delay0;
-    setting_option level_change_delay1;
-};
-
 struct audio_alert_setting
 {
     bool is_set;
@@ -101,24 +101,15 @@ struct key_input_setting
     setting_option key_press_time;
 };
 
-static motion_detect_setting g_motion_detect_cfg;
 static audio_alert_setting g_audio_alert_cfg;
 static key_input_setting g_key_input_cfg;
-static md_roi_index g_roi_index_cfg;
-static char *g_module_path = NULL;
+static char *g_module_path = nullptr;
 
 enum numeric_short_options
 {
   NONE = 0,
   REGISTER_MODULE,
   SHOW_REGISTER_STATE,
-
-  MD_ROI_INDEX,
-  MD_ENABLE,
-  MD_TH0,
-  MD_TH1,
-  MD_LCD0,
-  MD_LCD1,
 
   AA_CH_NUM,
   AA_SAMPLE_RATE,
@@ -131,7 +122,6 @@ enum numeric_short_options
 
   KI_KP_TIME,
 
-  SHOW_MD_INFO,
   SHOW_AA_INFO,
   SHOW_KI_INFO,
   SHOW_ALL_INFO
@@ -147,13 +137,6 @@ static struct option long_options[] =
 {"file", HAS_ARG, 0, 'f'},
 {"show-register-state", HAS_ARG, 0, SHOW_REGISTER_STATE},
 
-{"roi", HAS_ARG, 0, MD_ROI_INDEX},
-{"md-enable", HAS_ARG, 0, MD_ENABLE},
-{"md-th0", HAS_ARG, 0, MD_TH0},
-{"md-th1", HAS_ARG, 0, MD_TH1},
-{"md-lcd0", HAS_ARG, 0, MD_LCD0},
-{"md-lcd1", HAS_ARG, 0, MD_LCD1},
-
 {"aa-ch-num", HAS_ARG, 0, AA_CH_NUM},
 {"aa-sample-rate", HAS_ARG, 0, AA_SAMPLE_RATE},
 {"aa-chunk-bytes", HAS_ARG, 0, AA_CHUNK_BYTES},
@@ -165,7 +148,6 @@ static struct option long_options[] =
 
 {"ki-lp-time", HAS_ARG, 0, KI_KP_TIME},
 
-{"show-md-info", NO_ARG, 0, SHOW_MD_INFO},
 {"show-aa-info", NO_ARG, 0, SHOW_AA_INFO},
 {"show-ki-info", NO_ARG, 0, SHOW_KI_INFO},
 {"show-all-info", NO_ARG, 0, SHOW_ALL_INFO},
@@ -173,7 +155,7 @@ static struct option long_options[] =
 {0, 0, 0, 0}};
 
 const char *event_type_str[ALL_MODULE_NUM] =
-{"Motion Detect", "Audio Alert", "Audio Analysis", "Face Detect", "Key Input", };
+{"Audio Alert", "Audio Analysis", "Face Detect", "Key Input", };
 
 static const char *short_options = "hr:s:d:f:";
 
@@ -186,19 +168,12 @@ struct hint32_t_s
 static const hint32_t_s hint32_t[] =
 {
 {"", "\t\t\t" "Show usage\n"},
-{"0~5", "\t\t\t" "run event module, 0:Motion Detect,1:Audio Alert,2:Audio Analysis,3:Face Detect,4:Key Input,5:All event modules\n"},
-{"0~5", "\t\t" "stop event module, 0:Motion Detect,1:Audio Alert,2:Audio Analysis,3:Face Detect,4:Key Input,5:All event modules\n"},
-{"0~5", "\t\t" "destroy event module, 0:Motion Detect,1:Audio Alert,2:Audio Analysis,3:Face Detect,4:Key Input,5:All event modules\n"},
-{"0~4", "\t\t" "register event module, 0:Motion Detect,1:Audio Alert,2:Audio Analysis,3:Face Detect,4:Key Input\n"},
+{"0~5", "\t\t\t" "run event module, 0:Audio Alert,1:Audio Analysis,2:Face Detect,3:Key Input,4:All event modules\n"},
+{"0~5", "\t\t" "stop event module, 0:Audio Alert,1:Audio Analysis,2:Face Detect,3:Key Input,4:All event modules\n"},
+{"0~5", "\t\t" "destroy event module, 0:Audio Alert,1:Audio Analysis,2:Face Detect,3:Key Input,4:All event modules\n"},
+{"0~4", "\t\t" "register event module, 0:Audio Alert,1:Audio Analysis,2:Face Detect,3:Key Input\n"},
 {"", "\t\t\t" "register event module file path\n"},
-{"0~5", "\t" "show register event module state, 0:Motion Detect,1:Audio Alert,2:Audio Analysis,3:Face Detect,4:Key Input,5:All event modules\n"},
-
-{"0|1|2|3", "\t" "motion detect ROI index\n"},
-{"0|1", "\t" "disable or enable motion detect\n"},
-{"", "\t\t" "threshold0 of motion detect\n"},
-{"", "\t\t" "threshold1 of motion detect\n"},
-{"", "\t\t" "level0 change delay of motion detect\n"},
-{"", "\t\t" "level1 change delay of motion detect\n"},
+{"0~5", "\t" "show register event module state, 0:Audio Alert,1:Audio Analysis,2:Face Detect,3:Key Input,4:All event modules\n"},
 
 {"1|2", "\t" "audio channel number\n"},
 {"8000|16000|24000|36000|40000|48000", "\t" "audio sample rate\n"},
@@ -211,7 +186,6 @@ static const hint32_t_s hint32_t[] =
 
 {"", "\t\t" "key input pressed time\n"},
 
-{"", "\t\t" "show motion detect config\n"},
 {"", "\t\t" "show audio alert config\n"},
 {"", "\t\t" "show key input config\n"},
 {"", "\t\t" "show all plugin config\n"}, };
@@ -268,37 +242,6 @@ static int32_t init_param(int32_t argc, char **argv)
         show_regsiter_am_event_module_id = atoi(optarg);
         break;
 
-      case MD_ROI_INDEX:
-        VERIFY_PARA_2(atoi(optarg), 0, 3);
-        g_roi_index_cfg.roi_index.value.v_int = atoi(optarg);
-        g_roi_index_cfg.roi_index.is_set = true;
-        break;
-      case MD_ENABLE:
-        VERIFY_PARA_2(atoi(optarg), 0, 1);
-        g_motion_detect_cfg.enable.value.v_int = atoi(optarg);
-        g_motion_detect_cfg.enable.is_set = true;
-        break;
-      case MD_TH0:
-        VERIFY_PARA_1(atoi(optarg), 0);
-        g_motion_detect_cfg.threshold0.value.v_int = atoi(optarg);
-        g_motion_detect_cfg.threshold0.is_set = true;
-        break;
-      case MD_TH1:
-        VERIFY_PARA_1(atoi(optarg), 0);
-        g_motion_detect_cfg.threshold1.value.v_int = atoi(optarg);
-        g_motion_detect_cfg.threshold1.is_set = true;
-        break;
-      case MD_LCD0:
-        VERIFY_PARA_1(atoi(optarg), 0);
-        g_motion_detect_cfg.level_change_delay0.value.v_int = atoi(optarg);
-        g_motion_detect_cfg.level_change_delay0.is_set = true;
-        break;
-      case MD_LCD1:
-        VERIFY_PARA_1(atoi(optarg), 0);
-        g_motion_detect_cfg.level_change_delay1.value.v_int = atoi(optarg);
-        g_motion_detect_cfg.level_change_delay1.is_set = true;
-        break;
-
       case AA_CH_NUM:
         VERIFY_PARA_2(atoi(optarg), 1, 2);
         g_audio_alert_cfg.channel_num.value.v_int = atoi(optarg);
@@ -339,9 +282,6 @@ static int32_t init_param(int32_t argc, char **argv)
         g_key_input_cfg.key_press_time.is_set = true;
         break;
 
-      case SHOW_MD_INFO:
-        show_motion_detect_flag = true;
-        break;
       case SHOW_AA_INFO:
         show_audio_alert_flag = true;
         break;
@@ -364,67 +304,6 @@ static int32_t init_param(int32_t argc, char **argv)
 static void sigstop(int arg)
 {
   INFO("test event service got signal!\n");
-}
-
-static int32_t set_motion_detect_config()
-{
-  int32_t ret = 0;
-  am_service_result_t service_result =
-  {0};
-  am_event_md_config_s md_cfg =
-  {0};
-  bool has_setting = false;
-
-  if (g_motion_detect_cfg.enable.is_set) {
-    SET_BIT(md_cfg.enable_bits, AM_EVENT_MD_CONFIG_ENABLE);
-    md_cfg.enable = g_motion_detect_cfg.enable.value.v_bool;
-    has_setting = true;
-  }
-
-  if (g_roi_index_cfg.roi_index.is_set) {
-    INFO("roi#%d\n", g_roi_index_cfg.roi_index.value.v_int);
-    if (g_motion_detect_cfg.threshold0.is_set) {
-      SET_BIT(md_cfg.enable_bits, AM_EVENT_MD_CONFIG_THRESHOLD0);
-      md_cfg.threshold.threshold[0] =
-          g_motion_detect_cfg.threshold0.value.v_int;
-      md_cfg.threshold.roi_id = g_roi_index_cfg.roi_index.value.v_int;
-      has_setting = true;
-    }
-    if (g_motion_detect_cfg.threshold1.is_set) {
-      SET_BIT(md_cfg.enable_bits, AM_EVENT_MD_CONFIG_THRESHOLD1);
-      md_cfg.threshold.threshold[1] =
-          g_motion_detect_cfg.threshold1.value.v_int;
-      md_cfg.threshold.roi_id = g_roi_index_cfg.roi_index.value.v_int;
-      has_setting = true;
-    }
-    if (g_motion_detect_cfg.level_change_delay0.is_set) {
-      SET_BIT(md_cfg.enable_bits, AM_EVENT_MD_CONFIG_LEVEL0_CHANGE_DELAY);
-      md_cfg.level_change_delay.lc_delay[0] = g_motion_detect_cfg
-          .level_change_delay0.value.v_int;
-      md_cfg.level_change_delay.roi_id = g_roi_index_cfg.roi_index.value.v_int;
-      has_setting = true;
-    }
-    if (g_motion_detect_cfg.level_change_delay1.is_set) {
-      SET_BIT(md_cfg.enable_bits, AM_EVENT_MD_CONFIG_LEVEL1_CHANGE_DELAY);
-      md_cfg.level_change_delay.lc_delay[1] = g_motion_detect_cfg
-          .level_change_delay1.value.v_int;
-      md_cfg.level_change_delay.roi_id = g_roi_index_cfg.roi_index.value.v_int;
-      has_setting = true;
-    }
-  }
-
-  if (has_setting) {
-    g_api_helper->method_call(AM_IPC_MW_CMD_EVENT_MOTION_DETECT_CONFIG_SET,
-                              &md_cfg,
-                              sizeof(md_cfg),
-                              &service_result,
-                              sizeof(service_result));
-    if ((ret = service_result.ret != 0)) {
-      ERROR("failed to set motion detect config!\n");
-    }
-  }
-
-  return ret;
 }
 
 static int32_t set_audio_alert_config()
@@ -527,53 +406,6 @@ static int32_t set_key_input_config()
   return ret;
 }
 
-static int32_t show_motion_detect_config()
-{
-  int32_t ret = 0;
-  am_service_result_t service_result =
-  {0};
-  am_event_md_config_s *md_cfg = nullptr;
-  uint32_t roi_id = 0;
-  do {
-    g_api_helper->method_call(AM_IPC_MW_CMD_EVENT_MOTION_DETECT_CONFIG_GET,
-                              &roi_id,
-                              sizeof(roi_id),
-                              &service_result,
-                              sizeof(service_result));
-
-    if ((ret = service_result.ret) != 0) {
-      ERROR("Failed to get event config!");
-      break;
-    }
-
-    md_cfg = (am_event_md_config_s*) service_result.data;
-    PRINTF("\nmotion detect plugin:\nenable=%d\n", md_cfg->enable);
-    for (uint32_t i = 0; i < MD_MAX_ROI; i ++) {
-      roi_id = i;
-      g_api_helper->method_call(AM_IPC_MW_CMD_EVENT_MOTION_DETECT_CONFIG_GET,
-                                &roi_id,
-                                sizeof(roi_id),
-                                &service_result,
-                                sizeof(service_result));
-
-      if ((ret = service_result.ret) != 0) {
-        ERROR("Failed to get event config!");
-        break;
-      }
-      PRINTF("ROI#%d: threshold[0]=%d\n", i, md_cfg->threshold.threshold[0]);
-      PRINTF("ROI#%d: threshold[1]=%d\n", i, md_cfg->threshold.threshold[1]);
-      PRINTF("ROI#%d: level_change_delay[0]=%d\n",
-             i,
-             md_cfg->level_change_delay.lc_delay[0]);
-      PRINTF("ROI#%d: level_change_delay[1]=%d\n",
-             i,
-             md_cfg->level_change_delay.lc_delay[1]);
-    }
-  } while (0);
-
-  return ret;
-}
-
 static int32_t show_audio_alert_config()
 {
   int32_t ret = 0;
@@ -640,9 +472,6 @@ static int32_t show_all_info()
 {
   int32_t ret = 0;
   do {
-    if ((ret = show_motion_detect_config()) < 0) {
-      break;
-    }
     if ((ret = show_audio_alert_config()) < 0) {
       break;
     }
@@ -791,7 +620,7 @@ static int do_show_module_register_state()
   memset(&module_register_state, 0, sizeof(module_register_state));
   do {
     if (show_regsiter_am_event_module_id != -1) {
-      if (show_regsiter_am_event_module_id >= MOTION_DECT
+      if (show_regsiter_am_event_module_id >= AUDIO_ALERT_DECT
           && show_regsiter_am_event_module_id < ALL_MODULE_NUM) {
         module_register_state.id =
             (am_event_module_id) show_regsiter_am_event_module_id;
@@ -884,11 +713,6 @@ static int do_run_evnet_module()
         case KEY_INPUT_DECT:
 
           break;
-        case MOTION_DECT:
-          /*am_event_md_config_s md_config;
-           memset(&md_config, 0, sizeof(am_event_md_config_s));*/
-
-          break;
         case AUDIO_ANALYSIS_DECT:
         case FACE_DECT:
           ERROR("Not implemented event module!\n");
@@ -928,9 +752,6 @@ static int do_run_evnet_module()
             break;
           }
           case KEY_INPUT_DECT:
-
-            break;
-          case MOTION_DECT:
 
             break;
           case AUDIO_ANALYSIS_DECT:
@@ -1006,24 +827,17 @@ int main(int32_t argc, char **argv)
       show_all_info();
       break;
     } else {
-      if (show_motion_detect_flag) {
-        show_motion_detect_config();
-      }
       if (show_audio_alert_flag) {
         show_audio_alert_config();
       }
       if (show_key_input_flag) {
         show_key_input_config();
       }
-      if (show_motion_detect_flag | show_audio_alert_flag
-          | show_key_input_flag) {
+      if (show_audio_alert_flag | show_key_input_flag) {
         break;
       }
     }
 
-    if ((ret = set_motion_detect_config()) < 0) {
-      break;
-    }
     if ((ret = set_audio_alert_config()) < 0) {
       break;
     }

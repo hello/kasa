@@ -1,3 +1,36 @@
+/*******************************************************************************
+ * fifo.c
+ *
+ * History:
+ *	2010/05/13 - [Louis Sun] created file
+ *	2013/03/04 - [Jian Tang] modified file
+ *
+ * Copyright (c) 2016 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ ******************************************************************************/
+
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -189,6 +222,103 @@ int fifo_write_one_packet(fifo_t *fifo, u8 *header, u8 *packet_addr, u32 packet_
 	return 0;
 }
 
+/***************************************************************************************
+	function:	int fifo_write_one_packet(u8 *packet_addr, u32 packet_size)
+	input:	packet_addr: address of the packet to be stored into the fifo
+			packet_size: size of packet to be stored into the fifo
+	return value:	0: successful, -1: failed
+	remarks:	the algorithm gives priority to writers for sharing the free entries
+***************************************************************************************/
+int fifo_write_one_packet_slice(fifo_t *fifo, u8 *header, u8 *packet_addr[],u32 *slice_size, int tile_num)
+{
+	u8 *addr_for_this_write;
+	int entry_index_for_this_write;
+	int i;
+	u32 offset_size = 0;
+	u32 packet_size = 0;
+
+//	printf("lock, write\n");
+	pthread_mutex_lock(&fifo->mutex);
+//	printf("locked, write\n");
+	addr_for_this_write = fifo->addr_for_next_write;
+	entry_index_for_this_write = fifo->entry_index_for_next_write;
+
+	for (i = 0; i < tile_num; i++) {
+		// save the packet
+		packet_size += slice_size[i];
+	}
+
+	// skip the entry being used for this write
+	if (entry_index_for_this_write == fifo->entry_index_being_used) {
+		entry_index_for_this_write++;
+		wraparound_entry_index_if_necessary(fifo, &entry_index_for_this_write);
+	}
+	fifo_printf("[%x]write %d, using %d, next read %d, entry %d\n",
+		(u32)fifo&0xf, entry_index_for_this_write, fifo->entry_index_being_used,
+		fifo->entry_index_for_next_read, fifo->used_entry_num);
+
+	// if necessary, adjust write address to avoid wrapping around data
+	if ((addr_for_this_write + packet_size) > (fifo->buffer_end_addr + 1))
+		addr_for_this_write = fifo->buffer_start_addr;
+	for (i = 0; i < tile_num; i++) {
+		// save the packet
+		memcpy(addr_for_this_write + offset_size, packet_addr[i], slice_size[i]);
+		offset_size += slice_size[i];
+	}
+	// save the header
+	memcpy(&fifo->header_entries[entry_index_for_this_write*(fifo->header_size)],
+		header, fifo->header_size);
+
+	// update related info
+	if (fifo->packet_info_entries[entry_index_for_this_write].entry_state == ENTRY_INVALID)
+		fifo->used_entry_num++;
+
+	// fill the entry
+	fifo->packet_info_entries[entry_index_for_this_write].packet_addr = addr_for_this_write;
+	fifo->packet_info_entries[entry_index_for_this_write].packet_size = packet_size;
+	fifo->packet_info_entries[entry_index_for_this_write].entry_state = ENTRY_VALID;
+
+	// advance the entry for next read, if it is overwirtten by this write, when fifo is full
+	if ((entry_index_for_this_write == fifo->entry_index_for_next_read) &&
+		(fifo->used_entry_num > 2)) {	 // being used entry is still ocupying one entry
+		// if fifo is nearly full
+		fifo->entry_index_for_next_read++;
+		wraparound_entry_index_if_necessary(fifo, &fifo->entry_index_for_next_read);
+		if (fifo->entry_index_for_next_read == fifo->entry_index_being_used) {
+			fifo->entry_index_for_next_read++;	// skip the entry being used for next read
+			wraparound_entry_index_if_necessary(fifo, &fifo->entry_index_for_next_read);
+		}
+		fifo_printf("fifo full, advance read entry to %d >>>>>>>>>>>>>>"
+			">>>>>>>>>>>>>>>>>>\n", fifo->entry_index_for_next_read);
+	}
+
+	// update entry index for next write
+	fifo->entry_index_for_next_write = entry_index_for_this_write + 1;
+	wraparound_entry_index_if_necessary(fifo, &fifo->entry_index_for_next_write);
+
+	// update address for next write
+	fifo->addr_for_next_write = addr_for_this_write + packet_size;
+	if (fifo->addr_for_next_write > fifo->buffer_end_addr)
+		fifo->addr_for_next_write -= fifo->buffer_total_size;
+
+	// signal the condition variable if necessary
+	if (fifo->used_entry_num <= 1)
+		pthread_cond_signal(&fifo->cond);
+
+//	fifo->buffer_used_size += packet_size;
+
+//	printf("unlock, write\n");
+	pthread_mutex_unlock(&fifo->mutex);
+
+#if 0
+	printf("fifo_write_one_packet\n");
+	for (i = 0; i < 4; i++) {
+		printf("%p\t", fifo->packet_info_entries[i].packet_addr);
+	}
+	printf("\nnow %d entry used\n", fifo->used_entry_num);
+#endif
+	return 0;
+}
 
 /***************************************************************************************
 	function:	int fifo_read_one_packet(u8 **packet_addr, u32 *packet_size)

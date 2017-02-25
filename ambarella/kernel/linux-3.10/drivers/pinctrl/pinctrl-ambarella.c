@@ -40,7 +40,9 @@
 
 #define MUXIDS_TO_PINID(m)	((m) & 0xfff)
 #define MUXIDS_TO_ALT(m)	(((m) >> 12) & 0xf)
-#define MUXIDS_TO_CONF(m)	(((m) >> 16) & 0xffff)
+
+#define CONFIDS_TO_PINID(c)	((c) & 0xfff)
+#define CONFIDS_TO_CONF(c)	(((c) >> 16) & 0xffff)
 
 /*
  * bit1~0: 00: pull down, 01: pull up, 1x: clear pull up/down
@@ -61,6 +63,8 @@ struct ambpin_group {
 	unsigned int		*pins;
 	unsigned		num_pins;
 	u8			*alt;
+	unsigned int		*conf_pins;
+	unsigned		num_conf_pins;
 	unsigned long		*conf;
 };
 
@@ -118,9 +122,22 @@ static int amb_get_group_pins(struct pinctrl_dev *pctldev,
 }
 
 static void amb_pin_dbg_show(struct pinctrl_dev *pctldev,
-			struct seq_file *s, unsigned offset)
+			struct seq_file *s, unsigned pin)
 {
+	struct pin_desc *desc;
+
 	seq_printf(s, " %s", dev_name(pctldev->dev));
+
+	desc = pin_desc_get(pctldev, pin);
+	if (desc) {
+		seq_printf(s, " owner: %s%s%s%s",
+			desc->mux_owner ? desc->mux_owner : "",
+			desc->mux_owner && desc->gpio_owner ? " " : "",
+			desc->gpio_owner ? desc->gpio_owner : "",
+			!desc->mux_owner && !desc->gpio_owner ? "NULL" : "");
+	} else {
+		seq_printf(s, " not registered");
+	}
 }
 
 static int amb_dt_node_to_map(struct pinctrl_dev *pctldev,
@@ -132,9 +149,8 @@ static int amb_dt_node_to_map(struct pinctrl_dev *pctldev,
 	struct pinctrl_map *new_map;
 	char *grp_name = NULL;
 	int length = strlen(np->name) + SUFFIX_LENGTH;
-	u32 i, reg, new_num = 1;
+	u32 i, reg, new_num;
 
-	/* Check for pin config node which has no 'reg' property */
 	if (of_property_read_u32(np, "reg", &reg))
 		return -EINVAL;
 
@@ -157,7 +173,7 @@ static int amb_dt_node_to_map(struct pinctrl_dev *pctldev,
 		return -EINVAL;
 	}
 
-	new_num += grp->num_pins;
+	new_num = !!grp->num_pins + grp->num_conf_pins;
 	new_map = devm_kzalloc(soc->dev,
 				sizeof(struct pinctrl_map) * new_num, GFP_KERNEL);
 	if (!new_map)
@@ -167,16 +183,18 @@ static int amb_dt_node_to_map(struct pinctrl_dev *pctldev,
 	*num_maps = new_num;
 
 	/* create mux map */
-	new_map[0].type = PIN_MAP_TYPE_MUX_GROUP;
-	new_map[0].data.mux.group = grp_name;
-	new_map[0].data.mux.function = np->name;
+	if (grp->num_pins) {
+		new_map[0].type = PIN_MAP_TYPE_MUX_GROUP;
+		new_map[0].data.mux.group = grp_name;
+		new_map[0].data.mux.function = np->name;
+		new_map++;
+	}
 
 	/* create config map */
-	new_map++;
-	for (i = 0; i < grp->num_pins; i++) {
+	for (i = 0; i < grp->num_conf_pins; i++) {
 		new_map[i].type = PIN_MAP_TYPE_CONFIGS_PIN;
 		new_map[i].data.configs.group_or_pin =
-				pin_get_name(pctldev, grp->pins[i]);
+				pin_get_name(pctldev, grp->conf_pins[i]);
 		new_map[i].data.configs.configs = &grp->conf[i];
 		new_map[i].data.configs.num_configs = 1;
 	}
@@ -440,13 +458,44 @@ static int amb_pinconf_set(struct pinctrl_dev *pctldev, unsigned int pin,
 static int amb_pinconf_get(struct pinctrl_dev *pctldev,
 			unsigned int pin, unsigned long *config)
 {
+	dev_WARN_ONCE(pctldev->dev, true, "NOT Implemented.\n");
 	return -ENOTSUPP;
+}
+
+static void amb_pinconf_dbg_show(struct pinctrl_dev *pctldev,
+			struct seq_file *s, unsigned pin)
+{
+	struct amb_pinctrl_soc_data *soc;
+	u32 bank, offset, reg;
+	u32 pull_en, pull_dir, drv_strength;
+
+	soc = pinctrl_dev_get_drvdata(pctldev);
+	bank = PINID_TO_BANK(pin);
+	offset = PINID_TO_OFFSET(pin);
+
+	reg = GPIO_PAD_PULL_REG(GPIO_PAD_PULL_EN_OFFSET(bank));
+	pull_en = (amba_readl(reg) >> offset) & 0x1;
+
+	reg = GPIO_PAD_PULL_REG(GPIO_PAD_PULL_DIR_OFFSET(bank));
+	pull_dir = (amba_readl(reg) >> offset) & 0x1;
+
+	seq_printf(s, " pull: %s, ", pull_en ? pull_dir ? "up" : "down" : "disable");
+
+	reg = RCT_REG(GPIO_DS0_OFFSET(bank));
+	drv_strength = ((amba_readl(reg) >> offset) & 0x1) << 1;
+	reg = RCT_REG(GPIO_DS1_OFFSET(bank));
+	drv_strength |= (amba_readl(reg) >> offset) & 0x1;
+
+	seq_printf(s, "drive-strength: %s",
+		drv_strength == 3 ? "12mA" : drv_strength == 2 ? "8mA" :
+		drv_strength == 1 ? "4mA" : "2mA");
 }
 
 /* list of pinconfig callbacks for pinconfig vertical in the pinctrl code */
 static const struct pinconf_ops amb_pinconf_ops = {
 	.pin_config_get		= amb_pinconf_get,
 	.pin_config_set		= amb_pinconf_set,
+	.pin_config_dbg_show	= amb_pinconf_dbg_show,
 };
 
 static struct pinctrl_desc amb_pinctrl_desc = {
@@ -461,48 +510,67 @@ static int amb_pinctrl_parse_group(struct amb_pinctrl_soc_data *soc,
 {
 	struct ambpin_group *grp = &soc->groups[idx];
 	struct property *prop;
-	const char *prop_name = "amb,pinmux-ids";
+	const char *prop_name;
 	char *grp_name;
 	int length = strlen(np->name) + SUFFIX_LENGTH;
-	u32 val, i;
+	u32 reg, i;
 
 	grp_name = devm_kzalloc(soc->dev, length, GFP_KERNEL);
 	if (!grp_name)
 		return -ENOMEM;
 
-	if (of_property_read_u32(np, "reg", &val))
+	if (of_property_read_u32(np, "reg", &reg))
 		return -EINVAL;
 
-	snprintf(grp_name, length, "%s.%d", np->name, val);
+	snprintf(grp_name, length, "%s.%d", np->name, reg);
 
 	grp->name = grp_name;
 
+	prop_name = "amb,pinmux-ids";
 	prop = of_find_property(np, prop_name, &length);
-	if (!prop)
-		return -EINVAL;
-	grp->num_pins = length / sizeof(u32);
+	if (prop) {
+		grp->num_pins = length / sizeof(u32);
 
-	grp->pins = devm_kzalloc(soc->dev,
-				grp->num_pins * sizeof(u32), GFP_KERNEL);
-	if (!grp->pins)
-		return -ENOMEM;
+		grp->pins = devm_kzalloc(soc->dev,
+					grp->num_pins * sizeof(u32), GFP_KERNEL);
+		if (!grp->pins)
+			return -ENOMEM;
 
-	grp->alt = devm_kzalloc(soc->dev,
-				grp->num_pins * sizeof(u8), GFP_KERNEL);
-	if (!grp->alt)
-		return -ENOMEM;
+		grp->alt = devm_kzalloc(soc->dev,
+					grp->num_pins * sizeof(u8), GFP_KERNEL);
+		if (!grp->alt)
+			return -ENOMEM;
 
-	grp->conf = devm_kzalloc(soc->dev,
-				grp->num_pins * sizeof(unsigned long), GFP_KERNEL);
-	if (!grp->conf)
-		return -ENOMEM;
+		of_property_read_u32_array(np, prop_name, grp->pins, grp->num_pins);
 
-	of_property_read_u32_array(np, prop_name, grp->pins, grp->num_pins);
+		for (i = 0; i < grp->num_pins; i++) {
+			grp->alt[i] = MUXIDS_TO_ALT(grp->pins[i]);
+			grp->pins[i] = MUXIDS_TO_PINID(grp->pins[i]);
+		}
+	}
 
-	for (i = 0; i < grp->num_pins; i++) {
-		grp->alt[i] = MUXIDS_TO_ALT(grp->pins[i]);
-		grp->conf[i] = MUXIDS_TO_CONF(grp->pins[i]);
-		grp->pins[i] = MUXIDS_TO_PINID(grp->pins[i]);
+	/* parse pinconf */
+	prop_name = "amb,pinconf-ids";
+	prop = of_find_property(np, prop_name, &length);
+	if (prop) {
+		grp->num_conf_pins = length / sizeof(u32);
+
+		grp->conf_pins = devm_kzalloc(soc->dev,
+					grp->num_conf_pins * sizeof(u32), GFP_KERNEL);
+		if (!grp->conf_pins)
+			return -ENOMEM;
+
+		grp->conf = devm_kzalloc(soc->dev,
+				grp->num_conf_pins * sizeof(unsigned long), GFP_KERNEL);
+		if (!grp->conf)
+			return -ENOMEM;
+
+		of_property_read_u32_array(np, prop_name, grp->conf_pins, grp->num_conf_pins);
+
+		for (i = 0; i < grp->num_conf_pins; i++) {
+			grp->conf[i] = CONFIDS_TO_CONF(grp->conf_pins[i]);
+			grp->conf_pins[i] = CONFIDS_TO_PINID(grp->conf_pins[i]);
+		}
 	}
 
 	if (out_name)

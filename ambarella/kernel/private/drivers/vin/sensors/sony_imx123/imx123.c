@@ -4,14 +4,33 @@
  * History:
  *    2014/08/05 - [Long Zhao] Create
  *
- * Copyright (C) 2004-2014, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 #include <linux/module.h>
 #include <linux/ambpriv_device.h>
 #include <linux/interrupt.h>
@@ -255,8 +274,6 @@ static int imx123_set_format(struct vin_device *vdev, struct vin_video_format *f
 	struct vin_reg_16_8 *regs;
 	int i, regs_num, rval;
 
-	imx123_init_device(vdev);
-
 	if (format->hdr_mode == AMBA_VIDEO_LINEAR_MODE || dual_gain) {
 		regs = imx123_linear_mode_regs[format->device_mode];
 		regs_num = ARRAY_SIZE(imx123_linear_mode_regs[format->device_mode]);
@@ -294,7 +311,7 @@ static int imx123_set_format(struct vin_device *vdev, struct vin_video_format *f
 	}
 
 	/* for DOL mode, set RHS registers */
-	if (format->hdr_mode == AMBA_VIDEO_2X_HDR_MODE) {
+	if (format->hdr_mode == AMBA_VIDEO_2X_HDR_MODE && !dual_gain) {
 		imx123_write_reg(vdev, IMX123_RHS1_HSB, IMX123_QXGA_2X_RHS1 >> 16);
 		imx123_write_reg(vdev, IMX123_RHS1_MSB, IMX123_QXGA_2X_RHS1 >> 8);
 		imx123_write_reg(vdev, IMX123_RHS1_LSB, IMX123_QXGA_2X_RHS1 & 0xff);
@@ -312,8 +329,6 @@ static int imx123_set_format(struct vin_device *vdev, struct vin_video_format *f
 		pinfo->rhs1 = IMX123_QXGA_3X_RHS1;
 		pinfo->rhs2 = IMX123_QXGA_3X_RHS2;
 	}
-
-	imx123_set_pll(vdev, vdev->cur_format->pll_idx);
 
 	rval = imx123_update_hv_info(vdev);
 	if (rval < 0)
@@ -444,28 +459,42 @@ static int imx123_set_mirror_mode(struct vin_device *vdev,
 
 	case VINDEV_MIRROR_HORRIZONTALLY_VERTICALLY:
 		readmode = IMX123_H_MIRROR | IMX123_V_FLIP;
-		if (vdev->cur_format->hdr_mode == AMBA_VIDEO_LINEAR_MODE || dual_gain)
-			bayer_pattern = VINDEV_BAYER_PATTERN_RG;
-		else
-			bayer_pattern = VINDEV_BAYER_PATTERN_GB;
+		bayer_pattern = VINDEV_BAYER_PATTERN_RG;
+		if (vdev->cur_format->hdr_mode != AMBA_VIDEO_LINEAR_MODE && !dual_gain) {
+			imx123_write_reg(vdev, IMX123_WINMODE, 0x40);
+			imx123_write_reg(vdev, IMX123_WINWV_OB, 0x0b);
+			imx123_write_reg(vdev, IMX123_WINPV_LSB, 0x01);
+		}
 		break;
 
 	case VINDEV_MIRROR_HORRIZONTALLY:
 		readmode = IMX123_H_MIRROR;
-		if (vdev->cur_format->hdr_mode == AMBA_VIDEO_LINEAR_MODE || dual_gain)
-			bayer_pattern = VINDEV_BAYER_PATTERN_RG;
-		else
-			bayer_pattern = VINDEV_BAYER_PATTERN_GB;
+		bayer_pattern = VINDEV_BAYER_PATTERN_RG;
+		if (vdev->cur_format->hdr_mode != AMBA_VIDEO_LINEAR_MODE && !dual_gain) {
+			imx123_write_reg(vdev, IMX123_WINMODE, 0x00);
+			imx123_write_reg(vdev, IMX123_WINWV_OB, 0x0c);
+			imx123_write_reg(vdev, IMX123_WINPV_LSB, 0x00);
+		}
 		break;
 
 	case VINDEV_MIRROR_VERTICALLY:
 		readmode = IMX123_V_FLIP;
 		bayer_pattern = VINDEV_BAYER_PATTERN_RG;
+		if (vdev->cur_format->hdr_mode != AMBA_VIDEO_LINEAR_MODE && !dual_gain) {
+			imx123_write_reg(vdev, IMX123_WINMODE, 0x40);
+			imx123_write_reg(vdev, IMX123_WINWV_OB, 0x0b);
+			imx123_write_reg(vdev, IMX123_WINPV_LSB, 0x01);
+		}
 		break;
 
 	case VINDEV_MIRROR_NONE:
 		readmode = 0;
 		bayer_pattern = VINDEV_BAYER_PATTERN_RG;
+		if (vdev->cur_format->hdr_mode != AMBA_VIDEO_LINEAR_MODE && !dual_gain) {
+			imx123_write_reg(vdev, IMX123_WINMODE, 0x00);
+			imx123_write_reg(vdev, IMX123_WINWV_OB, 0x0c);
+			imx123_write_reg(vdev, IMX123_WINPV_LSB, 0x00);
+		}
 		break;
 
 	default:
@@ -711,25 +740,24 @@ static int imx123_wdr_shutter2row(struct vin_device *vdev,
 static int imx123_get_eis_info(struct vin_device *vdev,
 		struct vindev_eisinfo *eis_info)
 {
-	struct imx123_priv *pinfo = (struct imx123_priv *)vdev->priv;
-	struct vin_video_format *format = vdev->cur_format;
-
-	eis_info->cap_start_x = format->act_start_x;
-	eis_info->cap_start_y = format->act_start_y;
-	eis_info->cap_cap_w = format->act_width;
-	eis_info->cap_cap_h = format->act_height;
-	eis_info->source_width = format->width;
-	eis_info->source_height = format->height;
-	eis_info->current_fps = vdev->frame_rate;
-	eis_info->main_fps = format->default_fps;
-	eis_info->current_shutter_time = vdev->shutter_time;
 	eis_info->sensor_cell_width = 250;/* 2.5 um */
 	eis_info->sensor_cell_height = 250;/* 2.5 um */
 	eis_info->column_bin = 1;
 	eis_info->row_bin = 1;
+	eis_info->vb_time = vdev->cur_format->vb_time;
 
-	eis_info->vb_lines = pinfo->fsc - format->height;
-	eis_info->row_time = (u32)DIV64_CLOSEST((u64)format->line_time * 1000, 512);
+	return 0;
+}
+
+static int imx123_get_aaa_info(struct vin_device *vdev,
+	struct vindev_aaa_info *aaa_info)
+{
+	struct imx123_priv *pinfo = (struct imx123_priv *)vdev->priv;
+
+	aaa_info->sht0_max = pinfo->frame_length_lines - 14;
+	aaa_info->sht1_max = pinfo->rhs1 - 7;
+	aaa_info->sht2_max = (vdev->cur_format->hdr_mode == AMBA_VIDEO_3X_HDR_MODE) ?
+		(pinfo->rhs2 - pinfo->rhs1 - 9) : 0;
 
 	return 0;
 }
@@ -747,6 +775,7 @@ static struct vin_ops imx123_ops = {
 	.write_reg		= imx123_write_reg,
 	.set_hold_mode		= imx123_set_hold_mode,
 	.get_eis_info		= imx123_get_eis_info,
+	.get_aaa_info		= imx123_get_aaa_info,
 
 	/* for wdr sensor */
 	.set_wdr_again_idx_gp = imx123_set_wdr_again_idx_group,
@@ -788,6 +817,9 @@ static int imx123_probe(struct i2c_client *client,
 	vdev->agc_db_max = 0x30000000;	// 48dB
 	vdev->agc_db_min = 0x00000000;	// 0dB
 	vdev->agc_db_step = 0x00199999;	// 0.1dB
+
+	/* mode switch needs hw reset */
+	vdev->reset_for_mode_switch = true;
 
 	if (dual_gain) {
 		vdev->wdr_again_idx_min = 0;

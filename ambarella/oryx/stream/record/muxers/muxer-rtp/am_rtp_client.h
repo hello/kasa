@@ -4,18 +4,36 @@
  * History:
  *   2015-1-6 - [ypchang] created file
  *
- * Copyright (C) 2008-2015, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 #ifndef ORYX_STREAM_RECORD_MUXERS_MUXER_RTP_AM_RTP_CLIENT_H_
 #define ORYX_STREAM_RECORD_MUXERS_MUXER_RTP_AM_RTP_CLIENT_H_
 
 #include "am_rtp_msg.h"
+#include "am_mutex.h"
 #include "rtp.h"
 #include "rtcp.h"
 
@@ -32,6 +50,7 @@ enum AM_NET_STATE
 {
   AM_NET_OK,
   AM_NET_ERROR,
+  AM_NET_AGAIN,
   AM_NET_SLOW,
   AM_NET_PEER_SHUTDOWN,
   AM_NET_BADFD,
@@ -74,12 +93,18 @@ struct RtcpSRPacket
   uint32_t sender_ssrc();
 };
 
+struct RtcpSRBuffer
+{
+    AMRtpTcpHeader  tcp_hdr;
+    AMRtcpHeader    rtcp_hdr;
+    AMRtcpSRPayload rtcp_sr;
+};
 
 class AMEvent;
 class AMThread;
-class AMSpinLock;
 class AMMuxerRtp;
 class AMRtpSession;
+class AMIRtpSession;
 class AMRtpClientConfig;
 
 class AMRtpClient
@@ -103,10 +128,12 @@ class AMRtpClient
     bool is_alive();
     bool is_abort();
     bool is_enable();
-    void destroy();
+    bool is_new_client();
+    void set_new_client(bool new_client);
+    void destroy(bool send_notify = true);
     uint32_t ssrc();
     void inc_ref();
-    void set_session(AMRtpSession *session);
+    void set_session(AMIRtpSession *session);
 
   protected:
     AMRtpClient(int ctrl_fd, AMMuxerRtp *muxer);
@@ -125,44 +152,52 @@ class AMRtpClient
     AM_NET_STATE tcp_send(int fd, uint8_t *data, uint32_t len);
     AM_NET_STATE udp_send(int fd, sockaddr *addr, uint8_t *data, uint32_t len);
     AM_NET_STATE send_rtcp_packet(uint8_t *data, uint32_t len);
+    void update_rtcp_sr_pkt_num_bytes(RtcpSRBuffer &sr,
+                                      uint32_t pkt_num,
+                                      uint32_t payload_size);
+    void build_rtcp_sr_packet(RtcpSRBuffer &sr,
+                              uint32_t ssrc,
+                              uint32_t rtp_ts,
+                              uint64_t ntp_ts);
     void abort_client(bool send_cmd);
     void send_ack();
     bool send_kill_client();
     bool send_thread_cmd(AM_CLIENT_CMD cmd);
 
   private:
-    RtpClientConfig   *m_client_config; /* No need to delete */
-    AMRtpClientConfig *m_config;
-    AMRtpClientData   *m_client;
-    AMSpinLock        *m_lock;
-    AMThread          *m_rtcp_monitor;
-    AMThread          *m_packet_sender;
-    AMEvent           *m_rtp_event;
-    AMEvent           *m_rtcp_event;
-    AMMuxerRtp        *m_muxer;
-    uint8_t           *m_rtcp_sr_buf;
-    AMRtcpHeader      *m_rtcp_hdr;
-    AMRtcpSRPayload   *m_rtcp_sr;
-    AMRtpSession      *m_session;
-    int                m_ctrl_fd;
-    std::atomic_int    m_ref_count;
-    uint64_t           m_start_clock_90k;
-    uint64_t           m_tcp_max_speed;
-    uint64_t           m_tcp_min_speed;
-    uint64_t           m_tcp_avg_speed;
-    uint64_t           m_udp_max_speed;
-    uint64_t           m_udp_min_speed;
-    uint64_t           m_udp_avg_speed;
-    uint64_t           m_tcp_send_time;
-    uint64_t           m_udp_send_time;
-    uint64_t           m_tcp_send_size;
-    uint64_t           m_udp_send_size;
-    uint32_t           m_tcp_send_count;
-    uint32_t           m_udp_send_count;
-    bool               m_run;
-    bool               m_abort;
-    bool               m_enable;
-    int                m_ctrl[2];
+    uint64_t           m_start_clock_90k = 0ULL;
+    uint64_t           m_tcp_max_speed   = 0ULL;
+    uint64_t           m_tcp_min_speed   = ((uint64_t)-1);
+    uint64_t           m_tcp_avg_speed   = 0ULL;
+    uint64_t           m_udp_max_speed   = 0ULL;
+    uint64_t           m_udp_min_speed   = ((uint64_t)-1);
+    uint64_t           m_udp_avg_speed   = 0ULL;
+    uint64_t           m_tcp_send_time   = 0ULL;
+    uint64_t           m_udp_send_time   = 0ULL;
+    uint64_t           m_tcp_send_size   = 0ULL;
+    uint64_t           m_udp_send_size   = 0ULL;
+    RtpClientConfig   *m_client_config   = nullptr; /* No need to delete */
+    AMRtpClientConfig *m_config          = nullptr;
+    AMRtpClientData   *m_client          = nullptr;
+    AMThread          *m_rtcp_monitor    = nullptr;
+    AMThread          *m_packet_sender   = nullptr;
+    AMEvent           *m_rtp_event       = nullptr;
+    AMEvent           *m_rtcp_event      = nullptr;
+    AMMuxerRtp        *m_muxer           = nullptr;
+    RtcpSRBuffer      *m_rtcp_sr_buf     = nullptr;
+    AMRtcpHeader      *m_rtcp_hdr        = nullptr;
+    AMRtcpSRPayload   *m_rtcp_sr         = nullptr;
+    AMIRtpSession     *m_session         = nullptr;
+    uint32_t           m_tcp_send_count  = 0;
+    uint32_t           m_udp_send_count  = 0;
+    int                m_ctrl_fd         = -1;
+    int                m_ctrl[2]         = {-1};
+    std::atomic<bool>  m_run             = {true};
+    std::atomic<bool>  m_is_new          = {true};
+    std::atomic<bool>  m_abort           = {false};
+    std::atomic<bool>  m_enable          = {false};
+    std::atomic<int>   m_ref_count       = {0};
+    AMMemLock          m_lock;
 #define RTP_CLI_R      m_ctrl[0]
 #define RTP_CLI_W      m_ctrl[1]
 };

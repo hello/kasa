@@ -3,14 +3,33 @@
  *
  * History:
  *	2015/01/21 - [Zhi He] created file
- * Copyright (C) 2015 -2018, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 #include <config.h>
 #include <plat/ambcache.h>
 #include <linux/random.h>
@@ -47,7 +66,7 @@
 	} while (0)
 #endif
 
-static int __is_interlace_vout_mode(u32 mode)
+static u8 __is_interlace_vout_mode(u32 mode)
 {
 	switch (mode) {
 		case AMBA_VIDEO_MODE_480I:
@@ -66,9 +85,6 @@ static int __is_interlace_vout_mode(u32 mode)
 
 static int __check_enter_decode_mode_params(struct iav_decode_mode_config* mode_config)
 {
-	u32 i = 0;
-	struct iav_decoder_config* decoder_config = NULL;
-
 	if (!mode_config->num_decoder) {
 		DEC_ERROR("num_decoder %d is zero\n",
 			mode_config->num_decoder);
@@ -81,18 +97,10 @@ static int __check_enter_decode_mode_params(struct iav_decode_mode_config* mode_
 		return -EINVAL;
 	}
 
-	for (i = 0; i < mode_config->num_decoder; ++i) {
-		decoder_config = &mode_config->decoder_configs[i];
-		if (!decoder_config->max_frm_width || !decoder_config->max_frm_height) {
-			DEC_ERROR("not specify frame width %d or height %d\n",
-				decoder_config->max_frm_width, decoder_config->max_frm_height);
-			return -EINVAL;
-		}
-		if (!decoder_config->max_frm_num) {
-			DEC_ERROR("not specify max_frm_num %d\n",
-				decoder_config->max_frm_num);
-			return -EINVAL;
-		}
+	if (!mode_config->max_frm_width || !mode_config->max_frm_height) {
+		DEC_ERROR("not specify max frame width %d or height %d\n",
+			mode_config->max_frm_width, mode_config->max_frm_height);
+		return -EINVAL;
 	}
 
 	return 0;
@@ -198,20 +206,28 @@ static void handle_dec_msg(void *data, DSP_MSG *msg)
 
 	spin_lock(&iav->iav_lock);
 
-	decoder_status->current_bsb_read_offset = p_dsp_msg->h264_bits_fifo_next -
-		decoder_status->current_bsb_addr_dsp_base;
 	if (decoder_status->decode_state != p_dsp_msg->decode_state) {
 		DEC_DEBUG("[decode_state]: %d --> %d\n",
 			decoder_status->decode_state, p_dsp_msg->decode_state);
 		decoder_status->decode_state = p_dsp_msg->decode_state;
 	}
-	decoder_status->error_status = p_dsp_msg->error_status;
-	decoder_status->total_error_count = p_dsp_msg->total_error_count;
-	decoder_status->decoded_pic_number = p_dsp_msg->decoded_pic_number;
-	decoder_status->last_pts = p_dsp_msg->latest_pts;
-	decoder_status->yuv422_y_addr = p_dsp_msg->yuv422_y_addr;
-	decoder_status->yuv422_uv_addr = p_dsp_msg->yuv422_uv_addr;
-	decoder_status->accumulated_dec_cmd_number = 0;
+	if (decoder_status->decode_state) {
+		u32 error_status = p_dsp_msg->error_status & 0x7fffffff;
+		decoder_status->current_bsb_read_offset = p_dsp_msg->h264_bits_fifo_next -
+		decoder_status->current_bsb_addr_dsp_base;
+		if (ERR_NO_4BYTEHEADER != error_status) {
+			decoder_status->error_status = error_status;
+		} else {
+			decoder_status->error_status = 0;
+		}
+		decoder_status->total_error_count = p_dsp_msg->total_error_count;
+		decoder_status->decoded_pic_number = p_dsp_msg->decoded_pic_number;
+		decoder_status->last_pts = p_dsp_msg->latest_pts;
+		decoder_status->yuv422_y_addr = p_dsp_msg->yuv422_y_addr;
+		decoder_status->yuv422_uv_addr = p_dsp_msg->yuv422_uv_addr;
+		decoder_status->accumulated_dec_cmd_number = 0;
+	}
+
 	decoder_status->irq_count ++;
 	__dec_notify_waiters(decoder_status);
 
@@ -225,7 +241,7 @@ static inline int set_dsp_to_decode_mode(struct ambarella_iav *iav)
 	int ret = 0;
 	struct dsp_device *dsp = iav->dsp;
 
-	ret = dsp->set_op_mode(dsp, DSP_DECODE_MODE, NULL);
+	ret = dsp->set_op_mode(dsp, DSP_DECODE_MODE, NULL, 0);
 	if (!ret) {
 		iav->state = IAV_STATE_DECODING;
 	} else {
@@ -242,7 +258,7 @@ static int setup_h264_decoder(struct ambarella_iav *iav, u8 decoder_id)
 	struct amb_dsp_cmd *first, *cmd;
 	u8 i = 0;
 	struct iav_decode_vout_config *pvout_config = NULL;
-	int is_interlace = 0;
+	u8 is_interlace = 0;
 
 	if (1 != decoder->num_vout) {
 		DEC_ERROR("only support single vout\n");
@@ -264,17 +280,7 @@ static int setup_h264_decoder(struct ambarella_iav *iav, u8 decoder_id)
 		pvout_config = &decoder->vout_configs[i];
 		is_interlace = __is_interlace_vout_mode(pvout_config->vout_mode);
 		get_next_cmd(cmd, first);
-		if (!is_interlace) {
-			cmd_vout_video_setup(iav, cmd, pvout_config->vout_id, pvout_config->enable,
-				VOUT_SRC_DEC, pvout_config->flip, pvout_config->rotate,
-				pvout_config->target_win_offset_x, pvout_config->target_win_offset_y,
-				pvout_config->target_win_width, pvout_config->target_win_height);
-		} else {
-			cmd_vout_video_setup(iav, cmd, pvout_config->vout_id, pvout_config->enable,
-				VOUT_SRC_DEC, pvout_config->flip, pvout_config->rotate,
-				pvout_config->target_win_offset_x, pvout_config->target_win_offset_y,
-				pvout_config->target_win_width, pvout_config->target_win_height / 2);
-		}
+		cmd_vout_video_setup(iav, cmd, pvout_config, VOUT_SRC_DEC, is_interlace);
 	}
 	get_next_cmd(cmd, first);
 	cmd_rescale_postp(iav, cmd, decoder_id, (decoder->width >> 1), (decoder->height >> 1));
@@ -359,6 +365,14 @@ static void init_decoder_setting(struct iav_decoder_info* dec_config,
 	dec_status->is_started = 0;
 	dec_status->b_send_first_decode_cmd = 0;
 	dec_status->b_send_stop_cmd = 0;
+
+	dec_status->error_status = 0;
+	dec_status->total_error_count = 0;
+	dec_status->decoded_pic_number = 0;
+
+	dec_status->irq_count = 0;
+	dec_status->yuv422_y_addr = 0;
+	dec_status->yuv422_uv_addr = 0;
 }
 
 static void init_all_decoder_setting(struct ambarella_iav *iav)
@@ -385,6 +399,16 @@ static void init_decoder_status(struct iav_decoder_current_status *status)
 	status->speed = 0x100;
 	status->scan_mode = IAV_PB_SCAN_MODE_ALL_FRAMES;
 	status->direction= IAV_PB_DIRECTION_FW;
+
+	status->decode_state = 0;
+	status->error_status = 0;
+	status->total_error_count = 0;
+	status->decoded_pic_number = 0;
+
+	status->irq_count = 0;
+	status->yuv422_y_addr = 0;
+	status->yuv422_uv_addr = 0;
+
 }
 
 static int iav_enter_decode_mode(struct ambarella_iav *iav)
@@ -440,18 +464,27 @@ static int iav_ioc_enter_decode_mode(struct ambarella_iav *iav, void __user * ar
 		return rval;
 	}
 	memcpy(&dec_context->mode_config, &mode_config, sizeof(mode_config));
+	DEC_DEBUG("num %d, support ff %d, drpoc %d, max video %dx%d, vout0 %dx%d, vout1 %dx%d\n",
+		dec_context->mode_config.num_decoder,
+		dec_context->mode_config.b_support_ff_fb_bw, dec_context->mode_config.debug_use_dproc,
+		dec_context->mode_config.max_frm_width, dec_context->mode_config.max_frm_height,
+		dec_context->mode_config.max_vout0_width, dec_context->mode_config.max_vout0_height,
+		dec_context->mode_config.max_vout1_width, dec_context->mode_config.max_vout1_height);
 
 	rval = iav_enter_decode_mode(iav);
 
 	return rval;
 }
 
+extern int iav_goto_timer_mode(struct ambarella_iav *iav);
 static int iav_ioc_leave_decode_mode(struct ambarella_iav *iav)
 {
 	DEC_DEBUG("[iav flow]: leave decode_mode, from state (%d)\n", iav->state);
-
-	iav_clean_decode_stuff(iav);
-
+	if (IAV_STATE_DECODING == iav->state) {
+		iav_clean_decode_stuff(iav);
+		iav_goto_timer_mode(iav);
+		DEC_DEBUG("[iav flow]: after goto idle (timer mode), state %d\n", iav->state);
+	}
 	return 0;
 }
 
@@ -477,6 +510,15 @@ static int iav_ioc_create_decoder(struct ambarella_iav *iav, void __user * arg)
 
 	if (decoder_info.decoder_id >= dec_context->mode_config.num_decoder) {
 		DEC_ERROR("bad decoder_id %d.\n", decoder_info.decoder_id);
+		mutex_unlock(&iav->iav_mutex);
+		return -EINVAL;
+	}
+
+	if ((decoder_info.width > dec_context->mode_config.max_frm_width)
+		|| (decoder_info.height > dec_context->mode_config.max_frm_height)) {
+		DEC_ERROR("exceed max video resolution %dx%d, max %dx%d.\n",
+			decoder_info.width, decoder_info.height,
+			dec_context->mode_config.max_frm_width, dec_context->mode_config.max_frm_height);
 		mutex_unlock(&iav->iav_mutex);
 		return -EINVAL;
 	}
@@ -628,19 +670,32 @@ static int iav_ioc_decode_stop(struct ambarella_iav *iav, void __user * arg)
 		return -EPERM;
 	}
 
-	if (!dec_status->b_send_stop_cmd) {
-		/* always stop 1, stop 0 need re-setup decoder */
-		cmd_decode_stop(iav, stop.decoder_id, 1);
-		dec_status->b_send_stop_cmd = 1;
-		if (0 == stop.stop_flag) {
+	if (0 == dec_status->error_status) {
+		if (!dec_status->b_send_stop_cmd) {
+			/* always stop 1, stop 0 need re-setup decoder */
+			stop.stop_flag = 1;
+			cmd_decode_stop(iav, stop.decoder_id, stop.stop_flag);
+			dec_status->b_send_stop_cmd = 1;
+			if (0 == stop.stop_flag) {
+				DEC_DEBUG("[iav flow]: stop decode(id %d, flag 0), wait dec state to 0\n", stop.decoder_id);
+				wait_dec_state(iav, dec_status, HDEC_OPM_IDLE);
+			} else {
+				DEC_DEBUG("[iav flow]: stop decode(id %d, flag 1), wait dec state to 2\n", stop.decoder_id);
+				wait_dec_state(iav, dec_status, HDEC_OPM_VDEC_IDLE);
+			}
+		} else {
+			DEC_ERROR("already stopped.\n");
+		}
+	} else {
+		if (!dec_status->b_send_stop_cmd) {
+			/* stop 0, to clean errors */
+			cmd_decode_stop(iav, stop.decoder_id, 0);
+			dec_status->b_send_stop_cmd = 1;
 			DEC_DEBUG("[iav flow]: stop decode(id %d, flag 0), wait dec state to 0\n", stop.decoder_id);
 			wait_dec_state(iav, dec_status, HDEC_OPM_IDLE);
 		} else {
-			DEC_DEBUG("[iav flow]: stop decode(id %d, flag 1), wait dec state to 2\n", stop.decoder_id);
-			wait_dec_state(iav, dec_status, HDEC_OPM_VDEC_IDLE);
+			DEC_ERROR("already stopped.\n");
 		}
-	} else {
-		DEC_ERROR("already stopped.\n");
 	}
 
 	//DEC_DEBUG("before awake waiters(%d), %p.\n", dec_context->decoder_current_status[stop.decoder_id].num_waiters, &dec_context->decoder_current_status[stop.decoder_id]);
@@ -694,6 +749,12 @@ static int iav_ioc_decode_video(struct ambarella_iav *iav, void __user * arg)
 		return -EPERM;
 	}
 
+	if (0 != status->error_status) {
+		DEC_ERROR("decoder met error, status %d\n", status->error_status);
+		mutex_unlock(&iav->iav_mutex);
+		return -EPERM;
+	}
+
 	spin_lock(&iav->iav_lock);
 	status->current_bsb_write_offset = decode_video.end_ptr_offset;
 	spin_unlock(&iav->iav_lock);
@@ -713,7 +774,7 @@ static int iav_ioc_decode_video(struct ambarella_iav *iav, void __user * arg)
 		} else {
 			cmd_h264_decode(iav, NULL, decode_video.decoder_id,
 				decode_video.start_ptr_offset + status->current_bsb_addr_dsp_base,
-				status->current_bsb_size + status->current_bsb_addr_dsp_base,
+				status->current_bsb_size + status->current_bsb_addr_dsp_base - 1,
 				decode_video.num_frames, decode_video.first_frame_display);
 		}
 
@@ -760,7 +821,7 @@ static int iav_ioc_decode_video(struct ambarella_iav *iav, void __user * arg)
 			decode_video.num_frames);
 	} else {
 		cmd_h264_decode_fifo_update(iav, NULL, decode_video.decoder_id,
-			decode_video.start_ptr_offset + status->current_bsb_addr_dsp_base,
+			decode_video.start_ptr_offset + status->current_bsb_addr_dsp_base - 1,
 			status->current_bsb_size + status->current_bsb_addr_dsp_base,
 			decode_video.num_frames);
 	}
@@ -808,6 +869,12 @@ static int iav_ioc_wait_decode_bsb(struct ambarella_iav *iav, void __user * arg)
 	}
 
 	status = &iav->decode_context.decoder_current_status[bsb.decoder_id];
+
+	if (0 != status->error_status) {
+		DEC_ERROR("decoder met error, status 0x%08x, %d\n", status->error_status, status->error_status);
+		mutex_unlock(&iav->iav_mutex);
+		return -EPERM;
+	}
 
 	if ((bsb.room + DIAV_DEC_MIN_GAP_IN_BSB) >= status->current_bsb_size) {
 		DEC_ERROR("request size (%d) + DIAV_DEC_MIN_GAP_IN_BSB "
@@ -892,6 +959,12 @@ static int iav_ioc_decode_trick_play(struct ambarella_iav *iav, void __user * ar
 		return rval;
 	}
 
+	if (0 != dec_context->decoder_current_status[trickplay.decoder_id].error_status) {
+		DEC_ERROR("decoder met error, status %d\n", dec_context->decoder_current_status[trickplay.decoder_id].error_status);
+		mutex_unlock(&iav->iav_mutex);
+		return -EPERM;
+	}
+
 	if (!dec_context->decoder_current_status[trickplay.decoder_id].is_started) {
 		DEC_DEBUG("decode(%d) not started!\n", trickplay.decoder_id);
 		mutex_unlock(&iav->iav_mutex);
@@ -950,6 +1023,12 @@ static int iav_ioc_decode_speed(struct ambarella_iav *iav, void __user * arg)
 	if (0 > rval) {
 		mutex_unlock(&iav->iav_mutex);
 		return rval;
+	}
+
+	if (0 != dec_context->decoder_current_status[speed.decoder_id].error_status) {
+		DEC_ERROR("decoder met error, status %x\n", dec_context->decoder_current_status[speed.decoder_id].error_status);
+		mutex_unlock(&iav->iav_mutex);
+		return -EPERM;
 	}
 
 	if (!dec_context->decoder_current_status[speed.decoder_id].is_started) {

@@ -14,4 +14,4 @@
 # echo lock wait Locking console for user on tty
 # touch unlock wait /var/run/console-unlocked
 
-console consoledevs tty[0-9][0-9]* ttyS[0-9][0-9]* vc/[0-9][0-9]* :[0-9]+\.[0-9]+ :[0-9]+
+console consoledevs /dev/tty[0-9][0-9]* tty[0-9][0-9]* vc/[0-9][0-9]* :[0-9]+\.[0-9]+ :[0-9]+

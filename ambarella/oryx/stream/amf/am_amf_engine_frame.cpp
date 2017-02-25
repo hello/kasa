@@ -4,12 +4,29 @@
  * History:
  *   2014-7-24 - [ypchang] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -29,12 +46,12 @@
 void AMEngineFrame::clear_graph()
 {
   if (AM_LIKELY(m_filter_num > 0)) {
-    INFO("====== Clearing Engine ======");
+    INFO("^^^^^^ Clearing Engine ^^^^^^");
     stop_all_filters();
     purge_all_filters();
     delete_all_connections();
     remove_all_filters();
-    INFO("====== Engine Cleared ======");
+    INFO("^^^^^^ Engine Cleared ^^^^^^");
   }
 }
 
@@ -43,17 +60,17 @@ AM_STATE AMEngineFrame::run_all_filters()
   AM_STATE state = AM_STATE_OK;
 
   if (AM_LIKELY(!m_is_filter_running)) {
-    INFO("====== Start Running All Filters ======");
+    INFO("~~~~~~ Start Running All Filters ~~~~~~");
     for (uint32_t i = 0; i < m_filter_num; ++ i) {
       AMIPacketFilter *filter = m_filters[i].filter;
-      INFO("Starting Filter %s (%u)...", get_filter_name(filter), i + 1);
+      INFO("~~~~~~ Starting Filter %s (%u)...", get_filter_name(filter), i + 1);
       enable_output_pins(filter);
       if (AM_UNLIKELY(AM_STATE_OK != (state = filter->run()))) {
-        ERROR("Filter %s (%u) failed to run, returned %d",
+        ERROR("~~~~~~ Filter %s (%u) failed to run, returned %d",
               get_filter_name(filter), i + 1, state);
         /* Stop all the already started filters */
         for (uint32_t j = i - 1; j >= 0; -- j) {
-          NOTICE("Stopping %s (%u)",
+          NOTICE("~~~~~~ Stopping %s (%u)",
                  get_filter_name(m_filters[j].filter), j + 1);
           disable_output_pins(m_filters[j].filter);
           m_filters[j].filter->stop();
@@ -63,7 +80,7 @@ AM_STATE AMEngineFrame::run_all_filters()
     }
     if (AM_LIKELY(state == AM_STATE_OK)) {
       m_is_filter_running = true;
-      INFO("====== All Filters Are Started =======");
+      INFO("~~~~~~ All Filters Are Started ~~~~~~");
     }
   }
 
@@ -77,53 +94,51 @@ void AMEngineFrame::stop_all_filters()
     INFO("====== Stopping All Filters ======");
     for (uint32_t i = m_filter_num; i > 0; -- i) {
       AMIPacketFilter *filter = m_filters[i - 1].filter;
-      INFO("Stopping Filter %s (%u)...", get_filter_name(filter), i);
+      INFO("====== Stopping Filter %s (%u)...", get_filter_name(filter), i);
       disable_output_pins(filter);
       state = filter->stop();
       if (AM_UNLIKELY(AM_STATE_OK != state)) {
-        ERROR("Filter %s (%u) returned %d",
+        ERROR("====== Filter %s (%u) returned %d",
               get_filter_name(filter), i + 1, state);
       }
     }
-    if (AM_LIKELY(AM_STATE_OK == state)) {
-      INFO("====== All Filters Are Stopped ======");
-    }
     m_is_filter_running = false;
+    INFO("====== All Filters Are Stopped ======");
   }
 }
 
 void AMEngineFrame::purge_all_filters()
 {
-  INFO("====== Purging All Filters ======");
+  INFO("<<<<<< Purging All Filters <<<<<<");
   for (uint32_t i = 0; i < m_filter_num; ++ i) {
-    INFO("Purging Filter %s (%u)...",
+    INFO("<<<<<< Purging Filter %s (%u)...",
          get_filter_name(m_filters[i].filter), i + 1);
-    purge_filter(m_filters[i].filter);
+    m_filters[i].filter->purge();
   }
-  INFO("====== All Filters Are Purged ======");
+  INFO("<<<<<< All Filters Are Purged <<<<<<");
 }
 
 void AMEngineFrame::delete_all_connections()
 {
-  INFO("====== Deleting All Connections ======");
+  INFO("`````` Deleting All Connections ``````");
   for (uint32_t i = m_connection_num; i > 0; -- i) {
     m_connections[i - 1].pin_out->disconnect();
   }
   m_connection_num = 0;
-  INFO("====== All Connections Are Deleted ======");
+  INFO("`````` All Connections Are Deleted ``````");
 }
 
 void AMEngineFrame::remove_all_filters()
 {
-  INFO("====== Removing All Filters ======");
+  INFO("###### Removing All Filters ######");
   for (uint32_t i = m_filter_num; i > 0; -- i) {
-    INFO("Removing Filter %s (%u)...",
+    INFO("###### Removing Filter %s (%u)...",
          get_filter_name(m_filters[i - 1].filter), i);
     AM_DESTROY(m_filters[i - 1].filter);
     AM_DESTROY(m_filters[i - 1].so);
   }
   m_filter_num = 0;
-  INFO("====== All Filters Are Removed ======");
+  INFO("###### All Filters Are Removed ######");
 }
 
 void AMEngineFrame::enable_output_pins(AMIPacketFilter *filter)
@@ -146,9 +161,10 @@ AM_STATE AMEngineFrame::add_filter(AMIPacketFilter *filter, AMPlugin *so)
     m_filters[m_filter_num].filter = filter;
     m_filters[m_filter_num].flags = 0;
     ++ m_filter_num;
-    INFO("Filter(%u) %s is added...", m_filter_num, get_filter_name(filter));
+    INFO("@@@ Filter(%u) %s is added...",
+         m_filter_num, get_filter_name(filter));
   } else {
-    ERROR("Too many filters!");
+    ERROR("!!! Too many filters!");
     state = AM_STATE_TOO_MANY;
   }
   return state;
@@ -211,13 +227,13 @@ const char* AMEngineFrame::get_filter_name(AMIPacketFilter *filter)
 }
 
 AMEngineFrame::AMEngineFrame() :
-    m_is_filter_running(false),
+    m_filters(nullptr),
+    m_connections(nullptr),
     m_filter_num(0),
     m_filter_num_max(0),
     m_connection_num(0),
     m_connection_num_max(0),
-    m_filters(NULL),
-    m_connections(NULL)
+    m_is_filter_running(false)
 {}
 
 AMEngineFrame::~AMEngineFrame()
@@ -262,18 +278,6 @@ AM_STATE AMEngineFrame::init(uint32_t filter_num, uint32_t connection_num)
   } while(0);
 
   return state;
-}
-
-void AMEngineFrame::purge_filter(AMIPacketFilter *filter)
-{
-  AMIPacketFilter::INFO info;
-  filter->get_info(info);
-  for (uint32_t i = 0; i < info.num_in; ++ i) {
-    AMIPacketPin *pin = filter->get_input_pin(i);
-    if (AM_LIKELY(pin)) {
-      pin->purge();
-    }
-  }
 }
 
 void AMEngineFrame::set_output_pins_enabled(AMIPacketFilter *filter,

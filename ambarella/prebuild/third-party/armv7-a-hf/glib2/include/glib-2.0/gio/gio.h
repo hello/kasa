@@ -44,6 +44,7 @@
 #include <gio/gconverterinputstream.h>
 #include <gio/gconverteroutputstream.h>
 #include <gio/gcredentials.h>
+#include <gio/gdatagrambased.h>
 #include <gio/gdatainputstream.h>
 #include <gio/gdataoutputstream.h>
 #include <gio/gdbusaddress.h>
@@ -59,6 +60,9 @@
 #include <gio/gdbusserver.h>
 #include <gio/gdbusutils.h>
 #include <gio/gdrive.h>
+#include <gio/gdtlsclientconnection.h>
+#include <gio/gdtlsconnection.h>
+#include <gio/gdtlsserverconnection.h>
 #include <gio/gemblemedicon.h>
 #include <gio/gfileattribute.h>
 #include <gio/gfileenumerator.h>
@@ -111,6 +115,7 @@
 #include <gio/gsimpleaction.h>
 #include <gio/gsimpleactiongroup.h>
 #include <gio/gsimpleasyncresult.h>
+#include <gio/gsimpleiostream.h>
 #include <gio/gsimplepermission.h>
 #include <gio/gsocketaddressenumerator.h>
 #include <gio/gsocketaddress.h>
@@ -160,6 +165,10 @@
 #include <gio/gmenuexporter.h>
 #include <gio/gdbusmenumodel.h>
 #include <gio/gnotification.h>
+#include <gio/glistmodel.h>
+#include <gio/gliststore.h>
+
+#include <gio/gio-autocleanups.h>
 
 #undef __GIO_GIO_H_INSIDE__
 

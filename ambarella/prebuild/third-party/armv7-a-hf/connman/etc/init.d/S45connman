@@ -1,0 +1,61 @@
+#!/bin/sh
+#
+# Start connman daemon
+#
+
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+
+config_connman() {
+    eths=$(find /var/run/connman -name "*.mac")
+    for eth in $(echo ${eths})
+    do
+        name=$(basename ${eth} | awk -F. '{print $1}')
+        mac=$(cat ${eth})
+        service=$(find /var/lib/connman -name ${name}.config)
+        if [ ! -z ${service} ]; then
+            sed -i "s/MAC=.*/MAC=${mac}/g" ${service}
+        fi                                           
+    done  
+}       
+ 
+start() {
+    echo -n "Starting connman daemon: "
+    connmand                           
+    if [ $? -eq 0 ]; then
+       echo "OK"         
+       config_connman
+    else             
+       echo "Failed"
+    fi              
+}     
+ 
+stop() {
+    echo "Stopping connman daemon..."
+    /usr/bin/killall connmand        
+}                            
+ 
+restart() {
+        stop
+        start
+}            
+ 
+case "$1" in
+  start)    
+        start
+        ;;   
+  stop)   
+        stop
+        ;;  
+  restart|reload)
+        restart  
+        ;;     
+  config) 
+        config_connman
+        ;;            
+  *)      
+        echo $"Usage: $0 {start|stop|restart}"
+        exit 1                                
+esac          
+    
+exit $?
+

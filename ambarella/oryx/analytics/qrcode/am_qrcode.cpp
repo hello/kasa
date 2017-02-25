@@ -4,12 +4,29 @@
  * History:
  *   2014/12/16 - [Long Li] created file
  *
- * Copyright (C) 2008-2016, Ambarella Co,Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -26,6 +43,7 @@
 #include "am_qrcode.h"
 #include "am_qrcode_if.h"
 #include "am_video_reader_if.h"
+#include "am_video_address_if.h"
 
 using namespace std;
 using namespace zbar;
@@ -83,23 +101,23 @@ bool AMQrcode::qrcode_read(const int32_t buf_index, const uint32_t timeout)
   bool ret = true;
   AM_RESULT result = AM_RESULT_OK;
   ofstream out_file;
-  uint8_t *y_data_buf = NULL;
-  uint8_t *y_start = NULL;
-  uint8_t *y_buffer = NULL;
+  uint8_t *y_data_buf = nullptr;
+  uint8_t *y_start = nullptr;
+  uint8_t *y_buffer = nullptr;
   uint32_t i = 0;
   int32_t ret_val = -1;
   clock_t start = 0;
   clock_t end = 0;
   uint32_t pass_time = 0;
   string file_tmp;
-  AMIVideoReaderPtr reader = NULL;
-  AMQueryDataFrameDesc frame_desc;
-  AMMemMapInfo dsp_mem;
-
+  AMIVideoReaderPtr reader = nullptr;
+  AMIVideoAddressPtr address = nullptr;
+  AMQueryFrameDesc frame_desc;
+  AMAddress addr;
 
   do {
-    if ((buf_index < AM_ENCODE_SOURCE_BUFFER_MAIN)
-        || (buf_index > AM_ENCODE_SOURCE_BUFFER_4TH)) {
+    if ((buf_index < AM_SOURCE_BUFFER_MAIN)
+        || (buf_index > AM_SOURCE_BUFFER_4TH)) {
       ERROR("Selected encode source buffer index: %d is invalid\n", buf_index);
       ret = false;
       break;
@@ -117,30 +135,22 @@ bool AMQrcode::qrcode_read(const int32_t buf_index, const uint32_t timeout)
       ret = false;
       break;
     }
-    reader = AMIVideoReader::get_instance();
-    if (!reader) {
-      ERROR("Unable to get AMVideoReader instance \n");
+    if (!(reader = AMIVideoReader::get_instance())) {
+      ERROR("Unable to get AMVideoReader instance!");
       ret = false;
       break;
     }
-    result = reader->init();
-    if (result != AM_RESULT_OK) {
-      ERROR("AMVideoReader init fail\n");
-      ret = false;
-      break;
-    }
-    /* try to get dsp mem */
-    result = reader->get_dsp_mem(&dsp_mem);
-    if (result != AM_RESULT_OK) {
-      ERROR("Get dsb mem failed \n");
+
+    if (!(address = AMIVideoAddress::get_instance())) {
+      ERROR("Failed to get AMVideoAddress instance!");
       ret = false;
       break;
     }
 
     start = clock();
     do {
-      result = reader->query_yuv_frame(&frame_desc,
-                                       AM_ENCODE_SOURCE_BUFFER_ID(buf_index),
+      result = reader->query_yuv_frame(frame_desc,
+                                       AM_SOURCE_BUFFER_ID(buf_index),
                                        false);
       if (result == AM_RESULT_ERR_AGAIN) {
         /* DSP state not ready to query video,
@@ -153,12 +163,19 @@ bool AMQrcode::qrcode_read(const int32_t buf_index, const uint32_t timeout)
         ret = false;
         break;
       }
+
+      if (address->yuv_y_addr_get(frame_desc, addr) != AM_RESULT_OK) {
+        ERROR("Failed to get y address!");
+        ret = false;
+        break;
+      }
+
       if (!y_data_buf) {
         y_data_buf = new uint8_t[frame_desc.yuv.width * frame_desc.yuv.height];
       }
       if (y_data_buf) {
         y_buffer = y_data_buf;
-        y_start = dsp_mem.addr + frame_desc.yuv.y_addr_offset;
+        y_start = addr.data;
         for (i = 0; i < frame_desc.yuv.height; ++i) {
           memcpy(y_buffer, y_start, frame_desc.yuv.width);
           y_start += frame_desc.yuv.pitch;
@@ -202,7 +219,7 @@ bool AMQrcode::qrcode_read(const int32_t buf_index, const uint32_t timeout)
 
   if (y_data_buf) {
     delete[] y_data_buf;
-    y_data_buf = NULL;
+    y_data_buf = nullptr;
   }
   if (out_file.is_open()) {
     out_file<<"\n";

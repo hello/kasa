@@ -32,6 +32,8 @@
 #define S2E		(9100)
 #define S2L		(12000)
 #define S3		(11000)
+#define S3L		(13000)
+#define S5		(15000)
 
 #define CHIP_ID(x)	((x / 1000))
 #define CHIP_MAJOR(x)	((x / 100) % 10)
@@ -51,6 +53,10 @@
 #define CHIP_REV	S2L
 #elif defined(CONFIG_PLAT_AMBARELLA_S3)
 #define CHIP_REV	S3
+#elif defined(CONFIG_PLAT_AMBARELLA_S3L)
+#define CHIP_REV	S3L
+#elif defined(CONFIG_ARCH_AMBARELLA_S5)
+#define CHIP_REV	S5
 #else
 #error "Undefined CHIP_REV"
 #endif
@@ -63,5 +69,15 @@
 #endif
 
 /* ==========================================================================*/
+#if (CHIP_REV == A5S) || (CHIP_REV == A7L)
+#define	CHIP_BROKEN_UNALIGNED_ACCESS	1
+#endif
+
+#if (CHIP_REV == S3)
+#define	CHIP_FIX_2NDCORTEX_BOOT	1
+#endif
+
+/* ==========================================================================*/
+
 #endif /* __PLAT_AMBARELLA_CHIP_H__ */
 

@@ -1,18 +1,35 @@
-/**********************************************************************
+/*
  *
  * mw_get_aaa_params.c
  *
  * History:
  *	2012/12/10 - [Jingyang Qiu] Created this file
  *
- * Copyright (C) 2012 - 2016, Ambarella, Inc.
+ * Copyright (C) 2015 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
  *
- *********************************************************************/
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -55,8 +72,8 @@ typedef enum {
 	HDR_4X_EXPO_LINES,
 	PIRIS_LINEAR1,
 	PIRIS_LINEAR2,
-	PIRIS_HDR1,
-	PIRIS_HDR2,
+	PIRIS_HDR_2X,
+	PIRIS_HDR_3X,
 	EXPO_LINES_TOTAL,
 } ae_lines_id;
 
@@ -737,12 +754,15 @@ static int parse_aeb_params(_mw_global_config *pMw_info)
 
 	int item = 0;
 	img_aeb_tile_config_t *ptile_config = NULL;
-	img_aeb_expo_lines_t *pexpo_line[EXPO_LINES_TOTAL]  = {NULL};
+	img_aeb_expo_lines_t *pexpo_line[EXPO_LINES_TOTAL] = {NULL};
 	img_aeb_wb_param_t *pwb_params = NULL;
 	img_aeb_sensor_config_t *paeb_sensor_config = NULL;
 	img_aeb_sht_nl_table_t *psht_table = NULL;
 	img_aeb_gain_table_t *pgain_table = NULL;
 	img_aeb_expo_lines_t *p_tmp_lines = NULL;
+	img_aeb_auto_knee_param_t *p_auto_knee = NULL;
+	img_aeb_digit_wdr_param_t *p_digit_wdr[EXPO_LINES_TOTAL] = {NULL};
+	img_aeb_digit_wdr_param_t *p_curr_digit_wdr = NULL;
 	ae_cfg_tbl_t ae_tbl[EXPO_LINES_TOTAL];
 	amba_img_dsp_mode_cfg_t ik_mode;
 	amba_img_dsp_variable_range_t dsp_variable_range;
@@ -823,10 +843,22 @@ static int parse_aeb_params(_mw_global_config *pMw_info)
 				pexpo_line[PIRIS_LINEAR2] = (img_aeb_expo_lines_t *)buf;
 				break;
 			case AEB_EXPO_LINES_PIRIS_HDR1:
-				pexpo_line[PIRIS_HDR1] = (img_aeb_expo_lines_t *)buf;
+				pexpo_line[PIRIS_HDR_2X] = (img_aeb_expo_lines_t *)buf;
 				break;
 			case AEB_EXPO_LINES_PIRIS_HDR2:
-				pexpo_line[PIRIS_HDR2] = (img_aeb_expo_lines_t *)buf;
+				pexpo_line[PIRIS_HDR_3X] = (img_aeb_expo_lines_t *)buf;
+				break;
+			case AEB_AUTO_KNEE:
+				p_auto_knee = (img_aeb_auto_knee_param_t *)buf;
+				break;
+			case AEB_DIGIT_WDR:
+				p_digit_wdr[NORMAL_EXPO_LINES] = (img_aeb_digit_wdr_param_t *)buf;
+				break;
+			case AEB_DIGIT_WDR_2X_HDR:
+				p_digit_wdr[HDR_2X_EXPO_LINES] = (img_aeb_digit_wdr_param_t *)buf;
+				break;
+			case AEB_DIGIT_WDR_3X_HDR:
+				p_digit_wdr[HDR_3X_EXPO_LINES] = (img_aeb_digit_wdr_param_t *)buf;
 				break;
 			default:
 				MW_ERROR("Error: The type:%d is unknown\n", item);
@@ -899,10 +931,49 @@ static int parse_aeb_params(_mw_global_config *pMw_info)
 				p_tmp_lines = pexpo_line[NORMAL_EXPO_LINES];
 				break;
 			}
+			p_curr_digit_wdr = p_digit_wdr[NORMAL_EXPO_LINES];
 		} else if (resource->hdr_expo_num == HDR_2X) {
-			p_tmp_lines = pexpo_line[HDR_2X_EXPO_LINES];
+			switch (sensor->lens_id) {
+			case LENS_M13VP288IR_ID:
+				if (pexpo_line[PIRIS_HDR_2X] == NULL) {
+					p_tmp_lines = pexpo_line[HDR_2X_EXPO_LINES];
+				} else {
+					p_tmp_lines = pexpo_line[PIRIS_HDR_2X];
+				}
+				break;
+			case LENS_MZ128BP2810ICR_ID:
+				if (pexpo_line[PIRIS_HDR_2X] == NULL) {
+					p_tmp_lines = pexpo_line[HDR_2X_EXPO_LINES];
+				} else {
+					p_tmp_lines = pexpo_line[PIRIS_HDR_2X];
+				}
+				break;
+			default:
+				p_tmp_lines = pexpo_line[HDR_2X_EXPO_LINES];
+				break;
+			}
+			p_curr_digit_wdr = p_digit_wdr[HDR_2X_EXPO_LINES];
 		}  else if (resource->hdr_expo_num == HDR_3X) {
-			p_tmp_lines = pexpo_line[HDR_3X_EXPO_LINES];
+			switch (sensor->lens_id) {
+			case LENS_M13VP288IR_ID:
+				if (pexpo_line[PIRIS_HDR_3X] == NULL) {
+					p_tmp_lines = pexpo_line[HDR_3X_EXPO_LINES];
+				} else {
+					p_tmp_lines = pexpo_line[PIRIS_HDR_3X];
+				}
+				break;
+			case LENS_MZ128BP2810ICR_ID:
+				if (pexpo_line[PIRIS_HDR_3X] == NULL) {
+					p_tmp_lines = pexpo_line[HDR_3X_EXPO_LINES];
+				} else {
+					p_tmp_lines = pexpo_line[PIRIS_HDR_3X];
+				}
+				break;
+			default:
+				p_tmp_lines = pexpo_line[HDR_3X_EXPO_LINES];
+				break;
+			}
+			p_curr_digit_wdr = p_digit_wdr[HDR_3X_EXPO_LINES];
 		} else {
 			MW_ERROR("Error:can't find the proper ae lines for mode %d, expo num %d\n", \
 				resource->hdr_mode, resource->hdr_expo_num);
@@ -923,6 +994,20 @@ static int parse_aeb_params(_mw_global_config *pMw_info)
 
 		img_config_ae_tables(ae_tbl, resource->hdr_expo_num);
 		img_config_awb_param(&(pwb_params->wb_param));
+		if (p_auto_knee) {
+			if (img_config_auto_knee_info(p_auto_knee) < 0) {
+				MW_ERROR("img_config_auto_knee_info error!\n");
+				error_flag = -1;
+				break;
+			}
+		}
+		if (p_curr_digit_wdr) {
+			if (img_config_digit_wdr_info(p_curr_digit_wdr) < 0) {
+				MW_ERROR("img_config_digit_wdr_info error!\n");
+				error_flag = -1;
+				break;
+			}
+		}
 
 	} while (0);
 
@@ -1062,15 +1147,9 @@ int get_sensor_aaa_params_from_bin(_mw_global_config *pMw_info)
 		}
 		if ((pMw_info->sensor.lens_id != LENS_CMOUNT_ID) &&
 			(strcmp(pMw_info->sensor.load_files.lens_file, "") != 0)) {
-			if (pMw_info->res.hdr_mode == HDR_PIPELINE_OFF) {
-				if ((ret = parse_lens_params(pMw_info)) < 0) {
-					MW_ERROR("error: parse_lens_params\n");
-					break;
-				}
-			} else {
-				MW_INFO("Not support p-iris control in HDR mode now\n");
-				pMw_info->ae_params.lens_aperture.FNO_min = 0;
-				pMw_info->ae_params.lens_aperture.FNO_max = 0;
+			if ((ret = parse_lens_params(pMw_info)) < 0) {
+				MW_ERROR("error: parse_lens_params\n");
+				break;
 			}
 		}
 		pMw_info->init_params.operate_adj = OPERATE_NONE;

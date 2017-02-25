@@ -4,12 +4,29 @@
  * History:
  *   2014-9-12 - [lysun] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co,Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -30,6 +47,7 @@ extern AMIServiceFrame   *g_service_frame;
 
 #define IMAGE_STYLE_LEVEL_NUM 5
 #define IMAGE_STYLE_LEVEL_SHIFT 2
+#define LOCAL_EXPOSURE_LEVEL_NUM 4
 const int32_t saturation_tbl[IMAGE_STYLE_LEVEL_NUM] =
 { 44, 54, 64, 74, 88 };
 const int32_t sharpness_tbl[IMAGE_STYLE_LEVEL_NUM] =
@@ -40,6 +58,8 @@ const int32_t contrast_tbl[IMAGE_STYLE_LEVEL_NUM] =
 { 44, 54, 64, 70, 76 };
 const int32_t hue_tbl[IMAGE_STYLE_LEVEL_NUM] =
 { -10, -5, 0, 5, 10 };
+const uint32_t le_tbl[LOCAL_EXPOSURE_LEVEL_NUM] =
+{ 0, 64, 96, 128 };
 
 void ON_SERVICE_INIT(void *msg_data,
                      int msg_data_size,
@@ -68,10 +88,10 @@ void ON_SERVICE_DESTROY(void *msg_data,
                         void *result_addr,
                         int result_max_size)
 {
-  PRINTF("ON IMAGE SERVICE DESTROY");
-  g_service_frame->quit(); /* make run() in main quit */
+  PRINTF("ON IMAGE SERVICE DESTROY.");
   ((am_service_result_t*)result_addr)->ret = 0;
   ((am_service_result_t*)result_addr)->state = g_service_state;
+  g_service_frame->quit(); /* make run() in main quit */
 }
 
 void ON_SERVICE_START(void *msg_data,
@@ -80,6 +100,7 @@ void ON_SERVICE_START(void *msg_data,
                       int result_max_size)
 {
   int ret = 0;
+  PRINTF("ON IMAGE SERVICE START.");
   if (!g_image_quality) {
     ERROR("Image Service: failed to get AMIImageQuality instance\n");
     ret = -1;
@@ -106,6 +127,7 @@ void ON_SERVICE_STOP(void *msg_data,
                      int result_max_size)
 {
   int ret = 0;
+  PRINTF("ON IMAGE SERVICE STOP.");
   if (!g_image_quality) {
     ERROR("Image Service: fail to get AMIImageQuality instance\n");
     ret = -1;
@@ -157,8 +179,7 @@ void ON_IMAGE_AE_SETTING_GET(void *msg_data,
   am_ae_config_s *ae_config = (am_ae_config_s *)service_result->data;
 
   AM_IQ_CONFIG iq_config;
-  int config_value = 0;
-  iq_config.value = &config_value;
+  uint32_t le = 0;
 
   do {
     if (!result_addr) {
@@ -171,6 +192,8 @@ void ON_IMAGE_AE_SETTING_GET(void *msg_data,
       ret = -1;
       break;
     }
+
+    iq_config.value = malloc(sizeof(uint32_t));
 
     iq_config.key = AM_IQ_AE_METERING_MODE;
     if (!g_image_quality->get_config(&iq_config)) {
@@ -226,7 +249,15 @@ void ON_IMAGE_AE_SETTING_GET(void *msg_data,
       ret = -1;
       break;
     }
-    ae_config->local_exposure = *(uint8_t*) iq_config.value;
+    le = *(uint32_t*) iq_config.value;
+    for (uint32_t i = 0; i < LOCAL_EXPOSURE_LEVEL_NUM; i ++) {
+      if (le == le_tbl[i]) {
+        ae_config->local_exposure = i;
+        break;
+      } else {
+        ae_config->local_exposure = 0;
+      }
+    }
 
     iq_config.key = AM_IQ_AE_DC_IRIS_ENABLE;
     if (!g_image_quality->get_config(&iq_config)) {
@@ -284,7 +315,18 @@ void ON_IMAGE_AE_SETTING_GET(void *msg_data,
     }
     ae_config->sensor_shutter = *(uint32_t*) iq_config.value;
 
+    iq_config.key = AM_IQ_AE_AE_ENABLE;
+    if (!g_image_quality->get_config(&iq_config)) {
+      ERROR("get AM_IQ_AE_AE_ENABLE config error\n");
+      ret = -1;
+      break;
+    }
+    ae_config->ae_enable = *(uint8_t*) iq_config.value;
+
+    free(iq_config.value);
+
     iq_config.key = AM_IQ_AE_LUMA;
+    iq_config.value = malloc(sizeof(AMAELuma));
     if (!g_image_quality->get_config(&iq_config)) {
       ERROR("get AM_IQ_AE_LUMA config error\n");
       ret = -1;
@@ -293,13 +335,8 @@ void ON_IMAGE_AE_SETTING_GET(void *msg_data,
     ae_config->luma_value[0] = ((AMAELuma *) iq_config.value)->rgb_luma;
     ae_config->luma_value[1] = ((AMAELuma *) iq_config.value)->cfa_luma;
 
-    iq_config.key = AM_IQ_AE_AE_ENABLE;
-    if (!g_image_quality->get_config(&iq_config)) {
-      ERROR("get AM_IQ_AE_AE_ENABLE config error\n");
-      ret = -1;
-      break;
-    }
-    ae_config->ae_enable = *(uint8_t*) iq_config.value;
+    free(iq_config.value);
+
   } while (0);
   service_result->ret = ret;
 }
@@ -389,7 +426,7 @@ void ON_IMAGE_AE_SETTING_SET(void *msg_data,
   if (TEST_BIT(ae_config->enable_bits, AM_AE_CONFIG_LOCAL_EXPOSURE)) {
     INFO("local_exposure set is %d!\n", ae_config->local_exposure);
     iq_config.key = AM_IQ_AE_LOCAL_EXPOSURE;
-    *(int32_t*) iq_config.value = ae_config->local_exposure;
+    *(int32_t*) iq_config.value = le_tbl[ae_config->local_exposure];
     if (!g_image_quality->set_config(&iq_config)) {
       ERROR("local_exposure set failed!\n");
       ret = -1;
@@ -727,6 +764,14 @@ void ON_IMAGE_STYLE_SETTING_GET(void *msg_data,
       break;
     }
     sharpness = *(int32_t*) iq_config.value;
+
+    iq_config.key = AM_IQ_STYLE_AUTO_CONTRAST_MODE;
+    if (!g_image_quality->get_config(&iq_config)) {
+      ERROR("get AM_IQ_STYLE_AUTO_CONTRAST_MODE config error\n");
+      ret = -1;
+      break;
+    }
+    style_config->auto_contrast_mode = *(int32_t*) iq_config.value;
   } while (0);
 
   for (uint32_t i = 0; i < IMAGE_STYLE_LEVEL_NUM; i ++) {
@@ -847,6 +892,15 @@ void ON_IMAGE_STYLE_SETTING_SET(void *msg_data,
       ret = -1;
     }
   }
+  if (TEST_BIT(style_config->enable_bits, AM_IMAGE_STYLE_CONFIG_AUTO_CONTRAST_MODE)) {
+    INFO("auto_contrast_mode is %d\n", style_config->auto_contrast_mode);
+    iq_config.key = AM_IQ_STYLE_AUTO_CONTRAST_MODE;
+    *(int32_t*) iq_config.value = style_config->auto_contrast_mode;
+    if (!g_image_quality->set_config(&iq_config)) {
+      ERROR("auto_contrast_mode set failed!\n");
+      ret = -1;
+    }
+  }
   if (!g_image_quality->save_config()) {
     ERROR("Save config error!\n");
     ret = -1;
@@ -854,3 +908,50 @@ void ON_IMAGE_STYLE_SETTING_SET(void *msg_data,
 
   service_result->ret = ret;
 }
+
+void ON_IMAGE_ADJ_BIN_LOAD(void *msg_data,
+                               int msg_data_size,
+                               void *result_addr,
+                               int result_max_size)
+{
+  INFO("image service:ON_IMAGE_ADJ_BIN_LOAD \n");
+  int32_t ret = 0;
+  uint32_t len = 0;
+  AM_IQ_CONFIG iq_config;
+  am_service_result_t *service_result = (am_service_result_t*) result_addr;
+  memset(service_result, 0, sizeof(am_service_result_t));
+  len = strlen((char*)msg_data);
+  char *config_value = (char*) malloc((len + 1)*sizeof(char));
+
+  do {
+
+    if (!msg_data) {
+      ERROR("NULL pointer\n");
+      ret = -1;
+      break;
+    }
+
+    if (config_value == nullptr) {
+      PERROR("melloc failed");
+      ret = -1;
+      break;
+    }
+    strncpy(config_value, (char*)msg_data, len);
+    config_value[len] = '\0';
+    iq_config.value = config_value;
+    iq_config.key = AM_IQ_AEB_ADJ_BIN_LOAD;
+
+    if (!g_image_quality->set_config(&iq_config)) {
+      ERROR("load_adj_bin failed");
+      ret = -1;
+      break;
+    }
+  }while(0);
+
+  if (config_value != nullptr) {
+    free(config_value);
+  }
+  service_result->ret = ret;
+}
+
+

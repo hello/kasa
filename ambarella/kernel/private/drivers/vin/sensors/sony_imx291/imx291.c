@@ -4,14 +4,33 @@
  * History:
  *    2014/12/05 - [Long Zhao] Create
  *
- * Copyright (C) 2004-2014, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 #include <linux/module.h>
 #include <linux/ambpriv_device.h>
 #include <linux/interrupt.h>
@@ -155,17 +174,7 @@ static void imx291_start_streaming(struct vin_device *vdev)
 
 static int imx291_init_device(struct vin_device *vdev)
 {
-	struct vin_reg_16_8 *regs;
-	int i, regs_num;
-
 	imx291_sw_reset(vdev);
-
-	regs = imx291_share_regs;
-	regs_num = ARRAY_SIZE(imx291_share_regs);
-
-	for (i = 0; i < regs_num; i++)
-		imx291_write_reg(vdev, regs[i].addr, regs[i].data);
-
 	return 0;
 }
 
@@ -221,13 +230,15 @@ static int imx291_set_format(struct vin_device *vdev, struct vin_video_format *f
 	struct vin_reg_16_8 *regs;
 	int i, regs_num, rval;
 
-	regs = imx291_mode_regs[format->device_mode];
-	regs_num = ARRAY_SIZE(imx291_mode_regs[format->device_mode]);
-
+	regs = imx291_share_regs;
+	regs_num = ARRAY_SIZE(imx291_share_regs);
 	for (i = 0; i < regs_num; i++)
 		imx291_write_reg(vdev, regs[i].addr, regs[i].data);
 
-	imx291_set_pll(vdev, vdev->cur_format->pll_idx);
+	regs = imx291_mode_regs[format->device_mode];
+	regs_num = ARRAY_SIZE(imx291_mode_regs[format->device_mode]);
+	for (i = 0; i < regs_num; i++)
+		imx291_write_reg(vdev, regs[i].addr, regs[i].data);
 
 	rval = imx291_update_hv_info(vdev);
 	if (rval < 0)
@@ -261,7 +272,7 @@ static int imx291_set_shutter_row(struct vin_device *vdev, u32 row)
 	num_line = clamp(num_line, min_line, max_line);
 
 	/* get the shutter sweep time */
-	blank_lines = pinfo->frame_length_lines - num_line;
+	blank_lines = pinfo->frame_length_lines - num_line - 1;
 	imx291_write_reg(vdev, IMX291_SHS1_HSB, blank_lines >> 16);
 	imx291_write_reg(vdev, IMX291_SHS1_MSB, blank_lines >> 8);
 	imx291_write_reg(vdev, IMX291_SHS1_LSB, blank_lines & 0xff);
@@ -403,7 +414,7 @@ static int imx291_suspend(struct vin_device *vdev)
 
 	for (i = 0; i < ARRAY_SIZE(pm_regs); i++) {
 		imx291_read_reg(vdev, pm_regs[i].addr, &tmp);
-		pm_regs[i].data = (u16) tmp;
+		pm_regs[i].data = (u8)tmp;
 	}
 
 	return 0;
@@ -413,7 +424,7 @@ static int imx291_resume(struct vin_device *vdev)
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(pm_regs); i++) {
-		imx291_write_reg(vdev, pm_regs[i].addr, (u32)pm_regs[i].data);
+		imx291_write_reg(vdev, pm_regs[i].addr, pm_regs[i].data);
 	}
 
 	return 0;
@@ -461,6 +472,9 @@ static int imx291_probe(struct i2c_client *client,
 	vdev->agc_db_max = 0x3F000000;	/* 63dB */
 	vdev->agc_db_min = 0x00000000;	/* 0dB */
 	vdev->agc_db_step = 0x004CCCCC;	/* 0.3dB */
+
+	/* mode switch needs hw reset */
+	vdev->reset_for_mode_switch = true;
 
 	i2c_set_clientdata(client, vdev);
 

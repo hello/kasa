@@ -5,14 +5,33 @@
  *	2012/10/10 - [Cao Rongrong] created file
  *	2013/12/12 - [Jian Tang] modified file
  *
- * Copyright (C) 2012-2016, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 
 #include <config.h>
 #include <linux/kernel.h>
@@ -46,6 +65,11 @@
 static struct imgproc_private_info G_img;
 
 static DSP_CMD G_img_cmds[IMG_CMD_NUM];
+static struct iav_imgproc_info *G_img_info_ptr = NULL;
+#ifdef CONFIG_PM
+static struct timer_list sw_timer;
+#endif
+
 
 static DECLARE_COMPLETION(g_raw2yuv_comp);
 
@@ -144,6 +168,7 @@ static int img_init(void)
 	}
 
 	G_img.dsp_enc_mode = ENC_UNKNOWN_MODE;
+	G_img.hdr_buf_id = 0;
 	spin_lock_init(&G_img.lock);
 	init_waitqueue_head(&G_img.statis_wq);
 	init_waitqueue_head(&G_img.dsp_wq);
@@ -823,29 +848,30 @@ static int dsp_color_correction (struct iav_imgproc_info *context,
 		return -EFAULT;
 
 	dsp_cmd.cmd_code = COLOR_CORRECTION;
-	dsp_cmd.in_lookup_table_addr = VIRT_TO_DSP(G_img.addr[IMB_INPUT_LUT]);
-	dsp_cmd.matrix_addr = VIRT_TO_DSP(G_img.addr[IMB_MATRIX_DRAM]);
 
 	if (dsp_cmd.output_lookup_bypass == 1) {
 		dsp_cmd.out_lookup_table_addr = 0;
 	} else {
-		if (param->out_lookup_table_addr) {
+		if (dsp_cmd.out_lookup_table_addr) {
 			if (copy_from_user(G_img.addr[IMB_OUTPUT_LUT],
-				(void*)param->out_lookup_table_addr, IMS_OUTPUT_LUT))
+				(void*)dsp_cmd.out_lookup_table_addr, IMS_OUTPUT_LUT))
 				return -EFAULT;
 		}
 		dsp_cmd.out_lookup_table_addr = VIRT_TO_DSP(G_img.addr[IMB_OUTPUT_LUT]);
 	}
-	if (param->in_lookup_table_addr) {
+	if (dsp_cmd.in_lookup_table_addr) {
 		if (copy_from_user(G_img.addr[IMB_INPUT_LUT],
-			(void*)param->in_lookup_table_addr, IMS_INPUT_LUT))
+			(void*)dsp_cmd.in_lookup_table_addr, IMS_INPUT_LUT))
 			return -EFAULT;
 	}
-	if (param->matrix_addr) {
+	if (dsp_cmd.matrix_addr) {
 		if (copy_from_user(G_img.addr[IMB_MATRIX_DRAM],
-			(void*)param->matrix_addr, IMS_MATRIX_DRAM))
+			(void*)dsp_cmd.matrix_addr, IMS_MATRIX_DRAM))
 			return -EFAULT;
 	}
+
+	dsp_cmd.in_lookup_table_addr = VIRT_TO_DSP(G_img.addr[IMB_INPUT_LUT]);
+	dsp_cmd.matrix_addr = VIRT_TO_DSP(G_img.addr[IMB_MATRIX_DRAM]);
 
 	clean_d_cache(G_img.addr[IMB_INPUT_LUT], IMS_INPUT_LUT);
 	clean_d_cache(G_img.addr[IMB_MATRIX_DRAM], IMS_MATRIX_DRAM);
@@ -1321,6 +1347,10 @@ static int dsp_hdr_video_proc(struct iav_imgproc_info* context,
 	dsp_cmd.cmd_code = IPCAM_SET_HDR_PROC_CONTROL;
 
 	dsp_issue_img_cmd(&dsp_cmd, sizeof(dsp_cmd));
+	if (G_img.save_cmd) {
+		memcpy(&G_img_cmds[IMG_CMD_SET_HDR_PROC_CONTROL], &dsp_cmd,
+			sizeof(DSP_CMD));
+	}
 
 	return 0;
 }
@@ -1414,9 +1444,9 @@ static int img_dump_idsp(struct iav_imgproc_info* context,
 				dsp_cmd.dram_size = ((u32)*p_sec_size) + 64; //64 for header,
 				printk("sec_size %d %d\n", *p_sec_size, dsp_cmd.dram_size);
 			}
-			param->addr_long = dsp_cmd.dram_size;
+			mw_cmd.addr_long = dsp_cmd.dram_size;
 
-			if(copy_to_user(param->addr,dump_buffer,dsp_cmd.dram_size)){
+			if(copy_to_user(mw_cmd.addr,dump_buffer,dsp_cmd.dram_size)){
 				printk("cpy to usr err\n");
 				kfree(dump_buffer);
 				return -EFAULT;
@@ -1672,6 +1702,7 @@ int amba_imgproc_cmd(struct iav_imgproc_info *info, unsigned int cmd, unsigned l
 				"internal PTR number.\n", info->hdr_expo_num);
 		}
 		G_img.expo_num_minus_1 = info->hdr_expo_num - 1;
+		G_img_info_ptr = info;
 	}
 
 	return rval;
@@ -1680,15 +1711,88 @@ EXPORT_SYMBOL(amba_imgproc_cmd);
 
 //for raw2enc mode
 #ifdef CONFIG_PM
-int amba_imgproc_suspend(void)
+int amba_imgproc_suspend(int enc_mode)
 {
+	video_hiso_config_update_t *dsp_cmd = NULL;
+	u32 cfg_addr = 0;
+
+	dsp_cmd = (video_hiso_config_update_t*) &G_img_cmds[IMG_CMD_VIDEO_HISO_CONFIG_UPDATE];
+	if (G_img_info_ptr != NULL) {
+		switch (enc_mode) {
+		case DSP_ADVANCED_ISO_MODE:
+		case DSP_HDR_LINE_INTERLEAVED_MODE:
+		case DSP_BLEND_ISO_MODE:
+			cfg_addr = G_img_info_ptr->img_virt +
+				DSP_TO_PHYS(dsp_cmd->hiso_param_daddr) - G_img_info_ptr->img_phys;
+			memcpy((u8 *)G_img_info_ptr->img_virt + G_img_info_ptr->img_config_offset,
+				(void *)cfg_addr, LISO_CFG_DATA_SIZE);
+			break;
+		default:
+			iav_warn("Invalid enc mode %d in suspend.\n", enc_mode);
+			break;
+		}
+	}
+
 	return 0;
 }
 EXPORT_SYMBOL(amba_imgproc_suspend);
-int amba_imgproc_resume(int enc_mode, int expo_num)
+static void amba_send_img_cmds(int enc_mode)
+{
+	video_hiso_config_update_t *update_cmd = NULL;
+
+	/* Issue necessary IMG dsp commands*/
+	dsp_issue_img_cmd(&G_img_cmds[IMG_CMD_AAA_STATISTICS_SETUP],
+		sizeof(DSP_CMD));
+	dsp_issue_img_cmd(&G_img_cmds[IMG_CMD_AAA_HISTORGRAM_SETUP],
+		sizeof(DSP_CMD));
+	if (G_img.expo_num_minus_1 > 0) {
+		dsp_issue_cmd(&G_img_cmds[IMG_CMD_VIN_STATISTICS_SETUP],
+			sizeof(DSP_CMD));
+	}
+	switch(enc_mode) {
+	case DSP_NORMAL_ISO_MODE:
+		dsp_issue_img_cmd(&G_img_cmds[IMG_CMD_VIGNETTE_COMPENSATION],
+			sizeof(DSP_CMD));
+		dsp_issue_img_cmd(&G_img_cmds[IMG_CMD_RGB_GAIN_ADJUSTMENT],
+			sizeof(DSP_CMD));
+		dsp_issue_img_cmd(&G_img_cmds[IMG_CMD_DIGITAL_GAIN_SATURATION_LEVEL],
+			sizeof(DSP_CMD));
+		dsp_issue_img_cmd(&G_img_cmds[IMG_CMD_LOCAL_EXPOSURE],
+			sizeof(DSP_CMD));
+		dsp_issue_img_cmd(&G_img_cmds[IMG_CMD_BLACK_LEVEL_GLOBAL_OFFSET],
+			sizeof(DSP_CMD));
+		break;
+	case DSP_ADVANCED_ISO_MODE:
+	case DSP_HDR_LINE_INTERLEAVED_MODE:
+	case DSP_BLEND_ISO_MODE:
+		update_cmd = (video_hiso_config_update_t*)
+			&G_img_cmds[IMG_CMD_VIDEO_HISO_CONFIG_UPDATE];
+		update_cmd->loadcfg_type.flag.hiso_config_aaa_update = 1;
+		dsp_issue_img_cmd(&G_img_cmds[IMG_CMD_VIDEO_HISO_CONFIG_UPDATE],
+			sizeof(DSP_CMD));
+		break;
+	case DSP_MULTI_REGION_WARP_MODE:
+	default:
+		iav_warn("Invalid enc mode %d in resume.\n", enc_mode);
+		break;
+	}
+
+	if (G_img.expo_num_minus_1 > 0) {
+		dsp_issue_cmd(&G_img_cmds[IMG_CMD_SET_HDR_PROC_CONTROL],
+			sizeof(DSP_CMD));
+	}
+}
+
+static void swtimer_routine(unsigned long data)
+{
+	int enc_mode = (int)data;
+
+	amba_send_img_cmds(enc_mode);
+}
+
+int amba_imgproc_resume(int enc_mode, int fast_resume)
 {
 	int i;
-	video_hiso_config_update_t *update_cmd;
 
 	/* Clear imgproc driver status */
 	G_img.cfa_next = 0;
@@ -1708,52 +1812,15 @@ int amba_imgproc_resume(int enc_mode, int expo_num)
 	G_img.dsp_pts = 0;
 	G_img.mono_pts = 0;
 
-	/* Issue necessary IMG dsp commands*/
-	dsp_issue_img_cmd(&G_img_cmds[IMG_CMD_AAA_STATISTICS_SETUP],
-		sizeof(DSP_CMD));
-	dsp_issue_img_cmd(&G_img_cmds[IMG_CMD_AAA_HISTORGRAM_SETUP],
-		sizeof(DSP_CMD));
-	if (expo_num != 1) {
-		dsp_issue_cmd(&G_img_cmds[IMG_CMD_VIN_STATISTICS_SETUP],
-			sizeof(DSP_CMD));
-	}
-	switch(enc_mode) {
-	case DSP_NORMAL_ISO_MODE:
-		dsp_issue_img_cmd(&G_img_cmds[IMG_CMD_VIGNETTE_COMPENSATION],
-			sizeof(DSP_CMD));
-		dsp_issue_img_cmd(&G_img_cmds[IMG_CMD_RGB_GAIN_ADJUSTMENT],
-			sizeof(DSP_CMD));
-		dsp_issue_img_cmd(&G_img_cmds[IMG_CMD_DIGITAL_GAIN_SATURATION_LEVEL],
-			sizeof(DSP_CMD));
-		dsp_issue_img_cmd(&G_img_cmds[IMG_CMD_LOCAL_EXPOSURE],
-			sizeof(DSP_CMD));
-		dsp_issue_img_cmd(&G_img_cmds[IMG_CMD_BLACK_LEVEL_GLOBAL_OFFSET],
-			sizeof(DSP_CMD));
-		break;
-	case DSP_ADVANCED_ISO_MODE:
-		update_cmd = (video_hiso_config_update_t*)
-			&G_img_cmds[IMG_CMD_VIDEO_HISO_CONFIG_UPDATE];
-		update_cmd->loadcfg_type.flag.hiso_config_aaa_update = 1;
-		dsp_issue_img_cmd(&G_img_cmds[IMG_CMD_VIDEO_HISO_CONFIG_UPDATE],
-			sizeof(DSP_CMD));
-		dsp_issue_img_cmd(&G_img_cmds[IMG_CMD_AAA_STATISTICS_SETUP1],
-			sizeof(DSP_CMD));
-		dsp_issue_img_cmd(&G_img_cmds[IMG_CMD_AAA_STATISTICS_SETUP2],
-			sizeof(DSP_CMD));
-		dsp_issue_img_cmd(&G_img_cmds[IMG_CMD_VIDEO_HISO_CONFIG_UPDATE],
-			sizeof(DSP_CMD));
-		break;
-	case DSP_HDR_LINE_INTERLEAVED_MODE:
-		update_cmd = (video_hiso_config_update_t*)
-			&G_img_cmds[IMG_CMD_VIDEO_HISO_CONFIG_UPDATE];
-		update_cmd->loadcfg_type.flag.hiso_config_aaa_update = 1;
-		dsp_issue_img_cmd(&G_img_cmds[IMG_CMD_VIDEO_HISO_CONFIG_UPDATE],
-			sizeof(DSP_CMD));
-		break;
-	case DSP_MULTI_REGION_WARP_MODE:
-	case DSP_BLEND_ISO_MODE:
-	default:
-		break;
+	if (fast_resume) {
+		init_timer(&sw_timer);
+		sw_timer.data = enc_mode;
+		sw_timer.function = &swtimer_routine;
+		/* trigger timer 50 ms later */
+		sw_timer.expires = jiffies + HZ / 20;
+		add_timer(&sw_timer);
+	} else {
+		amba_send_img_cmds(enc_mode);
 	}
 
 	return 0;

@@ -4,12 +4,29 @@
  * History:
  *   2015-4-15 - [ypchang] created file
  *
- * Copyright (C) 2008-2015, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 /*! @file am_api_cmd_event.h
@@ -31,17 +48,11 @@ enum AM_SYS_IPC_MW_CMD_EVENT
   //! _AM_IPC_MW_CMD_EVENT_SERVICE_RESUME
   _AM_IPC_MW_CMD_EVENT_SERVICE_RESUME,
 
-  //! _AM_IPC_MW_CMD_EVENT_SERVICE_MOTION_DETECT_CONFIG_GET
-  _AM_IPC_MW_CMD_EVENT_SERVICE_MOTION_DETECT_CONFIG_GET,
-
   //! _AM_IPC_MW_CMD_EVENT_SERVICE_AUDIO_ALERT_CONFIG_GET
   _AM_IPC_MW_CMD_EVENT_SERVICE_AUDIO_ALERT_CONFIG_GET,
 
   //! _AM_IPC_MW_CMD_EVENT_SERVICE_KEY_INPUT_CONFIG_GET
   _AM_IPC_MW_CMD_EVENT_SERVICE_KEY_INPUT_CONFIG_GET,
-
-  //! _AM_IPC_MW_CMD_EVENT_SERVICE_MOTION_DETECT_CONFIG_SET
-  _AM_IPC_MW_CMD_EVENT_SERVICE_MOTION_DETECT_CONFIG_SET,
 
   //! _AM_IPC_MW_CMD_EVENT_SERVICE_AUDIO_ALERT_CONFIG_SET
   _AM_IPC_MW_CMD_EVENT_SERVICE_AUDIO_ALERT_CONFIG_SET,
@@ -193,41 +204,6 @@ BUILD_IPC_MSG_ID_WITH_TYPE(_AM_IPC_MW_CMD_EVENT_SERVICE_DESTROY_EVENT_MODULE,  \
                            AM_IPC_NEED_RETURN,                                 \
                            AM_SERVICE_TYPE_EVENT)
 /*! @} */
-
-/*! @defgroup airapi-commandid-event-md Motion Detection
- *  @ingroup airapi-commandid-event
- *  @brief Motion Detection realted command IDs,
- *         refer to @ref airapi-datastructure-event-md
- *         "Motion Detection" to see data structures
- *  @{
- */
-/*! @brief Set configure of Motion Detect Module
- *
- * Use this command to set a configure item of motion detect module
- * @sa AM_IPC_MW_CMD_EVENT_MOTION_DETECT_CONFIG_GET
- * @sa AM_EVENT_MD_CONFIG_BITS
- */
-#define AM_IPC_MW_CMD_EVENT_MOTION_DETECT_CONFIG_SET                           \
-BUILD_IPC_MSG_ID_WITH_TYPE(                                                    \
-                       _AM_IPC_MW_CMD_EVENT_SERVICE_MOTION_DETECT_CONFIG_SET,  \
-                       AM_IPC_DIRECTION_DOWN,                                  \
-                       AM_IPC_NEED_RETURN,                                     \
-                       AM_SERVICE_TYPE_EVENT)
-
-/*! @brief Get configure of Motion Detect Module
- *
- * Use this command to get a configure item of motion detect module
- * @sa AM_IPC_MW_CMD_EVENT_MOTION_DETECT_CONFIG_SET
- * @sa AM_EVENT_MD_CONFIG_BITS
- */
-#define AM_IPC_MW_CMD_EVENT_MOTION_DETECT_CONFIG_GET                           \
-BUILD_IPC_MSG_ID_WITH_TYPE(                                                    \
-                       _AM_IPC_MW_CMD_EVENT_SERVICE_MOTION_DETECT_CONFIG_GET,  \
-                       AM_IPC_DIRECTION_DOWN,                                  \
-                       AM_IPC_NEED_RETURN,                                     \
-                       AM_SERVICE_TYPE_EVENT)
-/*! @} */
-
 
 /*! @defgroup airapi-commandid-event-audio-alert Audio Alert
  *  @ingroup airapi-commandid-event

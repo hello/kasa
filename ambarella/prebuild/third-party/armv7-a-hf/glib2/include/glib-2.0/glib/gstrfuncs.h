@@ -265,6 +265,7 @@ gpointer              g_memdup	       (gconstpointer mem,
  * g_strdupv() copies a NULL-terminated array of strings
  * g_strv_length() returns the length of a NULL-terminated array of strings
  */
+typedef gchar** GStrv;
 GLIB_AVAILABLE_IN_ALL
 gchar**	              g_strsplit       (const gchar  *string,
 					const gchar  *delimiter,
@@ -300,6 +301,10 @@ GLIB_AVAILABLE_IN_2_40
 gboolean                g_str_match_string                              (const gchar   *search_term,
                                                                          const gchar   *potential_hit,
                                                                          gboolean       accept_alternates);
+
+GLIB_AVAILABLE_IN_2_44
+gboolean              g_strv_contains  (const gchar * const *strv,
+                                        const gchar         *str);
 
 G_END_DECLS
 

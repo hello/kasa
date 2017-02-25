@@ -4,12 +4,29 @@
  * History:
  *    2013/2/22 - [Louis Sun] Create
  *
- * Copyright (C) 2004-2013, Ambarella, Inc.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 /*! @file am_ipc_cmd_group.h
@@ -49,8 +66,8 @@ typedef struct cmd_group_pack_s{
 } cmd_group_pack_t;
 
 typedef struct cmd_ret_item_s {
-    void *output_arg;
-    int32_t     output_size;
+    void     *output_arg;
+    int32_t   output_size;
 } cmd_ret_item_t;
 
 typedef struct cmd_pack_header_s {
@@ -60,9 +77,9 @@ typedef struct cmd_pack_header_s {
 } cmd_pack_header_t;
 
 typedef struct cmd_group_ret_result_s {
+    int8_t *result_buffer;
     int32_t cmd_ret_total_size;
     cmd_ret_item_t cmd_ret_item[AM_MAX_NUM_CMDS_IN_GROUP];
-    int8_t * result_buffer;
 } cmd_group_ret_result_t;
 
 typedef enum{
@@ -78,7 +95,7 @@ typedef enum{
 typedef struct cmd_group_pack_header_s {
     int32_t cmd_num;
     int32_t payload_size;
-    char   magic_string[4]; /* PAC */   //in order to do simple check about the return value
+    char magic_string[4]; /* PAC */ //in order to do simple check about the return value
 } cmd_group_pack_header_t;
 
 typedef struct cmd_group_pack_header_s cmd_group_result_pack_header_t;
@@ -86,41 +103,39 @@ typedef struct cmd_group_pack_header_s cmd_group_result_pack_header_t;
 class AMIPCSyncCmdClient;
 class AMIPCCmdGroupClient {
   private:
-    //ipc_message_header_t ipc_cmd_header;
-
     static const int32_t cmd_group_pack_maxsize = sizeof(am_ipc_message_payload_t);
     static const int32_t cmd_group_ret_maxsize = sizeof(am_ipc_message_payload_t);
-
-    cmd_group_pack_t  cmd_group;
-    cmd_group_ret_result_t  cmd_group_result;
 
     int32_t prepare_cmd_pack();
     int32_t update_cmd_pack();
     int32_t check_cmd(int32_t function_id,
-                  void *input_arg,
-                  int32_t input_size,
-                  void *output_arg,
-                  int32_t output_maxsize);
+                      void *input_arg,
+                      int32_t input_size,
+                      void *output_arg,
+                      int32_t output_maxsize);
     int32_t parse_return_result();
 
-    AMIPCSyncCmdClient *cmd_sender;
+    AMIPCSyncCmdClient *cmd_sender = nullptr;
 
-    int32_t batch_state; //0: not in batch   1: in batch processing
+    int32_t batch_state = 0; //0: not in batch 1: in batch processing
+
+    cmd_group_pack_t cmd_group = {0};
+    cmd_group_ret_result_t cmd_group_result = {0};
 
   public:
     AMIPCCmdGroupClient();
     ~AMIPCCmdGroupClient();
 
-    int32_t create();   //real constructor, can only be called once
-    int32_t set_cmd_sender(AMIPCSyncCmdClient *p_cmd_sender);   //associate the cmd sender to it. can change it after set.
+    int32_t create(); //real constructor, can only be called once
+    int32_t set_cmd_sender(AMIPCSyncCmdClient *p_cmd_sender); //associate the cmd sender to it. can change it after set.
 
 
     int32_t batch_cmd_begin();
-    int32_t batch_cmd_add(int32_t  function_id,
-                      void *input_arg,
-                      int32_t input_size,
-                      void *output_arg,
-                      int32_t output_maxsize);
+    int32_t batch_cmd_add(int32_t function_id,
+                          void *input_arg,
+                          int32_t input_size,
+                          void *output_arg,
+                          int32_t output_maxsize);
     int32_t batch_cmd_exec();
 };
 

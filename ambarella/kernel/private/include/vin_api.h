@@ -4,14 +4,33 @@
  * History:
  *    2008/01/18 - [Anthony Ginger] Create
  *
- * Copyright (C) 2004-2008, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 
 #ifndef __VIN_PRI_H
 #define __VIN_PRI_H
@@ -67,20 +86,11 @@ struct vin_device_config {
 		/* for mipi */
 		struct {
 			u32 lane_number : 8;
-			u32 reserved : 8;
-			u32 lane_mux_0 : 16;
-			u32 lane_mux_1 : 16;
-			u32 lane_mux_2 : 16;
+			u32 bit_rate : 8;
+			u32 reserved0 : 16;
+			u32 reserved1;
 		} mipi_cfg;
 	};
-	/* for slave sensor */
-	struct {
-		u32 hsync_period;
-		u32 hsync_width : 16;
-		u32 vsync_period : 16;
-		u32 vsync_width : 16;
-		u32 reserved0 : 16;
-	} slave_cfg;
 	/* for hdr sensor */
 	struct {
 		struct {
@@ -177,6 +187,15 @@ struct vin_precise_fps {
 	int pll_idx;
 };
 
+/* for slave sensor */
+struct vin_master_sync {
+	u32 hsync_period;
+	u32 hsync_width : 16;
+	u32 vsync_period : 16;
+	u32 vsync_width : 16;
+	u32 reserved0 : 16;
+};
+
 /* Sync to amboot/include/dsp/s2l_cmd_msg.h */
 struct vin_video_format {
 	u32 video_mode;
@@ -193,6 +212,7 @@ struct vin_video_format {
 	u8 type;
 	u8 bits;
 	u8 ratio;
+	u8 mirror_pattern;
 	u8 bayer_pattern;
 	u8 hdr_mode;
 	u8 readout_mode;
@@ -238,6 +258,7 @@ struct vin_ops {
 	int (*get_dgain_ratio)(struct vin_device *vdev, struct vindev_dgain_ratio *args);
 	int (*set_hold_mode)(struct vin_device *vdev, u32 hold_mode);
 	int (*get_chip_status)(struct vin_device *vdev, struct vindev_chip_status *args);
+	int (*get_aaa_info)(struct vin_device *vdev, struct vindev_aaa_info *args);
 
 	/* WDR control */
 	int (*set_wdr_again_idx_gp)(struct vin_device *vdev, struct vindev_wdr_gp_s *args);
@@ -259,6 +280,8 @@ struct vin_ops {
 void ambarella_vin_mipi_phy_reset(void);
 void ambarella_vin_mipi_phy_enable(u8 lanes);
 int ambarella_set_vin_config(struct vin_device *vdev, struct vin_device_config *cfg);
+int ambarella_set_vin_master_sync(struct vin_device *vdev,
+		struct vin_master_sync *master_cfg, bool by_dbg_bus);
 int ambarella_vin_vsync_delay(struct vin_device *vdev, u32 vsync_delay);
 void ambarella_vin_add_precise_fps(struct vin_device *vdev,
 		struct vin_precise_fps *p_fps, u32 num_p_fps);

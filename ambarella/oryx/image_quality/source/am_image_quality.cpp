@@ -4,12 +4,29 @@
  * History:
  *   Dec 30, 2014 - [binwang] created file
  *
- * Copyright (C) 2014-2018, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 #include <stdio.h>
@@ -24,7 +41,11 @@
 #include "am_thread.h"
 #include "am_image_quality.h"
 
+#if defined(CONFIG_ARCH_S3L)
+#include "img_struct_arch.h"
+#else
 #include "img_adv_struct_arch.h"
+#endif
 #include "mw_struct.h"
 #include "mw_api.h"
 
@@ -156,20 +177,18 @@ bool AMImageQuality::init()
 bool AMImageQuality::destroy()
 {
   bool result = true;
+
   if (m_iq_state != AM_IQ_STATE_NOT_INIT) {
     if (mw_stop_aaa() < 0) {
       ERROR("AMImageQuality::mw_stop_aaa failed\n");
       result = false;
     }
-    if (m_fd_iav > 0) {
-      close(m_fd_iav);
-      m_fd_iav = -1;
-    }
     m_iq_state = AM_IQ_STATE_NOT_INIT;
   }
-  if (m_aaa_start) {
-    m_aaa_start->destroy();
-    m_aaa_start = nullptr;
+  AM_DESTROY(m_aaa_start);
+  if (m_fd_iav >= 0) {
+    close(m_fd_iav);
+    m_fd_iav = -1;
   }
 
   return result;
@@ -302,9 +321,11 @@ void AMImageQuality::print_config(AMIQParam *iq_param)
          "hue = %d\n"
          "contrast = %d\n"
          "sharpness = %d\n",
+         "auto_contrast_mode = %d\n",
          iq_param->style.saturation, iq_param->style.brightness,
          iq_param->style.hue, iq_param->style.contrast,
-         iq_param->style.sharpness);
+         iq_param->style.sharpness,
+         iq_param->style.auto_contrast_mode);
 }
 
 bool AMImageQuality::load_config()
@@ -351,9 +372,32 @@ bool AMImageQuality::save_config()
 void AMImageQuality::prepare_to_run_server(void *data)
 {
   AMImageQuality *iq = (AMImageQuality *) data;
+  int32_t iav_state = 0;
   do {
-    if (mw_start_aaa(iq->m_fd_iav) < 0) {
-      ERROR("AMImageQuality::mw_start_aaa error\n");
+    int ret = MW_AAA_SUCCESS;
+    if ((ret = mw_start_aaa(iq->m_fd_iav)) != MW_AAA_SUCCESS) {
+      switch(ret) {
+        case MW_AAA_INIT_FAIL:
+          ERROR("AMImageQuality: Failed to init!");
+          break;
+        case MW_AAA_NL_INIT_FAIL:
+          ERROR("AMImageQuality: Failed to create netlink!");
+          break;
+        case MW_AAA_INTERRUPTED:
+          NOTICE("AMImageQuality: Operation is interrupted!");
+          break;
+        default:
+          ERROR("AMImageQuality::mw_start_aaa error\n");
+          break;
+      }
+      break;
+    }
+    if (mw_get_iav_state(iq->m_fd_iav, &iav_state) < 0) {
+      ERROR("mw_get_iav_state failed");
+      break;
+    }
+    if (iav_state == IQ_IAV_STATE_IDLE || iav_state == IQ_IAV_STATE_INIT) {
+      WARN("AMImageQuality::IAV state is not ready, start AAA interrupted!");
       break;
     }
     if (mw_get_sys_info(&sys_info) < 0) {
@@ -382,37 +426,29 @@ void AMImageQuality::prepare_to_run_server(void *data)
         ERROR("AMImageQuality::set_ae_metering_mode error, start failed\n");
         break;
       }
-      if (iq->m_iq_config->m_loaded.ae.ae_metering_mode == AM_AE_CUSTOM_METERING) {
-        mw_set_ae_metering_table(
-          (mw_ae_metering_table*)&iq->m_iq_config->m_loaded.ae.ae_metering_table);
-      }
     }
     if (!iq->set_day_night_mode(&iq->m_iq_config->m_loaded.ae.day_night_mode)) {
       ERROR("AMImageQuality::set_day_night_mode error, start failed\n");
       break;
     }
     mw_ae_param ae_param;
-    if (sys_info.res.hdr_expo_num <= MIN_HDR_EXPOSURE_NUM) {
-      mw_get_ae_param(&ae_param);
-    }
+    mw_get_ae_param(&ae_param);
+
     ae_param.anti_flicker_mode =
         (mw_anti_flicker_mode) iq->m_iq_config->m_loaded.ae.anti_flicker_mode;
-    ae_param.slow_shutter_enable =
-        iq->m_iq_config->m_loaded.ae.slow_shutter_mode;
+    if (sys_info.res.hdr_expo_num <= MIN_HDR_EXPOSURE_NUM) {
+      ae_param.slow_shutter_enable = iq->m_iq_config->m_loaded.ae.slow_shutter_mode;
+    }
     ae_param.sensor_gain_max = iq->m_iq_config->m_loaded.ae.sensor_gain_max;
     ae_param.shutter_time_min =
         ROUND_DIV(512000000, iq->m_iq_config->m_loaded.ae.sensor_shutter_min);
-    if (sys_info.res.hdr_expo_num <= MIN_HDR_EXPOSURE_NUM) {
       ae_param.shutter_time_max =
           ROUND_DIV(512000000, iq->m_iq_config->m_loaded.ae.sensor_shutter_max);
-    }
     ae_param.ir_led_mode = iq->m_iq_config->m_loaded.ae.ir_led_mode;
-    if (sys_info.res.hdr_expo_num <= MIN_HDR_EXPOSURE_NUM) {
-      if (mw_set_ae_param(&ae_param) < 0) {
-        ERROR("AMImageQuality::mw_set_ae_param error\n");
-        break;
-      }
+    if (mw_set_ae_param(&ae_param) < 0) {
+      WARN("AMImageQuality::mw_set_ae_param ignored\n");
     }
+
     if (sys_info.res.hdr_expo_num <= MIN_HDR_EXPOSURE_NUM) {
       if (!iq->set_ae_target_ratio(&iq->m_iq_config->m_loaded.ae.ae_target_ratio)) {
         ERROR("AMImageQuality::set_ae_target_ratio error, start failed\n");
@@ -442,6 +478,10 @@ void AMImageQuality::prepare_to_run_server(void *data)
     mw_set_sharpness(iq->m_iq_config->m_loaded.style.sharpness);
     if (sys_info.res.hdr_expo_num <= MIN_HDR_EXPOSURE_NUM) {
       mw_set_brightness(iq->m_iq_config->m_loaded.style.brightness);
+      if (!iq->set_auto_contrast_mode(&iq->m_iq_config->m_loaded.style.auto_contrast_mode)) {
+        ERROR("AMImageQuality::set_auto_contrast_mode error, start failed\n");
+        break;
+      }
     }
 
     /*AWB config*/
@@ -455,8 +495,23 @@ void AMImageQuality::prepare_to_run_server(void *data)
 bool AMImageQuality::set_config(AM_IQ_CONFIG *config)
 {
   bool result = true;
+  int32_t iav_state = 0;
+
   if (!config || !config->value) {
     ERROR("AMImageQuality::Invalid argument!\n");
+    return false;
+  }
+
+  if (mw_get_iav_state(m_fd_iav, &iav_state) < 0) {
+    ERROR("mw_get_iav_state failed");
+    return false;
+  }
+  if (iav_state == IQ_IAV_STATE_IDLE || iav_state == IQ_IAV_STATE_INIT) {
+    WARN("AMImageQuality::IAV state is not ready, start AAA interrupted!");
+    return false;
+  }
+  if (mw_get_sys_info(&sys_info) < 0) {//update sys_info.res.hdr_expo_num
+    ERROR("AMImageQuality::mw_get_sensor_param_for_3A error\n");
     return false;
   }
 
@@ -486,7 +541,7 @@ bool AMImageQuality::set_config(AM_IQ_CONFIG *config)
           set_backlight_comp_enable((AM_BACKLIGHT_COMP_MODE *) config->value);
       break;
     case AM_IQ_AE_LOCAL_EXPOSURE:
-      result = set_local_exposure((AM_LOCAL_EXPOSURE_MODE *) config->value);
+      result = set_local_exposure((uint32_t *) config->value);
       break;
     case AM_IQ_AE_DC_IRIS_ENABLE:
       if (mw_is_dc_iris_supported()) {
@@ -538,6 +593,12 @@ bool AMImageQuality::set_config(AM_IQ_CONFIG *config)
     case AM_IQ_STYLE_SHARPNESS:
       result = set_sharpness((int32_t *) config->value);
       break;
+    case AM_IQ_STYLE_AUTO_CONTRAST_MODE:
+      result = set_auto_contrast_mode((int32_t *) config->value);
+      break;
+    case AM_IQ_AEB_ADJ_BIN_LOAD: {
+      result = load_adj_bin((char *) config->value);
+    }break;
     default:
       ERROR("AMImageQuality::set_config,unknown key\n");
       result = false;
@@ -588,7 +649,7 @@ bool AMImageQuality::get_config(AM_IQ_CONFIG *config)
           get_backlight_comp_enable((AM_BACKLIGHT_COMP_MODE *) config->value);
       break;
     case AM_IQ_AE_LOCAL_EXPOSURE:
-      result = get_local_exposure((AM_LOCAL_EXPOSURE_MODE *) config->value);
+      result = get_local_exposure((uint32_t *) config->value);
       break;
     case AM_IQ_AE_DC_IRIS_ENABLE:
       if (mw_is_dc_iris_supported()) {
@@ -643,6 +704,9 @@ bool AMImageQuality::get_config(AM_IQ_CONFIG *config)
     case AM_IQ_STYLE_SHARPNESS:
       result = get_sharpness((int32_t *) config->value);
       break;
+    case AM_IQ_STYLE_AUTO_CONTRAST_MODE:
+      result = get_auto_contrast_mode((int32_t *) config->value);
+      break;
     default:
       ERROR("AMImageQuality::get_config,unknown key\n");
       result = false;
@@ -651,6 +715,8 @@ bool AMImageQuality::get_config(AM_IQ_CONFIG *config)
 
   return result;
 }
+
+
 
 /*log level config*/
 bool AMImageQuality::set_log_level(AM_IQ_LOG_LEVEL *log_level)
@@ -821,7 +887,7 @@ bool AMImageQuality::set_backlight_comp_enable(AM_BACKLIGHT_COMP_MODE *backlight
   return result;
 }
 
-bool AMImageQuality::set_local_exposure(AM_LOCAL_EXPOSURE_MODE *local_exposure)
+bool AMImageQuality::set_local_exposure(uint32_t *local_exposure)
 {
   bool result = true;
   do {
@@ -834,7 +900,7 @@ bool AMImageQuality::set_local_exposure(AM_LOCAL_EXPOSURE_MODE *local_exposure)
       result = false;
       break;
     }
-    if (mw_set_auto_local_exposure_mode((AM_LOCAL_EXPOSURE_MODE) *local_exposure)
+    if (mw_set_auto_local_exposure_mode(*local_exposure)
         < 0) {
       ERROR("AMImageQuality::set_local_exposure error\n");
       result = false;
@@ -872,10 +938,6 @@ bool AMImageQuality::set_sensor_gain_max(uint32_t *sensor_gain_max)
 {
   bool result = true;
   do {
-    if (sys_info.res.hdr_expo_num > MIN_HDR_EXPOSURE_NUM) {
-      WARN("Can not set sensor gain max in HDR mode\n");
-      break;
-    }
     if (!sensor_gain_max) {
       ERROR("AMImageQuality::set_sensor_gain_max, NULL pointer\n");
       result = false;
@@ -899,10 +961,6 @@ bool AMImageQuality::set_sensor_shutter_min(uint32_t *sensor_shutter_min)
 {
   bool result = true;
   do {
-    if (sys_info.res.hdr_expo_num > MIN_HDR_EXPOSURE_NUM) {
-      WARN("Can not set sensor shutter min in HDR mode\n");
-      break;
-    }
     if (!sensor_shutter_min) {
       ERROR("AMImageQuality::set_sensor_shutter_min, NULL pointer\n");
       result = false;
@@ -926,10 +984,6 @@ bool AMImageQuality::set_sensor_shutter_max(uint32_t *sensor_shutter_max)
 {
   bool result = true;
   do {
-    if (sys_info.res.hdr_expo_num > MIN_HDR_EXPOSURE_NUM) {
-      WARN("Can not set sensor shutter max in HDR mode\n");
-      break;
-    }
     if (!sensor_shutter_max) {
       ERROR("AMImageQuality::set_sensor_shutter_max, NULL pointer\n");
       result = false;
@@ -1222,6 +1276,40 @@ bool AMImageQuality::set_sharpness(int32_t *sharpness)
   return result;
 }
 
+bool AMImageQuality::set_auto_contrast_mode(int32_t *ac_mode)
+{
+  bool result = true;
+  do {
+    if (!ac_mode) {
+      ERROR("AMImageQuality::set_auto_contrast_mode, NULL pointer\n");
+      result = false;
+      break;
+    }
+    uint32_t mode = *ac_mode;
+    if (mode == 0) {
+      if (mw_set_auto_color_contrast(0) < 0) {
+        ERROR("AMImageQuality::mw_set_auto_color_contrast error\n");
+        result = false;
+        break;
+      }
+    } else {
+      if (mw_set_auto_color_contrast(1) < 0) {
+        ERROR("AMImageQuality::mw_set_auto_color_contrast error\n");
+        result = false;
+        break;
+      }
+       if (mw_set_auto_color_contrast_strength(mode) < 0) {
+         ERROR("AMImageQuality::mw_set_auto_color_contrast_strength error\n");
+         result = false;
+         break;
+       }
+    }
+    m_iq_config->m_loaded.style.auto_contrast_mode = mode;
+  } while (0);
+
+  return result;
+}
+
 /*log level config*/
 bool AMImageQuality::get_log_level(AM_IQ_LOG_LEVEL *log_level)
 {
@@ -1329,7 +1417,7 @@ bool AMImageQuality::get_backlight_comp_enable(AM_BACKLIGHT_COMP_MODE *backlight
   return result;
 }
 
-bool AMImageQuality::get_local_exposure(AM_LOCAL_EXPOSURE_MODE *local_exposure)
+bool AMImageQuality::get_local_exposure(uint32_t *local_exposure)
 {
   bool result = true;
   do {
@@ -1599,4 +1687,69 @@ bool AMImageQuality::get_sharpness(int32_t *sharpness)
     *sharpness = m_iq_config->m_loaded.style.sharpness;
   } while (0);
   return result;
+}
+
+bool AMImageQuality::get_auto_contrast_mode(int32_t *ac_mode)
+{
+  bool result = true;
+  do {
+    if (!ac_mode) {
+      ERROR("AMImageQuality::get_auto_contrast_mode, NULL pointer\n");
+      result = false;
+      break;
+    }
+    *ac_mode = m_iq_config->m_loaded.style.auto_contrast_mode;
+  } while (0);
+  return result;
+}
+
+/*load bin*/
+bool AMImageQuality::load_adj_bin(const char *file_name)
+{
+  bool result = true;
+  mw_adj_file_param contents;
+
+  do {
+    uint32_t file_name_len = strlen(file_name);
+
+    memset(&contents, 0, sizeof(contents));
+
+    if (file_name_len > 0 && file_name_len < FILE_NAME_LENGTH) {
+      strncpy(contents.filename, file_name, file_name_len);
+      contents.filename[file_name_len] = '\0';
+    } else {
+      ERROR("Invalid length of %d,"
+            "please input file length [0,%d]",
+            file_name_len, FILE_NAME_LENGTH - 1);
+      result = false;
+      break;
+    }
+
+    contents.flag[ADJ_AE_TARGET].apply = 1;
+    contents.flag[ADJ_BLC].apply = 1;
+
+    if (mw_load_adj_param(&contents) < 0) {
+      ERROR("mw_reload_adj_param error");
+      result = false;
+      break;
+    }
+
+    if (result == true) {
+      if (contents.flag[ADJ_AE_TARGET].done) {
+        NOTICE("Load ADJ_AE_TARGET success");
+      }
+
+      if (contents.flag[ADJ_BLC].done) {
+        NOTICE("Load ADJ_BLC success");
+      }
+    }
+
+  } while(0);
+
+  return result;
+}
+
+bool AMImageQuality::need_notify()
+{
+  return m_iq_config? m_iq_config->m_loaded.notify_3A_to_media_svc: false;
 }

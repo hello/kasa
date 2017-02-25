@@ -18,6 +18,9 @@
  * $Id: wl_android.h 431563 2013-10-24 01:50:16Z $
  */
 
+#ifndef _wl_android_
+#define _wl_android_
+
 #include <linux/module.h>
 #include <linux/netdevice.h>
 #include <wldev_common.h>
@@ -108,3 +111,7 @@ s32 wl_genl_send_msg(struct net_device *ndev, u32 event_type,
 #ifdef SUPPORT_AIBSS
 s32 wl_netlink_send_msg(int pid, int seq, void *data, int size);
 #endif /* SUPPORT_AIBSS */
+
+#define RSSI_MAXVAL -2
+
+#endif /* _wl_android_ */

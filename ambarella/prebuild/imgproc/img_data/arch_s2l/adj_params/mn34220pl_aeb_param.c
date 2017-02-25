@@ -1,3 +1,35 @@
+/*
+ * image data
+ *
+ * History:
+ *    Author: Lu Wang <lwang@ambarella.com>
+ *
+ * Copyright (C) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
+
 #include "img_adv_struct_arch.h"
 
 
@@ -195,7 +227,7 @@ img_aeb_sensor_config_t mn34220pl_aeb_sensor_config ={
 			{{2, 2, 2, 2}}, 	// sensor offset
 		},
 		{	// hdr raw offset coef, non negative value is valid
-			16,		// long padding
+			0,		// long padding
 			2,		// short padding
 		},
 	},
@@ -242,29 +274,122 @@ img_aeb_gain_table_t mn34220pl_aeb_gain_table ={
 };
 
 
-img_auto_knee_config_info_t mn34220pl_auto_knee_config ={
-		0,//enable
-		1,//src mode, 0:cfa,1:rgb
-		192,255,//roi low,high
-		0,240,320,640,//min,mid_min,mid_max,max
-	{
-		{96,  96, 104},//0db,  min,mid,max
-		{108, 108, 114},//0db
-		{114, 114, 124},//0db,
-		{122, 122, 134},//6db
-		{128, 128, 144},
-		{128, 128, 144},
-		{128, 128, 144},
-		{138, 138, 145},
-		{140, 140, 140},
-		{140, 140, 140},
-		{140, 140, 140},
-		{140, 140, 140},
-		{140, 140, 140},
-		{140, 140, 140},
-		{140, 140, 140},
-		{140, 140, 140},
-	},
+img_aeb_auto_knee_param_t mn34220pl_aeb_auto_knee_config ={
+		.header = {
+				AEB_AUTO_KNEE,
+				1,
+				{1, 0, 0, 0},
+		},
+		.auto_knee_config = {
+				0,//enable
+				1,//src mode, 0:cfa,1:rgb
+				192,255,//roi low,high
+				0,240,320,640,//min,mid_min,mid_max,max
+				{
+				 {96,  96, 104},//0db,  min,mid,max
+				 {108, 108, 114},//0db
+				 {114, 114, 124},//0db,
+				 {122, 122, 134},//6db
+				 {128, 128, 144},
+				 {128, 128, 144},
+				 {128, 128, 144},
+				 {138, 138, 145},
+				 {140, 140, 140},
+				 {140, 140, 140},
+				 {140, 140, 140},
+				 {140, 140, 140},
+				 {140, 140, 140},
+				 {140, 140, 140},
+				 {140, 140, 140},
+				 {140, 140, 140},
+				},
+		},
+};
 
+img_aeb_digit_wdr_param_t mn34220pl_aeb_digit_wdr_config = {
+	.header = {
+		AEB_DIGIT_WDR,
+		1,
+		{1, 0, 0, 0},
+	},
+	.digit_wdr_config = {
+		0, 	// enable
+		{	// strength
+		0,	// 0db
+		0,	// 0db
+		0,	// 0db
+		0,	// 6db
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		},
+	},
+};
+
+img_aeb_digit_wdr_param_t mn34220pl_aeb_digit_wdr_config_2x_hdr = {
+	.header = {
+		AEB_DIGIT_WDR_2X_HDR,
+		1,
+		{1, 0, 0, 0},
+	},
+	.digit_wdr_config = {
+		0, 	// enable
+		{	// strength
+		0,	// 0db
+		0,	// 0db
+		0,	// 0db
+		0,	// 6db
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		},
+	},
+};
+
+img_aeb_digit_wdr_param_t mn34220pl_aeb_digit_wdr_config_3x_hdr = {
+	.header = {
+		AEB_DIGIT_WDR_3X_HDR,
+		1,
+		{1, 0, 0, 0},
+	},
+	.digit_wdr_config = {
+		0, 	// enable
+		{	// strength
+		0,	// 0db
+		0,	// 0db
+		0,	// 0db
+		0,	// 6db
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		},
+	},
 };
 

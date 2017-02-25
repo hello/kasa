@@ -4,12 +4,29 @@
 ## History:
 ##    2014/05/05 - [Jian Tang] Created file
 ##
-## Copyright (C) 2012-2016, Ambarella, Inc.
+## Copyright (C) 2015 Ambarella, Inc.
 ##
-## All rights reserved. No Part of this file may be reproduced, stored
-## in a retrieval system, or transmitted, in any form, or by any means,
-## electronic, mechanical, photocopying, recording, or otherwise,
-## without the prior consent of Ambarella, Inc.
+## This file and its contents ("Software") are protected by intellectual
+## property rights including, without limitation, U.S. and/or foreign
+## copyrights. This Software is also the confidential and proprietary
+## information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+## disclose, distribute, modify, or otherwise prepare derivative works of this
+## Software or any portion thereof except pursuant to a signed license agreement
+## or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+## In the absence of such an agreement, you agree to promptly notify and return
+## this Software to Ambarella, Inc.
+##
+## THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+## INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+## MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+## IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+## INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+## (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+## LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+## INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+## CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+## ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+## POSSIBILITY OF SUCH DAMAGE.
 ##
 
 LOCAL_PATH	:= $(call my-dir)
@@ -44,7 +61,7 @@ LOCAL_TARGET	:= $(AMP_MODULE)
 include $(BUILD_APP)
 
 .PHONY: $(LOCAL_TARGET)
-$(LOCAL_SRCS): prebuild_idsp_bin create_aaa_binary board_create_aaa_binary
+$(LOCAL_SRCS): create_aaa_binary board_create_aaa_binary
 
 $(LOCAL_TARGET): $(LOCAL_MODULE)
 	@mkdir -p $(FAKEROOT_DIR)/usr/lib/
@@ -125,6 +142,10 @@ ifeq ($(CONFIG_SENSOR_OV5658_MIPI), y)
 BIN_AAA_3D	+= $(wildcard ${PREBUILD_3D_PATH}/ov5658*_3D.bin)
 BIN_AAA_SRC	+= $(wildcard ${ADJ_PARAMS_PATH}/ov5658*.c)
 endif
+ifeq ($(CONFIG_SENSOR_OV2718_MIPI), y)
+BIN_AAA_3D	+= $(wildcard ${PREBUILD_3D_PATH}/ov2718*_3D.bin)
+BIN_AAA_SRC	+= $(wildcard ${ADJ_PARAMS_PATH}/ov2718*.c)
+endif
 
 ### Sony Sensors
 ifeq ($(CONFIG_SENSOR_IMX104), y)
@@ -142,6 +163,10 @@ endif
 ifeq ($(CONFIG_SENSOR_IMX322), y)
 BIN_AAA_3D	+= $(wildcard ${PREBUILD_3D_PATH}/imx322*_3D.bin)
 BIN_AAA_SRC	+= $(wildcard ${ADJ_PARAMS_PATH}/imx322*.c)
+endif
+ifeq ($(CONFIG_SENSOR_IMX326), y)
+BIN_AAA_3D	+= $(wildcard ${PREBUILD_3D_PATH}/imx326*_3D.bin)
+BIN_AAA_SRC	+= $(wildcard ${ADJ_PARAMS_PATH}/imx326*.c)
 endif
 ifeq ($(CONFIG_SENSOR_IMX136P), y)
 BIN_AAA_3D	+= $(wildcard ${PREBUILD_3D_PATH}/imx136*_3D.bin)
@@ -248,7 +273,7 @@ ifeq ($(BIN_AAA_PARAM),)
 	@echo "placeholder for non-existing 3A image to avoid compile error"
 else
 ifeq ($(BIN_LENS_PARAM),)
-create_aaa_binary: $(BIN_AAA_PARAM)
+create_aaa_binary: $(BIN_AAA_PARAM) prebuild_idsp_bin
 	@mkdir -p $(IMAGE_DATA_DIR)/adj_params/
 	@cp -f $(BIN_AAA_PARAM) $(IMAGE_DATA_DIR)/adj_params/
 	@mkdir -p $(IMAGE_DATA_DIR)/sensors/
@@ -256,7 +281,7 @@ create_aaa_binary: $(BIN_AAA_PARAM)
 	@cp -f ${BIN_AAA_3D} $(IMAGE_DATA_DIR)/sensors/
 	@echo "Build $@ Done."
 else
-create_aaa_binary: $(BIN_AAA_PARAM) $(BIN_LENS_PARAM)
+create_aaa_binary: $(BIN_AAA_PARAM) $(BIN_LENS_PARAM) prebuild_idsp_bin
 	@mkdir -p $(IMAGE_DATA_DIR)/adj_params/
 	@cp -f $(BIN_AAA_PARAM) $(IMAGE_DATA_DIR)/adj_params/
 	@mkdir -p $(IMAGE_DATA_DIR)/sensors/
@@ -327,6 +352,10 @@ ifeq ($(CONFIG_SENSOR_OV5658_MIPI), y)
 BOARD_BIN_AAA_3D	+= $(wildcard ${BOARD_PREBUILD_3D_PATH}/ov5658*_3D.bin)
 BOARD_BIN_AAA_SRC	+= $(wildcard ${BOARD_ADJ_PARAMS_PATH}/ov5658*.c)
 endif
+ifeq ($(CONFIG_SENSOR_OV2718_MIPI), y)
+BOARD_BIN_AAA_3D	+= $(wildcard ${BOARD_PREBUILD_3D_PATH}/ov2718*_3D.bin)
+BOARD_BIN_AAA_SRC	+= $(wildcard ${BOARD_ADJ_PARAMS_PATH}/ov2718*.c)
+endif
 
 ### Sony Sensors
 ifeq ($(CONFIG_SENSOR_IMX104), y)
@@ -344,6 +373,10 @@ endif
 ifeq ($(CONFIG_SENSOR_IMX322), y)
 BOARD_BIN_AAA_3D	+= $(wildcard ${BOARD_PREBUILD_3D_PATH}/imx322*_3D.bin)
 BOARD_BIN_AAA_SRC	+= $(wildcard ${BOARD_ADJ_PARAMS_PATH}/imx322*.c)
+endif
+ifeq ($(CONFIG_SENSOR_IMX326), y)
+BOARD_BIN_AAA_3D	+= $(wildcard ${BOARD_PREBUILD_3D_PATH}/imx326*_3D.bin)
+BOARD_BIN_AAA_SRC	+= $(wildcard ${BOARD_ADJ_PARAMS_PATH}/imx326*.c)
 endif
 ifeq ($(CONFIG_SENSOR_IMX136P), y)
 BOARD_BIN_AAA_3D	+= $(wildcard ${BOARD_PREBUILD_3D_PATH}/imx136*_3D.bin)

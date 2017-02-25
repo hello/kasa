@@ -42,9 +42,9 @@ build_external_drivers: prepare_external_drivers
 	@echo "Build External Drivers:"
 ifneq ($(EXT_DRIVER_MODULES),)
 	@$(ECHO) "  $(patsubst %/,%\n ,$(EXT_DRIVER_MODULES))"
-	$(AMBA_MAKEFILE_V)$(MAKE) $(AMBA_MAKE_PARA) -C $(LINUX_SRC_DIR) O=$(LINUX_OUT_DIR) \
+	$(AMBA_MAKEFILE_V)$(MAKE) $(AMBA_MAKE_PARA) ARCH=$(CPU_ARCH) -C $(LINUX_SRC_DIR) O=$(LINUX_OUT_DIR) \
 		M=$(OUT_EXTERNAL_DRIVER_DIR) modules
-	$(AMBA_MAKEFILE_V)$(MAKE) $(AMBA_MAKE_PARA) -C $(LINUX_SRC_DIR) O=$(LINUX_OUT_DIR) \
+	$(AMBA_MAKEFILE_V)$(MAKE) $(AMBA_MAKE_PARA) ARCH=$(CPU_ARCH) -C $(LINUX_SRC_DIR) O=$(LINUX_OUT_DIR) \
 		M=$(OUT_EXTERNAL_DRIVER_DIR) $(LINUX_INSTALL_FLAG) INSTALL_MOD_DIR=extra modules_install;
 else
 	@echo "  Nothing"

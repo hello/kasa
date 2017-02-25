@@ -4,12 +4,29 @@
 ## History:
 ##   2015-1-8 - [longli] created file
 ##
-## Copyright (C) 2008-2015, Ambarella Co, Ltd.
+## Copyright (c) 2016 Ambarella, Inc.
 ##
-## All rights reserved. No Part of this file may be reproduced, stored
-## in a retrieval system, or transmitted, in any form, or by any means,
-## electronic, mechanical, photocopying, recording, or otherwise,
-## without the prior consent of Ambarella.
+## This file and its contents ("Software") are protected by intellectual
+## property rights including, without limitation, U.S. and/or foreign
+## copyrights. This Software is also the confidential and proprietary
+## information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+## disclose, distribute, modify, or otherwise prepare derivative works of this
+## Software or any portion thereof except pursuant to a signed license agreement
+## or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+## In the absence of such an agreement, you agree to promptly notify and return
+## this Software to Ambarella, Inc.
+##
+## THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+## INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+## MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+## IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+## INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+## (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+## LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+## INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+## CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+## ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+## POSSIBILITY OF SUCH DAMAGE.
 ##
 
 ifeq ($(BUILD_AMBARELLA_ORYX_UPGRADE), y)
@@ -73,21 +90,22 @@ UPGRADE_VER_FILE   = $(ORYX_DIR)/include/upgrade/version.h
 UPGRADE_VER_PREFIX = UPGRADE
 
 LOCAL_TARGET  := $(UPGRADE_TARGET)
-LOCAL_SRCS    := $(wildcard $(LOCAL_PATH)/am_upgrade.cpp) \
-                 $(wildcard $(LOCAL_PATH)/am_dec7z.cpp)
-LOCAL_CFLAGS := -I$(ORYX_DIR)/include/utility \
-                -I$(ORYX_DIR)/include \
+LOCAL_SRCS    := $(wildcard $(LOCAL_PATH)/am_upgrade.cpp)
+
+LOCAL_CFLAGS := -I$(ORYX_DIR)/include \
+                -I$(ORYX_DIR)/include/utility \
+                -I$(ORYX_DIR)/include/utility/libarchive \
                 -I$(ORYX_DIR)/include/configure \
                 -I$(ORYX_DIR)/include/upgrade \
                 -I$(ORYX_DIR)/upgrade/include \
-                -I$(PREBUILD_3RD_PARTY_DIR)/7zdec/include \
                 -std=c++11 -pthread -Werror
 
-LOCAL_LDFLAGS:= -L$(PREBUILD_3RD_PARTY_DIR)/7zdec/lib -l7zDec
+LOCAL_LDFLAGS:= -lpthread
 
 LOCAL_LIBS := libamutil.so \
               libamdownload.so \
-              libamconfig.so
+              libamconfig.so \
+              libamarchive.so
 
 ifeq ($(BUILD_AMBARELLA_ORYX_DEBUG), y)
 LOCAL_CFLAGS += -O0 -g
@@ -120,30 +138,42 @@ ifeq ($(CONFIG_BACKUP_CPIO), y)
 include $(CLEAR_VARS)
 
 LOCAL_TARGET  := pba_upgrade
-LOCAL_SRCS  := $(wildcard $(LOCAL_PATH)/pba_upgrade.cpp) \
-               $(wildcard $(LOCAL_PATH)/am_dec7z.cpp)
+LOCAL_SRCS  := $(wildcard $(LOCAL_PATH)/pba_upgrade.cpp)
 LOCAL_CFLAGS :=  -I$(ORYX_DIR)/include \
                  -I$(ORYX_DIR)/include/configure \
                  -I$(ORYX_DIR)/include/utility   \
+                 -I$(ORYX_DIR)/include/utility/libarchive \
                  -I$(AMB_TOPDIR)/packages/security/digital_signature \
-                 -I$(PREBUILD_3RD_PARTY_DIR)/7zdec/include \
+                 -I$(AMB_TOPDIR)/packages/security/cryptochip_library \
+                 -I$(AMB_TOPDIR)/packages/security/lw_cryptography/include \
                  -std=c++11 -Werror
 
 LOCAL_LDFLAGS:=  -Wl,-rpath-link=$(FAKEROOT_DIR)/usr/lib \
                  -Wl,-rpath-link=$(PREBUILD_3RD_PARTY_DIR)/lua/usr/lib \
-                 -L$(PREBUILD_3RD_PARTY_DIR)/openssl/usr/lib -ldigisign -ldl \
-                 -L$(PREBUILD_3RD_PARTY_DIR)/7zdec/lib -l7zDec
+                 -Wl,-rpath-link=$(PREBUILD_3RD_PARTY_DIR)/libarchive/usr/lib \
+                 -Wl,-rpath-link=$(PREBUILD_3RD_PARTY_DIR)/xz/usr/lib \
+                 -Wl,-rpath-link=$(PREBUILD_3RD_PARTY_DIR)/bzip2/usr/lib \
+                 -Wl,-rpath-link=$(PREBUILD_3RD_PARTY_DIR)/zlib/usr/lib
 
 LOCAL_LIBS := libamconfig.so \
               libamutil.so \
+              libamarchive.so \
               libdigisign.a
 
 ifeq ($(CONFIG_DIGITAL_SIGNATURE_LIBRARY_NATIVE), y)
 LOCAL_LIBS	+= liblwcryptography.a
-LOCAL_LDFLAGS	+= -llwcryptography
 endif
 ifeq ($(CONFIG_DIGITAL_SIGNATURE_LIBRARY_OPENSSL), y)
-LOCAL_LDFLAGS	+= -lcrypto -lssl
+LOCAL_LDFLAGS	+= -L$(PREBUILD_3RD_PARTY_DIR)/openssl/usr/lib -lcrypto -lssl
+endif
+
+ifeq ($(SECURE_BOOT), y)
+ifeq ($(BUILD_AMBARELLA_CRYPTOCHIP_LIBRARY_FROM_SOURCE), y)
+LOCAL_LIBS	:= libcryptochip.a
+else
+LOCAL_LDFLAGS += -L$(AMB_TOPDIR)/packages/security/cryptochip_library/arch_$(AMBARELLA_ARCH)
+endif
+LOCAL_LDFLAGS	+= -lcryptochip
 endif
 
 include $(BUILD_APP)

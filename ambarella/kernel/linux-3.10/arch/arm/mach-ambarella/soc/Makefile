@@ -26,4 +26,5 @@ obj-$(CONFIG_PLAT_AMBARELLA_S2_CORTEX)			+= s2-cortex.o
 obj-$(CONFIG_PLAT_AMBARELLA_S2E)			+= s2e.o
 obj-$(CONFIG_PLAT_AMBARELLA_S2L)			+= s2l.o
 obj-$(CONFIG_PLAT_AMBARELLA_S3)				+= s3.o
+obj-$(CONFIG_PLAT_AMBARELLA_S3L)			+= s3l.o
 

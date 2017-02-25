@@ -4,15 +4,33 @@
  * History:
  *    2012/03/23 - [Long Zhao] Create
  *
- * Copyright (C) 2004-2013, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
  *
- * This file is produced by perl.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 #include <linux/module.h>
 #include <linux/ambpriv_device.h>
 #include <linux/interrupt.h>
@@ -22,6 +40,7 @@
 #include <iav_utils.h>
 #include <vin_api.h>
 #include "ov4689.h"
+#include "ov4689_table.c"
 
 static int bus_addr = (0 << 16) | (0x6C >> 1);
 module_param(bus_addr, int, 0644);
@@ -41,9 +60,7 @@ struct ov4689_priv {
 	u32 max_middle, max_short;
 };
 
-#include "ov4689_table.c"
-
-static int ov4689_write_reg( struct vin_device *vdev, u32 subaddr, u32 data)
+static int ov4689_write_reg(struct vin_device *vdev, u32 subaddr, u32 data)
 {
 	int rval;
 	struct ov4689_priv *ov4689;
@@ -76,7 +93,7 @@ static int ov4689_write_reg( struct vin_device *vdev, u32 subaddr, u32 data)
 	return 0;
 }
 
-static int ov4689_read_reg( struct vin_device *vdev, u32 subaddr, u32 *data)
+static int ov4689_read_reg(struct vin_device *vdev, u32 subaddr, u32 *data)
 {
 	int rval = 0;
 	struct ov4689_priv *ov4689;
@@ -102,7 +119,7 @@ static int ov4689_read_reg( struct vin_device *vdev, u32 subaddr, u32 *data)
 	msgs[1].len = 1;
 
 	rval = i2c_transfer(client->adapter, msgs, 2);
-	if (rval < 0){
+	if (rval < 0) {
 		vin_error("failed(%d): [0x%x]\n", rval, subaddr);
 		return rval;
 	}
@@ -116,12 +133,13 @@ static int ov4689_set_vin_mode(struct vin_device *vdev, struct vin_video_format 
 {
 	struct vin_device_config ov4689_config;
 
-	memset(&ov4689_config, 0, sizeof (ov4689_config));
+	memset(&ov4689_config, 0, sizeof(ov4689_config));
 
 	ov4689_config.interface_type = SENSOR_MIPI;
 	ov4689_config.sync_mode = SENSOR_SYNC_MODE_MASTER;
 
 	ov4689_config.mipi_cfg.lane_number = (lane == 4) ? SENSOR_4_LANE : SENSOR_2_LANE;
+	ov4689_config.mipi_cfg.bit_rate = SENSOR_MIPI_BIT_RATE_H;
 
 	ov4689_config.cap_win.x = format->def_start_x;
 	ov4689_config.cap_win.y = format->def_start_y;
@@ -159,7 +177,7 @@ static int ov4689_init_device(struct vin_device *vdev)
 
 static void ov4689_start_streaming(struct vin_device *vdev)
 {
-	ov4689_write_reg(vdev, OV4689_STANDBY, 0x01); //streaming
+	ov4689_write_reg(vdev, OV4689_STANDBY, 0x01); /* streaming */
 }
 
 static int ov4689_get_line_time(struct vin_device *vdev)
@@ -183,7 +201,7 @@ static int ov4689_update_hv_info(struct vin_device *vdev)
 	ov4689_read_reg(vdev, OV4689_HTS_MSB, &data_h);
 	ov4689_read_reg(vdev, OV4689_HTS_LSB, &data_l);
 	pinfo->line_length = (data_h<<8) + data_l;
-	if(unlikely(!pinfo->line_length)) {
+	if (unlikely(!pinfo->line_length)) {
 		vin_error("line length is 0!\n");
 		return -EIO;
 	}
@@ -192,25 +210,26 @@ static int ov4689_update_hv_info(struct vin_device *vdev)
 	ov4689_read_reg(vdev, OV4689_VTS_LSB, &data_l);
 	pinfo->frame_length_lines = (data_h<<8) + data_l;
 
-	if(vdev->cur_format->hdr_mode == AMBA_VIDEO_2X_HDR_MODE) {
+	if (vdev->cur_format->hdr_mode == AMBA_VIDEO_2X_HDR_MODE) {
 		ov4689_read_reg(vdev, OV4689_M_MAX_EXPO_MSB, &data_h);
 		ov4689_read_reg(vdev, OV4689_M_MAX_EXPO_LSB, &data_l);
 		pinfo->max_middle = ((data_h)<<8) + data_l;
-		if(unlikely(!pinfo->max_middle)) {
+		if (unlikely(!pinfo->max_middle)) {
 			vin_warn("max_middle is 0!\n");
 		}
-	} else if(vdev->cur_format->hdr_mode == AMBA_VIDEO_3X_HDR_MODE) {
+		pinfo->max_short = 0;
+	} else if (vdev->cur_format->hdr_mode == AMBA_VIDEO_3X_HDR_MODE) {
 		ov4689_read_reg(vdev, OV4689_M_MAX_EXPO_MSB, &data_h);
 		ov4689_read_reg(vdev, OV4689_M_MAX_EXPO_LSB, &data_l);
 		pinfo->max_middle = ((data_h)<<8) + data_l;
-		if(unlikely(!pinfo->max_middle)) {
+		if (unlikely(!pinfo->max_middle)) {
 			vin_warn("max_middle is 0!\n");
 		}
 
 		ov4689_read_reg(vdev, OV4689_S_MAX_EXPO_MSB, &data_h);
 		ov4689_read_reg(vdev, OV4689_S_MAX_EXPO_LSB, &data_l);
 		pinfo->max_short = ((data_h)<<8) + data_l;
-		if(unlikely(!pinfo->max_short)) {
+		if (unlikely(!pinfo->max_short)) {
 			vin_warn("max_short is 0!\n");
 		}
 	}
@@ -234,25 +253,25 @@ static int ov4689_set_format(struct vin_device *vdev, struct vin_video_format *f
 			regs_num = ARRAY_SIZE(ov4689_4lane_4m_regs);
 			vin_info("4 lane 4M\n");
 		} else if (lane == 2) {
-			switch(format->device_mode) {
-				case 0:
-					regs = ov4689_2lane_4m_regs;
-					regs_num = ARRAY_SIZE(ov4689_2lane_4m_regs);
-					vin_info("2 lane 4M\n");
-					break;
-				case 1:
-					regs = ov4689_2lane_1080p_regs;
-					regs_num = ARRAY_SIZE(ov4689_2lane_1080p_regs);
-					vin_info("2 lane 1080p\n");
-					break;
-				case 2:
-					regs = ov4689_2lane_720p_regs;
-					regs_num = ARRAY_SIZE(ov4689_2lane_720p_regs);
-					vin_info("2 lane 720p\n");
-					break;
-				default:
-					vin_error("2 lane mipi doesn't support mode:%d\n", format->video_mode);
-					return -EINVAL;
+			switch (format->device_mode) {
+			case 0:
+				regs = ov4689_2lane_4m_regs;
+				regs_num = ARRAY_SIZE(ov4689_2lane_4m_regs);
+				vin_info("2 lane 4M\n");
+				break;
+			case 1:
+				regs = ov4689_2lane_1080p_regs;
+				regs_num = ARRAY_SIZE(ov4689_2lane_1080p_regs);
+				vin_info("2 lane 1080p\n");
+				break;
+			case 2:
+				regs = ov4689_2lane_720p_regs;
+				regs_num = ARRAY_SIZE(ov4689_2lane_720p_regs);
+				vin_info("2 lane 720p\n");
+				break;
+			default:
+				vin_error("2 lane mipi doesn't support mode:%d\n", format->video_mode);
+				return -EINVAL;
 			}
 		} else {
 			vin_error("OV4689 can only support 2 or 4 lanes mipi\n");
@@ -329,7 +348,7 @@ static int ov4689_set_shutter_row(struct vin_device *vdev, u32 row)
 
 	num_line = row;
 
-	/* FIXME: shutter width: 4 ~(Frame format(V) - 4) */
+	/* FIXME: shutter width: 4 ~ (Frame format(V) - 4) */
 	min_line = 4;
 	max_line = pinfo->frame_length_lines - 4;
 	num_line = clamp(num_line, min_line, max_line);
@@ -351,14 +370,14 @@ static int ov4689_set_shutter_row(struct vin_device *vdev, u32 row)
 	return errCode;
 }
 
-static int ov4689_shutter2row(struct vin_device *vdev, u32* shutter_time)
+static int ov4689_shutter2row(struct vin_device *vdev, u32 *shutter_time)
 {
 	struct ov4689_priv *pinfo = (struct ov4689_priv *)vdev->priv;
 	u64 exposure_lines;
 	int rval = 0;
 
 	/* for fast boot, it may call set shutter time directly, so we must read line length/frame line */
-	if(!pinfo->line_length) {
+	if (!pinfo->line_length) {
 		rval = ov4689_update_hv_info(vdev);
 		if (rval < 0)
 			return rval;
@@ -396,25 +415,22 @@ static int ov4689_set_wdr_shutter_row_group(struct vin_device *vdev,
 	shutter_short2 = p_shutter_gp->s2;
 
 	/* shutter limitation check */
-	if(shutter_short1 > max_middle - 1) {
-		vin_warn("middle shutter %d exceeds limitation %d\n", shutter_short1, max_middle - 1);
+	if (shutter_short1 > max_middle - 1) {
+		vin_error("middle shutter %d exceeds limitation %d\n", shutter_short1, max_middle - 1);
+		return -EPERM;
 	}
 
-	if(vdev->cur_format->hdr_mode == AMBA_VIDEO_3X_HDR_MODE) {
-		if(shutter_short2 > max_short - 1) {
-			vin_warn("short shutter %d exceeds limitation %d\n", shutter_short2 , max_short - 1);
+	if (vdev->cur_format->hdr_mode == AMBA_VIDEO_3X_HDR_MODE) {
+		if (shutter_short2 > max_short - 1) {
+			vin_error("short shutter %d exceeds limitation %d\n", shutter_short2 , max_short - 1);
+			return -EPERM;
 		}
-		if(shutter_long + shutter_short1 + shutter_short2 >= frame_length_lines - 4){
-			vin_error("shutter exceeds limitation! long:%d, short1:%d, short2:%d, V:%d\n",
-				shutter_long, shutter_short1, shutter_short2, frame_length_lines);
-			return -1;
-		}
-	} else {
-		if(shutter_long + shutter_short1 >= frame_length_lines - 4){
-			vin_error("shutter exceeds limitation! long:%d, short1:%d, V:%d\n",
-				shutter_long, shutter_short1, frame_length_lines);
-			return -1;
-		}
+	}
+
+	if (shutter_long + max_middle + max_short > frame_length_lines - 2) {
+		vin_error("shutter exceeds limitation! long:%d, max short1:%d, max short2:%d, V:%d\n",
+			shutter_long, max_middle, max_short, frame_length_lines);
+		return -EPERM;
 	}
 
 	/* long shutter */
@@ -429,7 +445,7 @@ static int ov4689_set_wdr_shutter_row_group(struct vin_device *vdev,
 	ov4689_write_reg(vdev, OV4689_M_EXPO_MSB, (u8)(shutter_short1 >> 8));
 	ov4689_write_reg(vdev, OV4689_M_EXPO_LSB, (u8)(shutter_short1 & 0xFF));
 
-	if(vdev->cur_format->hdr_mode == AMBA_VIDEO_3X_HDR_MODE) {
+	if (vdev->cur_format->hdr_mode == AMBA_VIDEO_3X_HDR_MODE) {
 		/* short shutter 2 */
 		shutter_short2  = shutter_short2 << 4;
 		ov4689_write_reg(vdev, OV4689_S_EXPO_HSB, (u8)((shutter_short2 >> 16) & 0xF));
@@ -471,7 +487,7 @@ static int ov4689_set_fps(struct vin_device *vdev, int fps)
 
 	if (vdev->cur_format->hdr_mode == AMBA_VIDEO_LINEAR_MODE) {
 		v_lines = pinfo->frame_length_lines - vdev->cur_format->height;
-	} else if(vdev->cur_format->hdr_mode == AMBA_VIDEO_2X_HDR_MODE) {
+	} else if (vdev->cur_format->hdr_mode == AMBA_VIDEO_2X_HDR_MODE) {
 		v_lines = pinfo->frame_length_lines * 2 - vdev->cur_format->height;
 	} else if (vdev->cur_format->hdr_mode == AMBA_VIDEO_3X_HDR_MODE) {
 		v_lines = pinfo->frame_length_lines * 3 - vdev->cur_format->height;
@@ -617,7 +633,7 @@ static int ov4689_wdr_shutter2row(struct vin_device *vdev,
 	int rval = 0;
 
 	/* for fast boot, it may call set shutter time directly, so we must read line length/frame line */
-	if(!pinfo->line_length) {
+	if (!pinfo->line_length) {
 		rval = ov4689_update_hv_info(vdev);
 		if (rval < 0)
 			return rval;
@@ -650,7 +666,7 @@ static int ov4689_set_mirror_mode(struct vin_device *vdev,
 		struct vindev_mirror *mirror_mode)
 {
 	int errCode = 0;
-	u32 tmp_reg, bayer_pattern, vflip = 0,hflip = 0;
+	u32 tmp_reg, bayer_pattern, vflip = 0, hflip = 0;
 
 	switch (mirror_mode->pattern) {
 	case VINDEV_MIRROR_AUTO:
@@ -680,14 +696,14 @@ static int ov4689_set_mirror_mode(struct vin_device *vdev,
 		return -EINVAL;
 	}
 
-	errCode |= ov4689_read_reg(vdev,OV4689_V_FORMAT,&tmp_reg);
+	errCode |= ov4689_read_reg(vdev, OV4689_V_FORMAT, &tmp_reg);
 	tmp_reg &= (~OV4689_V_FLIP);
 	tmp_reg |= vflip;
 	ov4689_write_reg(vdev, OV4689_V_FORMAT, tmp_reg);
 
-	errCode |= ov4689_read_reg(vdev,OV4689_H_FORMAT,&tmp_reg);
-	tmp_reg &= (~OV4689_H_MIRROR);
-	tmp_reg |= hflip;
+	errCode |= ov4689_read_reg(vdev, OV4689_H_FORMAT, &tmp_reg);
+	tmp_reg |= OV4689_H_MIRROR;
+	tmp_reg ^= hflip;
 	ov4689_write_reg(vdev, OV4689_H_FORMAT, tmp_reg);
 
 	if (mirror_mode->bayer_pattern == VINDEV_BAYER_PATTERN_AUTO)
@@ -701,50 +717,42 @@ static int ov4689_get_chip_status(struct vin_device *vdev,
 {
 	u32 tmp_reg;
 
-	ov4689_read_reg(vdev,OV4689_TPM_TRIGGER,&tmp_reg);
+	ov4689_read_reg(vdev, OV4689_TPM_TRIGGER, &tmp_reg);
 	tmp_reg |= 0x01;
-	ov4689_write_reg(vdev,OV4689_TPM_TRIGGER,tmp_reg);
+	ov4689_write_reg(vdev, OV4689_TPM_TRIGGER, tmp_reg);
 	/* wait some time to read temperature */
 	msleep(5);
-	ov4689_read_reg(vdev,OV4689_TPM_READ,&tmp_reg);
+	ov4689_read_reg(vdev, OV4689_TPM_READ, &tmp_reg);
 
-	chip_status->temperature = (tmp_reg&0xFF) - OV4689_TPM_OFFSET;
+	chip_status->temperature = (tmp_reg & 0xFF) - OV4689_TPM_OFFSET;
 
 	return 0;
 }
 
 static int ov4689_get_eis_info(struct vin_device *vdev,
-		struct vindev_eisinfo *eis_info)
+	struct vindev_eisinfo *eis_info)
 {
-	struct ov4689_priv *pinfo = (struct ov4689_priv *)vdev->priv;
-	struct vin_video_format *format = vdev->cur_format;
-
-	eis_info->cap_start_x = format->act_start_x;
-	eis_info->cap_start_y = format->act_start_y;
-	eis_info->cap_cap_w = format->act_width;
-	eis_info->cap_cap_h = format->act_height;
-	eis_info->source_width = format->width;
-	eis_info->source_height = format->height;
-	eis_info->current_fps = vdev->frame_rate;
-	eis_info->main_fps = format->default_fps;
-	eis_info->current_shutter_time = vdev->shutter_time;
-	eis_info->sensor_cell_width = 200;// 2.0 um
-	eis_info->sensor_cell_height = 200;// 2.0 um
+	eis_info->sensor_cell_width = 200;/* 2.0 um */
+	eis_info->sensor_cell_height = 200;/* 2.0 um */
 	eis_info->column_bin = 1;
 	eis_info->row_bin = 1;
-
-	eis_info->row_time = (u32)DIV64_CLOSEST((u64)format->line_time * 1000, 512);
-
-	if (format->hdr_mode == AMBA_VIDEO_LINEAR_MODE) {
-		eis_info->vb_lines = pinfo->frame_length_lines - format->height;
-	} else if(format->hdr_mode == AMBA_VIDEO_2X_HDR_MODE) {
-		eis_info->vb_lines = pinfo->frame_length_lines * 2 - format->height;
-	} else if (format->hdr_mode == AMBA_VIDEO_3X_HDR_MODE) {
-		eis_info->vb_lines = pinfo->frame_length_lines * 3 - format->height;
-	}
+	eis_info->vb_time = vdev->cur_format->vb_time;
 
 	return 0;
 }
+
+static int ov4689_get_aaa_info(struct vin_device *vdev,
+	struct vindev_aaa_info *aaa_info)
+{
+	struct ov4689_priv *pinfo = (struct ov4689_priv *)vdev->priv;
+
+	aaa_info->sht0_max = pinfo->frame_length_lines - 4;
+	aaa_info->sht1_max = pinfo->max_middle - 1;
+	aaa_info->sht2_max = pinfo->max_short - 1;
+
+	return 0;
+}
+
 #ifdef CONFIG_PM
 static int ov4689_suspend(struct vin_device *vdev)
 {
@@ -752,17 +760,18 @@ static int ov4689_suspend(struct vin_device *vdev)
 
 	for (i = 0; i < ARRAY_SIZE(pm_regs); i++) {
 		ov4689_read_reg(vdev, pm_regs[i].addr, &tmp);
-		pm_regs[i].data = (u16) tmp;
+		pm_regs[i].data = (u8)tmp;
 	}
 
 	return 0;
 }
+
 static int ov4689_resume(struct vin_device *vdev)
 {
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(pm_regs); i++) {
-		ov4689_write_reg(vdev, pm_regs[i].addr, (u32)pm_regs[i].data);
+		ov4689_write_reg(vdev, pm_regs[i].addr, pm_regs[i].data);
 	}
 
 	return 0;
@@ -772,19 +781,20 @@ static int ov4689_resume(struct vin_device *vdev)
 static struct vin_ops ov4689_ops = {
 	.init_device		= ov4689_init_device,
 	.set_format		= ov4689_set_format,
-	.set_shutter_row 	= ov4689_set_shutter_row,
-	.shutter2row 		= ov4689_shutter2row,
+	.set_shutter_row	= ov4689_set_shutter_row,
+	.shutter2row		= ov4689_shutter2row,
 	.set_frame_rate	= ov4689_set_fps,
-	.set_agc_index	= ov4689_set_agc_index,
+	.set_agc_index		= ov4689_set_agc_index,
 	.set_mirror_mode	= ov4689_set_mirror_mode,
 	.read_reg			= ov4689_read_reg,
 	.write_reg		= ov4689_write_reg,
 	.set_hold_mode	= ov4689_set_hold_mode,
 	.get_chip_status	= ov4689_get_chip_status,
 	.get_eis_info		= ov4689_get_eis_info,
+	.get_aaa_info		= ov4689_get_aaa_info,
 #ifdef CONFIG_PM
-	.suspend 			= ov4689_suspend,
-	.resume 			= ov4689_resume,
+	.suspend		= ov4689_suspend,
+	.resume			= ov4689_resume,
 #endif
 
 	/* for wdr sensor */
@@ -797,7 +807,6 @@ static struct vin_ops ov4689_ops = {
 	.wdr_shutter2row = ov4689_wdr_shutter2row,
 };
 
-/*	< include init.c here for aptina sensor, which is produce by perl >  */
 /* ========================================================================== */
 static int ov4689_probe(struct i2c_client *client,
 	const struct i2c_device_id *id)
@@ -818,10 +827,10 @@ static int ov4689_probe(struct i2c_client *client,
 	vdev->sub_type = VINDEV_SUBTYPE_CMOS;
 	vdev->default_mode = AMBA_VIDEO_MODE_2688_1512;
 	vdev->default_hdr_mode = AMBA_VIDEO_LINEAR_MODE;
-	vdev->agc_db_max = 0x24000000;	// 36dB
-	vdev->agc_db_min = 0x00000000;	// 0dB
-	vdev->agc_db_step = 0x00180000;	// 0.09375dB
-	vdev->pixel_size = 0x00020000;	/* 2.0um */
+	vdev->agc_db_max = 0x24000000;  /* 36dB */
+	vdev->agc_db_min = 0x00000000;  /* 0dB */
+	vdev->agc_db_step = 0x00180000; /* 0.09375dB */
+	vdev->pixel_size = 0x00020000;  /* 2.0um */
 	vdev->wdr_again_idx_min = 0;
 	vdev->wdr_again_idx_max = OV4689_AGAIN_ROWS - 1;
 	vdev->wdr_dgain_idx_min = 0;

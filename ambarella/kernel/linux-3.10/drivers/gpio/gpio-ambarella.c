@@ -32,8 +32,8 @@
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
 #include <linux/irqchip/chained_irq.h>
+#include <plat/iav_helper.h>
 #include <plat/pinctrl.h>
-#include <plat/service.h>
 
 #if defined(CONFIG_PM)
 struct amb_gpio_regs {
@@ -225,8 +225,29 @@ static struct gpio_chip amb_gc = {
 
 static void amb_gpio_irq_enable(struct irq_data *data)
 {
+	struct amb_gpio_chip *amb_gpio = dev_get_drvdata(amb_gc.dev);
 	void __iomem *regbase = irq_data_get_irq_chip_data(data);
-	u32 offset = PINID_TO_OFFSET(data->hwirq);
+	void __iomem *iomux_base = amb_gpio->iomux_base;
+	u32 i, bank, offset, val;
+
+	bank = PINID_TO_BANK(data->hwirq);
+	offset = PINID_TO_OFFSET(data->hwirq);
+
+	/* make sure the pin is in gpio input mode */
+	if (!gpiochip_is_requested(&amb_gc, data->hwirq)) {
+		amba_clrbitsl(regbase + GPIO_AFSEL_OFFSET, 0x1 << offset);
+		amba_clrbitsl(regbase + GPIO_DIR_OFFSET, 0x1 << offset);
+
+		if (iomux_base) {
+			for (i = 0; i < 3; i++) {
+				val = amba_readl(iomux_base + IOMUX_REG_OFFSET(bank, i));
+				val &= (~(0x1 << offset));
+				amba_writel(iomux_base + IOMUX_REG_OFFSET(bank, i), val);
+			}
+			amba_writel(iomux_base + IOMUX_CTRL_SET_OFFSET, 0x1);
+			amba_writel(iomux_base + IOMUX_CTRL_SET_OFFSET, 0x0);
+		}
+	}
 
 	amba_writel(regbase + GPIO_IC_OFFSET, 0x1 << offset);
 	amba_setbitsl(regbase + GPIO_IE_OFFSET, 0x1 << offset);

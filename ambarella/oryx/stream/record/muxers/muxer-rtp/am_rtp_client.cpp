@@ -4,12 +4,29 @@
  * History:
  *   2015-1-6 - [ypchang] created file
  *
- * Copyright (C) 2008-2015, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 #include <time.h>
@@ -19,6 +36,7 @@
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <netinet/in.h>
+#include <netinet/ip.h>
 #include <netinet/tcp.h>
 
 #include "am_base_include.h"
@@ -29,10 +47,9 @@
 #include "am_rtp_client_config.h"
 
 #include "am_thread.h"
-#include "am_mutex.h"
 #include "am_event.h"
 
-#include "am_rtp_session_base.h"
+#include "am_rtp_session_if.h"
 #include "am_muxer_rtp.h"
 #include "am_rtp_data.h"
 
@@ -45,15 +62,6 @@ struct RtcpByePacket
 /*
  * AMRtpClientData
  */
-uint32_t random_number()
-{
-  struct timeval current = {0};
-  gettimeofday(&current, nullptr);
-  srand(current.tv_usec);
-
-  return (rand() % ((uint32_t)-1));
-}
-
 AMRtpClientData::AMRtpClientData(int fd_proto,
                                  int fd_tcp,
                                  uint32_t session,
@@ -99,7 +107,20 @@ static bool set_tcp_socket_opt(int fd, uint32_t sndbuf_size, uint32_t tmo_sec)
       int32_t send_buf = sndbuf_size;
       int32_t no_delay = 1;
       struct timeval timeout = {0};
-      timeout.tv_sec = tmo_sec;
+      int tos = 0;
+      socklen_t tos_len = sizeof(tos);
+
+      if (AM_UNLIKELY(getsockopt(fd, IPPROTO_IP, IP_TOS,
+                                 (void*)&tos, &tos_len) != 0)) {
+        PERROR("get IP_TOS");
+        break;
+      }
+      tos = tos | IPTOS_LOWDELAY | IPTOS_RELIABILITY | IPTOS_THROUGHPUT;
+      if (AM_UNLIKELY(setsockopt(fd, IPPROTO_IP, IP_TOS,
+                                 (const void*)&tos, tos_len) != 0)) {
+        PERROR("set IP_TOS");
+        break;
+      }
       if (AM_UNLIKELY((setsockopt(fd,
                                   IPPROTO_TCP, TCP_NODELAY,
                                   &no_delay, sizeof(no_delay)) != 0))) {
@@ -113,6 +134,7 @@ static bool set_tcp_socket_opt(int fd, uint32_t sndbuf_size, uint32_t tmo_sec)
         PERROR("setsockopt");
         break;
       }
+      timeout.tv_sec = tmo_sec;
       if (AM_UNLIKELY((setsockopt(fd,
                                   SOL_SOCKET, SO_RCVTIMEO,
                                   (char*)&timeout,
@@ -203,17 +225,30 @@ int AMRtpClientData::setup_udp_socket(RtpClientConfig &config, uint16_t port)
         PERROR("SO_SNDBUF");
         break;
       }
+      int tos = 0;
+      socklen_t tos_len = sizeof(tos);
+      if (AM_UNLIKELY(getsockopt(sock, IPPROTO_IP, IP_TOS,
+                                 (void*)&tos, &tos_len) != 0)) {
+        PERROR("get IP_TOS");
+        break;
+      }
+      tos = tos | IPTOS_LOWDELAY | IPTOS_RELIABILITY | IPTOS_THROUGHPUT;
+      if (AM_UNLIKELY(setsockopt(sock, IPPROTO_IP, IP_TOS,
+                                 (const void*)&tos, tos_len) != 0)) {
+        PERROR("set IP_TOS");
+        break;
+      }
       if (AM_LIKELY(config.blocked)) {
         timeval timeout = {0};
         timeout.tv_sec = config.block_timeout;
         if (AM_UNLIKELY(setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
                                    (char*)&timeout, sizeof(timeout)) != 0)) {
-          ERROR("SO_RCVTIMEO");
+          PERROR("SO_RCVTIMEO");
           break;
         }
         if (AM_UNLIKELY(setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO,
                                    (char*)&timeout, sizeof(timeout)) != 0)) {
-          ERROR("SO_SNDTIMEO");
+          PERROR("SO_SNDTIMEO");
           break;
         }
       } else {
@@ -350,13 +385,20 @@ bool AMRtpClient::start()
 void AMRtpClient::stop()
 {
   if (AM_LIKELY(m_run)) {
-    send_thread_cmd(AM_CLIENT_CMD_STOP);
+    if (AM_LIKELY(send_thread_cmd(AM_CLIENT_CMD_STOP))) {
+      if (AM_LIKELY(m_rtcp_event->wait(5000))) {
+        NOTICE("RTCP thread of Client %s stopped!", m_client->name.c_str());
+      } else {
+        WARN("Failed to receive STOP response of RTCP thread of Client %s!",
+             m_client->name.c_str());
+      }
+    }
   }
 }
 
 void AMRtpClient::set_enable(bool enable)
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   m_enable = enable;
 }
 
@@ -372,15 +414,27 @@ bool AMRtpClient::is_abort()
 
 bool AMRtpClient::is_enable()
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   return m_enable;
 }
 
-void AMRtpClient::destroy()
+bool AMRtpClient::is_new_client()
+{
+  return m_is_new.load();
+}
+
+void AMRtpClient::set_new_client(bool new_client)
+{
+  m_is_new = new_client;
+}
+
+void AMRtpClient::destroy(bool send_notify)
 {
   if (-- m_ref_count <= 0) {
     stop();
-    send_kill_client();
+    if (AM_LIKELY(send_notify)) {
+      send_kill_client();
+    }
     delete this;
   }
 }
@@ -395,66 +449,24 @@ void AMRtpClient::inc_ref()
   ++ m_ref_count;
 }
 
-void AMRtpClient::set_session(AMRtpSession *session)
+void AMRtpClient::set_session(AMIRtpSession *session)
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   m_session = session;
 }
 
 AMRtpClient::AMRtpClient(int ctrl_fd, AMMuxerRtp *muxer) :
-    m_client_config(nullptr),
-    m_config(nullptr),
-    m_client(nullptr),
-    m_lock(nullptr),
-    m_rtcp_monitor(nullptr),
-    m_packet_sender(nullptr),
-    m_rtp_event(nullptr),
-    m_rtcp_event(nullptr),
-    m_muxer(muxer),
-    m_rtcp_sr_buf(nullptr),
-    m_rtcp_hdr(nullptr),
-    m_rtcp_sr(nullptr),
-    m_session(nullptr),
-    m_ctrl_fd(ctrl_fd),
-    m_ref_count(0),
-    m_start_clock_90k(0ULL),
-    m_tcp_max_speed(0ULL),
-    m_tcp_min_speed(((uint64_t)-1)),
-    m_tcp_avg_speed(0ULL),
-    m_udp_max_speed(0ULL),
-    m_udp_min_speed(((uint64_t)-1)),
-    m_udp_avg_speed(0ULL),
-    m_tcp_send_time(0ULL),
-    m_udp_send_time(0ULL),
-    m_tcp_send_size(0ULL),
-    m_udp_send_size(0ULL),
-    m_tcp_send_count(0),
-    m_udp_send_count(0),
-    m_run(true),
-    m_abort(false),
-    m_enable(false)
+  m_muxer(muxer),
+  m_ctrl_fd(ctrl_fd)
 {
-  RTP_CLI_R = -1;
-  RTP_CLI_W = -1;
 }
 
 AMRtpClient::~AMRtpClient()
 {
-  if (AM_LIKELY(m_rtcp_monitor)) {
-    m_rtcp_monitor->destroy();
-  }
-  if (AM_LIKELY(m_packet_sender)) {
-    m_packet_sender->destroy();
-  }
-  if (AM_LIKELY(m_lock)) {
-    m_lock->destroy();
-  }
-  if (AM_LIKELY(m_rtp_event)) {
-    m_rtp_event->destroy();
-  }
-  if (AM_LIKELY(m_rtcp_event)) {
-    m_rtcp_event->destroy();
-  }
+  AM_DESTROY(m_rtcp_monitor);
+  AM_DESTROY(m_packet_sender);
+  AM_DESTROY(m_rtp_event);
+  AM_DESTROY(m_rtcp_event);
   if (AM_LIKELY(RTP_CLI_R >= 0)) {
     close(RTP_CLI_R);
   }
@@ -483,11 +495,6 @@ bool AMRtpClient::init(const std::string &config,
       ERROR("Failed to get RTP client configuration!");
       break;
     }
-    m_lock = AMSpinLock::create();
-    if (AM_UNLIKELY(!m_lock)) {
-      ERROR("Failed to create lock!");
-      break;
-    }
     if (AM_UNLIKELY(pipe(m_ctrl) < 0)) {
       PERROR("pipe");
       break;
@@ -501,16 +508,13 @@ bool AMRtpClient::init(const std::string &config,
       ERROR("Failed to initialize RTP client data!");
       break;
     }
-    m_rtcp_sr_buf = new uint8_t[sizeof(AMRtpTcpHeader) +
-                                sizeof(AMRtcpHeader) +
-                                sizeof(AMRtcpSRPayload)];
+    m_rtcp_sr_buf = new RtcpSRBuffer();
     if (AM_UNLIKELY(!m_rtcp_sr_buf)) {
       ERROR("Failed to allocate memory for RTCP SR packet!");
       break;
     } else {
-      m_rtcp_hdr = (AMRtcpHeader*)&m_rtcp_sr_buf[sizeof(AMRtpTcpHeader)];
-      m_rtcp_sr  = (AMRtcpSRPayload*)&m_rtcp_sr_buf[sizeof(AMRtpTcpHeader) +
-                                                    sizeof(AMRtcpHeader)];
+      m_rtcp_hdr = &m_rtcp_sr_buf->rtcp_hdr;
+      m_rtcp_sr  = &m_rtcp_sr_buf->rtcp_sr;
       m_rtcp_sr->set_packet_bytes(0);
       m_rtcp_sr->set_packet_count(0);
     }
@@ -561,6 +565,7 @@ void AMRtpClient::rtcp_monitor()
 {
   int maxfd = -1;
   bool rtcp_received = false;
+  bool need_signal = false;
   uint32_t err_count = 0;
   uint32_t rr_count_threashold = 3;
   uint32_t rr_count = 0;
@@ -609,11 +614,13 @@ void AMRtpClient::rtcp_monitor()
               NOTICE("Client: %s received stop signal!",
                      m_client->name.c_str());
               m_run = false;
+              need_signal = true;
             }break;
             case AM_CLIENT_CMD_ABORT: {
               NOTICE("Client: %s received abort signal!",
                      m_client->name.c_str());
               m_abort = true;
+              need_signal = true;
             }break;
             case AM_CLIENT_CMD_ACK: {
               if (AM_LIKELY(!rtcp_received)) {
@@ -685,7 +692,7 @@ void AMRtpClient::rtcp_monitor()
 
                   INFO("\nReceived RR of source %08X:"
                        "\n              Fraction Lost: %hhu"
-                       "\n         Total Packets Lost: %u"
+                       "\n         Total Packets Lost: %d"
                        "\nReceived Packets Seq Number: %u"
                        "\n        Interarrival Jitter: %u"
                        "\n                    Last SR: %u"
@@ -843,6 +850,9 @@ void AMRtpClient::rtcp_monitor()
     abort_client(false);
     m_run = false;
   }
+  if (AM_LIKELY(need_signal)) {
+    m_rtcp_event->signal();
+  }
 }
 
 void AMRtpClient::packet_sender()
@@ -851,26 +861,29 @@ void AMRtpClient::packet_sender()
   uint64_t last_ntp_time_stamp  = 0ULL;
   uint64_t curr_ntp_time        = 0ULL;
 
-  int64_t  first_sent_pkt_pts   = 0LL;
-  int64_t  last_sent_pkt_pts    = 0LL;
-  int64_t  curr_clock_cnt_90k   = 0LL;
+  uint64_t  first_sent_pkt_pts  = 0ULL;
+  uint64_t  last_sent_pkt_pts   = 0ULL;
+  uint64_t  curr_clock_cnt_90k  = 0ULL;
 
   uint32_t first_rtp_time_stamp = 0;
   uint32_t last_rtp_time_stamp  = 0;
 
   uint32_t last_sent_rtcp_bytes = 0;
   bool need_send_rtcp_sr = false;
+  bool first_rtcp = true;
 
   m_rtp_event->wait();
   while(m_run) {
     AMRtpData *rtp_data = nullptr;
     AMRtpPacket *packet = nullptr;
+    uint32_t    pkt_num = 0;
+    uint32_t payload_size = 0;
     if (AM_UNLIKELY(!m_session)) {
       usleep(m_client_config->wait_interval * 1000);
       continue;
     }
 
-    if (AM_UNLIKELY(!m_session->get_data_queue_by_ssrc(m_client->ssrc))) {
+    if (AM_UNLIKELY(!m_session->is_client_ready(m_client->ssrc))) {
       NOTICE("Client %s is already removed, abort!", m_client->name.c_str());
       m_abort = true;
       break;
@@ -881,44 +894,85 @@ void AMRtpClient::packet_sender()
       usleep(m_client_config->wait_interval * 1000);
       continue;
     }
-    m_lock->lock();
+    m_lock.lock();
 
-    packet = rtp_data->packet;
-    /* Send data */
-    m_rtcp_sr->add_packet_count(rtp_data->pkt_num);
-    m_rtcp_sr->add_packet_bytes(rtp_data->payload_size);
-    for (uint32_t i = 0; i < rtp_data->pkt_num; ++ i) {
-      AM_NET_STATE state = AM_NET_OK;
+    last_sent_pkt_pts = rtp_data->get_pts();
+    packet = rtp_data->get_packet();
+
+    if (AM_UNLIKELY(!m_abort && first_rtcp)) {
+      AM_NET_STATE rtcp_send_state = AM_NET_OK;
+      AMRtpHeader *rtp_header = (AMRtpHeader*)packet[0].udp_data;
+
+      first_rtcp = false;
+      first_ntp_time_stamp = m_session->fake_ntp_time_us();
+      first_rtp_time_stamp = n2hl(rtp_header->timestamp);
+      first_sent_pkt_pts = last_sent_pkt_pts;
+
+      /* This is the very first RTCP SR packet */
+      build_rtcp_sr_packet(*m_rtcp_sr_buf,
+                           m_client->ssrc,
+                           first_rtp_time_stamp,
+                           first_ntp_time_stamp);
+      last_sent_rtcp_bytes = m_rtcp_sr_buf->rtcp_sr.get_packet_bytes();
+      last_ntp_time_stamp = first_ntp_time_stamp;
 
       switch(m_client->client.client_rtp_mode) {
         case AM_RTP_TCP: {
-          uint8_t *data = packet[i].tcp();
-          uint32_t  len = packet[i].tcp_data_size();
-          uint8_t *ssrc = &packet[i].udp_data[8];
+          rtcp_send_state = send_rtcp_packet((uint8_t*)m_rtcp_sr_buf,
+                                             sizeof(RtcpSRBuffer));
+        }break;
+        case AM_RTP_UDP: {
+          rtcp_send_state = send_rtcp_packet((uint8_t*)m_rtcp_hdr,
+                                             sizeof(AMRtcpHeader) +
+                                             sizeof(AMRtcpSRPayload));
+        }break;
+        default:break;
+      }
 
-          packet[i].lock();
+      switch(rtcp_send_state) {
+        case AM_NET_ERROR: m_abort = true; break;
+        case AM_NET_SLOW: /*todo:*/break;
+        default: break;
+      }
+    }
+
+    payload_size = rtp_data->get_payload_size();
+    pkt_num = rtp_data->get_packet_number();
+    /* Send data */
+    for (uint32_t i = 0; i < pkt_num && !m_abort; ++ i) {
+      AM_NET_STATE state = AM_NET_OK;
+      if ((i + 1) == pkt_num) {
+        /* save the last RTP packet's timestamp */
+        last_rtp_time_stamp =
+            n2hl(((AMRtpHeader*)packet[i].udp_data)->timestamp);
+      }
+      switch(m_client->client.client_rtp_mode) {
+        case AM_RTP_TCP: {
+          uint32_t len = packet[i].total_size;
+          uint8_t  data[len];
+          uint8_t *ssrc = &data[sizeof(AMRtpTcpHeader) + 8];
+          memcpy(data, packet[i].tcp_data, len);
+
           data[1] = m_client->client.tcp_channel_rtp;
           ssrc[0] = (m_client->ssrc & 0xff000000) >> 24;
           ssrc[1] = (m_client->ssrc & 0x00ff0000) >> 16;
           ssrc[2] = (m_client->ssrc & 0x0000ff00) >>  8;
           ssrc[3] = (m_client->ssrc & 0x000000ff);
           state = tcp_send(m_client->tcp_fd, data, len);
-          packet[i].unlock();
         }break;
         case AM_RTP_UDP: {
-          uint8_t *data = packet[i].udp();
-          uint32_t  len = packet[i].udp_data_size();
+          uint32_t len = packet[i].total_size - sizeof(AMRtpTcpHeader);
+          uint8_t data[len];
           uint8_t *ssrc = &data[8];
           sockaddr *addr = m_client->client_rtp_address(nullptr);
 
-          packet[i].lock();
+          memcpy(data, packet[i].udp_data, len);
           ssrc[0] = (m_client->ssrc & 0xff000000) >> 24;
           ssrc[1] = (m_client->ssrc & 0x00ff0000) >> 16;
           ssrc[2] = (m_client->ssrc & 0x0000ff00) >>  8;
           ssrc[3] = (m_client->ssrc & 0x000000ff);
           state = addr ? udp_send(m_client->udp_fd_rtp, addr, data, len) :
               AM_NET_ERROR;
-          packet[i].unlock();
         }break;
         case AM_RAW_UDP:
         default: {
@@ -941,85 +995,43 @@ void AMRtpClient::packet_sender()
         break;
       }
     }
-    /* Get the very first RTP packet's timestamp */
-    if (AM_UNLIKELY(0 == first_rtp_time_stamp)) {
-      first_rtp_time_stamp =
-          n2hl(((AMRtpHeader*)packet[rtp_data->pkt_num - 1].udp_data)->
-               timestamp);
-    }
-    if (AM_UNLIKELY(0 == first_sent_pkt_pts)) {
-      first_sent_pkt_pts = rtp_data->pts;
-    }
-
-    last_sent_pkt_pts = rtp_data->pts;
-    last_rtp_time_stamp =
-        n2hl(((AMRtpHeader*)packet[rtp_data->pkt_num - 1].udp_data)->timestamp);
+    update_rtcp_sr_pkt_num_bytes(*m_rtcp_sr_buf, pkt_num, payload_size);
 
     /* release this AMRtpData */
     rtp_data->release();
 
-    curr_ntp_time = m_session->fake_ntp_time_us();
-    curr_clock_cnt_90k = m_session->get_clock_count_90k();
+    curr_ntp_time = m_session->fake_ntp_time_us(&curr_clock_cnt_90k);
 
-    if (AM_UNLIKELY(0 == first_ntp_time_stamp)) {
-      first_ntp_time_stamp = curr_ntp_time;
-    }
-    if (AM_UNLIKELY(0 == last_ntp_time_stamp)) {
-      last_ntp_time_stamp = curr_ntp_time;
-    }
-    need_send_rtcp_sr = (0 == last_sent_rtcp_bytes) ||
-        ((((m_rtcp_sr->get_packet_bytes() -
-            last_sent_rtcp_bytes) * 5 / 1000) >=
-            (sizeof(AMRtcpHeader) +
-                sizeof(AMRtcpSRPayload))) &&
-            ((curr_ntp_time - last_ntp_time_stamp) >=
-                m_client_config->rtcp_sr_interval * 1000000ULL));
+    need_send_rtcp_sr = ((((m_rtcp_sr->get_packet_bytes() -
+                            last_sent_rtcp_bytes) * 5 / 1000) >=
+                         (sizeof(AMRtcpHeader) + sizeof(AMRtcpSRPayload))) &&
+                        ((curr_ntp_time - last_ntp_time_stamp) >=
+                            m_client_config->rtcp_sr_interval * 1000000ULL));
 
     if (AM_LIKELY(!m_abort && need_send_rtcp_sr)) {
-      uint8_t *tcp_header = m_rtcp_sr_buf;
       AM_NET_STATE rtcp_send_state = AM_NET_OK;
       uint64_t clock_diff = m_client_config->rtcp_incremental_ts ?
-          (uint64_t)(curr_clock_cnt_90k - last_sent_pkt_pts) :
-          (uint64_t)(curr_clock_cnt_90k - first_sent_pkt_pts);
+                            (curr_clock_cnt_90k - last_sent_pkt_pts) :
+                            (curr_clock_cnt_90k - first_sent_pkt_pts);
       int32_t tsdiff = (int32_t)
           ((clock_diff * m_session->get_session_clock() + 45000ULL) / 90000ULL);
 
-      last_ntp_time_stamp = curr_ntp_time;
       last_rtp_time_stamp = m_client_config->rtcp_incremental_ts ?
           (last_rtp_time_stamp + tsdiff) :
           (first_rtp_time_stamp + tsdiff);
 
-      tcp_header[0] = 0x24;
-      tcp_header[1] = m_client->client.tcp_channel_rtcp;
-      tcp_header[2] = (RTCP_SR_PACKET_SIZE & 0xff00) >> 8;
-      tcp_header[3] = (RTCP_SR_PACKET_SIZE & 0x00ff);
-      m_rtcp_hdr->padding = 0;
-      m_rtcp_hdr->version = 2;
-      m_rtcp_hdr->count   = 0;
-      m_rtcp_hdr->set_packet_type(AM_RTCP_SR);
-      m_rtcp_hdr->set_ssrc(m_client->ssrc);
-      m_rtcp_hdr->set_packet_length((uint16_t)
-                                    ((sizeof(AMRtcpHeader) +
-                                        sizeof(AMRtcpSRPayload)) /
-                                        sizeof(uint32_t) - 1));
-      m_rtcp_sr->set_time_stamp(last_rtp_time_stamp);
-      m_rtcp_sr->set_ntp_time_h32((uint32_t)(curr_ntp_time / 1000000ULL));
-      m_rtcp_sr->set_ntp_time_l32((uint32_t)(((curr_ntp_time % 1000000ULL) <<
-                                              32) / 1000000ULL));
-      last_sent_rtcp_bytes = m_rtcp_sr->get_packet_bytes();
+      build_rtcp_sr_packet(*m_rtcp_sr_buf,
+                           m_client->ssrc,
+                           last_rtp_time_stamp,
+                           curr_ntp_time);
 
-      INFO("%s RTCP TS: %u, NTP H32: %u, NTP L32: %u",
-           m_client->name.c_str(),
-           last_rtp_time_stamp,
-           (uint32_t)(curr_ntp_time / 1000000ULL),
-           (uint32_t)(((curr_ntp_time % 1000000ULL) << 32) / 1000000ULL));
+      last_sent_rtcp_bytes = m_rtcp_sr_buf->rtcp_sr.get_packet_bytes();
+      last_ntp_time_stamp = curr_ntp_time;
 
       switch(m_client->client.client_rtp_mode) {
         case AM_RTP_TCP: {
-          rtcp_send_state = send_rtcp_packet(m_rtcp_sr_buf,
-                                             sizeof(AMRtpTcpHeader) +
-                                             sizeof(AMRtcpHeader) +
-                                             sizeof(AMRtcpSRPayload));
+          rtcp_send_state = send_rtcp_packet((uint8_t*)m_rtcp_sr_buf,
+                                             sizeof(RtcpSRBuffer));
         }break;
         case AM_RTP_UDP: {
           rtcp_send_state = send_rtcp_packet((uint8_t*)m_rtcp_hdr,
@@ -1035,7 +1047,7 @@ void AMRtpClient::packet_sender()
         default: break;
       }
     }
-    m_lock->unlock();
+    m_lock.unlock();
     if (AM_UNLIKELY(m_abort)) {
       break;
     }
@@ -1067,16 +1079,25 @@ AM_NET_STATE AMRtpClient::tcp_send(int fd, uint8_t *data, uint32_t len)
                     len - total_sent,
                     m_client_config->blocked ? 0 : MSG_DONTWAIT);
     if (AM_UNLIKELY(send_ret < 0)) {
-      if (AM_LIKELY((errno != EAGAIN) &&
-                    (errno != EWOULDBLOCK) &&
-                    (errno != EINTR))) {
-        if (AM_LIKELY((errno == ECONNRESET) ||
-                      (errno == EPIPE))) {
-          WARN("Client(%s) closed it's connection while sending data!",
+      bool need_break = true;
+      switch(errno) {
+        case EAGAIN:
+        case EINTR: {
+          need_break = false;
+        }break;
+        case EPIPE: {
+          WARN("Connection to client(%s) has been shut down!",
                m_client->name.c_str());
-        } else {
+        }break;
+        case ECONNRESET: {
+          WARN("Client(%s) closed it's connection!",
+               m_client->name.c_str());
+        }break;
+        default: {
           PERROR("send");
-        }
+        }break;
+      }
+      if (AM_LIKELY(need_break)) {
         state = AM_NET_ERROR;
         break;
       }
@@ -1158,10 +1179,25 @@ AM_NET_STATE AMRtpClient::udp_send(int fd, sockaddr *addr,
                       (m_client_config->blocked ? 0 : MSG_DONTWAIT),
                       addr, sizeof(sockaddr));
     if (AM_UNLIKELY(send_ret < 0)) {
-      if (AM_LIKELY((errno != EAGAIN) &&
-                    (errno != EWOULDBLOCK) &&
-                    (errno != EINTR))) {
-        PERROR("send");
+      bool need_break = true;
+      switch(errno) {
+        case EAGAIN:
+        case EINTR: {
+          need_break = false;
+        }break;
+        case EPIPE: {
+          WARN("Connection to client(%s) has been shut down!",
+               m_client->name.c_str());
+        }break;
+        case ECONNRESET: {
+          WARN("Client(%s) closed it's connection!",
+               m_client->name.c_str());
+        }break;
+        default: {
+          PERROR("send");
+        }break;
+      }
+      if (AM_LIKELY(need_break)) {
         state = AM_NET_ERROR;
         break;
       }
@@ -1253,12 +1289,60 @@ AM_NET_STATE AMRtpClient::send_rtcp_packet(uint8_t *data, uint32_t len)
   return state;
 }
 
+inline void AMRtpClient::update_rtcp_sr_pkt_num_bytes(RtcpSRBuffer &sr,
+                                                      uint32_t pkt_num,
+                                                      uint32_t payload_size)
+{
+  AMRtcpSRPayload &rtcp_sr = sr.rtcp_sr;
+  rtcp_sr.add_packet_count(pkt_num);
+  rtcp_sr.add_packet_bytes(payload_size);
+}
+
+void AMRtpClient::build_rtcp_sr_packet(RtcpSRBuffer &sr,
+                                       uint32_t ssrc,
+                                       uint32_t rtp_ts,
+                                       uint64_t ntp_ts)
+{
+  AMRtcpHeader   &rtcp_hdr = sr.rtcp_hdr;
+  AMRtcpSRPayload &rtcp_sr = sr.rtcp_sr;
+  uint8_t *tcp_header = (uint8_t*)&sr.tcp_hdr;
+  tcp_header[0] = 0x24;
+  tcp_header[1] = m_client->client.tcp_channel_rtcp;
+  tcp_header[2] = (RTCP_SR_PACKET_SIZE & 0xff00) >> 8;
+  tcp_header[3] = (RTCP_SR_PACKET_SIZE & 0x00ff);
+
+  rtcp_hdr.padding = 0;
+  rtcp_hdr.version = 2;
+  rtcp_hdr.count   = 0;
+  rtcp_hdr.set_packet_type(AM_RTCP_SR);
+  rtcp_hdr.set_ssrc(ssrc);
+  rtcp_hdr.set_packet_length((uint16_t)
+                                ((sizeof(AMRtcpHeader) +
+                                    sizeof(AMRtcpSRPayload)) /
+                                    sizeof(uint32_t) - 1));
+  rtcp_sr.set_time_stamp(rtp_ts);
+  rtcp_sr.set_ntp_time_h32((uint32_t)(ntp_ts / 1000000ULL));
+  rtcp_sr.set_ntp_time_l32((uint32_t)(((ntp_ts % 1000000ULL)<<32)/1000000ULL));
+  INFO("%s RTCP TS: %u, NTP H32: %u, NTP L32: %u",
+       m_client->name.c_str(),
+       rtp_ts,
+       (uint32_t)(ntp_ts / 1000000ULL),
+       (uint32_t)(((ntp_ts % 1000000ULL) << 32) / 1000000ULL));
+}
+
 void AMRtpClient::abort_client(bool send_cmd)
 {
-  m_muxer->kill_client(m_client->ssrc);
   if (AM_LIKELY(send_cmd)) {
-    send_thread_cmd(AM_CLIENT_CMD_ABORT);
+    if (AM_LIKELY(send_thread_cmd(AM_CLIENT_CMD_ABORT))) {
+      if (AM_LIKELY(m_rtcp_event->wait(5000))) {
+        NOTICE("RTCP thread of Client %s aborted!", m_client->name.c_str());
+      } else {
+        WARN("Failed to receive ABORT response of RTCP thread of Client %s!",
+             m_client->name.c_str());
+      }
+    }
   }
+  m_muxer->kill_client(m_client->ssrc);
 }
 
 void AMRtpClient::send_ack()

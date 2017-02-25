@@ -4,20 +4,36 @@
  * History:
  *   2014-9-16 - [lysun] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co,Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
 #include "am_base_include.h"
-#include <signal.h>
-#include <thread>
-#include "am_log.h"
 #include "am_define.h"
+#include "am_log.h"
+
 #include "am_service_frame_if.h"
 #include "am_system_service_msg_map.h"
 #include "am_api_system.h"
@@ -25,63 +41,31 @@
 #include "am_system_service_priv.h"
 #include "am_upgrade_if.h"
 #include "am_led_handler_if.h"
+#include "am_signal.h"
 
-enum {
-  IPC_API_PROXY = 0,
-  IPC_STREAM,
-  IPC_EVENT,
-  IPC_IMAGE,
-  IPC_COUNT
-};
+#include <thread>
 
-AMIPCBase *g_ipc_base_obj[] = {NULL, NULL, NULL, NULL};
-AMIServiceFrame   *g_service_frame = NULL;
+AMIServiceFrame   *g_service_frame = nullptr;
 AM_SERVICE_STATE g_service_state = AM_SERVICE_STATE_NOT_INIT;
-AMIFWUpgradePtr g_upgrade_fw = NULL;
-AMILEDHandlerPtr g_ledhandler = NULL;
+AMIFWUpgradePtr g_upgrade_fw = nullptr;
+AMILEDHandlerPtr g_ledhandler = nullptr;
 am_mw_ntp_cfg g_ntp_cfg = {{"",""}, 0, 0, 0, 0, false};
-std::thread *g_th_ntp = NULL;
+std::thread *g_th_ntp = nullptr;
 
-static void sigstop(int arg)
-{
-  INFO("system_service got signal\n");
-}
-
-static int create_control_ipc()
-{
-  AMIPCSyncCmdServer *ipc = new AMIPCSyncCmdServer();
-  if (ipc && ipc->create(AM_IPC_SYSTEM_NAME)  < 0) {
-    ERROR("receiver create failed \n");
-    delete ipc;
-    return -1;
-  } else {
-    g_ipc_base_obj[IPC_API_PROXY] = ipc;
-  }
-
-  ipc->REGISTER_MSG_MAP(API_PROXY_TO_SYSTEM_SERVICE);
-  ipc->complete();
-  DEBUG("IPC create done for API_PROXY TO SYSTEM_SERVICE\n");
-
-  return 0;
-}
-
-int clean_up()
-{
-    uint32_t i;
-    for (i = 0 ; i < sizeof(g_ipc_base_obj)/sizeof(g_ipc_base_obj[0]); i++)
-      delete g_ipc_base_obj[i];
-    exit(1);
-    return 0;
-}
-
-
-int main()
+int main(int argc, char *argv[])
 {
   int ret  = 0;
+  AMIPCSyncCmdServer ipc;
+
+  signal(SIGINT,  SIG_IGN);
+  signal(SIGQUIT, SIG_IGN);
+  signal(SIGTERM, SIG_IGN);
+  register_critical_error_signal_handler();
+
   do {
     AMPIDLock lock;
 
-    g_service_frame = AMIServiceFrame::create("System.Service");
+    g_service_frame = AMIServiceFrame::create(argv[0]);
     if (AM_UNLIKELY(!g_service_frame)) {
       ERROR("Failed to create service framework object for System.Service!");
       ret = -1;
@@ -89,17 +73,23 @@ int main()
       break;
     }
 
-    signal(SIGINT, sigstop);
-    signal(SIGQUIT, sigstop);
-    signal(SIGTERM, sigstop);
-
     if (lock.try_lock() < 0) {
       ERROR("Unable to lock PID, System.Service should be running already");
       ret = -4;
+      g_service_state = AM_SERVICE_STATE_ERROR;
       break;
     }
 
-    create_control_ipc();
+    if (ipc.create(AM_IPC_SYSTEM_NAME) < 0) {
+      ret = -5;
+      g_service_state = AM_SERVICE_STATE_ERROR;
+      break;
+    } else {
+      ipc.REGISTER_MSG_MAP(API_PROXY_TO_SYSTEM_SERVICE);
+      ipc.complete();
+      DEBUG("IPC create done for API_PROXY TO SYSTEM_SERVICE\n");
+    }
+
     g_service_state = AM_SERVICE_STATE_INIT_DONE;
     NOTICE("Entering System.Service main loop!");
     g_service_frame->run(); /* block here */
@@ -112,17 +102,12 @@ int main()
     if (g_th_ntp) {
       g_th_ntp->join();
       delete g_th_ntp;
-      g_th_ntp = NULL;
+      g_th_ntp = nullptr;
     }
-    clean_up();
     ret = 0;
   } while (0);
-
-  if (AM_LIKELY(g_service_frame)) {
-    g_service_frame->destroy();
-    g_service_frame = nullptr;
-  }
-  PRINTF("System Service destroyed!");
+  AM_DESTROY(g_service_frame);
+  PRINTF("System service destroyed!");
 
   return ret;
 }

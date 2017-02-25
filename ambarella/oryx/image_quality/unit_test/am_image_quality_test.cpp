@@ -4,15 +4,33 @@
  * History:
  *   Jan 4, 2015 - [binwang] created file
  *
- * Copyright (C) 2015-2019, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 #include <stdio.h>
+#include <iostream>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -299,7 +317,7 @@ static bool ae_setting()
         }
         PRINTF("current local_exposure_mode = %d\n"
                "input local_exposure_mode: \n>",
-               *(AM_LOCAL_EXPOSURE_MODE* )iq_config.value);
+               *(uint32_t* )iq_config.value);
         scanf("%d", &i);
         iq_config.value = &i;
         ret = g_image_quality->set_config(&iq_config);
@@ -313,7 +331,7 @@ static bool ae_setting()
           break;
         }
         PRINTF("local_exposure_mode is %d\n",
-               *(AM_LOCAL_EXPOSURE_MODE* )iq_config.value);
+               *(uint32_t* )iq_config.value);
         break;
       case 'i':
         iq_config.key = AM_IQ_AE_DC_IRIS_ENABLE;
@@ -959,9 +977,19 @@ int main()
           break;
         case 'q':
           INFO("ImageQuality quit \n");
-          g_image_quality = NULL;
+          g_image_quality = nullptr;
           quit_flag = 1;
           break;
+        case 'e':
+        case 'd':{
+          AM_IQ_CONFIG tem_config;
+          char tem_str[FILE_NAME_LENGTH] = {0};
+          printf("Please input the file path\n");
+          std::cin >> tem_str;
+          tem_config.value = tem_str;
+          tem_config.key = AM_IQ_AEB_ADJ_BIN_LOAD;
+          g_image_quality->set_config(&tem_config);
+        } break;
         default:
           error_opt = 1;
           break;

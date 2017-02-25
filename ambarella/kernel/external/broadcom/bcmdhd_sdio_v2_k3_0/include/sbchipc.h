@@ -2706,6 +2706,7 @@ typedef volatile struct {
 #define RES4349_MACPHY_CLKAVAIL		30
 
 #define CR4_4349_RAM_BASE			(0x180000)
+#define CR4_4349_RAM_BASE_FROM_REV_9		(0x160000)
 #define CC4_4349_SR_ASM_ADDR		(0x48)
 
 #define CST4349_CHIPMODE_SDIOD(cs)	(((cs) & (1 << 6)) != 0)	/* SDIO */
@@ -2824,7 +2825,8 @@ typedef volatile struct {
 #define CCTRL2_4335_PMUWAKE		(1 << 31)
 #define PATCHTBL_SIZE			(0x800)
 #define CR4_4335_RAM_BASE                    (0x180000)
-#define CR4_4345_RAM_BASE                    (0x1b0000)
+#define CR4_4345_LT_C0_RAM_BASE              (0x1b0000)
+#define CR4_4345_GE_C0_RAM_BASE              (0x198000)
 #define CR4_4349_RAM_BASE                    (0x180000)
 #define CR4_4350_RAM_BASE                    (0x180000)
 #define CR4_4360_RAM_BASE                    (0x0)

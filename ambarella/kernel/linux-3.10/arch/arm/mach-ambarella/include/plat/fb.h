@@ -143,9 +143,6 @@ extern struct ambarella_platform_fb *ambfb_data_ptr[];
 /* ==========================================================================*/
 extern int ambarella_fb_get_platform_info(u32, struct ambarella_platform_fb *);
 extern int ambarella_fb_set_iav_info(u32, struct ambarella_fb_iav_info *);
-extern int ambarella_fb_update_info(u32 fb_id, int xres, int yres,
-	int xvirtual, int yvirtual, int format, u32 bits_per_pixel,
-	u32 smem_start, u32 smem_len);
 
 #endif /* __ASSEMBLER__ */
 /* ==========================================================================*/

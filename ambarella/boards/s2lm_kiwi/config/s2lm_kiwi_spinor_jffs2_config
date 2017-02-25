@@ -134,7 +134,7 @@ CONFIG_AMBOOT_BD_FDT_SUPPORT=y
 # CONFIG_AMBOOT_BD_NONE_SUPPORT is not set
 # CONFIG_AMBOOT_FDT_LOW_ADDR is not set
 # CONFIG_AMBOOT_SEARCH_PTB is not set
-CONFIG_AMBOOT_BD_CMDLINE="console=ttyS0 root=/dev/mtdblock5 rw rootfstype=jffs2 init=/linuxrc noinitrd lpj=5009408"
+CONFIG_AMBOOT_BD_CMDLINE="console=ttyS0 root=/dev/mtdblock6 rw rootfstype=jffs2 init=/linuxrc noinitrd lpj=5009408"
 CONFIG_AMBOOT_BAPI_SUPPORT=y
 CONFIG_AMBOOT_BAPI_ZERO_FB=y
 # CONFIG_AMBOOT_BAPI_AOSS is not set

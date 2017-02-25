@@ -56,4 +56,10 @@
 #define AK4642_BOTH_MIC_ON	1
 #define AK4642_INPUT_UNKNOWN	2
 
+#define AK4642_MCLK_IN	0
+#define AK4642_BCLK_IN	1
+#define AK4642_MCLK_IN_BCLK_OUT	2
+
+
+
 #endif

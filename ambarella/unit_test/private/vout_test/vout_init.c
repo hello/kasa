@@ -4,12 +4,29 @@
  * History:
  *	2009/7/15 - [Zhenwu Xue] created file
  *
- * Copyright (C) 2007-2008, Ambarella, Inc.
+ * Copyright (C) 2015 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -21,6 +38,8 @@
 #include "lcd/lcd_digital.c"
 #include "lcd/lcd_digital601.c"
 #include "lcd/lcd_td043.c"
+#include "lcd/lcd_st7789v.c"
+#include "lcd/lcd_ili8961.c"
 
 typedef struct lcd_model {
 	const char			*model;
@@ -33,6 +52,8 @@ lcd_model_t lcd_model_list[] = {
 	{"digital601",	lcd_digital601_setmode,	NULL				},
 	{"td043",	lcd_td043_setmode,	NULL				},
 	{"td043_16",	lcd_td043_16_setmode,	NULL				},
+	{"st7789v",	lcd_st7789v_16_setmode,	NULL				},
+	{"ili8961",	lcd_ili8961_setmode,	NULL				},
 };
 
 int get_lcd_model_index(const char *lcd_model)
@@ -104,6 +125,8 @@ vout_res_t vout_res[] = {
 	{"1080p30",	AMBA_VIDEO_MODE_1080P30,		1920, 1080},
 	{"1080p",	AMBA_VIDEO_MODE_1080P,			1920, 1080},
 	{"1080p50",	AMBA_VIDEO_MODE_1080P50,		1920, 1080},
+	{"4mp30",	AMBA_VIDEO_MODE_2560X1440P30,		2560, 1440},
+	{"4mp25",	AMBA_VIDEO_MODE_2560X1440P25,		2560, 1440},
 	{"native",	AMBA_VIDEO_MODE_HDMI_NATIVE,		0,    0},
 	{"2160p30",	AMBA_VIDEO_MODE_2160P30,		3840, 2160},
 	{"2160p25",	AMBA_VIDEO_MODE_2160P25,		3840, 2160},
@@ -134,10 +157,13 @@ vout_res_t vout_res[] = {
 	{"hvga",	AMBA_VIDEO_MODE_HVGA,			320,  480},	//TPO489
 	{"vga",		AMBA_VIDEO_MODE_VGA,			640,  480},
 	{"wvga",	AMBA_VIDEO_MODE_WVGA,			800,  480},	//TD043
+	{"D240x320",	AMBA_VIDEO_MODE_240_320,                240,  320},	//ST7789V
 	{"D240x400",	AMBA_VIDEO_MODE_240_400,		240,  400},	//WDF2440
 	{"xga",		AMBA_VIDEO_MODE_XGA,		       1024,  768},	//EJ080NA
 	{"wsvga",	AMBA_VIDEO_MODE_WSVGA,	       1024,  600},	//AT070TNA2
 	{"D960x540",	AMBA_VIDEO_MODE_960_540,		960,  540},	//E330QHD
+	//{"D960x576",	AMBA_VIDEO_MODE_960_576,		960,    576},
+	//{"D960x480",	AMBA_VIDEO_MODE_960_480,		960,    480},
 };
 
 int get_vout_mode(const char *name)
@@ -567,7 +593,7 @@ int vout_get_sink_id(int chan, int sink_type)
 #define CSC_HINTS	\
 	{"", "\tDisable vout csc"},	\
 	{"", "\t\tEnable or Disable color space conversion of the corresponding vout"}, \
-	{"disable|video|osd", "\tselect mixer csc"},
+	{"disable|video|osd", "Select mixer csc"},
 
 #define HDMI_3D_STRUCTURE_OPTIONS	\
 	{"3d",                    HAS_ARG,  0,   SPECIFY_HDMI_3D_STRUCTURE,               },
@@ -1260,11 +1286,11 @@ int dynamically_change_vout(void)
 		}
 
 		if (vout_flag[VOUT_0]) {
-			init_vout(VOUT_0, 1);
+			init_vout(VOUT_0, 0);
 		}
 
 		if (vout_flag[VOUT_1]) {
-			init_vout(VOUT_1, 1);
+			init_vout(VOUT_1, 0);
 		}
 
 		return 1;

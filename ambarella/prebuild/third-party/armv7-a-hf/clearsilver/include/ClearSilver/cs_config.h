@@ -20,7 +20,7 @@
 
 
 /* Enable support for HTML Compression (still must be enabled at run time) */
-/* #undef HTML_COMPRESSION */
+#define HTML_COMPRESSION 1
 
 /* Enable support for X Remote CGI Debugging */
 /* #undef ENABLE_REMOTE_DEBUG */

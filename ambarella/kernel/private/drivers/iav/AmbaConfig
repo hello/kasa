@@ -4,12 +4,29 @@
 ## History:
 ##    2014/01/16 - [Jian Tang] Create
 ##
-## Copyright (C) 2014-2018, Ambarella, Inc.
+## Copyright (c) 2015 Ambarella, Inc.
 ##
-## All rights reserved. No Part of this file may be reproduced, stored
-## in a retrieval system, or transmitted, in any form, or by any means,
-## electronic, mechanical, photocopying, recording, or otherwise,
-## without the prior consent of Ambarella, Inc.
+## This file and its contents ("Software") are protected by intellectual
+## property rights including, without limitation, U.S. and/or foreign
+## copyrights. This Software is also the confidential and proprietary
+## information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+## disclose, distribute, modify, or otherwise prepare derivative works of this
+## Software or any portion thereof except pursuant to a signed license agreement
+## or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+## In the absence of such an agreement, you agree to promptly notify and return
+## this Software to Ambarella, Inc.
+##
+## THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+## INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+## MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+## IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+## INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+## (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+## LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+## INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+## CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+## ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+## POSSIBILITY OF SUCH DAMAGE.
 ##
 
 menuconfig BUILD_AMBARELLA_IAV
@@ -21,10 +38,26 @@ menuconfig BUILD_AMBARELLA_IAV
 
 if BUILD_AMBARELLA_IAV
 
+config CONFIG_AMBARELLA_IAV_DRAM_DECODE_ONLY
+	bool "IAV Memory Layout In Decode Only Mode"
+	default n
+	help
+		This option is used for decode only mode. In this mode, only DSP_BSB_SIZE is valid.
+		Others will all be set to 0.
+
+config CONFIG_AMBARELLA_IAV_DRAM_VOUT_ONLY
+	bool "IAV Setting In VOUT Only Mode"
+	default n
+	help
+		This option is used for vout only mode. In this mode, Only PM, USR, BPC and IMG will be used.
+		Others will all be set to 0. Also IDSP will be raised to 312MHz and more DSP SMEM will be
+		allocated to VOUT.
+
 menu "IAV memory options"
 
 config DSP_BSB_SIZE
 	hex "DSP Bit Stream Buffer Size"
+	depends on !(CONFIG_AMBARELLA_IAV_DRAM_VOUT_ONLY)
 	range  0x0100000   0x3200000
 	default 0x0600000
 	help
@@ -35,6 +68,7 @@ config DSP_BSB_SIZE
 
 config DSP_IAVRSVD_SIZE
 	hex "DSP Reserved Buffer Size for IAV Drivers"
+	depends on !(CONFIG_AMBARELLA_IAV_DRAM_DECODE_ONLY)
 	range  0x0A00000  0x8000000
 	default 0x0A00000
 	help
@@ -44,6 +78,7 @@ config DSP_IAVRSVD_SIZE
 
 config IAV_MEM_USR_SIZE
 	hex "IAV Usr Buffer Size"
+	depends on !(CONFIG_AMBARELLA_IAV_DRAM_DECODE_ONLY)
 	default 0x0000000
 	help
 		If this function is not used, set it to 0x0;
@@ -51,25 +86,36 @@ config IAV_MEM_USR_SIZE
 		1920 * 1080 * 2: bytes per pixel
 		2: 2 cycle buffers
 
+config IAV_MEM_MV_SIZE
+	hex "IAV Motion Vector Buffer Size"
+	depends on !(CONFIG_AMBARELLA_IAV_DRAM_DECODE_ONLY) && !(CONFIG_AMBARELLA_IAV_DRAM_VOUT_ONLY)
+	default 0x0000000
+	help
+		This option is used to set MV buffer.
+		If this function is not used, set it to 0x0;
+		For a 6MP stream,  one frame MV data size is (3072 * 2048) / (16 *16) * 4 Bytes = 96 KB(0x0018000).
+		It is recommended to set MV buffer size from 1MB (0x0100000) to 4MB (0x0400000) for cycle saving
+
 config IAV_MEM_OVERLAY_SIZE
 	hex "IAV Overlay Buffer Size"
+	depends on !(CONFIG_AMBARELLA_IAV_DRAM_DECODE_ONLY) && !(CONFIG_AMBARELLA_IAV_DRAM_VOUT_ONLY)
 	range  0x0000000   0x0400000
 	default 0x0200000
 	help
 		If this function is not used, set it to 0x0;
 		IAV OVERLAY SIZE must be in the range of 0MB to 4MB, default is 2 MB(0x0200000).
 
-
-config CONFIG_AMBARELLA_IAV_QP_OFFSET_IPB
-	bool "Support qp offset for all I/P/B frames"
-	depends on (CONFIG_ARCH_S2L)
+config CONFIG_AMBARELLA_IAV_ROI_IPB
+	bool "Support roi matrix for all I/P/B frames"
+	depends on (CONFIG_ARCH_S2L) && !(CONFIG_AMBARELLA_IAV_DRAM_DECODE_ONLY) && !(CONFIG_AMBARELLA_IAV_DRAM_VOUT_ONLY)
 	default n
 	help
-		choose this to reserve more qp memory for P/B frames.
-		If it is set, QP MATRIX numbers is 3, or else it is 1.
+		choose this to reserve more roi memory for P/B frames.
+		If it is set, roi matrix numbers is 3, or else it is 1.
 
 config IAV_MEM_QPM_SIZE
 	hex "IAV QP MATRIX Buffer Size"
+	depends on (CONFIG_ARCH_S2L) && !(CONFIG_AMBARELLA_IAV_DRAM_DECODE_ONLY) && !(CONFIG_AMBARELLA_IAV_DRAM_VOUT_ONLY)
 	default 0x0018000
 	help
 		This option is used to set a single QP buffer.
@@ -84,13 +130,14 @@ config IAV_MEM_QPM_SIZE
 
 config CONFIG_AMBARELLA_IAV_DRAM_WARP_MEM
 	bool "Open warp memory for dewarp"
+	depends on !(CONFIG_AMBARELLA_IAV_DRAM_DECODE_ONLY) && !(CONFIG_AMBARELLA_IAV_DRAM_VOUT_ONLY)
 	default y
 	help
 		Choose this to allocate warp memory for dewarp, default WARP size is 364 KB.
 
 config IAV_MEM_PM_SIZE_S2L
 	hex "IAV Privacy Mask Buffer Size"
-	depends on (CONFIG_ARCH_S2L)
+	depends on (CONFIG_ARCH_S2L) && !(CONFIG_AMBARELLA_IAV_DRAM_DECODE_ONLY)
 	default 0x03C0000
 	help
 		It supports two types of privacy masks, BPC and MCTF.
@@ -104,6 +151,19 @@ config IAV_MEM_PM_SIZE_S2L
 		And they will share the same partition, so choose the max, default set is 3840 KB(0x03C0000).
 		If only need to use MCTF, set 768 KB(0x00C0000) is enough.
 
+config IAV_MEM_VCA_SIZE
+	hex "IAV Vca Buffer Size"
+	depends on (CONFIG_ARCH_S2L) && !(CONFIG_AMBARELLA_IAV_DRAM_DECODE_ONLY) && !(CONFIG_AMBARELLA_IAV_DRAM_VOUT_ONLY)
+	default 0x0000000
+	help
+		This Mem is used for VCA dump, set it as below rules.
+		If this function is not used, set it to 0x0;
+		Or else, default is 5M, it's for cif, 352 * (1 + 288 + 288 /2) * 32  = 4.65 MB.
+		352: Buffer_pitch which is ROUND_UP32(max_preview_width).
+		1 + 288 + 288 /2: Buffer_height which is (1 for PTS + max_preview_height for luma
+		+ max_preview_height / 2 for chroma).
+		32: The max number of frames which can dumped.
+
 endmenu
 
 config CONFIG_AMBARELLA_IAV_SESSION_ID_SUPPORT
@@ -114,7 +174,7 @@ config CONFIG_AMBARELLA_IAV_SESSION_ID_SUPPORT
 
 config CONFIG_AMBARELLA_IAV_GUARD_VSYNC_LOSS
 	bool "Guard Vsync loss detection in IAV driver"
-	depends on (CONFIG_ARCH_S2L)
+	depends on (CONFIG_ARCH_S2L || CONFIG_ARCH_S3L)
 	default n
 	help
 		IAV driver detect Vsync loss signal, and App recover from Vsync loss.

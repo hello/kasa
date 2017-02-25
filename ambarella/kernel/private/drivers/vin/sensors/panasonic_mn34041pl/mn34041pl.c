@@ -4,15 +4,33 @@
  * History:
  *    2011/01/12 - [Haowei Lo] Create
  *
- * Copyright (C) 2004-2011, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
  *
- * This file is produced by perl.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 #include <linux/module.h>
 #include <linux/ambpriv_device.h>
 #include <linux/interrupt.h>
@@ -356,56 +374,17 @@ static int mn34041pl_set_mirror_mode(struct vin_device *vdev,
 	return 0;
 }
 
-static int mn34041pl_get_vb_lines(struct vin_device *vdev)
-{
-	u32 val_high, val_low, v_lines;
-
-	mn34041pl_read_reg(vdev, 0x01A0, &val_low);
-	mn34041pl_read_reg(vdev, 0x01A1, &val_high);
-	v_lines = (val_high & 0x01) << 16 | val_low;
-	v_lines += 1;
-
-	return v_lines - vdev->cur_format->height;
-}
-
-static int mn34041pl_get_row_time( struct vin_device *vdev)
-{
-	u64 h_time, h_clks;
-
-	h_clks = 2400;
-	h_time = h_clks * 1000000000;
-	h_time = DIV64_CLOSEST(h_time, vdev->cur_pll->pixelclk); /* ns */
-
-	return h_time;
-}
-
 static int mn34041pl_get_eis_info(struct vin_device *vdev,
 		struct vindev_eisinfo *eis_info)
 {
-	struct vin_video_format *format = vdev->cur_format;
-
-	memset(eis_info, 0, sizeof (struct vindev_eisinfo));
-
-	eis_info->cap_start_x = format->def_start_x;
-	eis_info->cap_start_y = format->def_start_y;
-	eis_info->cap_cap_w = format->def_width;
-	eis_info->cap_cap_h = format->def_height;
-	eis_info->source_width = format->width;
-	eis_info->source_height = format->height;
-	eis_info->current_fps = vdev->frame_rate;
-	eis_info->main_fps = format->default_fps;
-	eis_info->current_shutter_time = vdev->shutter_time;
 	eis_info->sensor_cell_width = 275;// 2.75 um
 	eis_info->sensor_cell_height = 275;// 2.75 um
-	eis_info->column_bin = 0;
-	eis_info->row_bin = 0;
-
-	eis_info->vb_lines = mn34041pl_get_vb_lines(vdev);
-	eis_info->row_time = mn34041pl_get_row_time(vdev);
+	eis_info->column_bin = 1;
+	eis_info->row_bin = 1;
+	eis_info->vb_time = vdev->cur_format->vb_time;
 
 	return 0;
 }
-EXPORT_SYMBOL(mn34041pl_get_eis_info);
 
 static struct vin_ops mn34041pl_ops = {
 	.init_device		= mn34041pl_init_device,

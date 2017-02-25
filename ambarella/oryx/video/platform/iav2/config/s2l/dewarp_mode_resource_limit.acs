@@ -1,0 +1,97 @@
+--[[
+Copyright (c) 2016 Ambarella, Inc.
+
+This file and its contents ("Software") are protected by intellectual
+property rights including, without limitation, U.S. and/or foreign
+copyrights. This Software is also the confidential and proprietary
+information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+disclose, distribute, modify, or otherwise prepare derivative works of this
+Software or any portion thereof except pursuant to a signed license agreement
+or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+In the absence of such an agreement, you agree to promptly notify and return
+this Software to Ambarella, Inc.
+
+THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+--]]
+--encode resource limit is maximum resource by the product
+--usually set to maximum possible and not changed often
+--this config can be used to check whether the DSP memory
+--is sufficient for all of the features or not
+--me0_scale: Specify ME0 scale factor. 0: Off, 1: 8X downscale, 2: 16X downscale
+resource_limit = {
+   max_streams = 4,
+   max_buffers = 4,
+   source_buffer_max_size = {
+    {width = 1920, height = 1080},
+    {width = 720,  height = 576},
+    {width = 1920, height = 1080},
+    {width = 1280, height = 720},
+   },
+   source_buffer_extra_dram = {
+    0,0,0,0,
+   },
+   stream_max_size= {
+    {width = 1920, height = 1080},
+    {width = 1920, height = 1080},
+    {width = 1280, height = 720},
+    {width = 720,  height = 480},
+   },
+   stream_max_gop_M = {
+     2,1,1,1,
+   },
+   stream_max_gop_N = {
+     120,120,120,120,
+   },
+   stream_max_advanced_quality_model = {
+     0,0,0,0,
+   },
+   stream_long_ref_possible = {
+     false,false,false,false,
+   },
+   dsp_partition_possible = {
+     sub_buf_raw            = false,
+     sub_buf_main_yuv       = false,
+     sub_buf_main_me1       = false,
+     sub_buf_prev_A_yuv     = false,
+     sub_buf_prev_A_me1     = false,
+     sub_buf_prev_B_yuv     = false,
+     sub_buf_prev_B_me1     = false,
+     sub_buf_prev_C_yuv     = false,
+     sub_buf_prev_C_me1     = false,
+   },
+   rotate_possible          = false,
+   raw_capture_possible     = false,
+   vout_swap_possible       = false,
+   lens_warp_possible       = true,
+   enc_raw_rgb_possible     = false,
+   enc_raw_yuv_possible     = false,
+   enc_from_mem_possible    = false,
+   efm_buf_num              = 8,
+   raw_max_width            = 0,
+   raw_max_height           = 0,
+   max_warp_input_width     = 0,
+   max_warp_output_width    = 0,
+   max_padding_width        = 256,
+   v_warped_main_max_width  = 0,
+   v_warped_main_max_height = 0,
+   enc_dummy_latency        = 0,
+   idsp_upsample_type       = 2,
+   debug_iso_type           = -1,
+   debug_stitched           = -1,
+   debug_chip_id            = -1,
+   mixer_a_enable           = false,
+   mixer_b_enable           = false,
+   me0_scale                = 0,
+}
+
+return resource_limit

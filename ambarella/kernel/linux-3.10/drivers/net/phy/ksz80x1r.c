@@ -73,6 +73,7 @@ void ksz80x1r_prevent_loss(struct phy_device *phydev) {
 	phy_write(phydev, 0x0d, 0x401c);
 	phy_write(phydev, 0x0e, 0xffff);
 }
+
 int ksz80x1r_config_aneg(struct phy_device *phydev)
 {
 	int result;
@@ -80,9 +81,9 @@ int ksz80x1r_config_aneg(struct phy_device *phydev)
 	result = genphy_config_aneg(phydev);
 	if(result > 0)
 		ksz80x1r_prevent_loss(phydev);
+
 	return result;
 }
-
 
 static int ksz80x1r_ack_interrupt(struct phy_device *phydev)
 {

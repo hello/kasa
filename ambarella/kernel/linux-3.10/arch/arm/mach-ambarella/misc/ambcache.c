@@ -43,10 +43,6 @@
 #define MODULE_PARAM_PREFIX	"ambarella_config."
 
 /* ==========================================================================*/
-#define CACHE_LINE_SIZE		32
-#define CACHE_LINE_MASK		~(CACHE_LINE_SIZE - 1)
-
-/* ==========================================================================*/
 #ifdef CONFIG_OUTER_CACHE
 #if defined(CONFIG_AMBARELLA_SYS_CACHE_CALL)
 static u32 cache_l2_status = 0;
@@ -56,196 +52,7 @@ static void __iomem *ambcache_l2_base = __io(AMBARELLA_VA_L2CC_BASE);
 #endif
 #endif
 
-#if defined(CONFIG_AMBARELLA_SYS_CACHE_CALL)
-static int cache_check_start = 1;
-module_param(cache_check_start, int, 0644);
-static int cache_check_end = 0;
-module_param(cache_check_end, int, 0644);
-static int cache_check_fail_halt = 0;
-module_param(cache_check_fail_halt, int, 0644);
-#endif
-
 /* ==========================================================================*/
-void ambcache_clean_range(void *addr, unsigned int size)
-{
-	u32					vstart;
-	u32					vend;
-#ifdef CONFIG_OUTER_CACHE
-	u32					pstart;
-#endif
-	u32					addr_tmp;
-
-	vstart = (u32)addr & CACHE_LINE_MASK;
-	vend = ((u32)addr + size + CACHE_LINE_SIZE - 1) & CACHE_LINE_MASK;
-#if defined(CONFIG_AMBARELLA_SYS_CACHE_CALL)
-	if (cache_check_start && (vstart != (u32)addr)) {
-		if (cache_check_fail_halt) {
-			panic("%s start:0x%08x vs 0x%08x\n",
-				__func__, vstart, (u32)addr);
-		} else {
-			pr_warn("%s start:0x%08x vs 0x%08x\n",
-				__func__, vstart, (u32)addr);
-		}
-	}
-	if (cache_check_end && (vend != ((u32)addr + size))) {
-		if (cache_check_fail_halt) {
-			panic("%s end:0x%08x vs 0x%08x\n",
-				__func__, vend, ((u32)addr + size));
-		} else {
-			pr_warn("%s end:0x%08x vs 0x%08x\n",
-				__func__, vend, ((u32)addr + size));
-		}
-	}
-#endif
-#ifdef CONFIG_OUTER_CACHE
-	pstart = ambarella_virt_to_phys(vstart);
-#endif
-
-	for (addr_tmp = vstart; addr_tmp < vend; addr_tmp += CACHE_LINE_SIZE) {
-		__asm__ __volatile__ (
-			"mcr p15, 0, %0, c7, c10, 1" : : "r" (addr_tmp));
-	}
-	dsb();
-
-#ifdef CONFIG_OUTER_CACHE
-	outer_clean_range(pstart, (pstart + size));
-#endif
-}
-EXPORT_SYMBOL(ambcache_clean_range);
-
-void ambcache_inv_range(void *addr, unsigned int size)
-{
-	u32					vstart;
-	u32					vend;
-#ifdef CONFIG_OUTER_CACHE
-	u32					pstart;
-#endif
-	u32					addr_tmp;
-
-	vstart = (u32)addr & CACHE_LINE_MASK;
-	vend = ((u32)addr + size + CACHE_LINE_SIZE - 1) & CACHE_LINE_MASK;
-#if defined(CONFIG_AMBARELLA_SYS_CACHE_CALL)
-	if (cache_check_start && (vstart != (u32)addr)) {
-		if (cache_check_fail_halt) {
-			panic("%s start:0x%08x vs 0x%08x\n",
-				__func__, vstart, (u32)addr);
-		} else {
-			pr_warn("%s start:0x%08x vs 0x%08x\n",
-				__func__, vstart, (u32)addr);
-		}
-	}
-	if (cache_check_end && (vend != ((u32)addr + size))) {
-		if (cache_check_fail_halt) {
-			panic("%s end:0x%08x vs 0x%08x\n",
-				__func__, vend, ((u32)addr + size));
-		} else {
-			pr_warn("%s end:0x%08x vs 0x%08x\n",
-				__func__, vend, ((u32)addr + size));
-		}
-	}
-#endif
-#ifdef CONFIG_OUTER_CACHE
-	pstart = ambarella_virt_to_phys(vstart);
-	outer_inv_range(pstart, (pstart + size));
-#endif
-
-	for (addr_tmp = vstart; addr_tmp < vend; addr_tmp += CACHE_LINE_SIZE) {
-		__asm__ __volatile__ (
-			"mcr p15, 0, %0, c7, c6, 1" : : "r" (addr_tmp));
-	}
-	dsb();
-
-#ifdef CONFIG_OUTER_CACHE
-	outer_inv_range(pstart, (pstart + size));
-
-	for (addr_tmp = vstart; addr_tmp < vend; addr_tmp += CACHE_LINE_SIZE) {
-		__asm__ __volatile__ (
-			"mcr p15, 0, %0, c7, c6, 1" : : "r" (addr_tmp));
-	}
-	dsb();
-#endif
-}
-EXPORT_SYMBOL(ambcache_inv_range);
-
-void ambcache_flush_range(void *addr, unsigned int size)
-{
-	u32					vstart;
-	u32					vend;
-#ifdef CONFIG_OUTER_CACHE
-	u32					pstart;
-#endif
-	u32					addr_tmp;
-
-	vstart = (u32)addr & CACHE_LINE_MASK;
-	vend = ((u32)addr + size + CACHE_LINE_SIZE - 1) & CACHE_LINE_MASK;
-#if defined(CONFIG_AMBARELLA_SYS_CACHE_CALL)
-	if (cache_check_start && (vstart != (u32)addr)) {
-		if (cache_check_fail_halt) {
-			panic("%s start:0x%08x vs 0x%08x\n",
-				__func__, vstart, (u32)addr);
-		} else {
-			pr_warn("%s start:0x%08x vs 0x%08x\n",
-				__func__, vstart, (u32)addr);
-		}
-	}
-	if (cache_check_end && (vend != ((u32)addr + size))) {
-		if (cache_check_fail_halt) {
-			panic("%s end:0x%08x vs 0x%08x\n",
-				__func__, vend, ((u32)addr + size));
-		} else {
-			pr_warn("%s end:0x%08x vs 0x%08x\n",
-				__func__, vend, ((u32)addr + size));
-		}
-	}
-#endif
-#ifdef CONFIG_OUTER_CACHE
-	pstart = ambarella_virt_to_phys(vstart);
-
-	for (addr_tmp = vstart; addr_tmp < vend; addr_tmp += CACHE_LINE_SIZE) {
-		__asm__ __volatile__ (
-			"mcr p15, 0, %0, c7, c10, 1" : : "r" (addr_tmp));
-	}
-	dsb();
-
-	outer_flush_range(pstart, (pstart + size));
-
-	for (addr_tmp = vstart; addr_tmp < vend; addr_tmp += CACHE_LINE_SIZE) {
-		__asm__ __volatile__ (
-			"mcr p15, 0, %0, c7, c6, 1" : : "r" (addr_tmp));
-	}
-	dsb();
-#else
-	for (addr_tmp = vstart; addr_tmp < vend; addr_tmp += CACHE_LINE_SIZE) {
-		__asm__ __volatile__ (
-			"mcr p15, 0, %0, c7, c14, 1" : : "r" (addr_tmp));
-	}
-	dsb();
-#endif
-}
-EXPORT_SYMBOL(ambcache_flush_range);
-
-void ambcache_pli_range(void *addr, unsigned int size)
-{
-	u32					vstart;
-	u32					vend;
-	u32					addr_tmp;
-
-	vstart = (u32)addr & CACHE_LINE_MASK;
-	vend = ((u32)addr + size + CACHE_LINE_SIZE - 1) & CACHE_LINE_MASK;
-
-	for (addr_tmp = vstart; addr_tmp < vend; addr_tmp += CACHE_LINE_SIZE) {
-#if __LINUX_ARM_ARCH__ >= 7
-		__asm__ __volatile__ (
-			"pli [%0]" : : "r" (addr_tmp));
-#elif __LINUX_ARM_ARCH__ >= 5
-		__asm__ __volatile__ (
-			"mcr p15, 0, %0, c7, c13, 1" : : "r" (addr_tmp));
-#else
-#error "PLI not supported"
-#endif
-	}
-}
-EXPORT_SYMBOL(ambcache_pli_range);
 
 #ifdef CONFIG_OUTER_CACHE
 
@@ -261,7 +68,7 @@ static u32 setup_l2_ctrl(void)
 	ctrl |= (0x1 << L2X0_AUX_CTRL_WAY_SIZE_SHIFT);
 	ctrl |= (0x1 << L2X0_AUX_CTRL_DATA_PREFETCH_SHIFT);
 	ctrl |= (0x1 << L2X0_AUX_CTRL_INSTR_PREFETCH_SHIFT);
-#elif (CHIP_REV == S2L)
+#elif (CHIP_REV == S2L) || (CHIP_REV == S3L)
 	ctrl |= (0x0 << L2X0_AUX_CTRL_ASSOCIATIVITY_SHIFT);
 	ctrl |= (0x1 << L2X0_AUX_CTRL_WAY_SIZE_SHIFT);
 	ctrl |= (0x1 << L2X0_AUX_CTRL_DATA_PREFETCH_SHIFT);

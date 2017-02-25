@@ -128,7 +128,7 @@ static int chunk_sizes[] = {
 	1 << 22,	// 4 MB
 	5242880,	// 5 megs
 	6291456,	// 6 megs (std L2 cache size)
-#ifndef __arm__
+#if !defined(__arm__) && !defined(__aarch64__)
 	7 * 1024 * 1024,	// 7 megs
 	8 * 1024 * 1024,
 	16 * 1024 * 1024,
@@ -181,7 +181,7 @@ static double chunk_sizes_log2[] =
 	22,		// 4 MB
 	22.3219,
 	22.585,
-#ifndef __arm__
+#if !defined(__arm__) && !defined(__aarch64__)
 	22.8074,
 	23,
 	24,
@@ -477,7 +477,7 @@ void println (wchar_t *s)
 
 void print_int (int d)
 {
-#if defined(__WIN32__) && defined(__arm__)
+#if defined(__WIN32__) && (defined(__arm__) || defined(__aarch64__))
 	swprintf (msg + wcslen (msg), L"%d", d);
 #else
 	swprintf (msg + wcslen (msg), MSGLEN, L"%d", d);
@@ -492,7 +492,7 @@ void println_int (int d)
 
 void print_result (long double result)
 {
-#if defined(__WIN32__) && defined(__arm__)
+#if defined(__WIN32__) && (defined(__arm__) || defined(__aarch64__))
 	swprintf (msg + wcslen (msg), L"%.1Lf MB/s", result);
 #else
 	swprintf (msg + wcslen (msg), MSGLEN, L"%.1Lf MB/s", result);
@@ -516,7 +516,7 @@ void dump (FILE *f)
 
 void flush ()
 {
-#if defined(__WIN32__) && defined(__arm__)
+#if defined(__WIN32__) && (defined(__arm__) || defined(__aarch64__))
 	MessageBeep (MB_OK);
 #else
 	dump (NULL);
@@ -608,7 +608,7 @@ do_write (unsigned long size, int mode, bool random)
 	unsigned char *chunk0;
 	unsigned long loops;
 	unsigned long long total_count=0;
-#ifdef __x86_64__
+#if defined(__x86_64__) || defined(__aarch64__)
 	unsigned long value = 0x1234567689abcdef;
 #else
 	unsigned long value = 0x12345678;
@@ -679,7 +679,7 @@ do_write (unsigned long size, int mode, bool random)
 	if (mode == SSE2_BYPASS) {
 		print (L"bypassing cache (128-bit), size = ");
 	} else {
-#ifdef __x86_64__
+#if defined(__x86_64__) || defined(__aarch64__)
 		print (L"(64-bit), size = ");
 #else
 		print (L"(32-bit), size = ");
@@ -696,7 +696,7 @@ do_write (unsigned long size, int mode, bool random)
 	while (diff < usec_per_test) {
 		total_count += loops;
 
-#ifndef __arm__
+#if !defined(__arm__) && !defined(__aarch64__)
 		if (mode == SSE2) {
 			if (random)
 				RandomWriterSSE2 (chunk_ptrs, size/256, loops, value);
@@ -814,7 +814,7 @@ do_read (unsigned long size, bool use_sse2, bool random)
 	if (use_sse2) {
 		print (L"(128-bit), size = ");
 	} else {
-#ifdef __x86_64__
+#if defined(__x86_64__) || defined(__aarch64__)
 		print (L"(64-bit), size = ");
 #else
 		print (L"(32-bit), size = ");
@@ -833,7 +833,7 @@ do_read (unsigned long size, bool use_sse2, bool random)
 	while (diff < usec_per_test) {
 		total_count += loops;
 
-#ifndef __arm__
+#if !defined(__arm__) && !defined(__aarch64__)
 		if (use_sse2) {
 			if (random)
 				RandomReaderSSE2 (chunk_ptrs, size/256, loops);
@@ -919,7 +919,7 @@ do_copy (unsigned long size, int mode)
 		print (L"(128-bit), size = ");
 	}
 	else {
-#ifdef __x86_64__
+#if defined(__x86_64__) || defined(__aarch64__)
 		print (L"(64-bit), size = ");
 #else
 		print (L"(32-bit), size = ");
@@ -938,7 +938,7 @@ do_copy (unsigned long size, int mode)
 	while (diff < usec_per_test) {
 		total_count += loops;
 
-#ifndef __arm__
+#if !defined(__arm__) && !defined(__aarch64__)
 		if (mode == SSE2)
 			CopySSE (chunk_dest, chunk_src, size, loops);
 #if 0
@@ -984,7 +984,7 @@ fb_readwrite (bool use_sse2)
 	//unsigned long datum;
 	int fd;
 	//register unsigned long foo;
-#ifdef __x86_64__
+#if defined(__x86_64__) || defined(__aarch64__)
 	unsigned long value = 0x1234567689abcdef;
 #else
 	unsigned long value = 0x12345678;
@@ -1058,7 +1058,7 @@ fb_readwrite (bool use_sse2)
 
 	total_count = FBLOOPS_R;
 
-#ifndef __arm__
+#if !defined(__arm__) && !defined(__aarch64__)
 	if (use_sse2)
 		ReaderSSE2 (fb, length, FBLOOPS_R);
 	else
@@ -1080,7 +1080,7 @@ fb_readwrite (bool use_sse2)
 
 	total_count = FBLOOPS_W;
 
-#ifndef __arm__
+#if !defined(__arm__) && !defined(__aarch64__)
 	if (use_sse2)
 		WriterSSE2_bypass (fb, length, FBLOOPS_W, value);
 	else
@@ -1106,7 +1106,7 @@ register_test ()
 	unsigned long diff = 0;
 
 	//--------------------------------------
-#ifdef __x86_64__
+#if defined(__x86_64__) || defined(__aarch64__)
 	print (L"Main register to main register transfers (64-bit) ");
 #else
 	print (L"Main register to main register transfers (32-bit) ");
@@ -1127,7 +1127,7 @@ register_test ()
 	newline ();
 	flush ();
 
-#ifndef __arm__
+#if !defined(__arm__) && !defined(__aarch64__)
 	//--------------------------------------
 #ifdef __x86_64__
 	print (L"Main register to vector register transfers (64-bit) ");
@@ -1371,7 +1371,7 @@ stack_test ()
 	unsigned long t0;
 	unsigned long diff = 0;
 
-#ifdef __x86_64__
+#if defined(__x86_64__) || defined(__aarch64__)
 	print (L"Stack-to-register transfers (64-bit) ");
 #else
 	print (L"Stack-to-register transfers (32-bit) ");
@@ -1394,7 +1394,7 @@ stack_test ()
 	newline ();
 	flush ();
 
-#ifdef __x86_64__
+#if defined(__x86_64__) || defined(__aarch64__)
 	print (L"Register-to-stack transfers (64-bit) ");
 #else
 	print (L"Register-to-stack transfers (32-bit) ");
@@ -1430,10 +1430,10 @@ library_test ()
 	int i;
 
 
-#if defined(__WIN32__) && defined(__arm__)
+#if defined(__WIN32__) && (defined(__arm__) || defined(__aarch64__))
 	#define NT_SIZE (1024*1024)
 	#define NT_SIZE2 (50)
-#elif !defined(__WIN32__) && defined(__arm__)
+#elif !defined(__WIN32__) && (defined(__arm__) || defined(__aarch64__))
 #if defined(DRAM_SIZE_SMALL)
 	#define NT_SIZE (16*1024*1024)
 #else
@@ -1883,7 +1883,7 @@ main (int argc, char **argv)
 
 	msg[0] = 0;
 
-#if !(defined(__WIN32__) && defined(__arm__))
+#if !(defined(__WIN32__) && (defined(__arm__) || defined(__aarch64__)))
 	printf ("This is bandwidth version %s.\n", VERSION);
 	printf ("Copyright (C) 2005-2010 by Zack T Smith.\n\n");
 	printf ("This software is covered by the GNU Public License.\n");
@@ -1912,26 +1912,33 @@ main (int argc, char **argv)
 		return 0;
 	}
 
-#ifndef __arm__
+#if !defined(__arm__) && !defined(__aarch64__)
 	if (!has_sse2 ()) {
 		puts ("Processor does not have SSE2.");
 		use_sse2 = false;
 		use_sse4 = false;
 	}
 
-	#ifdef __x86_64__
+#ifdef __x86_64__
 	if (use_sse2)
 		println (L"Using 128-bit and 64-bit data transfers.");
 	else
 		println (L"Using 64-bit data transfers.");
-	#else
+#else
 	if (use_sse2)
 		println (L"Using 128-bit and 32-bit data transfers.");
 	else
 		println (L"Using 32-bit data transfers.");
-	#endif
+#endif
+
+#else
+
+#if defined(__aarch64__)
+	println (L"Using 64-bit transfers.");
 #else
 	println (L"Using 32-bit transfers.");
+#endif
+
 	use_sse2 = false;
 #endif
 
@@ -1961,7 +1968,7 @@ main (int argc, char **argv)
 			fclose (f);
 		}
 
-#ifndef __arm__
+#if !defined(__arm__) && !defined(__aarch64__)
 		unlink (TMPFILE);
 		if (-1 == system ("grep -i sse4 /proc/cpuinfo > "TMPFILE))
 			perror ("system");
@@ -1995,7 +2002,7 @@ main (int argc, char **argv)
 	graph = BMP_new (graph_width, graph_height);
 	graph_init ();
 
-#if !defined(__arm__)
+#if !defined(__arm__) && !defined(__aarch64__)
 	//------------------------------------------------------------
 	// SSE2 sequential reads.
 	//
@@ -2100,7 +2107,7 @@ main (int argc, char **argv)
 	// Sequential non-SSE2 reads.
 	//
 	newline ();
-#ifdef __x86_64__
+#if defined(__x86_64__) || defined(__aarch64__)
 	graph_new_line ("Sequential 64-bit reads", RGB_BLUE);
 #else
 	graph_new_line ("Sequential 32-bit reads", RGB_BLUE);
@@ -2117,7 +2124,7 @@ main (int argc, char **argv)
 	// Random non-SSE2 reads.
 	//
 	newline ();
-#ifdef __x86_64__
+#if defined(__x86_64__) || defined(__aarch64__)
 	graph_new_line ("Random 64-bit reads", RGB_CYAN);
 #else
 	graph_new_line ("Random 32-bit reads", RGB_CYAN);
@@ -2134,7 +2141,7 @@ main (int argc, char **argv)
 	//------------------------------------------------------------
 	// Sequential non-SSE2 writes.
 	//
-#ifdef __x86_64__
+#if defined(__x86_64__) || defined(__aarch64__)
 	graph_new_line ("Sequential 64-bit writes", RGB_DARKGREEN);
 #else
 	graph_new_line ("Sequential 32-bit writes", RGB_DARKGREEN);
@@ -2152,7 +2159,7 @@ main (int argc, char **argv)
 	//------------------------------------------------------------
 	// Random non-SSE2 writes.
 	//
-#ifdef __x86_64__
+#if defined(__x86_64__) || defined(__aarch64__)
 	graph_new_line ("Random 64-bit writes", RGB_GREEN);
 #else
 	graph_new_line ("Random 32-bit writes", RGB_GREEN);
@@ -2168,7 +2175,7 @@ main (int argc, char **argv)
 		graph_add_point (chunk_size, amount);
 	}
 
-#ifndef __arm__
+#if !defined(__arm__) && !defined(__aarch64__)
 	//------------------------------------------------------------
 	// SSE2 sequential copy.
 	//
@@ -2212,7 +2219,7 @@ main (int argc, char **argv)
 	fb_readwrite (true);
 #endif
 
-#if defined(__WIN32__) && defined(__arm__)
+#if defined(__WIN32__) && (defined(__arm__) || defined(__aarch64__))
 	MessageBoxW (0, msg, APPNAME, 0);
 
 	FILE *of = fopen ("bandwidth.log", "w");

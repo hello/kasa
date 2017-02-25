@@ -3,14 +3,33 @@
  *
  * Author: Cao Rongrong <rrcao@ambarella.com>
  *
- * Copyright (C) 2012 -2016, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 
 #include <linux/mutex.h>
 #include <linux/interrupt.h>
@@ -22,7 +41,7 @@
 #include <linux/seq_file.h>
 #include <linux/kthread.h>
 #include <plat/highres_timer.h>
-#include <plat/service.h>
+#include <plat/iav_helper.h>
 #include <iav_utils.h>
 #include <vin_api.h>
 #include "iav_vin.h"
@@ -132,7 +151,7 @@ static int vin_hw_poweron(struct vin_device *vdev)
 		if (vinc->pwr_gpio[i] >= 0) {
 			gpio_svc.svc_id = AMBSVC_GPIO_OUTPUT;
 			gpio_svc.gpio = vinc->pwr_gpio[i];
-			gpio_svc.value = !vinc->pwr_gpio_active[i];
+			gpio_svc.value = vinc->pwr_gpio_active[i];
 			ambarella_request_service(AMBARELLA_SERVICE_GPIO, &gpio_svc, NULL);
 		}
 	}
@@ -145,15 +164,6 @@ static int vin_hw_poweron(struct vin_device *vdev)
 	}
 
 	msleep(5);
-
-	for (i = 0; i < 3; i++) {
-		if (vinc->pwr_gpio[i] >= 0) {
-			gpio_svc.svc_id = AMBSVC_GPIO_OUTPUT;
-			gpio_svc.gpio = vinc->pwr_gpio[i];
-			gpio_svc.value = vinc->pwr_gpio_active[i];
-			ambarella_request_service(AMBARELLA_SERVICE_GPIO, &gpio_svc, NULL);
-		}
-	}
 
 	if (vinc->rst_gpio >= 0) {
 		gpio_svc.svc_id = AMBSVC_GPIO_OUTPUT;
@@ -197,21 +207,7 @@ static int vin_hw_poweroff(struct vin_device *vdev)
 	return 0;
 }
 
-static int ambarella_vin_set_pll_reg(struct vin_device *vdev, int pll_idx)
-{
-	if (pll_idx >= vdev->num_plls) {
-		vin_error("invalid pll index (%d/%d)\n", vdev->num_plls, pll_idx);
-		return -EINVAL;
-	}
-
-	/* set device specific configuration if necessary */
-	if (vdev->ops->set_pll)
-		return vdev->ops->set_pll(vdev, pll_idx);
-
-	return 0;
-}
-
-static int ambarella_vin_set_clk(struct vin_device *vdev, int pll_idx)
+static int ambarella_vin_set_pll(struct vin_device *vdev, int pll_idx)
 {
 	struct vin_video_pll *pll;
 
@@ -230,12 +226,39 @@ static int ambarella_vin_set_clk(struct vin_device *vdev, int pll_idx)
 	/* wait 5ms for pll stable */
 	msleep(5);
 
-	ambarella_vin_set_pll_reg(vdev, pll_idx);
+	return 0;
+}
+
+static int ambarella_vin_set_pll_reg(struct vin_device *vdev, int pll_idx)
+{
+	if (pll_idx >= vdev->num_plls) {
+		vin_error("invalid pll index (%d/%d)\n", vdev->num_plls, pll_idx);
+		return -EINVAL;
+	}
+
+	/* set device specific configuration if necessary */
+	if (vdev->ops->set_pll)
+		return vdev->ops->set_pll(vdev, pll_idx);
 
 	return 0;
 }
 
-static int ambarella_vin_set_phy(u32 intf_id, u8 interface_type)
+static int ambarella_vin_set_clk(struct vin_device *vdev, int pll_idx)
+{
+	int rval;
+
+	rval = ambarella_vin_set_pll(vdev, pll_idx);
+	if (rval < 0)
+		return rval;
+
+	rval = ambarella_vin_set_pll_reg(vdev, pll_idx);
+	if (rval < 0)
+		return rval;
+
+	return 0;
+}
+
+static int ambarella_vin_set_phy(u32 intf_id, u8 interface_type, u8 mipi_bit_rate)
 {
 	if ((intf_id != VIN_PRIMARY) && (intf_id != VIN_PIP)) {
 		vin_error("unsupport interface id %d\n", intf_id);
@@ -269,8 +292,14 @@ static int ambarella_vin_set_phy(u32 intf_id, u8 interface_type)
 			amba_writel(RCT_REG(0x478), 0x14403);
 			msleep(5);
 			amba_writel(RCT_REG(0x478), 0x14402);
-			amba_writel(RCT_REG(0x47C), 0x12B4B22F);
-			amba_writel(RCT_REG(0x480), 0x201F | (1 << 9)); /* force mipi clk to be HS mode */
+
+			if (mipi_bit_rate == SENSOR_MIPI_BIT_RATE_H) {
+				amba_writel(RCT_REG(0x47C), 0x1FDD964A);
+				amba_writel(RCT_REG(0x480), 0x3C1F | (1 << 9)); /* force mipi clk to be HS mode */
+			} else {
+				amba_writel(RCT_REG(0x47C), 0x1FDD9326);
+				amba_writel(RCT_REG(0x480), 0x3C1F | (1 << 9)); /* force mipi clk to be HS mode */
+			}
 		} else {
 			amba_writel(RCT_REG(0x474), 0x0);
 			amba_writel(RCT_REG(0x478), 0x14409);
@@ -317,10 +346,9 @@ int ambarella_set_vin_config(struct vin_device *vdev, struct vin_device_config *
 {
 	struct ambarella_iav *iav;
 	struct vin_dsp_config *dsp_config;
-	struct vin_master_config *master_config;
 	struct vin_controller *vinc;
 	u8 sync_code_style, data_edge, lane_number;
-	u16 lane_mux[3]={0,0,0};
+	u16 lane_mux[3] = {0, 0, 0};
 	int i, lane_mask = 0;
 
 	/* find the corresponding vin controller */
@@ -358,6 +386,7 @@ int ambarella_set_vin_config(struct vin_device *vdev, struct vin_device_config *
 	vinc->vin_format.max_act_win.width = cfg->hdr_cfg.act_win.max_width;
 	vinc->vin_format.max_act_win.height = cfg->hdr_cfg.act_win.max_height;
 	vinc->vin_format.readout_mode = cfg->readout_mode;
+	vinc->vin_format.sync_mode = cfg->sync_mode;
 	iav->vin_enabled = 1;
 
 	/* update VIN config used by DSP cmd. */
@@ -395,9 +424,6 @@ int ambarella_set_vin_config(struct vin_device *vdev, struct vin_device_config *
 		break;
 	case SENSOR_MIPI:
 		lane_number = cfg->mipi_cfg.lane_number;
-		lane_mux[0] = cfg->mipi_cfg.lane_mux_0;
-		lane_mux[1] = cfg->mipi_cfg.lane_mux_1;
-		lane_mux[2] = cfg->mipi_cfg.lane_mux_2;
 		break;
 	}
 
@@ -527,7 +553,6 @@ int ambarella_set_vin_config(struct vin_device *vdev, struct vin_device_config *
 			dsp_config->r26.eov_pat = 0xAB00;
 			break;
 		case SENSOR_SYNC_STYLE_PANASONIC:
-			/* for mn34220pl 3x */
 			dsp_config->r14.sync_type = 1;
 			dsp_config->r15.sol_en = 1;
 			dsp_config->r15.eol_en = 1;
@@ -625,36 +650,62 @@ int ambarella_set_vin_config(struct vin_device *vdev, struct vin_device_config *
 
 	if (cfg->interface_type == SENSOR_MIPI) {
 		dsp_config->r27.mipi_vc_mask = 0x3;
-		dsp_config->r27.mipi_dt_mask = 0x3f;
+		dsp_config->r27.mipi_dt_mask = 0x2f;
 		dsp_config->r28.mipi_ecc_enable = 1;
 	}
 
-	if (cfg->sync_mode == SENSOR_SYNC_MODE_SLAVE){
-		/* update master config */
-		master_config = vinc->master_config;
-
-		master_config->r0.hsync_period_l = (u16)cfg->slave_cfg.hsync_period ;
-		master_config->r1.hsync_period_h = (u16)(cfg->slave_cfg.hsync_period >> 16);
-		master_config->r2.hsync_width = cfg->slave_cfg.hsync_width;
-		master_config->r3.hsync_offset = 0;
-		master_config->r4.vsync_period = cfg->slave_cfg.vsync_period;
-		master_config->r5.vsync_width = cfg->slave_cfg.vsync_width;
-		master_config->r6.vsync_offset = 0;
-		master_config->r7.hsync_polarity = 0;
-		master_config->r7.vsync_polarity = 0;
-		master_config->r7.no_vb_hsync = 0;
-		master_config->r7.intr_mode = 0;
-		master_config->r7.vsync_width_unit = 0;
-		master_config->r7.num_vsync = 1;
-		master_config->r7.continuous = 1;
-		master_config->r7.preempt = 0;
-	}
-
-	ambarella_vin_set_phy(vdev->intf_id, cfg->interface_type);
+	ambarella_vin_set_phy(vdev->intf_id, cfg->interface_type, cfg->mipi_cfg.bit_rate);
 
 	return 0;
 }
 EXPORT_SYMBOL(ambarella_set_vin_config);
+
+int ambarella_set_vin_master_sync(struct vin_device *vdev, struct vin_master_sync *master_cfg, bool by_dbg_bus)
+{
+	struct vin_controller *vinc;
+
+	/* find the corresponding vin controller */
+	vinc = vin_get_controller(vdev);
+	if (!vinc) {
+		vin_error("can not find vin controller!\n");
+		return -ENODEV;
+	}
+
+	if (!master_cfg)
+		return 0;
+
+	/* update master config */
+	vinc->master_config->r0.hsync_period_l = master_cfg->hsync_period ;
+	vinc->master_config->r1.hsync_period_h = master_cfg->hsync_period >> 16;
+	vinc->master_config->r2.hsync_width = master_cfg->hsync_width;
+	vinc->master_config->r3.hsync_offset = 0;
+	vinc->master_config->r4.vsync_period = master_cfg->vsync_period;
+	vinc->master_config->r5.vsync_width = master_cfg->vsync_width;
+	vinc->master_config->r6.vsync_offset = 0;
+	vinc->master_config->r7.hsync_polarity = 0;
+	vinc->master_config->r7.vsync_polarity = 0;
+	vinc->master_config->r7.no_vb_hsync = 0;
+	vinc->master_config->r7.intr_mode = 0;
+	vinc->master_config->r7.vsync_width_unit = 0;
+	vinc->master_config->r7.num_vsync = 1;
+	vinc->master_config->r7.continuous = 1;
+	vinc->master_config->r7.preempt = 0;
+
+	if (by_dbg_bus) {
+		amba_writel(DBGBUS_BASE + 0x118000, 0x1000);
+		amba_writel(DBGBUS_BASE + 0x110400, vinc->master_config->r0.hsync_period_l);
+		amba_writel(DBGBUS_BASE + 0x110404, vinc->master_config->r1.hsync_period_h);
+		amba_writel(DBGBUS_BASE + 0x110408, vinc->master_config->r2.hsync_width);
+		amba_writel(DBGBUS_BASE + 0x11040C, vinc->master_config->r3.hsync_offset);
+		amba_writel(DBGBUS_BASE + 0x110410, vinc->master_config->r4.vsync_period);
+		amba_writel(DBGBUS_BASE + 0x110414, vinc->master_config->r5.vsync_width);
+		amba_writel(DBGBUS_BASE + 0x110418, vinc->master_config->r6.vsync_offset);
+		amba_writel(DBGBUS_BASE + 0x11041C, 0x2020);
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(ambarella_set_vin_master_sync);
 
 struct vin_device *ambarella_vin_create_device(const char *name, u32 sensor_id, u32 priv_size)
 {
@@ -741,11 +792,9 @@ int ambarella_vin_register_device(struct vin_device *vdev, struct vin_ops *ops,
 		if (vinc->iav->vin_enabled == 0) {
 			vin_hw_poweron(vdev);
 			if (vdev->ops->init_device) {
-				/* setup default pll needed by device to work */
-				ambarella_vin_set_clk(vdev, 0);
+				/* setup default pll clock source needed by device to work */
+				ambarella_vin_set_pll(vdev, 0);
 				vdev->ops->init_device(vdev);
-				/* set pll registers again, because init_device will do sw reset */
-				ambarella_vin_set_pll_reg(vdev, 0);
 			}
 		} else {
 			/* FIXME: In fastboot case,  IAV in preview mode by amboot/iav already
@@ -991,7 +1040,11 @@ static int vin_set_shutter_time(struct vin_device *vdev, int shutter)
 	if (rval < 0)
 		return rval;
 
+	if (vdev->ops->set_hold_mode)
+		vdev->ops->set_hold_mode(vdev, 1);
 	rval = vdev->ops->set_shutter_row(vdev, shutter);
+	if (vdev->ops->set_hold_mode)
+		vdev->ops->set_hold_mode(vdev, 0);
 	if (rval < 0)
 		return rval;
 
@@ -1089,7 +1142,9 @@ static int vin_set_frame_rate(struct vin_device *vdev, int frame_rate)
 	vinc->vin_format.frame_rate = frame_rate;
 
 	/* Modify idsp frame rate factor */
+	mutex_lock(&iav->iav_mutex);
 	cmd_update_idsp_factor(iav, NULL);
+	mutex_unlock(&iav->iav_mutex);
 
 	rval = iav_vin_update_stream_framerate(iav);
 	if (rval < 0)
@@ -1249,6 +1304,7 @@ static int vin_dev_set_mirror_mode(struct vin_device *vdev, unsigned long args)
 			return rval;
 	}
 
+	vdev->cur_format->mirror_pattern = mirror_mode.pattern;
 	if (mirror_mode.bayer_pattern != VINDEV_BAYER_PATTERN_AUTO) {
 		vdev->cur_format->bayer_pattern = mirror_mode.bayer_pattern;
 		vinc->vin_format.bayer_pattern = vdev->cur_format->bayer_pattern;
@@ -1267,6 +1323,7 @@ static int vin_dev_get_mirror_mode(struct vin_device *vdev, unsigned long args)
 	}
 
 	mirror_mode.vsrc_id = vdev->vsrc_id;
+	mirror_mode.pattern = vdev->cur_format->mirror_pattern;
 	mirror_mode.bayer_pattern = vdev->cur_format->bayer_pattern;
 
 	if (copy_to_user((void __user *)args, &mirror_mode, sizeof(mirror_mode)))
@@ -1686,11 +1743,9 @@ static int vin_dev_set_video_mode(struct vin_device *vdev, unsigned long args)
 		vdev->reset_for_mode_switch){
 		vin_hw_poweron(vdev);
 		if (vdev->ops->init_device) {
-			/* setup default pll needed by device to work */
-			ambarella_vin_set_clk(vdev, 0);
+			/* setup default pll clock source needed by device to work */
+			ambarella_vin_set_pll(vdev, 0);
 			vdev->ops->init_device(vdev);
-			/* set pll registers again, because init_device will do sw reset */
-			ambarella_vin_set_pll_reg(vdev, 0);
 		}
 	}
 
@@ -1722,13 +1777,10 @@ static int vin_dev_set_video_mode(struct vin_device *vdev, unsigned long args)
 		return -EINVAL;
 	}
 
-	/* vin device needs clock to work, so setup it first  */
-	if (format->pll_idx >= vdev->num_plls) {
-		vin_error("invalid PLL index %d.\n", format->pll_idx);
-		return -EINVAL;
-	}
-
-	ambarella_vin_set_clk(vdev, format->pll_idx);
+	/* setup corresponding pll clock source and regs */
+	rval = ambarella_vin_set_clk(vdev, format->pll_idx);
+	if (rval < 0)
+		return rval;
 
 	vdev->cur_format = format;
 	vdev->pre_video_mode = mode.video_mode;
@@ -1807,6 +1859,10 @@ static int vin_dev_get_aaa_info(struct vin_device *vdev, unsigned long args)
 		return -EPERM;
 	}
 
+	memset(&vsrc_aaa_info, 0, sizeof(struct vindev_aaa_info));
+	if (vdev->ops->get_aaa_info) {
+		vdev->ops->get_aaa_info(vdev, &vsrc_aaa_info);
+	}
 	vsrc_aaa_info.vsrc_id = vdev->vsrc_id;
 	vsrc_aaa_info.sensor_id = vdev->sensor_id;
 	vsrc_aaa_info.bayer_pattern = vdev->cur_format->bayer_pattern;
@@ -2107,30 +2163,51 @@ static int vin_device_ioctl(struct vin_controller *vinc,
 
 int vin_pm_suspend(struct vin_device *vdev)
 {
-	/* suspend sensor */
-	if (vdev->ops->suspend) {
-		vdev->ops->suspend(vdev);
+	struct vin_controller *vinc = NULL;
+	vinc = vin_get_controller(vdev);
+
+	if (vinc->iav->vin_enabled) {
+		/* suspend sensor */
+		if (vdev->ops->suspend) {
+			vdev->ops->suspend(vdev);
+		}
 	}
 	vin_hw_poweroff(vdev);
-	/* stop clk_si */
-	rct_set_so_freq_hz(0);
 
 	return 0;
 }
 
 int vin_pm_resume(struct vin_device *vdev)
 {
+	struct vin_controller *vinc = NULL;
+	struct vindev_mirror mirror_mode;
+
 	vin_hw_poweron(vdev);
-	if (vdev->ops->init_device && vdev->ops->set_format) {
-		/* must clear cur_pll so that clk_si can be set again when vin resumes */
-		vdev->cur_pll = 0;
-		/* setup default pll needed by device to work */
-		ambarella_vin_set_clk(vdev, vdev->cur_format->pll_idx);
+	/* must clear cur_pll so that clk_si can be set again when vin resumes */
+	vdev->cur_pll = NULL;
+
+	vinc = vin_get_controller(vdev);
+	if (vinc->iav->vin_enabled && vdev->ops->init_device && vdev->ops->set_format) {
+		if (vdev->cur_format) {
+			/* setup pll clock source needed by device to work */
+			ambarella_vin_set_pll(vdev, vdev->cur_format->pll_idx);
+		}
 		vdev->ops->init_device(vdev);
-		/* set pll registers again, because init_device will do sw reset */
-		ambarella_vin_set_pll_reg(vdev, vdev->cur_format->pll_idx);
-		vdev->ops->set_format(vdev, vdev->cur_format);
-		/* resume sensor*/
+		if (vdev->cur_format) {
+			/* set sensor pll registers */
+			ambarella_vin_set_pll_reg(vdev, vdev->cur_format->pll_idx);
+			vdev->ops->set_format(vdev, vdev->cur_format);
+
+			if (vdev->frame_rate)
+				vdev->ops->set_frame_rate(vdev, vdev->frame_rate);
+			if (vdev->ops->set_mirror_mode) {
+				mirror_mode.vsrc_id = 0;
+				mirror_mode.pattern = vdev->cur_format->mirror_pattern;
+				mirror_mode.bayer_pattern = vdev->cur_format->bayer_pattern;
+				vdev->ops->set_mirror_mode(vdev, &mirror_mode);
+			}
+		}
+		/* resume sensor shutter and gain status */
 		if (vdev->ops->resume) {
 			vdev->ops->resume(vdev);
 		}
@@ -2307,7 +2384,7 @@ static struct vin_controller *vin_controller_init(struct ambarella_iav *iav,
 	}
 
 	if (vinc->iav->vin_enabled == 0)
-		ambarella_vin_set_phy(id, SENSOR_PARALLEL_LVCMOS);
+		ambarella_vin_set_phy(id, SENSOR_PARALLEL_LVCMOS, 0);
 
 	vin_info("%s: probed!\n", vinc->name);
 

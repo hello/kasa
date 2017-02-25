@@ -5,12 +5,29 @@
  * @Email : hbxiao@ambarella.com
  * @Time  : 08/12/2014 [Created]
  *
- * Copyright (C) 2009, Ambarella, Inc.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 #include "am_base_include.h"
 #include "am_log.h"
@@ -19,7 +36,7 @@
 
 #define CONTEXT_NAME ((const char *)"AMPulseAudioDevice")
 
-AMPulseAudioDevice *AMPulseAudioDevice::m_instance = NULL;
+AMPulseAudioDevice *AMPulseAudioDevice::m_instance = nullptr;
 std::mutex AMPulseAudioDevice::m_mutex;
 
 struct UserData
@@ -43,6 +60,17 @@ static const char *device_str[] =
 { "mic", "speaker", "playback stream", "recording stream" };
 
 AMPulseAudioDevice::AMPulseAudioDevice() :
+    m_sink_volume(nullptr),
+    m_sink_input_volume(nullptr),
+    m_source_volume(nullptr),
+    m_source_output_volume(nullptr),
+    m_context(nullptr),
+    m_threaded_mainloop(nullptr),
+    m_sink_index(-1),
+    m_sink_input_index(-1),
+    m_source_index(-1),
+    m_source_output_index(-1),
+    m_context_state(PA_CONTEXT_UNCONNECTED),
     m_ctx_connected(false),
     m_sink_muted(false),
     m_sink_input_muted(false),
@@ -50,17 +78,6 @@ AMPulseAudioDevice::AMPulseAudioDevice() :
     m_source_output_muted(false),
     m_list_flag(false),
     m_set_operation_success(false),
-    m_sink_index(-1),
-    m_sink_input_index(-1),
-    m_source_index(-1),
-    m_source_output_index(-1),
-    m_context_state(PA_CONTEXT_UNCONNECTED),
-    m_sink_volume(NULL),
-    m_sink_input_volume(NULL),
-    m_source_volume(NULL),
-    m_source_output_volume(NULL),
-    m_context(NULL),
-    m_threaded_mainloop(NULL),
     m_reference_count(0)
 {
   memset(&m_sample_spec, 0, sizeof(m_sample_spec));
@@ -69,7 +86,7 @@ AMPulseAudioDevice::AMPulseAudioDevice() :
 AMPulseAudioDevice::~AMPulseAudioDevice()
 {
   if (m_ctx_connected) {
-    pa_context_set_state_callback(m_context, NULL, NULL);
+    pa_context_set_state_callback(m_context, nullptr, nullptr);
     pa_context_disconnect(m_context);
     m_ctx_connected = false;
     DEBUG("pa_context_disconnect\n");
@@ -77,13 +94,13 @@ AMPulseAudioDevice::~AMPulseAudioDevice()
 
   if (m_context) {
     pa_context_unref(m_context);
-    m_context = NULL;
+    m_context = nullptr;
     DEBUG("pa_context_unref (m_context)\n");
   }
 
   if (m_threaded_mainloop) {
     pa_threaded_mainloop_free(m_threaded_mainloop);
-    m_threaded_mainloop = NULL;
+    m_threaded_mainloop = nullptr;
     DEBUG("pa_threaded_mainloop_free (m_threaded_mainloop)\n");
   }
 
@@ -97,14 +114,14 @@ AMIAudioDevice *AMPulseAudioDevice::get_instance()
 {
   m_mutex.lock();
 
-  if (m_instance == NULL) {
-    if ((m_instance = new AMPulseAudioDevice()) == NULL) {
+  if (m_instance == nullptr) {
+    if ((m_instance = new AMPulseAudioDevice()) == nullptr) {
       ERROR("Failed to create an instance of AMPulseAudioDevice!");
     } else {
       if (!m_instance->audio_device_init()) {
         ERROR("Failed to initialize audio device!\n");
         delete m_instance;
-        m_instance = NULL;
+        m_instance = nullptr;
       }
     }
   }
@@ -118,8 +135,7 @@ void AMPulseAudioDevice::release()
   if ((m_reference_count >= 0) && (-- m_reference_count <= 0)) {
     DEBUG("Last reference of AMPulseAudioDevice's object: %p", m_instance);
     delete m_instance;
-    m_instance = NULL;
-    m_reference_count = 0;
+    m_instance = nullptr;
   }
 }
 
@@ -135,14 +151,15 @@ bool AMPulseAudioDevice::audio_device_init()
 
   do {
     UserData userData(this, m_threaded_mainloop);
-    pa_mainloop_api *mainloop_api = NULL;
+    pa_mainloop_api *mainloop_api = nullptr;
 
-    if (m_threaded_mainloop != NULL) {
+    if (m_threaded_mainloop != nullptr) {
       INFO("m_threaded_mainloop already created!\n");
       break;
     }
+    setenv("PULSE_RUNTIME_PATH", "/var/run/pulse/", 1);
     m_threaded_mainloop = pa_threaded_mainloop_new();
-    if (m_threaded_mainloop == NULL) {
+    if (m_threaded_mainloop == nullptr) {
       ret = false;
       ERROR("Failed to new threaded mainloop!\n");
       break;
@@ -151,14 +168,14 @@ bool AMPulseAudioDevice::audio_device_init()
     mainloop_api = pa_threaded_mainloop_get_api(m_threaded_mainloop);
     m_context = pa_context_new(mainloop_api, CONTEXT_NAME);
 
-    if (m_context == NULL) {
+    if (m_context == nullptr) {
       ret = false;
       ERROR("Failed to new context!\n");
       break;
     }
 
     pa_context_set_state_callback(m_context, static_pa_state, &userData);
-    pa_context_connect(m_context, NULL, PA_CONTEXT_NOFLAGS, NULL);
+    pa_context_connect(m_context, nullptr, PA_CONTEXT_NOFLAGS, NULL);
 
     if (pa_threaded_mainloop_start(m_threaded_mainloop) != 0) {
       ret = false;
@@ -167,10 +184,17 @@ bool AMPulseAudioDevice::audio_device_init()
     }
 
     pa_threaded_mainloop_lock(m_threaded_mainloop);
-    /* Will be signaled in pa_state()*/
-    pa_threaded_mainloop_wait(m_threaded_mainloop);
+    while ((m_context_state = pa_context_get_state(m_context)) !=
+           PA_CONTEXT_READY) {
+      if ((m_context_state == PA_CONTEXT_FAILED) ||
+          (m_context_state == PA_CONTEXT_TERMINATED)) {
+        break;
+      }
+      /* Will be signaled in pa_state()*/
+      pa_threaded_mainloop_wait(m_threaded_mainloop);
+    }
     pa_threaded_mainloop_unlock(m_threaded_mainloop);
-    pa_context_set_state_callback(m_context, NULL, NULL);
+    pa_context_set_state_callback(m_context, nullptr, nullptr);
 
     m_ctx_connected = (m_context_state == PA_CONTEXT_READY);
     if (!m_ctx_connected) {
@@ -188,28 +212,28 @@ bool AMPulseAudioDevice::audio_device_init()
     }
 
     m_sink_volume = new pa_cvolume();
-    if (NULL == m_sink_volume) {
+    if (nullptr == m_sink_volume) {
       ERROR("Failed to allocate memory for sink volume!");
       ret = false;
       break;
     }
 
     m_source_volume = new pa_cvolume();
-    if (NULL == m_source_volume) {
+    if (nullptr == m_source_volume) {
       ERROR("Failed to allocate memory for source volume!");
       ret = false;
       break;
     }
 
     m_sink_input_volume = new pa_cvolume();
-    if (NULL == m_sink_input_volume) {
+    if (nullptr == m_sink_input_volume) {
       ERROR("Failed to allocate memory for sink input volume!");
       ret = false;
       break;
     }
 
     m_source_output_volume = new pa_cvolume();
-    if (NULL == m_source_output_volume) {
+    if (nullptr == m_source_output_volume) {
       ERROR("Failed to allocate memory for source output volume!");
       ret = false;
       break;
@@ -463,21 +487,13 @@ bool AMPulseAudioDevice::get_index_list(AM_AUDIO_DEVICE_TYPE device,
 
 void AMPulseAudioDevice::static_pa_state(pa_context *context, void *data)
 {
-  ((UserData *) data)->adev->pa_state(context, ((UserData *) data)->data);
+  ((UserData *) data)->adev->pa_state(context, ((UserData*)data)->data);
 }
 
 void AMPulseAudioDevice::pa_state(pa_context *context, void *data)
 {
-  if (context) {
-    m_context_state = pa_context_get_state(context);
-  }
-
-  if (!context || (m_context_state == PA_CONTEXT_READY) ||
-      (m_context_state == PA_CONTEXT_FAILED) ||
-      (m_context_state == PA_CONTEXT_TERMINATED)) {
-    pa_threaded_mainloop_signal((pa_threaded_mainloop *)data, 0);
-  }
   DEBUG("pa_state is called!");
+  pa_threaded_mainloop_signal((pa_threaded_mainloop*)data, 0);
 }
 
 void AMPulseAudioDevice::static_get_sink_info(pa_context *c,
@@ -495,7 +511,7 @@ void AMPulseAudioDevice::get_sink_info(const pa_sink_info *sink)
 {
   int i;
 
-  if (sink != NULL) {
+  if (sink != nullptr) {
     m_sink_index = sink->index;
     m_sink_muted = (sink->mute > 0);
 
@@ -541,7 +557,7 @@ void AMPulseAudioDevice::get_sink_input_info(
 {
   int i;
 
-  if (sink_input != NULL) {
+  if (sink_input != nullptr) {
     m_sink_input_index = sink_input->index;
     m_sink_input_muted = (sink_input->mute > 0);
 
@@ -584,7 +600,7 @@ void AMPulseAudioDevice::get_source_info(const pa_source_info *source)
 {
   int i;
 
-  if (source != NULL) {
+  if (source != nullptr) {
     m_source_index = source->index;
     m_source_muted = (source->mute > 0);
 
@@ -628,7 +644,7 @@ void AMPulseAudioDevice::static_get_source_output_info(
 void AMPulseAudioDevice::get_source_output_info(
     const pa_source_output_info *source_output)
 {
-  if (source_output != NULL) {
+  if (source_output != nullptr) {
     m_source_output_index = source_output->index;
     m_source_output_muted = (source_output->mute > 0);
 
@@ -706,7 +722,7 @@ bool AMPulseAudioDevice::unified_entrance_for_getting_volume_info(
   bool device_is_specified = false;
   std::map<int, std::string>::iterator iter;
   unsigned int i = 0;
-  char *name = NULL;
+  char *name = nullptr;
   int index = 0;
 
   do {
@@ -732,7 +748,7 @@ bool AMPulseAudioDevice::unified_entrance_for_getting_volume_info(
     if (flag) {
       /* User want to fetch volume info by name. */
       name = (char *) index_or_name;
-      device_is_specified = (name != NULL);
+      device_is_specified = (name != nullptr);
     } else {
       /* User want to fetch volume info by index. */
       index = *((int *) index_or_name);
@@ -817,7 +833,7 @@ bool AMPulseAudioDevice::get_volume_info_by_index(AM_AUDIO_DEVICE_TYPE device,
 {
   bool ret = true;
   bool has_get_volume_info = true;
-  pa_operation *pa_op = NULL;
+  pa_operation *pa_op = nullptr;
   pa_operation_state_t op_state;
   UserData userData(this, m_threaded_mainloop);
 
@@ -849,17 +865,19 @@ bool AMPulseAudioDevice::get_volume_info_by_index(AM_AUDIO_DEVICE_TYPE device,
       break;
     }
 
-    while ((op_state = pa_operation_get_state(pa_op)) != PA_OPERATION_DONE) {
-      if (op_state == PA_OPERATION_CANCELLED) {
-        INFO("Get source info operation cancelled!\n");
-        has_get_volume_info = false;
-        break;
+    if (pa_op) {
+      while ((op_state = pa_operation_get_state(pa_op)) != PA_OPERATION_DONE) {
+        if (op_state == PA_OPERATION_CANCELLED) {
+          INFO("Get source info operation cancelled!\n");
+          has_get_volume_info = false;
+          break;
+        }
+
+        pa_threaded_mainloop_wait(m_threaded_mainloop);
       }
 
-      pa_threaded_mainloop_wait(m_threaded_mainloop);
+      pa_operation_unref(pa_op);
     }
-
-    pa_operation_unref(pa_op);
     pa_threaded_mainloop_unlock(m_threaded_mainloop);
 
     if (has_get_volume_info) {
@@ -904,7 +922,7 @@ bool AMPulseAudioDevice::unified_entrance_for_setting_volume_info(
   bool device_is_specified = false;
   std::map<int, std::string>::iterator iter;
   unsigned int i = 0;
-  char *name = NULL;
+  char *name = nullptr;
   int index = 0;
 
   do {
@@ -930,7 +948,7 @@ bool AMPulseAudioDevice::unified_entrance_for_setting_volume_info(
     if (flag) {
       /* User want to fetch volume info by name. */
       name = (char *) index_or_name;
-      device_is_specified = (name != NULL);
+      device_is_specified = (name != nullptr);
     } else {
       /* User want to fetch volume info by index. */
       index = *((int *) index_or_name);
@@ -1016,7 +1034,7 @@ bool AMPulseAudioDevice::set_volume_info_by_index(
   int i = 0;
   bool ret = true;
   AMAudioVolumeInfo temp;
-  pa_operation *pa_op = NULL;
+  pa_operation *pa_op = nullptr;
   pa_operation_state_t op_state;
   UserData userData(this, m_threaded_mainloop);
 
@@ -1172,16 +1190,16 @@ bool AMPulseAudioDevice::set_volume_info_by_index(
 
     }
 
-    while ((op_state = pa_operation_get_state(pa_op)) != PA_OPERATION_DONE) {
-      if (op_state == PA_OPERATION_CANCELLED) {
-        INFO("Get source info operation cancelled!\n");
-        break;
+    if (pa_op) {
+      while ((op_state = pa_operation_get_state(pa_op)) != PA_OPERATION_DONE) {
+        if (op_state == PA_OPERATION_CANCELLED) {
+          INFO("Get source info operation cancelled!\n");
+          break;
+        }
+        pa_threaded_mainloop_wait(m_threaded_mainloop);
       }
-
-      pa_threaded_mainloop_wait(m_threaded_mainloop);
+      pa_operation_unref(pa_op);
     }
-
-    pa_operation_unref(pa_op);
     pa_threaded_mainloop_unlock(m_threaded_mainloop);
 
     ret = m_set_operation_success;
@@ -1193,7 +1211,7 @@ bool AMPulseAudioDevice::set_volume_info_by_index(
 bool AMPulseAudioDevice::get_sample_spec_info()
 {
   bool ret = true;
-  pa_operation *pa_op = NULL;
+  pa_operation *pa_op = nullptr;
   UserData userData(this, m_threaded_mainloop);
   pa_operation_state_t op_state;
 
@@ -1202,17 +1220,20 @@ bool AMPulseAudioDevice::get_sample_spec_info()
                                      static_get_server_info,
                                      &userData);
 
-  while ((op_state = pa_operation_get_state(pa_op)) != PA_OPERATION_DONE) {
-    if (op_state == PA_OPERATION_CANCELLED) {
-      INFO("Get server info operation cancelled!\n");
-      ret = false;
-      break;
+  if (pa_op) {
+    while ((op_state = pa_operation_get_state(pa_op)) != PA_OPERATION_DONE) {
+      if (op_state == PA_OPERATION_CANCELLED) {
+        INFO("Get server info operation cancelled!\n");
+        ret = false;
+        break;
+      }
+
+      pa_threaded_mainloop_wait(m_threaded_mainloop);
     }
 
-    pa_threaded_mainloop_wait(m_threaded_mainloop);
+    pa_operation_unref(pa_op);
   }
 
-  pa_operation_unref(pa_op);
   pa_threaded_mainloop_unlock(m_threaded_mainloop);
   return ret;
 }
@@ -1262,7 +1283,7 @@ bool AMPulseAudioDevice::get_name_by_index(AM_AUDIO_DEVICE_TYPE device,
 bool AMPulseAudioDevice::audio_device_info_list_get(AM_AUDIO_DEVICE_TYPE device)
 {
   bool ret = true;
-  pa_operation *pa_op = NULL;
+  pa_operation *pa_op = nullptr;
   UserData userData(this, m_threaded_mainloop);
   pa_operation_state_t op_state;
 
@@ -1294,17 +1315,19 @@ bool AMPulseAudioDevice::audio_device_info_list_get(AM_AUDIO_DEVICE_TYPE device)
       break;
     }
 
-    while ((op_state = pa_operation_get_state(pa_op)) != PA_OPERATION_DONE) {
-      if (op_state == PA_OPERATION_CANCELLED) {
-        INFO("Get server info operation cancelled!\n");
-        ret = false;
-        break;
+    if (pa_op) {
+      while ((op_state = pa_operation_get_state(pa_op)) != PA_OPERATION_DONE) {
+        if (op_state == PA_OPERATION_CANCELLED) {
+          INFO("Get server info operation cancelled!\n");
+          ret = false;
+          break;
+        }
+
+        pa_threaded_mainloop_wait(m_threaded_mainloop);
       }
 
-      pa_threaded_mainloop_wait(m_threaded_mainloop);
+      pa_operation_unref(pa_op);
     }
-
-    pa_operation_unref(pa_op);
     pa_threaded_mainloop_unlock(m_threaded_mainloop);
   } while (0);
 

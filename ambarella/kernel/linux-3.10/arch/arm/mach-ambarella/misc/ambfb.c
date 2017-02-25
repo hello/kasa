@@ -207,36 +207,6 @@ int ambarella_fb_set_iav_info(u32 fb_id, struct ambarella_fb_iav_info *iav)
 }
 EXPORT_SYMBOL(ambarella_fb_set_iav_info);
 
-int ambarella_fb_update_info(u32 fb_id, int xres, int yres,
-		int xvirtual, int yvirtual, int format, u32 bits_per_pixel,
-		u32 smem_start, u32 smem_len)
-{
-	struct ambarella_platform_fb *ambfb_data;
-
-	if (fb_id > ARRAY_SIZE(ambfb_data_ptr))
-		return -EPERM;
-
-	ambfb_data = ambfb_data_ptr[fb_id];
-
-	mutex_lock(&ambfb_data->lock);
-	ambfb_data->screen_var.xres = xres;
-	ambfb_data->screen_var.yres = yres;
-	ambfb_data->screen_var.xres_virtual = xvirtual;
-	ambfb_data->screen_var.yres_virtual = yvirtual;
-	ambfb_data->screen_var.bits_per_pixel = bits_per_pixel;
-	ambfb_data->color_format = format;
-	ambfb_data->use_prealloc = 1;
-	ambfb_data->screen_fix.smem_start = smem_start;
-	ambfb_data->screen_fix.smem_len = smem_len;
-	mutex_unlock(&ambfb_data->lock);
-
-	pr_debug("%s %d: %dx%d %dx%d %d %d 0x%08x:0x%08x\n", __func__, fb_id,
-		xres, yres, xvirtual, yvirtual,
-		format, bits_per_pixel, smem_start, smem_len);
-
-	return 0;
-}
-
 int __init ambarella_init_fb(void)
 {
 	struct ambarella_platform_fb *ambfb_data;

@@ -27,10 +27,10 @@
 /* ==========================================================================*/
 #if (CHIP_REV == A5S) || (CHIP_REV == A7L)
 #define NUM_DMA_CHANNELS 		4
-#elif (CHIP_REV == S2L) || (CHIP_REV == S2E) || (CHIP_REV == S3)
-#define NUM_DMA_CHANNELS 		8
-#else
+#elif (CHIP_REV == S2)
 #define NUM_DMA_CHANNELS 		5
+#else
+#define NUM_DMA_CHANNELS 		8
 #endif
 
 #define DMA_OFFSET			0x5000
@@ -41,6 +41,7 @@
 #define FDMA_BASE			(AHB_BASE + FDMA_OFFSET)
 #define FDMA_REG(x)			(FDMA_BASE + (x))
 
+/* ==========================================================================*/
 
 #define INVALID_DMA_CHAN		0xFF
 
@@ -59,7 +60,7 @@
 #define SLIM_TX_DMA_CHAN		INVALID_DMA_CHAN
 #define SLIM_RX_DMA_CHAN		INVALID_DMA_CHAN
 
-#elif (CHIP_REV == S3)
+#elif (CHIP_REV == S3) || (CHIP_REV == S3L)
 #define NOR_SPI_TX_DMA_CHAN		0
 #define NOR_SPI_RX_DMA_CHAN		1
 #define SSI1_TX_DMA_CHAN		2
@@ -197,7 +198,7 @@
 #define DMA_DSM_SPJP_64B                0x00000004
 #define DMA_DSM_SPJP_128B               0x00000005
 
-#if (CHIP_REV == S3)
+#if (CHIP_REV == S3) || (CHIP_REV == S2E) || (CHIP_REV == S3L)
 #define DMA_NODC_MN_BURST_SIZE	(DMA_CHANX_CTR_BLK_512B | DMA_CHANX_CTR_TS_8B)
 #define DMA_NODC_SP_BURST_SIZE	(DMA_CHANX_CTR_BLK_16B | DMA_CHANX_CTR_TS_8B)
 #define DMA_DESC_MN_BURST_SIZE	(DMA_DESC_BLK_512B | DMA_DESC_TS_8B)

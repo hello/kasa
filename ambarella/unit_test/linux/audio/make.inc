@@ -23,6 +23,7 @@ LOCAL_TARGET	:= test_audio
 LOCAL_SRCS	:= $(LOCAL_PATH)/test_audio.cpp \
 			$(LOCAL_PATH)/audio_encode.cpp
 LOCAL_CFLAGS	:= -I$(PREBUILD_3RD_PARTY_DIR)/alsa-lib/include \
+				-I$(PREBUILD_3RD_PARTY_DIR)/alsa-lib/usr/include \
 				-I$(LOCAL_PATH)/alsautils
 LOCAL_LDFLAGS	:= -L$(PREBUILD_3RD_PARTY_DIR)/alsa-lib/usr/lib -lasound \
                  -lpthread -lrt -ldl

@@ -20,6 +20,8 @@
 #include <linux/slab.h>
 #include <linux/types.h>
 #include <plat/event.h>
+#include <linux/io.h>
+#include <plat/rct.h>
 
 //#define amba_cpufreq_debug	//used at debug mode
 
@@ -56,6 +58,11 @@ static int amba_cpufreq_target(struct cpufreq_policy *policy,
 	int index, ret;
 	unsigned int cur_freq;
 
+	if(target_freq < 96000) {
+		printk("Target frequency is too low, cortex is not stable, it should be more than 96000\n");
+		return -EINVAL;
+	}
+
 	if (cpufreq_frequency_table_target(policy, amba_cpufreq.cortex_clktbl,
 				target_freq, relation, &index))
 		return -EINVAL;
@@ -65,7 +72,8 @@ static int amba_cpufreq_target(struct cpufreq_policy *policy,
 	core_newfreq = amba_cpufreq.core_clktbl[index].frequency * 1000;
 	freqs.new = cortex_newfreq / 1000;
 
-	amba_cpufreq_prt(KERN_INFO "prepare to switch the frequency from %d KHz to %d KHz\n",freqs.old, freqs.new);
+	amba_cpufreq_prt(KERN_INFO "prepare to switch the frequency from %d KHz to %d KHz\n"
+				,freqs.old, freqs.new);
 
 	cpufreq_notify_transition(policy, &freqs, CPUFREQ_PRECHANGE);
 	ambarella_set_event(AMBA_EVENT_PRE_CPUFREQ, NULL);
@@ -83,11 +91,21 @@ static int amba_cpufreq_target(struct cpufreq_policy *policy,
 		pr_err("CPU Freq: cpu clk_set_rate failed: %d\n", ret);
 	}
 
+#if (CHIP_REV == S2L) || (CHIP_REV == S3L)
+	if(amba_cpufreq.core_clktbl[index].frequency <= 96000) {
+		/*Disable IDSP/VDSP to Save Power*/
+		amba_writel(CKEN_CLUSTER_REG, 0x540);
+	} else {
+		/*Enable IDSP/VDSP to Save Power*/
+		amba_writel(CKEN_CLUSTER_REG, 0x3fff);
+	}
+#endif
 	cpufreq_notify_transition(policy, &freqs, CPUFREQ_POSTCHANGE);
 	ambarella_set_event(AMBA_EVENT_POST_CPUFREQ, NULL);
 
 	cur_freq = clk_get_rate(amba_cpufreq.cortex_clk) / 1000;
-	amba_cpufreq_prt(KERN_INFO "current frequency of cortex clock is:%d KHz\n", cur_freq);
+	amba_cpufreq_prt(KERN_INFO "current frequency of cortex clock is:%d KHz\n",
+				 cur_freq);
 
 
 	return ret;
@@ -141,13 +159,19 @@ static int amba_cpufreq_driver_init(void)
 	struct cpufreq_frequency_table *cortex_freqtbl;
 	struct cpufreq_frequency_table *core_freqtbl;
 	const __be32 *val;
-	int cnt, i, ret;
+	int cnt, i, ret, clk_div;
 
 	printk("ambarella cpufreq driver init\n");
 	np = of_find_node_by_path("/cpus");
 	if (!np) {
 		pr_err("No cpu node found");
 		return -ENODEV;
+	}
+
+	ret = of_property_read_u32(np, "amb,core-div", &clk_div);
+	if (ret != 0 || !((clk_div == 1 || clk_div == 2))) {
+		/*Default is that the pll_out_core is twice gclk_core */
+		clk_div = 2;
 	}
 
 	if (of_property_read_u32(np, "clock-latency",
@@ -178,7 +202,8 @@ static int amba_cpufreq_driver_init(void)
 
 	for (i = 0; i < cnt; i++) {
 		core_freqtbl[i].index = i;
-		core_freqtbl[i].frequency = be32_to_cpup(val) * 2;
+		/*pll_out_core = clk_div * gclk_core;*/
+		core_freqtbl[i].frequency = be32_to_cpup(val) * clk_div;
 
 		cortex_freqtbl[i].index = i;
 		cortex_freqtbl[i].frequency = be32_to_cpup((val + 1));
@@ -190,7 +215,7 @@ static int amba_cpufreq_driver_init(void)
 	cortex_freqtbl[i].frequency = clk_get_rate(clk_get(NULL, "gclk_cortex")) / 1000;
 
 	core_freqtbl[i].index = i;
-	core_freqtbl[i].frequency = clk_get_rate(clk_get(NULL, "gclk_core")) / 1000;
+	core_freqtbl[i].frequency = clk_get_rate(clk_get(NULL, "gclk_core")) / 1000 * clk_div;
 
 	i++;
 	cortex_freqtbl[i].index = i;

@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: bcmsdh_sdmmc.h 408158 2013-06-17 22:15:35Z $
+ * $Id: bcmsdh_sdmmc.h 496576 2014-08-13 15:04:56Z $
  */
 
 #ifndef __BCMSDH_SDMMC_H__
@@ -33,6 +33,7 @@
 #define sd_debug(x)	do { if (sd_msglevel & SDH_DEBUG_VAL) printf x; } while (0)
 #define sd_data(x)	do { if (sd_msglevel & SDH_DATA_VAL) printf x; } while (0)
 #define sd_ctrl(x)	do { if (sd_msglevel & SDH_CTRL_VAL) printf x; } while (0)
+#define sd_cost(x)	do { if (sd_msglevel & SDH_COST_VAL) printf x; } while (0)
 
 
 #define sd_sync_dma(sd, read, nbytes)
@@ -57,7 +58,15 @@
 /* private bus modes */
 #define SDIOH_MODE_SD4		2
 #define CLIENT_INTR			0x100	/* Get rid of this! */
-#define SDIOH_SDMMC_MAX_SG_ENTRIES	32
+#define SDIOH_SDMMC_MAX_SG_ENTRIES	(SDPCM_MAXGLOM_SIZE+2)
+
+#if defined(SWTXGLOM)
+typedef struct glom_buf {
+	void *glom_pkt_head;
+	void *glom_pkt_tail;
+	uint32 count;				/* Total number of pkts queued */
+} glom_buf_t;
+#endif /* SWTXGLOM */
 
 struct sdioh_info {
 	osl_t		*osh;			/* osh handler */
@@ -83,6 +92,10 @@ struct sdioh_info {
 	struct sdio_func	fake_func0;
 	struct sdio_func	*func[SDIOD_MAX_IOFUNCS];
 
+	uint	txglom_mode;		/* Txglom mode: 0 - copy, 1 - multi-descriptor */
+#if defined(SWTXGLOM)
+	glom_buf_t glom_info;		/* pkt information used for glomming */
+#endif
 };
 
 /************************************************************
@@ -115,8 +128,11 @@ extern void sdioh_sdmmc_free_irq(uint irq, sdioh_info_t *sd);
 extern sdioh_info_t *sdioh_attach(osl_t *osh, struct sdio_func *func);
 extern SDIOH_API_RC sdioh_detach(osl_t *osh, sdioh_info_t *sd);
 
+#ifdef GLOBAL_SDMMC_INSTANCE
 typedef struct _BCMSDH_SDMMC_INSTANCE {
 	sdioh_info_t	*sd;
 	struct sdio_func *func[SDIOD_MAX_IOFUNCS];
 } BCMSDH_SDMMC_INSTANCE, *PBCMSDH_SDMMC_INSTANCE;
+#endif
+
 #endif /* __BCMSDH_SDMMC_H__ */

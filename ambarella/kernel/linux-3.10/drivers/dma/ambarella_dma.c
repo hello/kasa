@@ -25,6 +25,7 @@
 #include <linux/dmapool.h>
 #include <linux/delay.h>
 #include <linux/of.h>
+#include <linux/of_dma.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <mach/hardware.h>
@@ -198,42 +199,11 @@ static void ambdma_put_desc(struct ambdma_chan *amb_chan,
 static void ambdma_return_desc(struct ambdma_chan *amb_chan,
 		struct ambdma_desc *amb_desc)
 {
-	struct dma_async_tx_descriptor	*txd = &amb_desc->txd;
-
 	/* move children to free_list */
 	list_splice_init(&amb_desc->tx_list, &amb_chan->free_list);
 	/* move myself to free_list */
 	list_move_tail(&amb_desc->desc_node, &amb_chan->free_list);
 
-	/* unmap dma addresses if required */
-	if (!amb_chan->chan.private) {
-		if (!(txd->flags & DMA_COMPL_SKIP_DEST_UNMAP)) {
-			struct device *dev = amb_chan->chan.device->dev;
-			if (txd->flags & DMA_COMPL_DEST_UNMAP_SINGLE)
-				dma_unmap_single(dev,
-						amb_desc->lli->dst,
-						amb_desc->len,
-						DMA_FROM_DEVICE);
-			else
-				dma_unmap_page(dev,
-						amb_desc->lli->dst,
-						amb_desc->len,
-						DMA_FROM_DEVICE);
-		}
-		if (!(txd->flags & DMA_COMPL_SKIP_SRC_UNMAP)) {
-			struct device *dev = amb_chan->chan.device->dev;
-			if (txd->flags & DMA_COMPL_SRC_UNMAP_SINGLE)
-				dma_unmap_single(dev,
-						amb_desc->lli->src,
-						amb_desc->len,
-						DMA_TO_DEVICE);
-			else
-				dma_unmap_page(dev,
-						amb_desc->lli->src,
-						amb_desc->len,
-						DMA_TO_DEVICE);
-		}
-	}
 }
 
 static void ambdma_chain_complete(struct ambdma_chan *amb_chan,
@@ -984,11 +954,55 @@ dma_memcpy_err:
 	return NULL;
 }
 
+struct amba_dma_filter_param {
+	struct device_node *of_node;
+	unsigned int chan_id;
+	unsigned int dma_type;
+	//unsigned int force_stop;
+};
+
+static bool amba_dma_filter_fn(struct dma_chan *chan, void *fn_param)
+{
+	struct amba_dma_filter_param *param = fn_param;
+	//struct ambdma_chan *amb_chan = to_ambdma_chan(chan);
+	//struct ambdma_device *amb_dma = amb_chan->amb_dma;
+
+	if (chan->chan_id != param->chan_id)
+		return false;
+
+	//amb_chan->chan.private = &param->force_stop;
+	return true;
+}
+
+static struct dma_chan *amb_dma_xlate(struct of_phandle_args *dma_spec,
+			       struct of_dma *ofdma)
+{
+	struct ambdma_device *amb_dma = ofdma->of_dma_data;
+	dma_cap_mask_t mask;
+	struct amba_dma_filter_param param;
+
+	if (dma_spec->args_count != 2)
+		return NULL;
+	if (dma_spec->args[1] == 1)
+		mask = amb_dma->dma_slave.cap_mask;
+	else
+		mask = amb_dma->dma_memcpy.cap_mask;
+
+	param.of_node = ofdma->of_node;
+	param.chan_id = dma_spec->args[0];
+
+	if (param.chan_id >= amb_dma->nr_channels)
+		return NULL;
+
+	return dma_request_channel(mask, amba_dma_filter_fn, &param);
+}
+
 static int ambarella_dma_probe(struct platform_device *pdev)
 {
 	struct ambdma_device *amb_dma;
 	struct ambdma_chan *amb_chan;
 	struct device_node *np = pdev->dev.of_node;
+	const char *prop_name = "dma-trans-type";
 	int val, i, ret = 0;
 
 	/* alloc the amba dma engine struct */
@@ -1041,6 +1055,22 @@ static int ambarella_dma_probe(struct platform_device *pdev)
 
 	of_property_read_u32(np, "amb,copy-align", &amb_dma->copy_align);
 	amb_dma->support_prs = !!of_find_property(np, "amb,support-prs", NULL);
+	ret = of_property_read_u32(np, "dma-channels", &amb_dma->nr_channels);
+	if (ret) {
+		dev_err(&pdev->dev, "failed to read dma-channels\n");
+		return ret;
+	}
+	ret = of_property_read_u32(np, "dma-requests", &amb_dma->dma_requests);
+	if (ret) {
+		dev_err(&pdev->dev, "failed to read dma-requests\n");
+		return ret;
+	}
+
+	ret = of_property_read_u32_array(np, prop_name, amb_dma->dma_channel_type, amb_dma->nr_channels);
+	if (ret) {
+		dev_err(&pdev->dev, "failed to read dma-trans-type\n");
+		return ret;
+	}
 
 	/* Init dma_device struct */
 	dma_cap_zero(amb_dma->dma_slave.cap_mask);
@@ -1085,9 +1115,7 @@ static int ambarella_dma_probe(struct platform_device *pdev)
 				(unsigned long)amb_chan);
 		dma_cookie_init(&amb_chan->chan);
 
-		if (i == I2S_TX_DMA_CHAN || i == I2S_RX_DMA_CHAN ||
-			i == UART_TX_DMA_CHAN || i == UART_RX_DMA_CHAN ||
-			i == NOR_SPI_TX_DMA_CHAN || i == NOR_SPI_RX_DMA_CHAN) {
+		if (amb_dma->dma_channel_type[i] != 0) {
 			amb_chan->chan.device = &amb_dma->dma_slave;
 			list_add_tail(&amb_chan->chan.device_node,
 					&amb_dma->dma_slave.channels);
@@ -1100,33 +1128,16 @@ static int ambarella_dma_probe(struct platform_device *pdev)
 
 #if (DMA_SUPPORT_SELECT_CHANNEL == 1)
 	val = 0;
+	ret = of_property_read_u32_array(np, "dma-channel-sel",
+				amb_dma->dma_channel_sel, amb_dma->nr_channels);
+	if (ret) {
+		dev_err(&pdev->dev, "failed to read dma-channel-sel\n");
+	}
 	for (i = 0; i < NUM_DMA_CHANNELS; i++) {
-		switch(i) {
-		case NOR_SPI_TX_DMA_CHAN:
-			val |= NOR_SPI_TX_DMA_REQ_IDX << (i * 4);
-			break;
-		case NOR_SPI_RX_DMA_CHAN:
-			val |= NOR_SPI_RX_DMA_REQ_IDX << (i * 4);
-			break;
-		case SSI1_TX_DMA_CHAN:
-			val |= SSI1_TX_DMA_REQ_IDX << (i * 4);
-			break;
-		case SSI1_RX_DMA_CHAN:
-			val |= SSI1_RX_DMA_REQ_IDX << (i * 4);
-			break;
-		case UART_TX_DMA_CHAN:
-			val |= UART_TX_DMA_REQ_IDX << (i * 4);
-			break;
-		case UART_RX_DMA_CHAN:
-			val |= UART_RX_DMA_REQ_IDX << (i * 4);
-			break;
-		case I2S_RX_DMA_CHAN:
-			val |= I2S_RX_DMA_REQ_IDX << (i * 4);
-			break;
-		case I2S_TX_DMA_CHAN:
-			val |= I2S_TX_DMA_REQ_IDX << (i * 4);
-			break;
-		}
+		if (ret)
+			val |= i << (i * 4);
+		else
+			val |= (amb_dma->dma_channel_sel[i]) << (i * 4);
 	}
 	amba_writel(AHBSP_DMA_CHANNEL_SEL_REG, val);
 #endif
@@ -1174,6 +1185,15 @@ static int ambarella_dma_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, amb_dma);
 
+	if (np) {
+		ret = of_dma_controller_register(np, amb_dma_xlate, amb_dma);
+		if (ret) {
+			dev_err(&pdev->dev,
+				"failed to register controller\n");
+			goto ambdma_dma_probe_exit6;
+		}
+	}
+
 	dev_info(&pdev->dev, "Ambarella DMA Engine \n");
 
 	return 0;
@@ -1216,6 +1236,9 @@ static int ambarella_dma_remove(struct platform_device *pdev)
 		tasklet_kill(&amb_chan->tasklet);
 	}
 
+	if (pdev->dev.of_node)
+		of_dma_controller_free(pdev->dev.of_node);
+
 	dma_async_device_unregister(&amb_dma->dma_memcpy);
 	dma_async_device_unregister(&amb_dma->dma_slave);
 
@@ -1231,6 +1254,52 @@ static int ambarella_dma_remove(struct platform_device *pdev)
 	return 0;
 }
 
+#ifdef CONFIG_PM
+#if (DMA_SUPPORT_SELECT_CHANNEL == 1)
+static u32 ambdma_chan_sel_val = 0;
+#endif
+static int ambarella_dma_suspend(struct platform_device *pdev, pm_message_t state)
+{
+	struct ambdma_device *amb_dma = platform_get_drvdata(pdev);
+	struct ambdma_chan *amb_chan;
+	int i;
+
+	/* save dma channel register */
+	for (i = 0; i < NUM_DMA_CHANNELS; i++) {
+		amb_chan = &amb_dma->amb_chan[i];
+		amb_chan->ch_ctl = amba_readl(DMA_CHAN_CTR_REG(i));
+		amb_chan->ch_da = amba_readl(DMA_CHAN_DA_REG(i));
+		amb_chan->ch_sta = amba_readl(DMA_CHAN_STA_REG(i));
+	}
+#if (DMA_SUPPORT_SELECT_CHANNEL == 1)
+	ambdma_chan_sel_val = amba_readl(AHBSP_DMA_CHANNEL_SEL_REG);
+#endif
+	return 0;
+
+}
+
+static int ambarella_dma_resume(struct platform_device *pdev)
+{
+	struct ambdma_device *amb_dma = platform_get_drvdata(pdev);
+	struct ambdma_chan *amb_chan;
+	int i;
+
+#if (DMA_SUPPORT_SELECT_CHANNEL == 1)
+	amba_writel(AHBSP_DMA_CHANNEL_SEL_REG, ambdma_chan_sel_val);
+#endif
+	/* restore dma channel register */
+	for (i = 0; i < NUM_DMA_CHANNELS; i++) {
+		amb_chan = &amb_dma->amb_chan[i];
+		amba_writel(DMA_CHAN_STA_REG(i), amb_chan->ch_sta);
+		amba_writel(DMA_CHAN_DA_REG(i), amb_chan->ch_da);
+		amba_writel(DMA_CHAN_CTR_REG(i), amb_chan->ch_ctl);
+	}
+
+	return 0;
+}
+#endif
+
+
 static const struct of_device_id ambarella_dma_dt_ids[] = {
 	{.compatible = "ambarella,dma", },
 	{},
@@ -1240,7 +1309,10 @@ MODULE_DEVICE_TABLE(of, ambarella_dma_dt_ids);
 static struct platform_driver ambarella_dma_driver = {
 	.probe		= ambarella_dma_probe,
 	.remove		= ambarella_dma_remove,
-
+#ifdef CONFIG_PM
+	.suspend		= ambarella_dma_suspend,
+	.resume		= ambarella_dma_resume,
+#endif
 	.driver		= {
 		.name	= "ambarella-dma",
 		.owner	= THIS_MODULE,

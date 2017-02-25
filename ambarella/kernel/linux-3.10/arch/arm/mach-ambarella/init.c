@@ -35,17 +35,12 @@
 #include <asm/mach/map.h>
 #include <mach/hardware.h>
 #include <mach/init.h>
-#include <plat/debug.h>
-#include <plat/bapi.h>
 #include <plat/clk.h>
 #include <plat/ambcache.h>
 
 /* ==========================================================================*/
 u64 ambarella_dmamask = DMA_BIT_MASK(32);
 EXPORT_SYMBOL(ambarella_dmamask);
-
-u32 ambarella_debug_level = AMBA_DEBUG_NULL;
-EXPORT_SYMBOL(ambarella_debug_level);
 
 /* ==========================================================================*/
 enum {
@@ -339,21 +334,6 @@ void __init ambarella_init_machine(void)
 
 void ambarella_restart_machine(char mode, const char *cmd)
 {
-#if defined(CONFIG_AMBARELLA_SUPPORT_BAPI)
-	struct ambarella_bapi_reboot_info_s	reboot_info;
-
-	reboot_info.magic = DEFAULT_BAPI_REBOOT_MAGIC;
-	reboot_info.mode = AMBARELLA_BAPI_CMD_REBOOT_NORMAL;
-	if (cmd) {
-		if(strcmp(cmd, "recovery") == 0) {
-			reboot_info.mode = AMBARELLA_BAPI_CMD_REBOOT_RECOVERY;
-		} else if(strcmp(cmd, "fastboot") == 0) {
-			reboot_info.mode = AMBARELLA_BAPI_CMD_REBOOT_FASTBOOT;
-		}
-	}
-	ambarella_bapi_cmd(AMBARELLA_BAPI_CMD_SET_REBOOT_INFO, &reboot_info);
-#endif
-
 	local_irq_disable();
 	local_fiq_disable();
 	flush_cache_all();

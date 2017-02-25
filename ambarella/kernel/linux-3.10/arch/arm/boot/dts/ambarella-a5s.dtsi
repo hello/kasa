@@ -17,6 +17,7 @@
 		serial0 = &uart0;
 		serial1 = &uart1;
 		nand = &nand0;
+		emmc = &sdmmc0;
 		i2c0 = &i2c0;
 		i2c1 = &i2c1;
 		spi0 = &spi0;
@@ -351,10 +352,14 @@
 			      <0x60010000 0x1000>;
 		};
 
-		dma@60005000 {
+		dma: dma@60005000 {
 			compatible = "ambarella,dma";
 			reg = <0x60005000 0x1000>;
 			interrupts = <15 0x4>;
+			#dma-cells = <2>;
+			dma-channels = <4>;
+			dma-requests = <4>;
+			dma-trans-type = <0 1 1 0>; /* 0-memcpy ,1-slave*/
 			amb,copy-align = <3>;
 		};
 
@@ -381,9 +386,11 @@
 			reg = <0x6000a000 0x1000>;
 			pinctrl-names = "default";
 			pinctrl-0 = <&i2s0_pins>;
-			bclk_reverse = <0>;
 			amb,i2s-channels = <2>;
 			amb,default-mclk = <12288000>;
+			dmas = <&dma 1 1>,
+				   <&dma 0 1>;
+			dma-names = "tx", "rx";
 		};
 
 		udc@60006000 {
@@ -393,7 +400,7 @@
 			amb,usbphy = <&usbphy>;
 		};
 
-		sdmmc0@60002000 {
+		sdmmc0: sdmmc0@60002000 {
 			compatible = "ambarella,sdmmc";
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -401,7 +408,8 @@
 			      <0x60001000 0x80>; /* fio reg address */
 			interrupts = <18 0x4>;
 			amb,clk-name = "gclk_sd";
-			amb,wait-tmo = <2500>; /* in millisecond */
+			amb,wait-tmo = <10000>; /* in millisecond */
+			amb,switch_vol_tmo = <20>;
 			amb,max-blk-size = <524288>; /* valid value: 4K<<n */
 			status = "disabled";
 
@@ -461,9 +469,17 @@
 		};
 	};
 
+	iav {
+		compatible = "ambarella,iav";
+	};
+
 	bogus_bus {
 		compatible = "simple-bus";
 		#address-cells = <1>;
 		#size-cells = <0>;
+
+		dummycodec: codec@0 {
+			compatible = "ambarella,dummycodec";
+		};
 	};
 };

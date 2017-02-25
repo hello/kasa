@@ -1,12 +1,29 @@
 ## History:
 ##    2011/12/09 - [Cao Rongrong] Create
 ##
-## Copyright (C) 2012-2016, Ambarella, Inc.
+## Copyright (C) 2015 Ambarella, Inc.
 ##
-## All rights reserved. No Part of this file may be reproduced, stored
-## in a retrieval system, or transmitted, in any form, or by any means,
-## electronic, mechanical, photocopying, recording, or otherwise,
-## without the prior consent of Ambarella, Inc.
+## This file and its contents ("Software") are protected by intellectual
+## property rights including, without limitation, U.S. and/or foreign
+## copyrights. This Software is also the confidential and proprietary
+## information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+## disclose, distribute, modify, or otherwise prepare derivative works of this
+## Software or any portion thereof except pursuant to a signed license agreement
+## or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+## In the absence of such an agreement, you agree to promptly notify and return
+## this Software to Ambarella, Inc.
+##
+## THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+## INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+## MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+## IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+## INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+## (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+## LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+## INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+## CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+## ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+## POSSIBILITY OF SUCH DAMAGE.
 ##
 
 AMB_BOARD_DIR		:= $(shell pwd)
@@ -72,10 +89,13 @@ MKJFFS2 		:= $(AMB_TOPDIR)/rootfs/bin/mkfs.jffs2
 ########################## BOARD #####################################
 
 ifeq ($(DOT_CONFIG), $(wildcard $(DOT_CONFIG)))
-AMBARELLA_ARCH		:= $(shell grep ^CONFIG_ARCH $(DOT_CONFIG) | \
+AMBARELLA_ARCH_HI	:= $(shell grep ^CONFIG_ARCH $(DOT_CONFIG) | \
 				sed -e s/^CONFIG_ARCH_// | \
-				sed -e s/=y// | \
-				tr [:upper:] [:lower:])
+				sed -e s/=y//)
+$(if $(filter $(AMBARELLA_ARCH_HI), $(notdir $(ALL_TOPDIR))), \
+		$(error Don't use $(AMBARELLA_ARCH_HI) as project directory))
+
+AMBARELLA_ARCH		:= $(shell echo $(AMBARELLA_ARCH_HI) | tr [:upper:] [:lower:])
 ifeq ($(AMBARELLA_ARCH), s2e)
 AMBARELLA_ARCH		:= s2
 endif
@@ -122,13 +142,17 @@ AMBARELLA_LDFLAGS	:=
 AMBARELLA_CPU_ARCH	:=
 
 ifeq ($(CONFIG_CPU_CORTEXA9_HF), y)
-AMBARELLA_CPU_ARCH = armv7-a-hf
+AMBARELLA_CPU_ARCH	:= armv7-a-hf
+CPU_ARCH		:= arm
 else ifeq ($(CONFIG_CPU_CORTEXA9), y)
-AMBARELLA_CPU_ARCH = armv7-a
+AMBARELLA_CPU_ARCH	:= armv7-a
+CPU_ARCH		:= arm
 else ifeq ($(CONFIG_CPU_ARM1136JS), y)
-AMBARELLA_CPU_ARCH = armv6k
+AMBARELLA_CPU_ARCH	:= armv6k
+CPU_ARCH		:= arm
 else ifeq ($(CONFIG_CPU_ARM926EJS), y)
-AMBARELLA_CPU_ARCH = armv5te
+AMBARELLA_CPU_ARCH	:= armv5te
+CPU_ARCH		:= arm
 endif
 
 ########################## APP FLAGS ###################################
@@ -161,6 +185,7 @@ ORYX_CODEC_DIR   := $(FAKEROOT_DIR)/$(shell echo $(BUILD_AMBARELLA_ORYX_CODEC_DI
 ORYX_MUXER_DIR   := $(FAKEROOT_DIR)/$(shell echo $(BUILD_AMBARELLA_ORYX_MUXER_DIR))
 ORYX_DEMUXER_DIR := $(FAKEROOT_DIR)/$(shell echo $(BUILD_AMBARELLA_ORYX_DEMUXER_DIR))
 ORYX_EVENT_PLUGIN_DIR := $(FAKEROOT_DIR)/$(shell echo $(BUILD_AMBARELLA_ORYX_EVENT_PLUGIN_DIR))
+ORYX_VIDEO_PLUGIN_DIR := $(FAKEROOT_DIR)/$(shell echo $(BUILD_AMBARELLA_ORYX_VIDEO_PLUGIN_DIR))
 
 ###################### VENDOR FLAGS ########################
 
@@ -194,8 +219,8 @@ AMBARELLA_APP_CFLAGS	+= $(call cc-option,-fdiagnostics-color=auto,)
 
 #Disable lto for all gcc 4.x, no prove to be good.
 #Impact 3A & algo, let's test in gcc 5.x.
-AMBARELLA_APP_CFLAGS	+= $(call cc-ifversion, -ge, 0500, -flto,)
-AMBARELLA_APP_LDFLAGS	+= $(call cc-ifversion, -ge, 0500, -flto,)
+#AMBARELLA_APP_CFLAGS	+= $(call cc-ifversion, -ge, 0500, -flto,)
+#AMBARELLA_APP_LDFLAGS	+= $(call cc-ifversion, -ge, 0500, -flto,)
 
 ifeq ($(BUILD_AMBARELLA_UNIT_TESTS_STATIC), y)
 AMBARELLA_APP_LDFLAGS	+= -static

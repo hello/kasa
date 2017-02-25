@@ -4,12 +4,29 @@
  * History:
  *   2015-1-26 - [ypchang] created file
  *
- * Copyright (C) 2008-2015, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -53,6 +70,8 @@ void AMServiceFrame::run()
 {
   fd_set allset;
   fd_set fdset;
+  sigset_t mask;
+  sigset_t mask_orig;
 
   int maxfd = -1;
   bool is_ok = true;
@@ -60,6 +79,17 @@ void AMServiceFrame::run()
 
   FD_ZERO(&allset);
   FD_SET(CTRL_SOCK_R, &allset);
+
+  /* Block out interrupts */
+  sigemptyset(&mask);
+  sigaddset(&mask, SIGINT);
+  sigaddset(&mask, SIGTERM);
+  sigaddset(&mask, SIGQUIT);
+
+  if (AM_UNLIKELY(sigprocmask(SIG_BLOCK, &mask, &mask_orig) < 0)) {
+    PERROR("sigprocmask");
+  }
+
   if (AM_LIKELY(m_user_input_callback)) {
     FD_SET(STDIN_FILENO, &allset);
     maxfd = AM_MAX(CTRL_SOCK_R, STDIN_FILENO);
@@ -67,7 +97,7 @@ void AMServiceFrame::run()
     maxfd = CTRL_SOCK_R;
   }
   m_thread_feed_dog = AMThread::create(sem_thread_name.c_str(),
-                                       send_heartbeat_to_watchdog,
+                                       static_send_heartbeat_to_watchdog,
                                        (void*)this);
   if (AM_UNLIKELY(!m_thread_feed_dog)) {
     ERROR("Failed to create thread %s: %s",
@@ -83,7 +113,8 @@ void AMServiceFrame::run()
     char ch[1]  = {SERVICE_CMD_NULL};
     char cmd[1] = {SERVICE_CMD_NULL};
     fdset = allset;
-    if (AM_LIKELY(select(maxfd + 1, &fdset, nullptr, nullptr, nullptr) > 0)) {
+    if (AM_LIKELY(pselect(maxfd + 1, &fdset, nullptr, nullptr, nullptr,
+                          &mask) > 0)) {
       if (AM_LIKELY(FD_ISSET(CTRL_SOCK_R, &fdset))) {
         if (AM_LIKELY(read(CTRL_SOCK_R, cmd, sizeof(cmd)) < 0)) {
           ERROR("Failed to read Service Control Command of %s! Quit!",
@@ -123,10 +154,15 @@ void AMServiceFrame::run()
       default:break;
     }
 
+    if (AM_LIKELY(AM_SERVICE_FRAME_CMD(cmd[0]) != SERVICE_CMD_NULL)) {
+      send_wd_ctrl_cmd(AM_SERVICE_FRAME_CMD(cmd[0]));
+    }
+
     if (AM_LIKELY(m_run && is_ok &&
                   (cmd[0] == SERVICE_CMD_NULL) &&
                   (ch[0]  != SERVICE_CMD_NULL) &&
                   m_user_input_callback)) {
+      send_wd_ctrl_cmd(SERVICE_CMD_QUIT);
       m_user_input_callback(ch[0]);
     }
   }
@@ -166,6 +202,8 @@ AMServiceFrame::AMServiceFrame(const std::string& name) :
 {
   CTRL_SOCK_R = -1;
   CTRL_SOCK_W = -1;
+  WD_CTRL_SOCK_R = -1;
+  WD_CTRL_SOCK_W = -1;
 }
 
 AMServiceFrame::~AMServiceFrame()
@@ -177,15 +215,27 @@ AMServiceFrame::~AMServiceFrame()
   if (AM_LIKELY(CTRL_SOCK_W >= 0)) {
     close(CTRL_SOCK_W);
   }
+  if (AM_LIKELY(WD_CTRL_SOCK_R >= 0)) {
+    close(WD_CTRL_SOCK_R);
+  }
+  if (AM_LIKELY(WD_CTRL_SOCK_W >= 0)) {
+    close(WD_CTRL_SOCK_W);
+  }
 }
 
 bool AMServiceFrame::init()
 {
   bool ret = false;
-  m_sem_name = "/" + m_name;
+  m_sem_name = "/" + std::string(basename(m_name.c_str())) + ".watchdog";
+  INFO("Watchdog semaphore name: %s", m_sem_name.c_str());
   do {
     if (AM_UNLIKELY(socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP,
                                m_ctrl_sock) < 0)) {
+      PERROR("socketpair");
+      break;
+    }
+    if (AM_UNLIKELY(socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP,
+                               m_wd_ctrl_sock) < 0)) {
       PERROR("socketpair");
       break;
     }
@@ -216,6 +266,28 @@ bool AMServiceFrame::send_ctrl_cmd(AM_SERVICE_FRAME_CMD cmd)
 
   return (ret == sizeof(command));
 }
+
+bool AMServiceFrame::send_wd_ctrl_cmd(AM_SERVICE_FRAME_CMD cmd)
+{
+  int ret = 0;
+  int count = 0;
+  char command[1] = {cmd};
+
+  do {
+    ret = write(WD_CTRL_SOCK_W, command, sizeof(command));
+    if (AM_UNLIKELY(ret <= 0)) {
+      if (AM_LIKELY((errno != EAGAIN) &&
+                    (errno != EWOULDBLOCK) &&
+                    (errno != EINTR))) {
+        ERROR("Failed to send service control command \'%c\'!", cmd);
+        break;
+      }
+    }
+  }while((++ count < 5) && ((ret > 0) && (ret < (int)sizeof(command))));
+
+  return (ret == sizeof(command));
+}
+
 bool AMServiceFrame::init_semaphore(const char* sem_name)
 {
   m_semaphore = sem_open(sem_name, O_CREAT|O_EXCL,0644, 0);
@@ -227,27 +299,86 @@ bool AMServiceFrame::init_semaphore(const char* sem_name)
   }
   return (m_semaphore != SEM_FAILED);
 }
-void AMServiceFrame::send_heartbeat_to_watchdog(void* data)
-{
-  struct timeval heart_beat_interval;
-  AMServiceFrame *thread = (AMServiceFrame*)data;
-  bool semOk = thread->init_semaphore(thread->m_sem_name.c_str());
-  thread->m_thread_running=true;
 
-  if (AM_UNLIKELY(!semOk)) {
-    ERROR("Failed to initialize semaphore %s\n", thread->m_sem_name.c_str());
+void AMServiceFrame::static_send_heartbeat_to_watchdog(void *data)
+{
+  ((AMServiceFrame*)data)->send_heartbeat_to_watchdog();
+}
+
+void AMServiceFrame::send_heartbeat_to_watchdog()
+{
+  struct timespec heart_beat_interval;
+  bool semOk = init_semaphore(m_sem_name.c_str());
+  bool run = true;
+
+  sigset_t sigmask;
+  sigset_t sigmask_orig;
+
+  fd_set allset;
+  fd_set fdset;
+  int maxfd = -1;
+
+  FD_ZERO(&allset);
+  FD_SET(WD_CTRL_SOCK_R, &allset);
+
+  /* Block out interrupt */
+  sigemptyset(&sigmask);
+  sigaddset(&sigmask, SIGINT);
+  sigaddset(&sigmask, SIGTERM);
+
+  if (AM_UNLIKELY(sigprocmask(SIG_BLOCK, &sigmask, &sigmask_orig) < 0)) {
+    PERROR("sigprocmask");
   }
 
-  while (semOk && thread->m_run) {
-    if (AM_LIKELY(sem_trywait(thread->m_semaphore) == 0)) {
+  maxfd = WD_CTRL_SOCK_R;
+
+  m_thread_running=true;
+  if (AM_UNLIKELY(!semOk)) {
+    ERROR("Failed to initialize semaphore %s\n", m_sem_name.c_str());
+  }
+
+  while (run && semOk && m_run) {
+    if (AM_LIKELY(sem_trywait(m_semaphore) == 0)) {
       continue;
     }
+    fdset = allset;
     heart_beat_interval.tv_sec = HEART_BEAT_INTERVAL;
-    heart_beat_interval.tv_usec = 0;
-    if (select(0, nullptr, nullptr, nullptr, &heart_beat_interval) < 0) {
-      PERROR("select");
+    heart_beat_interval.tv_nsec = 0;
+
+    int ret = pselect(maxfd + 1, &fdset, nullptr, nullptr,
+                      &heart_beat_interval,
+                      &sigmask);
+    char cmd[1] = {SERVICE_CMD_NULL};
+    if (AM_UNLIKELY(ret < 0)) { /* Error Occurs */
+      if (AM_LIKELY(errno != EINTR)) {
+        PERROR("pselect");
+        break;
+      }
+    } else if (ret > 0) { /* Get Control Command */
+      if (AM_LIKELY(FD_ISSET(WD_CTRL_SOCK_R, &fdset))) {
+        if (AM_LIKELY(read(WD_CTRL_SOCK_R, cmd, sizeof(cmd)) < 0)) {
+          ERROR("Failed to read WatchDog Thread Control Command of %s! Quit!",
+                m_thread_feed_dog->name());
+          cmd[0] = SERVICE_CMD_ABORT;
+        } else {
+          INFO("%s received command from WatchDog Thread control socket: %c",
+                 m_thread_feed_dog->name(), cmd[0]);
+        }
+      }
+    } /* ret == 0 means timeout */
+
+    switch(AM_SERVICE_FRAME_CMD(cmd[0])) {
+      case SERVICE_CMD_ABORT:
+      case SERVICE_CMD_QUIT: {
+        run = false;
+        continue;
+      }break;
+      case SERVICE_CMD_NULL:
+      default:break;
     }
   }
-  sem_close(thread->m_semaphore);
-  thread->m_semaphore = nullptr;
+
+  while (sem_trywait(m_semaphore) == 0) {/*Clear all the semaphore*/}
+  sem_close(m_semaphore);
+  m_semaphore = nullptr;
 }

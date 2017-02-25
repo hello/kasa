@@ -4,17 +4,37 @@
  *  History:
  *    Mar 6, 2015 - [Shupeng Ren] created file
  *
- * Copyright (C) 2007-2015, Ambarella, Inc.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 #ifndef _AM_EVENT_SENDER_H_
 #define _AM_EVENT_SENDER_H_
 
 #include "am_event_sender_if.h"
+#include "am_mutex.h"
+#include <atomic>
+#include <vector>
 
 class AMIEventSender;
 class AMEventSenderOutput;
@@ -33,7 +53,7 @@ class AMEventSender: public AMPacketActiveFilter, public AMIEventSender
     virtual void get_info(INFO& info) override;
     virtual AMIPacketPin* get_input_pin(uint32_t index) override;
     virtual AMIPacketPin* get_output_pin(uint32_t index) override;
-    virtual bool send_event() override;
+    virtual bool send_event(AMEventStruct& event) override;
     virtual uint32_t version() override;
 
   private:
@@ -44,19 +64,20 @@ class AMEventSender: public AMPacketActiveFilter, public AMIEventSender
                   uint32_t output_num);
     virtual void on_run() override;
     AM_PTS get_current_pts();
+    bool check_event_params(AMEventStruct& event);
 
   private:
-    int                             m_hw_timer_fd;
-    bool                            m_run;
-    AM_PTS                          m_last_pts;
-    uint32_t                        m_input_num;
-    uint32_t                        m_output_num;
-    vector<AMEventSenderOutput*>    m_output;
-    vector<AMFixedPacketPool*>      m_packet_pool;
-    AMEventSenderConfig            *m_config;
-    EventSenderConfig              *m_event_config;
-    AMEvent                        *m_event;
-    std::mutex                      m_mutex;
+    AM_PTS                            m_last_pts;
+    AMEventSenderConfig              *m_config;
+    EventSenderConfig                *m_event_config;
+    AMEvent                          *m_event;
+    int                               m_hw_timer_fd;
+    uint32_t                          m_input_num;
+    uint32_t                          m_output_num;
+    std::atomic_bool                  m_run;
+    std::vector<AMEventSenderOutput*> m_output;
+    std::vector<AMFixedPacketPool*>   m_packet_pool;
+    AMMemLock                         m_mutex;
 };
 
 class AMEventSenderOutput: public AMPacketOutputPin

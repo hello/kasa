@@ -4,12 +4,29 @@
  * History:
  *   2015-1-12 - [Tao Wu] created file
  *
- * Copyright (C) 2008-2015, Ambarella ShangHai Co,Ltd
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -18,9 +35,9 @@
 #include <arpa/inet.h>
 struct DnsIPv4
 {
+    DnsIPv4 *dns_next;
     uint32_t dns;
     char dns_string[INET_ADDRSTRLEN + 1];
-    DnsIPv4 *dns_next;
     DnsIPv4();
     ~DnsIPv4();
 
@@ -32,9 +49,9 @@ struct DnsIPv4
 
 struct DnsIPv6
 {
-    struct in6_addr dns;
-    char dns_string[INET6_ADDRSTRLEN + 1];
     DnsIPv6 *dns_next;
+    char dns_string[INET6_ADDRSTRLEN + 1];
+    struct in6_addr dns;
     DnsIPv6();
     ~DnsIPv6();
 
@@ -47,6 +64,8 @@ struct DnsIPv6
 
 struct NetInfoIPv4
 {
+    DnsIPv4     *dns;
+    NetInfoIPv4 *info_next;
     uint32_t netdev_address;
     uint32_t netdev_netmask;
     uint32_t netdev_gateway;
@@ -54,8 +73,6 @@ struct NetInfoIPv4
     char address_string[INET_ADDRSTRLEN + 1];
     char netmask_string[INET_ADDRSTRLEN + 1];
     char gateway_string[INET_ADDRSTRLEN + 1];
-    DnsIPv4     *dns;
-    NetInfoIPv4 *info_next;
     NetInfoIPv4();
     ~NetInfoIPv4();
 
@@ -85,15 +102,15 @@ struct NetInfoIPv4
 
 struct NetInfoIPv6
 {
+    NetInfoIPv6 *info_next;
+    DnsIPv6     *dns;
+    uint32_t netdev_prefix;
     struct in6_addr netdev_address;
     struct in6_addr netdev_netmask;
     struct in6_addr netdev_gateway;
-    uint32_t netdev_prefix;
     char address_string[INET6_ADDRSTRLEN + 1];
     char netmask_string[INET6_ADDRSTRLEN + 1];
     char gateway_string[INET6_ADDRSTRLEN + 1];
-    NetInfoIPv6 *info_next;
-    DnsIPv6     *dns;
     NetInfoIPv6();
     ~NetInfoIPv6();
 
@@ -126,14 +143,14 @@ struct NetInfoIPv6
 
 struct NetDeviceInfo
 {
-    bool is_default;
-    uint32_t netdev_index;
-    int32_t netdev_mtu;
     char *netdev_name;
     char *netdev_mac;
     NetInfoIPv4 *ipv4;
     NetInfoIPv6 *ipv6;
     NetDeviceInfo *info_next;
+    uint32_t netdev_index;
+    int32_t netdev_mtu;
+    bool is_default;
     NetDeviceInfo();
     ~NetDeviceInfo();
     void print_netdev_info();
@@ -163,8 +180,6 @@ struct NetDeviceInfo
 
 struct APInfo
 {
-    int index;
-
     const char *active_bssid;
     const char *device;
     const char *bssid;
@@ -182,6 +197,9 @@ struct APInfo
     const char *path;
 
     APInfo *info_next;
+
+    int index;
+
     APInfo();
     ~APInfo();
     void print_ap_info();

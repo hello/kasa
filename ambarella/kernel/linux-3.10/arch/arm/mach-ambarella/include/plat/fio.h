@@ -31,44 +31,35 @@
 #define	FIO_USE_2X_FREQ			0
 #endif
 
-#if (CHIP_REV == S2) || (CHIP_REV == S2E)
-#define	NAND_READ_ID5			1
-#define SYS_CONFIG_NAND_PAGE_SIZE	0x00000010
-#define SYS_CONFIG_NAND_READ_CONFIRM	0x00000020
-#define SYS_CONFIG_NAND_ECC_BCH_EN	0x00000400
-#define SYS_CONFIG_NAND_ECC_SPARE_2X	0x00000800
-
-#elif (CHIP_REV == S2L) || (CHIP_REV == S3)
-#define	NAND_READ_ID5			1
-#define SYS_CONFIG_NAND_PAGE_SIZE	0x00040000
-#define SYS_CONFIG_NAND_READ_CONFIRM	0x00020000
-#define SYS_CONFIG_NAND_ECC_BCH_EN	0x00010000
-#define SYS_CONFIG_NAND_ECC_SPARE_2X	0x00008000
-
-#else
+#if (CHIP_REV == A5S)
 #define	NAND_READ_ID5			0
-#define SYS_CONFIG_NAND_PAGE_SIZE	0x00000020
-#define SYS_CONFIG_NAND_READ_CONFIRM	0x00000040
-#define SYS_CONFIG_NAND_ECC_BCH_EN	0x00000000
-#define SYS_CONFIG_NAND_ECC_SPARE_2X	0x00000000
-
+#else
+#define	NAND_READ_ID5			1
 #endif
 
-#if (CHIP_REV == S2E) || (CHIP_REV == S2L) || (CHIP_REV == S3)
-#define	FIO_INDEPENDENT_SD		1
-#else
+#if (CHIP_REV == A5S) || (CHIP_REV == S2)
 #define	FIO_INDEPENDENT_SD		0
+#else
+#define	FIO_INDEPENDENT_SD		1
 #endif
 
-#if (CHIP_REV == S2E)
-#define NAND_ECC_RPT_NUM_SUPPORT	1
+/* For BCH mode */
+#if (CHIP_REV == S3L)
+#define FIO_SUPPORT_SKIP_BLANK_ECC	1
 #else
-#define NAND_ECC_RPT_NUM_SUPPORT	0
+#define FIO_SUPPORT_SKIP_BLANK_ECC	0
 #endif
+
 /* ==========================================================================*/
 #define FIO_FIFO_OFFSET			0x0000
 #define FIO_OFFSET			0x1000
+#if (CHIP_REV == S2E)
+#define FIO_4K_OFFSET			0x1e000
+#else
 #define FIO_4K_OFFSET			0x30000
+#endif
+
+#define FIO_4K_PHYS_BASE		(AHB_PHYS_BASE + FIO_4K_OFFSET)
 
 #define FIO_FIFO_BASE			(AHB_BASE + FIO_FIFO_OFFSET)
 #define FIO_BASE			(AHB_BASE + FIO_OFFSET)
@@ -97,6 +88,11 @@
 #define FIO_CTR_DA			0x00020000
 #define FIO_CTR_DR			0x00010000
 #define FIO_CTR_SX			0x00000100
+#if (FIO_SUPPORT_SKIP_BLANK_ECC == 1)
+#define FIO_CTR_SKIP_BLANK		0x00000080
+#else
+#define FIO_CTR_SKIP_BLANK		0x00000000
+#endif
 #define FIO_CTR_ECC_8BIT		0x00000060
 #define FIO_CTR_ECC_6BIT		0x00000040
 #define FIO_CTR_RS			0x00000010
@@ -182,6 +178,8 @@ extern void fio_amb_sdio0_set_int(u32 mask, u32 on);
 
 extern int ambarella_init_fio(void);
 extern void ambarella_fio_rct_reset(void);
+
+extern void *ambarella_fio_push(void *func, u32 size);
 
 #endif /* __ASSEMBLER__ */
 /* ==========================================================================*/

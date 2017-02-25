@@ -1,18 +1,35 @@
-/**********************************************************
+/*
  * test_privacymask.c
  *
  * History:
  *	2010/05/28 - [Louis Sun] created for A5s
  *	2011/07/04 - [Jian Tang] modified for A5s
  *
- * Copyright (C) 2007-2011, Ambarella, Inc.
+ * Copyright (C) 2015 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
  *
- *********************************************************/
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -58,9 +75,6 @@ typedef struct privacy_mask_rect_s{
 static int mask_rect_remove = 0;
 static int mask_rect_set = 0;
 static privacy_mask_rect_t	mask_rect;
-
-static int hdr_x_offset = 0;
-static int hdr_y_offset = 0;
 
 #define NO_ARG		0
 #define HAS_ARG		1
@@ -216,14 +230,6 @@ static inline int get_vin_info(){
 
 	memcpy(&vin_info, &video_info.info, sizeof(struct amba_video_info));
 
-	if (video_info.info.hdr_mode >= AMBA_VIDEO_2X_HDR_MODE) {
-		vin_info.width = video_info.info.max_act_width;
-		vin_info.height = video_info.info.max_act_height;
-		// FIX ME! act win and max_act win may not have same center in the future.
-		hdr_x_offset = (video_info.info.max_act_width - video_info.info.width) / 2;
-		hdr_y_offset = (video_info.info.max_act_height - video_info.info.height) / 2;
-	}
-
 	vsrc_fps.vsrc_id = 0;
 	if (ioctl(fd_privacy_mask, IAV_IOC_VIN_GET_FPS, &vsrc_fps) < 0) {
 		perror("IAV_IOC_VIN_GET_FPS");
@@ -313,14 +319,12 @@ int fill_pm_mem(privacy_mask_rect_t pm_rect, int pm_remove)
 		row += pitch;
 	}
 
-
 	if (ioctl(fd_privacy_mask, IAV_IOC_SET_PRIVACY_MASK, &privacy_mask) < 0) {
 		perror("IAV_IOC_SET_PRIVACY_MASK");
 		return -1;
 	}
 
 	return 0;
-
 }
 
 int auto_run_test(int interval)
@@ -329,8 +333,8 @@ int auto_run_test(int interval)
 	privacy_mask_rect_t random_pm;
 	sleep_time = interval * 1000000 / (DIV_ROUND(512000000, vin_frame_time));
 
-	random_pm.start_x = rand() % vin_info.width + hdr_x_offset;
-	random_pm.start_y = rand() % vin_info.height + hdr_y_offset;
+	random_pm.start_x = rand() % vin_info.width;
+	random_pm.start_y = rand() % vin_info.height;
 	random_pm.width = rand() % vin_info.width;
 	random_pm.height = rand() % vin_info.height;
 
@@ -410,9 +414,6 @@ int main(int argc, char **argv)
 			}
 			return 0;
 		}
-
-		mask_rect.start_x += hdr_x_offset;
-		mask_rect.start_y += hdr_y_offset;
 
 		if (fill_pm_mem(mask_rect, mask_rect_remove) < 0){
 			perror("fill_pm_mem");

@@ -1,24 +1,34 @@
-/*
- *  RSA/SHA-256 signature creation program
+/*******************************************************************************
+ * rsa_sign.c
  *
- *  Copyright (C) 2006-2011, ARM Limited, All Rights Reserved
+ * History:
+ *  2015/06/25 - [Zhi He] create file
  *
- *  This file is part of mbed TLS (https://tls.mbed.org)
+ * Copyright (C) 2015 Ambarella, Inc.
  *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
  *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
- *  You should have received a copy of the GNU General Public License along
- *  with this program; if not, write to the Free Software Foundation, Inc.,
- *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
- */
+ ******************************************************************************/
 
 #include <stdio.h>
 #include <string.h>
@@ -26,100 +36,80 @@
 
 #include "cryptography_if.h"
 
-int main( int argc, char *argv[] )
+int main()
 {
-    FILE *f;
-    int ret;
+    FILE *f = NULL;
+    int ret = 0;
     unsigned int i;
     rsa_context_t rsa;
-    unsigned char hash[32] = {
+    unsigned char fake_digest[32] = {
         0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef,
         0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef,
         0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef,
         0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef
     };
-    unsigned char buf[D_BIG_NUMBER_MAX_SIZE];
+    unsigned char signature[128];
 
-    ret = 1;
+    rsa_init(&rsa, RSA_PKCS_V15, 0);
 
-    if( ( f = fopen( "rsa_priv.txt", "rb" ) ) == NULL )
-    {
+    if ((f = fopen( "rsa_priv.txt", "rb")) == NULL) {
         ret = 1;
-        printf( " failed\n  ! Could not open rsa_priv.txt\n" \
-                "  ! Please run rsa_genkey first\n\n" );
+        printf("cannot open rsa_priv.txt\n");
         goto exit;
     }
 
-    rsa_init( &rsa, RSA_PKCS_V15, 0 );
-
-    if( ( ret = big_number_read_file( &rsa.N , 16, f ) ) != 0 ||
-        ( ret = big_number_read_file( &rsa.E , 16, f ) ) != 0 ||
-        ( ret = big_number_read_file( &rsa.D , 16, f ) ) != 0 ||
-        ( ret = big_number_read_file( &rsa.P , 16, f ) ) != 0 ||
-        ( ret = big_number_read_file( &rsa.Q , 16, f ) ) != 0 ||
-        ( ret = big_number_read_file( &rsa.DP, 16, f ) ) != 0 ||
-        ( ret = big_number_read_file( &rsa.DQ, 16, f ) ) != 0 ||
-        ( ret = big_number_read_file( &rsa.QP, 16, f ) ) != 0 )
-    {
-        printf( " failed\n  ! big_number_read_file returned %d\n\n", ret );
+    if ((ret = big_number_read_file( &rsa.N , 16, f)) != 0 ||
+        (ret = big_number_read_file( &rsa.E , 16, f)) != 0 ||
+        (ret = big_number_read_file( &rsa.D , 16, f)) != 0 ||
+        (ret = big_number_read_file( &rsa.P , 16, f)) != 0 ||
+        (ret = big_number_read_file( &rsa.Q , 16, f)) != 0 ||
+        (ret = big_number_read_file( &rsa.DP, 16, f)) != 0 ||
+        (ret = big_number_read_file( &rsa.DQ, 16, f)) != 0 ||
+        (ret = big_number_read_file( &rsa.QP, 16, f)) != 0) {
+        printf("big_number_read_file fail, return %d\n", ret);
         goto exit;
     }
 
-    rsa.len = ( big_number_msb( &rsa.N ) + 7 ) >> 3;
+    fclose(f);
+    f = NULL;
 
-    fclose( f );
-
-    printf( "\n  . Checking the private key" );
-    fflush( stdout );
-    if( ( ret = rsa_check_privkey( &rsa ) ) != 0 )
-    {
-        printf( " failed\n  ! rsa_check_privkey failed with -0x%0x\n", -ret );
+    rsa.len = (big_number_msb(&rsa.N) + 7) >> 3;
+    if (128 != rsa.len){
+        printf("only support 1024 bit rsa, len %d\n", rsa.len);
         goto exit;
     }
 
-    /*
-     * Compute the SHA-256 hash of the input file,
-     * then calculate the RSA signature of the hash.
-     */
-    printf( "\n  . Generating the RSA/SHA-256 signature" );
-    fflush( stdout );
-
-#if 0
-    if( ( ret = sha1_file( argv[1], hash ) ) != 0 )
-    {
-        printf( " failed\n  ! Could not open or read %s\n\n", argv[1] );
-        goto exit;
-    }
-#endif
-
-    if ((ret = rsa_sha256_sign(&rsa, hash, buf ) ) != 0 )
-    {
-        printf( " failed\n  ! rsa_pkcs1_sign returned -0x%0x\n\n", -ret );
+    if ((ret = rsa_check_privkey(&rsa)) != 0) {
+        printf("rsa_check_privkey fail, return %d\n",ret);
         goto exit;
     }
 
-    if( ( f = fopen("test.sign", "wb+" ) ) == NULL )
-    {
+    if ((ret = rsa_sha256_sign(&rsa, fake_digest, signature)) != 0) {
+        printf("rsa_sha256_sign fail, return %d\n\n", ret);
+        goto exit;
+    }
+
+    if ((f = fopen("test.sign", "wb+")) == NULL) {
         ret = 1;
-        printf( " failed\n  ! Could not create %s\n\n", argv[1] );
+        printf("cannot open test.sign\n");
         goto exit;
     }
 
-    for( i = 0; i < rsa.len; i++ )
-        fprintf( f, "%02X%s", buf[i],
-                 ( i + 1 ) % 16 == 0 ? "\r\n" : " " );
+    fwrite(signature, 1, sizeof(signature), f);
 
-    fclose( f );
-
-    printf( "\n  . Done (created \"%s\")\n\n", argv[1] );
-
+    printf("sign done\n");
 exit:
 
+    if (f != NULL)
+        fclose(f);
+
+    rsa_free(&rsa);
+
 #if defined(_WIN32)
-    printf( "  + Press Enter to exit this program.\n" );
-    fflush( stdout ); getchar();
+    printf("press any key to exit.\n" );
+    fflush(stdout); getchar();
 #endif
 
-    return( ret );
+    return ret;
 }
 

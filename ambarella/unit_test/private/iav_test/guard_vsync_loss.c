@@ -5,15 +5,31 @@
  * History:
  *	2014/07/28 - [Zhaoyang Chen] create this file
  *
- * Copyright (C) 2012-2015, Ambarella, Inc.
+ * Copyright (C) 2015 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
-
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -33,56 +49,14 @@
 #include <basetypes.h>
 
 #include "iav_ioctl.h"
+#include "iav_netlink.h"
 
 // vin
 #include "../vin_test/vin_init.c"
 
 
-#define NL_PORT_VSYNC			21
-#define MAX_NL_MSG_LEN 			1024
-
 #define MAX_ENCODE_STREAM_NUM	(IAV_STREAM_MAX_NUM_IMPL)
 #define ALL_ENCODE_STREAMS		((1<<MAX_ENCODE_STREAM_NUM) - 1)
-
-
-enum NL_REQUEST_VSYNC {
-	NL_REQUEST_VSYNC_RESTORE = 0,
-	NL_REQUEST_VSYNC_FIRST = NL_REQUEST_VSYNC_RESTORE,
-	NL_REQUEST_VSYNC_LAST = NL_REQUEST_VSYNC_RESTORE + 1,
-	NL_REQUEST_VSYNC_NUM = NL_REQUEST_VSYNC_LAST - NL_REQUEST_VSYNC_FIRST,
-};
-
-enum NL_SESSION_CMD {
-	NL_SESSION_CMD_CONNECT = 0,
-	NL_SESSION_CMD_DISCONNECT,
-	NL_SESSION_CMD_FIRST = NL_SESSION_CMD_CONNECT,
-	NL_SESSION_CMD_LAST = NL_SESSION_CMD_DISCONNECT + 1,
-	NL_SESSION_CMD_NUM = NL_SESSION_CMD_LAST - NL_SESSION_CMD_FIRST,
-};
-
-enum NL_CMD_STATUS {
-	NL_CMD_STATUS_SUCCESS = 0,
-	NL_CMD_STATUS_FAIL,
-};
-
-enum NL_MSG_TYPE {
-	NL_MSG_TYPE_SESSION = 0,
-	NL_MSG_TYPE_REQUEST,
-};
-
-enum NL_MSG_DIR {
-	NL_MSG_DIR_CMD = 0,
-	NL_MSG_DIR_STATUS,
-};
-
-struct nl_msg_data {
-	u32 pid;
-	u32 port;
-	u32 type;
-	u32 dir;
-	u32 cmd;
-	u32 status;
-};
 
 struct nl_vsync_config {
 	s32 fd_nl;
@@ -293,6 +267,7 @@ static int restart_encoded_streams(void)
 static int reset_vin(void)
 {
 	struct vindev_mode video_info;
+	struct vindev_fps vsrc_fps;
 	// select channel: for multi channel VIN (initialize)
 	if (channel >= 0) {
 		if (select_channel() < 0)
@@ -301,18 +276,32 @@ static int reset_vin(void)
 
 	memset(&video_info, 0, sizeof(video_info));
 	video_info.vsrc_id = 0;
-	if(ioctl(fd_iav, IAV_IOC_VIN_GET_MODE, &video_info)){
+	if(ioctl(fd_iav, IAV_IOC_VIN_GET_MODE, &video_info) < 0) {
 		return -1;
 	} else {
 		printf("Start to restore vin_mode 0x%x and hdr_mode %d.\n",
 			video_info.video_mode, video_info.hdr_mode);
 	}
 
-	if(ioctl(fd_iav, IAV_IOC_VIN_SET_MODE, &video_info)){
+	vsrc_fps.vsrc_id = 0;
+	if(ioctl(fd_iav, IAV_IOC_VIN_GET_FPS, &vsrc_fps) < 0) {
+		return -1;
+	} else {
+		printf("Start to restore vin frame rate %d.\n", vsrc_fps.fps);
+	}
+
+	if(ioctl(fd_iav, IAV_IOC_VIN_SET_MODE, &video_info) < 0) {
 		return -1;
 	} else {
 		printf("Succeed to restore vin_mode 0x%x and hdr_mode %d.\n",
 			video_info.video_mode, video_info.hdr_mode);
+	}
+
+	if (ioctl(fd_iav, IAV_IOC_VIN_SET_FPS, &vsrc_fps) < 0) {
+		perror("IAV_IOC_VIN_SET_FPS");
+		return -1;
+	} else {
+		printf("Succeed to restore vin frame rate %d.\n", vsrc_fps.fps);
 	}
 
 	return 0;
@@ -331,7 +320,10 @@ static int recover_vsync_loss()
 	if (ret) {
 		return ret;
 	}
-	reset_vin();
+	ret = reset_vin();
+	if (ret) {
+		return ret;
+	}
 	ret = enter_preview();
 	if (ret) {
 		return ret;
@@ -345,13 +337,13 @@ static int process_vsync_req(int vsync_req)
 {
 	int ret = 0;
 
-	if (vsync_req == NL_REQUEST_VSYNC_RESTORE) {
+	if (vsync_req == NL_REQ_VSYNC_RESTORE) {
 		ret = recover_vsync_loss();
 		vsync_config.msg.pid = getpid();
 		vsync_config.msg.port = NL_PORT_VSYNC;
 		vsync_config.msg.type = NL_MSG_TYPE_REQUEST;
 		vsync_config.msg.dir = NL_MSG_DIR_STATUS;
-		vsync_config.msg.cmd = NL_REQUEST_VSYNC_RESTORE;
+		vsync_config.msg.cmd = NL_REQ_VSYNC_RESTORE;
 		if (ret < 0) {
 			vsync_config.msg.status = NL_CMD_STATUS_FAIL;
 			send_vsync_msg_to_kernel(vsync_config.msg);
@@ -377,7 +369,7 @@ static int process_vsync_session_status(struct nl_msg_data *kernel_msg)
 	}
 
 	switch (kernel_msg->cmd) {
-	case NL_SESSION_CMD_CONNECT:
+	case NL_SESS_CMD_CONNECT:
 		if (kernel_msg->status == NL_CMD_STATUS_SUCCESS) {
 			vsync_config.nl_connected = 1;
 			printf("Connection established with kernel.\n");
@@ -386,7 +378,7 @@ static int process_vsync_session_status(struct nl_msg_data *kernel_msg)
 			printf("Failed to establish connection with kernel!\n");
 		}
 		break;
-	case NL_SESSION_CMD_DISCONNECT:
+	case NL_SESS_CMD_DISCONNECT:
 		vsync_config.nl_connected = 0;
 		if (kernel_msg->status == NL_CMD_STATUS_SUCCESS) {
 			printf("Connection removed with kernel.\n");
@@ -466,7 +458,7 @@ static void * netlink_loop(void * data)
 	int count = 100;
 
 	while (count && !vsync_config.nl_connected) {
-		if (nl_send_vsync_session_cmd(NL_SESSION_CMD_CONNECT) < 0) {
+		if (nl_send_vsync_session_cmd(NL_SESS_CMD_CONNECT) < 0) {
 			printf("Failed to establish connection with kernel!\n");
 		}
 		sleep(1);
@@ -496,7 +488,7 @@ static void * netlink_loop(void * data)
 
 static void sigstop()
 {
-	nl_send_vsync_session_cmd(NL_SESSION_CMD_DISCONNECT);
+	nl_send_vsync_session_cmd(NL_SESS_CMD_DISCONNECT);
 	exit(1);
 }
 

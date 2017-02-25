@@ -5,12 +5,29 @@
  *	2013/03/12 - [Cao Rongrong] Created file
  *	2013/12/12 - [Jian Tang] Modified file
  *
- * Copyright (C) 2012-2018, Ambarella, Inc.
+ * Copyright (C) 2015 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -41,14 +58,6 @@ enum {
 	DSP_ENCODE_MODE_LAST = DSP_ENCODE_MODE_TOTAL_NUM,
 };
 
-enum iav_chip_arch {
-	CHIP_ARCH_UNKNOWN = 0xFFFF,
-	CHIP_ARCH_S2L = 12000,
-	CHIP_ARCH_S3L = 13000,
-
-	CHIP_ARCH_NUM = 2,
-};
-
 enum iav_chip_id {
 	IAV_CHIP_ID_UNKNOWN = -1,
 
@@ -62,6 +71,9 @@ enum iav_chip_id {
 	IAV_CHIP_ID_S2L_88		= 6,
 	IAV_CHIP_ID_S2L_99		= 7,
 	IAV_CHIP_ID_S2L_TEST		= 8,
+	IAV_CHIP_ID_S2L_22		= 9,
+	IAV_CHIP_ID_S2L_33MEX	= 10,
+	IAV_CHIP_ID_S2L_33EX	= 11,
 	IAV_CHIP_ID_S2L_LAST,
 	IAV_CHIP_ID_S2LM_FIRST	= IAV_CHIP_ID_S2L_22M,
 	IAV_CHIP_ID_S2LM_LAST	= IAV_CHIP_ID_S2L_99M + 1,
@@ -79,6 +91,11 @@ enum iav_chip_id {
 	IAV_CHIP_ID_S3LM_LAST	= IAV_CHIP_ID_S3L_99M + 1,
 	IAV_CHIP_ID_S3L_FIRST	= IAV_CHIP_ID_S3L_66,
 	IAV_CHIP_ID_S3L_NUM		= IAV_CHIP_ID_S3L_LAST - IAV_CHIP_ID_S3LM_FIRST,
+};
+
+enum {
+	DSP_CLOCK_NORMAL_STATE = 0,
+	DSP_CLOCK_OFF_STATE = 1,
 };
 
 struct iav_window {
@@ -118,6 +135,11 @@ struct iav_driver_dsp_info {
 	u8 dspin[8];
 };
 
+struct iav_dsp_hash {
+	u8 input[32];
+	u8 output[4];
+};
+
 struct iav_dsplog_setup {
 	int	cmd;
 	u32	args[8];
@@ -139,34 +161,6 @@ enum iav_system_params {
 	IAV_STREAM_MAX_NUM_IMPL = 4,
 	IAV_STREAM_MAX_NUM_EXTRA = 0,
 	IAV_STREAM_MAX_NUM_ALL = (IAV_STREAM_MAX_NUM_IMPL + IAV_STREAM_MAX_NUM_EXTRA),
-};
-
-enum iav_srcbuf_id {
-	IAV_SRCBUF_MN = 0,		/* main buffer */
-	IAV_SRCBUF_PC,			/* 2nd buffer */
-	IAV_SRCBUF_PB,			/* 3rd buffer */
-	IAV_SRCBUF_PA,			/* 4th buffer */
-#ifdef CONFIG_ARCH_S3L
-	IAV_SRCBUF_PD,			/* 5th buffer */
-#endif
-	IAV_SRCBUF_PMN,		/* virtual pre-main buffer, only for dewarp mode */
-	IAV_SRCBUF_EFM,		/* efm buffer */
-	IAV_SRCBUF_NUM,
-
-	/* For user space convenience */
-	IAV_SRCBUF_1 = IAV_SRCBUF_MN,
-	IAV_SRCBUF_2 = IAV_SRCBUF_PC,
-	IAV_SRCBUF_3 = IAV_SRCBUF_PB,
-	IAV_SRCBUF_4 = IAV_SRCBUF_PA,
-#ifdef CONFIG_ARCH_S3L
-	IAV_SRCBUF_5 = IAV_SRCBUF_PD,
-#endif
-
-	IAV_SRCBUF_FIRST = IAV_SRCBUF_MN,
-	IAV_SRCBUF_LAST = IAV_SRCBUF_PMN,
-	IAV_SRCBUF_LAST_PMN = IAV_SRCBUF_PMN + 1,
-	IAV_SUB_SRCBUF_FIRST = IAV_SRCBUF_PC,
-	IAV_SUB_SRCBUF_LAST = IAV_SRCBUF_PMN,
 };
 
 enum iav_hdr_type {
@@ -210,83 +204,14 @@ enum iav_debug_type {
 	DEBUG_TYPE_CHIP_ID = (1 << 2),
 };
 
-enum instant_mjpeg_enable {
-	IAV_FETCH_MJPEG_INSTANT_DISABLE = 0,
-	IAV_FETCH_MJPEG_INSTANT_ENABLE = 1,
-};
-
 struct iav_res_s3l {
-	u32 arch;
 	u32 num_aaa_buf : 4;
 	u32 num_vin_stats_buf : 4;
 	u32 reserved : 24;
 };
 
-struct iav_system_resource {
-	u8 encode_mode;
-	u8 max_num_encode;
-	u8 max_num_cap_sources;
-	u8 exposure_num;
-
-	struct iav_window buf_max_size[IAV_SRCBUF_NUM];
-	struct iav_window stream_max_size[IAV_STREAM_MAX_NUM_ALL];
-	u8 stream_max_M[IAV_STREAM_MAX_NUM_ALL];
-	u8 stream_max_N[IAV_STREAM_MAX_NUM_ALL];
-	u8 stream_max_advanced_quality_model[IAV_STREAM_MAX_NUM_ALL];
-	u8 stream_long_ref_enable[IAV_STREAM_MAX_NUM_ALL];
-
-	/* Read only */
-	u32 raw_pitch_in_bytes;
-	u32 total_memory_size : 8;
-	u32 hdr_type : 2;
-	u32 iso_type : 3;
-	u32 is_stitched : 1;
-	u32 reserved1 : 18;
-
-	/* Writable for different configuration */
-	u32 rotate_enable : 1;
-	u32 raw_capture_enable : 1;
-	u32 vout_swap_enable : 1;
-	u32 lens_warp_enable : 1;
-	u32 enc_raw_rgb : 1;
-	u32 mixer_a_enable : 1;
-	u32 mixer_b_enable : 1;
-	u32 osd_from_mixer_a : 1;
-	u32 osd_from_mixer_b : 1;
-	u32 idsp_upsample_type : 2;
-	u32 mctf_pm_enable : 1;
-	u32 me0_scale : 2;
-	u32 enc_from_mem : 1;
-	u32 enc_raw_yuv : 1;
-	u32 eis_delay_count : 2;
-	u32 reserved2 : 14;
-	u32 dsp_partition_map;
-
-	struct iav_window raw_size;	/* Only for encode from raw (RGB/YUV) feature */
-	struct iav_window efm_size;	/* Only for encode from memory feature */
-	s8  extra_dram_buf[IAV_SRCBUF_NUM];
-	s8  reserved3[3];
-	u16 efm_buf_num;
-	u16 max_warp_input_width;
-	u16 max_warp_input_height;
-	u16 max_warp_output_width;
-	u16 max_padding_width; // For LDC stitching
-	u16 v_warped_main_max_width;
-	u16 v_warped_main_max_height;
-	u16 enc_dummy_latency;
-
-	/* Debug only */
-	u32 debug_enable_map;
-	u32 debug_stitched : 1;
-	u32 debug_iso_type : 3;
-	u32 debug_chip_id : 5;
-	u32 reserved4 : 23;
-
-	/* Different for ARCHs */
-	union {
-		struct iav_res_s3l res;
-	};
-};
+// Do Not change the definition order
+#include <iav_types_arch.h>
 
 enum iav_chroma_radius_num {
 	CHROMA_RADIUS_32 = 0,
@@ -346,8 +271,9 @@ enum iav_buffer_id {
 	IAV_BUFFER_BPC = 10,
 	IAV_BUFFER_CMD_SYNC = 11,
 	IAV_BUFFER_PM_MCTF = 12,
-	IAV_BUFFER_FB_DATA = 13,
-	IAV_BUFFER_FB_AUDIO = 14,
+	IAV_BUFFER_VCA = 13,
+	IAV_BUFFER_FB_DATA = 14,
+	IAV_BUFFER_FB_AUDIO = 15,
 	IAV_BUFFER_NUM,
 	IAV_BUFFER_FIRST = IAV_BUFFER_DSP,
 	IAV_BUFFER_LAST = IAV_BUFFER_NUM,
@@ -408,6 +334,7 @@ enum iav_desc_id {
 	IAV_DESC_ME1 = 4,
 	IAV_DESC_ME0 = 5,
 	IAV_DESC_BUFCAP = 6,
+	IAV_DESC_QP_HIST = 7,
 	IAV_DESC_NUM,
 	IAV_DESC_FIRST = IAV_DESC_FRAME,
 	IAV_DESC_LAST = IAV_DESC_NUM,
@@ -448,28 +375,36 @@ struct iav_framedesc {
 	u32 instant_fetch 	: 1;
 	u32 reserved		: 3;
 	u32 bitrate_kbps	: 16;
+	u32 mv_data_offset;
 	u64 arm_pts;
 	u64 dsp_pts;
 	u32 frame_num;
 	u32 session_id;
 	u32 size;
 	struct iav_window reso;
+	u32 reserved1;
+	u64 enc_done_ts;
+};
+
+/* mv descriptor reported by DSP */
+struct iav_mv {
+	int x : 15;			// Bit [14:0] is the x component in signed 15-bit format
+	int y : 12;			// Bit [26:15] is the y component in signed 12-bit format
+	int reserved : 5;
 };
 
 struct iav_statisdesc {
 	u32 id;
+	u32 time_ms;		/* timeout in ms; -1 means non-blocking, 0 means blocking */
 	u32 data_addr_offset;
-	u64 dsp_pts;
+	u32 width;
+	u32 height;
+	u32 pitch;
+	u64 arm_pts;
+	u32 dsp_pts;
 	u32 frame_num;
-	u32 mvdump_pitch;
-	u32 mvdump_unit_sz;
-};
-
-/* encode statistics descriptor reported by DSP */
-struct iav_motion_vector {
-	int x : 14;			// Bit [13:0] is the x component in signed 14-bit format
-	int y : 13;			// Bit [26:14] is the y component in signed 13-bit format
-	int reserved : 5;
+	u32 session_id;
+	u32 size;
 };
 
 enum IAV_BUFCAP_FLAG {
@@ -541,6 +476,21 @@ struct iav_bufcapdesc {
 	struct iav_me_cap me0[IAV_SRCBUF_NUM];
 };
 
+/* Total number of bins for QP histogram */
+#define	IAV_QP_HIST_BIN_MAX_NUM	(16)
+struct iav_qp_histogram {
+	u32 id;
+	u32 PTS;
+	u8 qp[IAV_QP_HIST_BIN_MAX_NUM];	// QP value for each bin
+	u16 mb[IAV_QP_HIST_BIN_MAX_NUM];	// Macroblocks used per each bin
+};
+
+struct iav_qphistdesc {
+	struct iav_qp_histogram stream_qp_hist[IAV_STREAM_MAX_NUM_IMPL];
+	u32 stream_num;
+	u32 seq_num;
+};
+
 struct iav_querydesc {
 	enum iav_desc_id qid;	/* query desc id */
 	union {
@@ -551,6 +501,7 @@ struct iav_querydesc {
 		struct iav_mebufdesc me1;
 		struct iav_mebufdesc me0;
 		struct iav_bufcapdesc bufcap;
+		struct iav_qphistdesc qphist;
 	} arg;
 };
 
@@ -558,6 +509,7 @@ enum iav_srcbuf_type {
 	IAV_SRCBUF_TYPE_OFF = 0,
 	IAV_SRCBUF_TYPE_ENCODE = 1,
 	IAV_SRCBUF_TYPE_PREVIEW = 2,
+	IAV_SRCBUF_TYPE_VCA = 3,
 };
 
 enum iav_srcbuf_state {
@@ -567,6 +519,8 @@ enum iav_srcbuf_state {
 	IAV_SRCBUF_STATE_ERROR = 255,
 };
 
+#define MAX_NUM_VCA_DUMP_DURATION (32)
+
 struct iav_srcbuf_setup {
 	struct iav_window size[IAV_SRCBUF_NUM];
 	struct iav_rect input[IAV_SRCBUF_NUM];
@@ -574,6 +528,10 @@ struct iav_srcbuf_setup {
 
 	/* Following fields only work for dewarp mode */
 	u8 unwarp[IAV_SRCBUF_NUM];
+
+	/* Following fields only work for vca */
+	u8 dump_interval[IAV_SRCBUF_NUM];
+	u16 dump_duration[IAV_SRCBUF_NUM];
 };
 
 struct iav_srcbuf_format {
@@ -631,8 +589,7 @@ struct iav_stream_format {
 	u32 vflip : 1;
 	u32 rotate_cw : 1;
 	u32 duration : 16;
-	u32 snapshot_enable : 1;
-	u32 reserved : 12;
+	u32 reserved : 13;
 };
 
 struct iav_h264_gop {
@@ -655,14 +612,18 @@ struct iav_bitrate {
 	u32 p_qp_reduce : 8;
 	u32 adapt_qp : 8;
 	u32 skip_flag : 8;
+	u32 log_q_num_plus_1 : 8;
+	u32 max_i_size_KB;
+	u32 qp_min_on_Q : 8;
+	u32 qp_max_on_Q : 8;
+	u32 q_qp_reduce : 8;
 	u32 reserved1 : 8;
 };
 
-typedef enum {
-	QPROI_TYPE_QP_QUALITY = 0,
-	QPROI_TYPE_QP_OFFSET,
-} QPROI_TYPE;
-
+struct iav_rc_strategy {
+	u32 abs_br_flag : 1;
+	u32 reserved : 31;
+};
 
 typedef enum {
 	QP_FRAME_I = 0,
@@ -674,7 +635,8 @@ typedef enum {
 struct iav_qproi_data {
 	u8 qp_quality;
 	s8 qp_offset;
-	u8 reserved[2];
+	u8 zmv_threshold;
+	u8 reserved;
 };
 
 struct iav_qpmatrix {
@@ -684,7 +646,6 @@ struct iav_qpmatrix {
 	u32 qpm_no_check : 1;		/* no qp matrix check for set op */
 	u32 reserved : 29;
 	char qp_delta[QP_FRAME_TYPE_NUM][4];
-	u32 type;					/* qp roi type */
 	u32 size;
 	u32 data_offset;			/* qp matrix data offset */
 };
@@ -700,6 +661,13 @@ struct iav_h264_enc_param {
 	u8 user3_intra_bias;
 	u8 user3_direct_bias;
 	u16 reserved;
+};
+
+struct iav_h264_pskip {
+	u32 repeat_enable : 1;
+	u32 reserved1 : 15;
+	u32 repeat_num : 8;
+	u32 reserved2 : 8;
 };
 
 enum iav_streamcfg_id {
@@ -719,9 +687,13 @@ enum iav_streamcfg_id {
 	IAV_H264_CFG_ENC_PARAM = 0x1004,
 	IAV_H264_CFG_QP_ROI = 0x1005,
 	IAV_H264_CFG_ZMV_THRESHOLD = 0x1006,
-	IAV_H264_CFG_ENC_IMPROVE = 0x1007,
+	IAV_H264_CFG_FLAT_AREA_IMPROVE = 0x1007,
 	IAV_H264_CFG_FORCE_FAST_SEEK = 0x1008,
 	IAV_H264_CFG_FRAME_DROP = 0x1009,
+	IAV_H264_CFG_STATIS = 0x100A,
+	IAV_H264_CFG_LONG_REF_P = 0x100B,
+	IAV_H264_CFG_RC_STRATEGY = 0x100C,
+	IAV_H264_CFG_FORCE_PSKIP = 0x100D,
 	IAV_H264_CFG_NUM,
 	IAV_H264_CFG_FIRST = IAV_H264_CFG_GOP,
 	IAV_H264_CFG_LAST = IAV_H264_CFG_NUM,
@@ -731,21 +703,6 @@ enum iav_streamcfg_id {
 	IAV_MJPEG_CFG_NUM,
 	IAV_MJPEG_CFG_FIRST = IAV_MJPEG_CFG_QUALITY,
 	IAV_MJPEG_CFG_LAST = IAV_MJPEG_CFG_NUM,
-
-	/* H265 config (0x3000 ~ 0x3FFF) */
-	IAV_H265_CFG_GOP = 0x3000,
-	IAV_H265_CFG_BITRATE = 0x3001,
-	IAV_H265_CFG_FORCE_IDR = 0x3002,
-	IAV_H265_CFG_QP_LIMIT = 0x3003,
-	IAV_H265_CFG_ENC_PARAM = 0x3004,
-	IAV_H265_CFG_QP_ROI = 0x3005,
-	IAV_H265_CFG_ZMV_THRESHOLD = 0x3006,
-	IAV_H265_CFG_ENC_IMPROVE = 0x3007,
-	IAV_H265_CFG_FORCE_FAST_SEEK = 0x3008,
-	IAV_H265_CFG_FRAME_DROP = 0x3009,
-	IAV_H265_CFG_NUM,
-	IAV_H265_CFG_FIRST = IAV_H264_CFG_GOP,
-	IAV_H265_CFG_LAST = IAV_H264_CFG_NUM,
 };
 
 struct iav_stream_cfg {
@@ -759,24 +716,17 @@ struct iav_stream_cfg {
 
 		struct iav_h264_gop h264_gop;
 		struct iav_bitrate h264_rc;
+		struct iav_rc_strategy h264_rc_strategy;
 		struct iav_qpmatrix h264_roi;
 		struct iav_h264_enc_param h264_enc;
+		struct iav_h264_pskip h264_pskip;
 		int h264_force_idr;
-		u32 h264_enc_improve;
+		u32 h264_flat_area_improve;
 		u32 h264_force_fast_seek;
 		u32 h264_drop_frames;
+		u32 h264_statis;
 
 		u32 mjpeg_quality;
-
-		/* H265 shares same structure with H264 */
-		struct iav_h264_gop h265_gop;
-		struct iav_bitrate h265_rc;
-		struct iav_qpmatrix h265_roi;
-		struct iav_h264_enc_param h265_enc;
-		int h265_force_idr;
-		u32 h265_enc_improve;
-		u32 h265_force_fast_seek;
-		u32 h265_drop_frames;
 	} arg;
 	u32 dsp_pts;
 };
@@ -831,10 +781,10 @@ struct iav_h264_cfg {
 	u32 cpb_cmp_idc : 2;
 	u32 fast_rc_idc : 4;
 	u32 mv_threshold : 8;
-	u32 enc_improve : 1;
+	u32 flat_area_improve : 1;
 	u32 multi_ref_p : 1;
 	u32 reserved1 : 6;
-	u32 long_term_intvl : 8;
+	u32 fast_seek_intvl : 8;
 	u32 intrabias_p : 16;
 	u32 intrabias_b : 16;
 	u8 user1_intra_bias;
@@ -843,8 +793,15 @@ struct iav_h264_cfg {
 	u8 user2_direct_bias;
 	u8 user3_intra_bias;
 	u8 user3_direct_bias;
-	u16 reserved2;
+	s8 deblocking_filter_alpha;
+	s8 deblocking_filter_beta;
+	u8 deblocking_filter_enable;
+	u8 reserved2[3];
 	struct iav_pic_info pic_info;
+	u16 frame_crop_left_offset;
+	u16 frame_crop_right_offset;
+	u16 frame_crop_top_offset;
+	u16 frame_crop_bottom_offset;
 };
 
 /* GOP model */
@@ -876,9 +833,13 @@ enum iav_bitrate_control_params {
 	H264_I_QP_REDUCE_MIN = 1,
 	H264_P_QP_REDUCE_MAX = 5,
 	H264_P_QP_REDUCE_MIN = 1,
+	H264_Q_QP_REDUCE_MAX = 10,
+	H264_Q_QP_REDUCE_MIN = 1,
 	/* skip frame flag */
 	H264_WITHOUT_FRAME_DROP = 0,
 	H264_WITH_FRAME_DROP = 6,
+	H264_I_SIZE_KB_MAX = 8192,
+	H264_LOG_Q_NUM_PLUS_1_MAX = 4,
 };
 
 enum {
@@ -931,7 +892,9 @@ struct iav_overlay_area {
 #define MAX_NUM_OVERLAY_AREA	(4)
 struct iav_overlay_insert {
 	u32 id;
-	u32 enable;
+	u32 enable: 1;
+	u32 osd_insert_always: 1;
+	u32 reserved : 30;
 	struct iav_overlay_area area[MAX_NUM_OVERLAY_AREA];
 };
 
@@ -1184,6 +1147,11 @@ struct iav_efm_request_frame {
 struct iav_efm_handshake_frame {
 	u32 frame_idx;
 	u32 frame_pts;
+
+	u8 is_last_frame;
+	u8 use_hw_pts;//only apply to real time's case
+	u8 reserved1;
+	u8 reserved2;
 };
 
 struct iav_apply_frame_sync {
@@ -1274,28 +1242,16 @@ enum {
 	IAV_PB_SCAN_MODE_I_ONLY = 1,
 };
 
-enum {
-	IAV_DSP_DECODE_MODE_IDLE = 0,
-	IAV_DSP_DECODE_MODE_RUN = 1,
-	IAV_DSP_DECODE_MODE_IDLE_WITH_LAST_FRAME = 2,
-	IAV_DSP_DECODE_MODE_1_to_0 = 3,
-	IAV_DSP_DECODE_MODE_1_to_2 = 4,
-	IAV_DSP_DECODE_MODE_STILL_JPEG = 5,
-	IAV_DSP_DECODE_MODE_STILL_JPEG_WITH_LAST_FRAME = 6,
-	IAV_DSP_DECODE_MODE_5_to_0 = 7,
-	IAV_DSP_DECODE_MODE_5_to_6 = 8,
-	IAV_DSP_DECODE_MODE_MULTI_SCENE = 9,
-	IAV_DSP_DECODE_MODE_9_to_0 = 10,
-};
-
 struct iav_decoder_config {
 	u8	max_frm_num;
-	u8	reserved0;
-	u8	reserved1;
-	u8	reserved2;
+	u8	b_support_ff;
+	u8	b_support_fb;
+	u8	b_support_bw;
 
 	u16	max_frm_width;
 	u16	max_frm_height;
+
+	u32	max_bitrate;
 };
 
 struct iav_decode_vout_config {
@@ -1317,12 +1273,20 @@ struct iav_decode_vout_config {
 };
 
 struct iav_decode_mode_config {
-	u8	reserved0;
-	u8	reserved1;
-	u8	reserved2;
+	u8	b_support_ff_fb_bw;
+	u8	debug_max_frame_per_interrupt;
+	u8	debug_use_dproc;
 	u8	num_decoder;
 
-	struct iav_decoder_config decoder_configs[DIAV_MAX_DECODER_NUMBER];
+	//for resource allocation inside dsp
+	u32	max_frm_width;
+	u32	max_frm_height;
+
+	u32	max_vout0_width;
+	u32	max_vout0_height;
+
+	u32	max_vout1_width;
+	u32	max_vout1_height;
 };
 
 struct iav_decoder_info {
@@ -1448,6 +1412,8 @@ typedef enum {
 	IOC_DSP_LOG = 0x01,
 	IOC_DSP_CFG = 0x02,
 	IOC_DRV_DSP_INFO = 0x03,
+	IOC_DSP_CLOCK = 0x04,
+	IOC_GET_DSP_HASH = 0x05,
 
 	/* For system (0x10 ~ 0x2F) */
 	IOC_STATE = 0x10,
@@ -1492,6 +1458,7 @@ typedef enum {
 	IOC_DEBUG = 0xD1,
 
 	/* Reserved (0xF0 ~ 0xFF) */
+	IOC_CUSTOM = 0xF0,
 } IAV_ENC_IOC;
 
 typedef enum {
@@ -1521,6 +1488,8 @@ typedef enum {
 #define IAV_IOC_SET_DSP_LOG			IAVENC_IOW(IOC_DSP_LOG, struct iav_dsplog_setup *)
 #define IAV_IOC_DUMP_DSP_CFG			IAVENC_IOR(IOC_DSP_CFG)
 #define IAV_IOC_DRV_DSP_INFO	IAVENC_IOWR(IOC_DRV_DSP_INFO, struct iav_driver_dsp_info *)
+#define IAV_IOC_SET_DSP_CLOCK_STATE	IAVENC_IOW(IOC_DSP_CLOCK, u32)
+#define IAV_IOC_GET_DSP_HASH	IAVENC_IOWR(IOC_GET_DSP_HASH, struct iav_dsp_hash *)
 
 /* state ioctl */
 #define IAV_IOC_WAIT_NEXT_FRAME		IAVENC_IOR(IOC_STATE, u8)
@@ -1529,6 +1498,7 @@ typedef enum {
 #define IAV_IOC_ENABLE_PREVIEW	IAVENC_IOW(IOC_SET_PREVIEW, int)
 #define IAV_IOC_START_ENCODE			IAVENC_IOW(IOC_ENCODE_START, u32)
 #define IAV_IOC_STOP_ENCODE			IAVENC_IOW(IOC_ENCODE_STOP, u32)
+#define IAV_IOC_ABORT_ENCODE		IAVENC_IOW(IOC_ENCODE_STOP, u8)
 
 /* system ioctl */
 #define IAV_IOC_SET_SYSTEM_RESOURCE	IAVENC_IOW(IOC_SYSTEM_RESOURCE, struct iav_system_resource *)
@@ -1611,6 +1581,9 @@ typedef enum {
 /* IAV test for debug */
 #define IAV_IOC_SET_DEBUG_CONFIG			IAVENC_IOW(IOC_DEBUG, struct iav_debug_cfg *)
 #define IAV_IOC_GET_DEBUG_CONFIG			IAVENC_IOR(IOC_DEBUG, struct iav_debug_cfg *)
+
+/* Customized IAV IOCTL */
+#define IAV_IOC_CUSTOM_CMDS		IAVENC_IOWR(IOC_CUSTOM, u8)
 
 /* decode ioctl */
 #define IAV_IOC_ENTER_DECODE_MODE    IAVDEC_IOWR(IOC_ENTER_DECODE_MODE, struct iav_decode_mode_config *)

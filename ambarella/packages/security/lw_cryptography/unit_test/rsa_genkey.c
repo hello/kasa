@@ -1,24 +1,34 @@
-/*
- *  Example RSA key generation program
+/*******************************************************************************
+ * rsa_genkey.c
  *
- *  Copyright (C) 2006-2011, ARM Limited, All Rights Reserved
+ * History:
+ *  2015/06/25 - [Zhi He] create file
  *
- *  This file is part of mbed TLS (https://tls.mbed.org)
+ * Copyright (C) 2015 Ambarella, Inc.
  *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
  *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
- *  You should have received a copy of the GNU General Public License along
- *  with this program; if not, write to the Free Software Foundation, Inc.,
- *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
- */
+ ******************************************************************************/
 
 #include <stdio.h>
 #include <time.h>
@@ -54,83 +64,65 @@ static int __random_generator(void* context, unsigned char* output, unsigned int
     return 0;
 }
 
-int main( void )
+int main()
 {
     int ret;
     rsa_context_t rsa;
     FILE *fpub  = NULL;
     FILE *fpriv = NULL;
-    const char *pers = "rsa_genkey";
 
-    printf( ". Generating the RSA key [ %d-bit ]...", KEY_SIZE );
-    fflush( stdout );
+    rsa_init(&rsa, RSA_PKCS_V15, 0);
 
-    rsa_init( &rsa, RSA_PKCS_V15, 0 );
-
-    if( ( ret = rsa_gen_key( &rsa, __random_generator, NULL, KEY_SIZE,
-                             EXPONENT ) ) != 0 )
-    {
-        printf( " failed\n  ! rsa_gen_key returned %d\n\n", ret );
+    if ((ret = rsa_gen_key( &rsa, __random_generator, NULL, KEY_SIZE, EXPONENT)) != 0) {
+        printf("rsa_gen_key fail, ret %d\n", ret);
         goto exit;
     }
 
-    printf( " ok\n  . Exporting the public  key in rsa_pub.txt...." );
-    fflush( stdout );
-
-    if( ( fpub = fopen( "rsa_pub.txt", "wb+" ) ) == NULL )
-    {
-        printf( " failed\n  ! could not open rsa_pub.txt for writing\n\n" );
+    if ((fpub = fopen( "rsa_pub.txt", "wb+")) == NULL) {
+        printf("cannot open rsa_pub.txt\n");
         ret = 1;
         goto exit;
     }
 
-    if( ( ret = big_number_write_file( "N = ", &rsa.N, 16, fpub ) ) != 0 ||
-        ( ret = big_number_write_file( "E = ", &rsa.E, 16, fpub ) ) != 0 )
-    {
-        printf( " failed\n  ! big_number_write_file returned %d\n\n", ret );
+    if ((ret = big_number_write_file("N = ", &rsa.N, 16, fpub)) != 0 ||
+        (ret = big_number_write_file("E = ", &rsa.E, 16, fpub )) != 0) {
+        printf("big_number_write_file fail, return %d\n", ret );
         goto exit;
     }
 
-    printf( " ok\n  . Exporting the private key in rsa_priv.txt..." );
-    fflush( stdout );
-
-    if( ( fpriv = fopen( "rsa_priv.txt", "wb+" ) ) == NULL )
-    {
-        printf( " failed\n  ! could not open rsa_priv.txt for writing\n" );
+    if ((fpriv = fopen("rsa_priv.txt", "wb+")) == NULL) {
+        printf("cannot open rsa_priv.txt\n");
         ret = 1;
         goto exit;
     }
 
-    if( ( ret = big_number_write_file( "N = " , &rsa.N , 16, fpriv ) ) != 0 ||
-        ( ret = big_number_write_file( "E = " , &rsa.E , 16, fpriv ) ) != 0 ||
-        ( ret = big_number_write_file( "D = " , &rsa.D , 16, fpriv ) ) != 0 ||
-        ( ret = big_number_write_file( "P = " , &rsa.P , 16, fpriv ) ) != 0 ||
-        ( ret = big_number_write_file( "Q = " , &rsa.Q , 16, fpriv ) ) != 0 ||
-        ( ret = big_number_write_file( "DP = ", &rsa.DP, 16, fpriv ) ) != 0 ||
-        ( ret = big_number_write_file( "DQ = ", &rsa.DQ, 16, fpriv ) ) != 0 ||
-        ( ret = big_number_write_file( "QP = ", &rsa.QP, 16, fpriv ) ) != 0 )
-    {
-        printf( " failed\n  ! big_number_write_file returned %d\n\n", ret );
+    if ((ret = big_number_write_file("N = ", &rsa.N , 16, fpriv)) != 0 ||
+        (ret = big_number_write_file("E = ", &rsa.E , 16, fpriv)) != 0 ||
+        (ret = big_number_write_file("D = ", &rsa.D , 16, fpriv)) != 0 ||
+        (ret = big_number_write_file("P = " , &rsa.P , 16, fpriv)) != 0 ||
+        (ret = big_number_write_file("Q = " , &rsa.Q , 16, fpriv)) != 0 ||
+        (ret = big_number_write_file("DP = ", &rsa.DP, 16, fpriv)) != 0 ||
+        (ret = big_number_write_file("DQ = ", &rsa.DQ, 16, fpriv)) != 0 ||
+        (ret = big_number_write_file("QP = ", &rsa.QP, 16, fpriv)) != 0) {
+        printf("big_number_write_file fail, ret %d\n", ret);
         goto exit;
     }
-
-    printf( " ok\n\n" );
 
 exit:
 
-    if( fpub  != NULL )
-        fclose( fpub );
+    if (fpub != NULL)
+        fclose(fpub);
 
-    if( fpriv != NULL )
-        fclose( fpriv );
+    if (fpriv != NULL)
+        fclose(fpriv);
 
-    rsa_free( &rsa );
+    rsa_free(&rsa);
 
 #if defined(_WIN32)
-    printf( "  Press Enter to exit this program.\n" );
-    fflush( stdout ); getchar();
+    printf("press any key to exit\n" );
+    fflush(stdout); getchar();
 #endif
 
-    return( ret );
+    return ret;
 }
 

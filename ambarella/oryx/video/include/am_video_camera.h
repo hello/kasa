@@ -1,159 +1,146 @@
-/*******************************************************************************
+/**
  * am_video_camera.h
  *
- * History:
- *   2014-8-6 - [lysun] created file
+ *  History:
+ *    Jul 20, 2015 - [Shupeng Ren] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co,Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
  *
- ******************************************************************************/
-#ifndef AM_VIDEO_CAMERA_H_
-#define AM_VIDEO_CAMERA_H_
-
-#include "am_video_param.h"
-#include "am_video_camera_if.h"
-#include <atomic>
-
-/*
- *
- * If mode specified
- *    create encode device by mode.
- *    run that encode device, DONE.
- * else
- *    load config
- *    analyze config
- *    decide which mode to use.
- *    create encode device by mode.
- *    run that encode device. done.
- * end if
- *
- *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
+#ifndef ORYX_VIDEO_INCLUDE_AM_VIDEO_CAMERA_H_
+#define ORYX_VIDEO_INCLUDE_AM_VIDEO_CAMERA_H_
+#include "am_video_camera_if.h"
 
-enum AM_CAMERA_STATE{
-  AM_CAMERA_STATE_NOT_INIT = 0,
-  AM_CAMERA_STATE_INIT_DONE = 1,
-  AM_CAMERA_STATE_RUNNING = 2,
-  AM_CAMERA_STATE_STOPPED = 3,
-  AM_CAMERA_STATE_ERROR = 4,
-};
-
-class AMIEncodeDevice;
-class AMEncodeSystemCapability;
-
-struct AMCameraParam{
-    AM_ENCODE_MODE          mode;
-    AM_HDR_EXPOSURE_TYPE    hdr;
-    AM_IMAGE_ISO_TYPE       iso;
-    AM_DEWARP_TYPE          dewarp;
-    bool                    high_mp_encode;
-};
-
-
-class AMCameraConfig
+class AMEncodeDevice;
+class AMDPTZ;
+class AMVideoCamera : public AMIVideoCamera
 {
-  public:
-    AMCameraConfig();
-    virtual ~AMCameraConfig();
-    //load config from file to m_loaded
-    virtual AM_RESULT load_config(AMEncodeDSPCapability *dsp_cap);
-    //save config m_using to file
-    virtual AM_RESULT save_config();
-    //compare "saved" copy to find difference
-    //copy m_loaded to m_using
-    virtual AM_RESULT sync();
-
-    bool m_changed;
-    AMCameraParam m_loaded;
-  protected:
-    AM_RESULT camera_param_to_dsp_cap(AMCameraParam * cam_param, AMEncodeDSPCapability *dsp_cap);
-    AMCameraParam m_using;
-
-};
-
-
-class AMVideoCamera: public AMIVideoCamera
-{
-    friend class AMIVideoCamera;
+    friend AMIVideoCamera;
 
   public:
-    virtual AM_RESULT init(AMEncodeDSPCapability *dsp_cap);
-    virtual AM_RESULT init(AM_ENCODE_MODE mode);
-    virtual AM_RESULT init(); //init with config file to specify mode
-    virtual AM_RESULT destroy();
+    AM_RESULT start()                                                  override;
+    AM_RESULT start_stream(AM_STREAM_ID id)                            override;
+    AM_RESULT stop()                                                   override;
+    AM_RESULT stop_stream(AM_STREAM_ID id)                             override;
 
-    //high level camera APIs here
-    //these high level APIs will create feature set, and then
-    //let system resource class to test and then,
-    //get input from m_system_resource, calculate detail config, then
-    //update m_config->m_loaded
+    AM_RESULT idle()                                                   override;
+    AM_RESULT preview()                                                override;
+    AM_RESULT encode()                                                 override;
+    AM_RESULT decode()                                                 override;
 
-    virtual AM_RESULT set_hdr_enable(bool enable);
-    virtual AM_RESULT set_advanced_iso_enable(bool enable);
-    virtual AM_RESULT set_ldc_enable(bool enable);
-    virtual AM_RESULT set_dewarp_enable(bool enable);
+    AM_RESULT get_vin_status(AMVinInfo &vin)                           override;
+    AM_RESULT get_stream_status(AM_STREAM_ID id,
+                                AM_STREAM_STATE &state)                override;
 
-    //high level camera interface
-    //it will try to load default config file, and find a mode, init that mode,
-    //and call that device's update method.
-    virtual AM_RESULT start();
+    AM_RESULT get_buffer_state(AM_SOURCE_BUFFER_ID id,
+                               AM_SRCBUF_STATE &state)                 override;
 
-    //try to call that device's stop method.
-    virtual AM_RESULT stop();
+    AM_RESULT get_buffer_format(AMBufferConfigParam &param)            override;
+    AM_RESULT set_buffer_format(const AMBufferConfigParam &param)      override;
+    AM_RESULT save_buffer_config()                                     override;
 
-    virtual AM_RESULT load_config(); //explicitly load from config file
+    uint32_t  get_encode_stream_max_num()                              override;
+    uint32_t  get_source_buffer_max_num()                              override;
+    AM_RESULT get_bitrate(AMBitrate &bitrate)                          override;
+    AM_RESULT set_bitrate(const AMBitrate &bitrate)                    override;
+    AM_RESULT get_framerate(AMFramerate &rate)                         override;
+    AM_RESULT set_framerate(const AMFramerate &rate)                   override;
 
-    virtual AM_RESULT update();      //update with current config,
 
-    virtual AM_RESULT save_config(); //explicitly save to config file
+    AM_RESULT stop_vin()                                               override;
 
-    virtual AMIEncodeDevice *get_encode_device();
-    /*
-     *
-     *...
-     *... More High level APIs added here.
-     *... Which is like APIs that high level user would call
-     *...
-     *... For low level users, the method is to write to the config file,
-     *... then let encode_device to update.     *...
-     *...
-     *...
-     *...
-     */
+    AM_RESULT halt_vout(AM_VOUT_ID id)                                 override;
 
-    bool is_mode_change_required();
+    AM_RESULT force_idr(AM_STREAM_ID stream_id)                        override;
 
-  protected:
-    static AMVideoCamera *get_instance();
-    virtual void release();
-    virtual void inc_ref();
-    virtual AM_RESULT find_encode_mode_by_feature(AM_ENCODE_MODE *mode);
-    virtual AM_RESULT create_encode_device();
+    AM_RESULT get_ldc_state(bool &state)                               override;
 
-  protected:
+    void* get_video_plugin(const std::string& plugin_name)             override;
+
+    AM_RESULT load_config_all()                                        override;
+
+  public:
+    //For configure files operation
+    AM_RESULT get_feature_config(AMFeatureParam &config)               override;
+    AM_RESULT set_feature_config(const AMFeatureParam &config)         override;
+    AM_RESULT get_vin_config(AMVinParamMap &config)                    override;
+    AM_RESULT set_vin_config(const AMVinParamMap &config)              override;
+    AM_RESULT get_vout_config(AMVoutParamMap &config)                  override;
+    AM_RESULT set_vout_config(const AMVoutParamMap &config)            override;
+    AM_RESULT get_buffer_config(AMBufferParamMap &config)              override;
+    AM_RESULT set_buffer_config(const AMBufferParamMap &config)        override;
+    AM_RESULT get_stream_config(AMStreamParamMap &config)              override;
+    AM_RESULT set_stream_config(const AMStreamParamMap &config)        override;
+    AM_RESULT get_mjpeg_info(AMMJpegInfo &mjpeg)                       override;
+    AM_RESULT set_mjpeg_info(const AMMJpegInfo &mjpeg)                 override;
+    AM_RESULT get_h26x_gop(AMGOP &h264)                                override;
+    AM_RESULT set_h26x_gop(const AMGOP &h264)                          override;
+    AM_RESULT get_stream_type(AM_STREAM_ID id, AM_STREAM_TYPE &type)   override;
+    AM_RESULT set_stream_type(AM_STREAM_ID id, AM_STREAM_TYPE &type)   override;
+    AM_RESULT get_stream_size(AM_STREAM_ID id, AMResolution &res)      override;
+    AM_RESULT set_stream_size(AM_STREAM_ID id, AMResolution &res)      override;
+    AM_RESULT get_stream_offset(AM_STREAM_ID id, AMOffset &offset)     override;
+    AM_RESULT set_stream_offset(AM_STREAM_ID id,
+                                const AMOffset &offset)                override;
+    AM_RESULT get_stream_source(AM_STREAM_ID id,
+                                AM_SOURCE_BUFFER_ID &source)           override;
+    AM_RESULT set_stream_source(AM_STREAM_ID id,
+                                AM_SOURCE_BUFFER_ID &source)           override;
+    AM_RESULT get_stream_flip(AM_STREAM_ID id, AM_VIDEO_FLIP &flip)    override;
+    AM_RESULT set_stream_flip(AM_STREAM_ID id, AM_VIDEO_FLIP &flip)    override;
+    AM_RESULT get_stream_rotate(AM_STREAM_ID id, AM_VIDEO_ROTATE &rot) override;
+    AM_RESULT set_stream_rotate(AM_STREAM_ID id, AM_VIDEO_ROTATE &rot) override;
+    AM_RESULT get_stream_profile(AM_STREAM_ID id, AM_PROFILE &profile) override;
+    AM_RESULT set_stream_profile(AM_STREAM_ID id, AM_PROFILE &profile) override;
+    AM_RESULT save_stream_config()                                     override;
+    AM_RESULT get_power_mode(AM_POWER_MODE &mode)                      override;
+    AM_RESULT set_power_mode(AM_POWER_MODE mode)                       override;
+    AM_RESULT get_avail_cpu_clks(std::map<int32_t, int32_t> &clks)     override;
+    AM_RESULT get_cur_cpu_clk(int32_t &clk)                            override;
+    AM_RESULT set_cpu_clk(int32_t index)                               override;
+
+  private:
+    static AMVideoCamera* get_instance();
+    static AMVideoCamera* create();
+    void inc_ref();
+    void release();
     AMVideoCamera();
     virtual ~AMVideoCamera();
-    AMVideoCamera(AMVideoCamera const &copy) = delete;
-    AMVideoCamera& operator=(AMVideoCamera const &copy) = delete;
+    AM_RESULT init();
 
-  protected:
-    static AMVideoCamera     *m_instance;
-    //high level camera config class
-    AMCameraConfig           *m_camera_config;
-    //this class is used to help AMEncodeDeviceConfig to decide which mode
-    //to work and create derived class of AMEncodeDevice for that mode
-    AMEncodeSystemCapability *m_system_capability;
-    //this will be created by type.
-    AMEncodeDevice           *m_encode_device;
-    std::atomic_int           m_ref_count;
-    AM_ENCODE_MODE            m_encode_mode;
-    AM_CAMERA_STATE           m_camera_state;
-    AMEncodeDSPCapability     m_dsp_cap; //features of this encode mode
+  private:
+    static AMVideoCamera   *m_instance;
+    static recursive_mutex  m_mtx;
+    AMEncodeDevice         *m_device;
+    atomic_int              m_ref_cnt;
+
+    AMIPlatformPtr          m_platform;
+
+    AMVinConfigPtr          m_vin_config;
+    AMVoutConfigPtr         m_vout_config;
+    AMBufferConfigPtr       m_buffer_config;
+    AMStreamConfigPtr       m_stream_config;
 };
 
-#endif /* AM_VIDEO_CAMERA_H_ */
+#endif /* ORYX_VIDEO_INCLUDE_AM_VIDEO_CAMERA_H_ */

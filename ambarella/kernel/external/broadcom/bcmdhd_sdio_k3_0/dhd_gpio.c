@@ -4,24 +4,20 @@
 #ifdef CUSTOMER_HW
 
 #ifdef CONFIG_PLAT_AMBARELLA
+#define WIFI_DRIVER_NAME "bcmdhd"
+
 #include <config.h>
 #include <linux/gpio.h>
 #include <plat/sd.h>
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 9, 0)
-#include <linux/of_gpio.h>
-#include <plat/service.h>
-#else
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 9, 0)
 #include <mach/board.h>
 #endif
-//#define GPIO_BCM_WL_REG_ON 102
-//#define GPIO_BCM_WL_HOST_WAKE 4
 #endif
 
 #ifdef CONFIG_MACH_ODROID_4210
 #include <mach/gpio.h>
 #include <mach/regs-gpio.h>
 #include <plat/gpio-cfg.h>
-
 #include <plat/sdhci.h>
 #include <plat/devs.h>	// modifed plat-samsung/dev-hsmmcX.c EXPORT_SYMBOL(s3c_device_hsmmcx) added
 
@@ -29,118 +25,32 @@
 #endif
 
 #ifdef CONFIG_PLAT_AMBARELLA
-int amba_gpio_set(int gpio_id, int value)
+int amba_gpio_request(int gpio_id)
 {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 9, 0)
-	/* Kernel 3.10 */
-	int	errCode = 0;
-	struct ambsvc_gpio gpio_svc;
-
-	gpio_svc.svc_id = AMBSVC_GPIO_REQUEST;
-	gpio_svc.gpio = gpio_id;
-	errCode = ambarella_request_service(AMBARELLA_SERVICE_GPIO,
-					&gpio_svc, NULL);
-	if (errCode < 0) {
-		printk("can't request gpio[%d]!\n", gpio_id);
-		return errCode;
+	int ret = -1;
+	ret = gpio_request(GPIO(gpio_id), WIFI_DRIVER_NAME);
+	if (ret < 0) {
+		printk("gpio request (%d) failed.\n", gpio_id);
+		return ret;
 	}
-
-	gpio_svc.svc_id = AMBSVC_GPIO_OUTPUT;
-	gpio_svc.value = value;
-	errCode = ambarella_request_service(AMBARELLA_SERVICE_GPIO,
-				&gpio_svc, NULL);
-	if (errCode < 0)
-		return errCode;
-
-	return errCode;
-#else
-	/* Kernel 3.8 */
-	gpio_set_value(GPIO(gpio_id), value);
-	return 0;
-#endif
+	return ret;
 }
 
-int amba_gpio_set_input(int gpio_id)
+int amba_gpio_output(int gpio_id, int value)
 {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 9, 0)
-	/* Kernel 3.10 */
-	int	errCode = 0;
-	struct ambsvc_gpio gpio_svc;
-
-	gpio_svc.svc_id = AMBSVC_GPIO_REQUEST;
-	gpio_svc.gpio = gpio_id;
-	errCode = ambarella_request_service(AMBARELLA_SERVICE_GPIO,
-					&gpio_svc, NULL);
-	if (errCode < 0) {
-		printk("can't request gpio[%d]!\n", gpio_id);
-		return errCode;
-	}
-
-	gpio_svc.svc_id = AMBSVC_GPIO_INPUT;
-	errCode = ambarella_request_service(AMBARELLA_SERVICE_GPIO,
-				&gpio_svc, NULL);
-	if (errCode < 0)
-		return errCode;
-	return errCode;
-#else
-	/* Kernel 3.8 */
-	ambarella_gpio_config(GPIO(gpio_id), GPIO_FUNC_SW_INPUT);
-	return 0;
-#endif
+	return gpio_direction_output(GPIO(gpio_id), value);;
 }
 
 int amba_gpio_irq(int gpio_id, int *irq_num)
 {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 9, 0)
-	/* Kernel 3.10 */
-	int	errCode = 0;
-	struct ambsvc_gpio gpio_svc;
-
-	gpio_svc.svc_id = AMBSVC_GPIO_REQUEST;
-	gpio_svc.gpio = gpio_id;
-	errCode = ambarella_request_service(AMBARELLA_SERVICE_GPIO,
-					&gpio_svc, NULL);
-	if (errCode < 0) {
-		printk("can't request gpio[%d]!\n", gpio_id);
-		return errCode;
-	}
-
-	gpio_svc.svc_id = AMBSVC_GPIO_INPUT;
-	errCode = ambarella_request_service(AMBARELLA_SERVICE_GPIO,
-				&gpio_svc, NULL);
-	if (errCode < 0)
-		return errCode;
-
-	gpio_svc.svc_id = AMBSVC_GPIO_TO_IRQ;
-	errCode = ambarella_request_service(AMBARELLA_SERVICE_GPIO,
-				&gpio_svc, irq_num);
-	if (errCode < 0) {
-		printk("can't get irq from gpio[%d]!\n", gpio_id);
-		return errCode;
-	}
-	return errCode;
-#else
-	/* Kernel 3.8 */
 	*irq_num = gpio_to_irq(GPIO(gpio_id));
-	ambarella_gpio_config(GPIO(gpio_id), GPIO_FUNC_SW_INPUT);
-	return 0;
-#endif
+	return gpio_direction_input(GPIO(gpio_id));
 }
 
-int free_gpio(int gpio_id)
+int amba_gpio_free(int gpio_id)
 {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 9, 0)
-	int	errCode = 0;
-	struct ambsvc_gpio gpio_svc;
-
-	gpio_svc.svc_id = AMBSVC_GPIO_FREE;
-	gpio_svc.gpio = gpio_id;
-	ambarella_request_service(AMBARELLA_SERVICE_GPIO, &gpio_svc, NULL);
-
-	return errCode;
-#else
+	gpio_free(GPIO(gpio_id));
 	return 0;
-#endif
 }
 #endif
 
@@ -156,12 +66,12 @@ int bcm_wlan_get_oob_irq(void)
 #endif
 
 #ifdef CONFIG_PLAT_AMBARELLA
-	printk("GPIO(WL_HOST_WAKE) = %d\n", GPIO_BCM_WL_HOST_WAKE);
+	printk("GPIO(WL_HOST_WAKE) [%d]\n", GPIO_BCM_WL_HOST_WAKE);
+	amba_gpio_request(GPIO_BCM_WL_HOST_WAKE);
 	amba_gpio_irq(GPIO_BCM_WL_HOST_WAKE, &host_oob_irq);
 #endif
 
 	printk("host_oob_irq: %d \r\n", host_oob_irq);
-
 	return host_oob_irq;
 }
 #endif
@@ -187,23 +97,30 @@ void bcm_wlan_power_on(int flag)
 
 #ifdef CONFIG_PLAT_AMBARELLA
 	if (flag == 1) {
-		printk("======== PULL WL_REG_ON HIGH! WL_REG_ON=%d. ========\n",
-			GPIO_BCM_WL_REG_ON);
-		amba_gpio_set(GPIO_BCM_WL_REG_ON, 1);
+		printk("======== PULL WL_REG_ON[%d], active[%d], HIGH! ========\n",
+			GPIO_BCM_WL_REG_ON, GPIO_BCM_WL_REG_ON_ACTIVE);
+		amba_gpio_request(GPIO_BCM_WL_REG_ON);
+		amba_gpio_output(GPIO_BCM_WL_REG_ON, GPIO_BCM_WL_REG_ON_ACTIVE);
 		mdelay(100);
-		free_gpio(GPIO_BCM_WL_REG_ON);
-		printk("======== Enable sdhci presence change! ========\n");
+		printk("======== Enable sdhci presence change! Slot.num[%d] ========\n",
+			WIFI_CONN_SD_SLOT_NUM);
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3, 9, 0)
-		ambarella_detect_sd_slot(0, 1);
+		if (WIFI_CONN_SD_SLOT_NUM >= 0 && WIFI_CONN_SD_SLOT_NUM < 5) {
+			ambarella_detect_sd_slot(WIFI_CONN_SD_SLOT_NUM, 1);
+		}
 #else
-		ambarella_detect_sd_slot(ambarella_board_generic.wifi_sd_bus,
-			ambarella_board_generic.wifi_sd_slot, 1);
+		if (ambarella_board_generic.wifi_sd_bus >= 0 && ambarella_board_generic.wifi_sd_bus < 5) {
+			ambarella_detect_sd_slot(ambarella_board_generic.wifi_sd_bus,
+				ambarella_board_generic.wifi_sd_slot, 1);
+		}
 #endif
 
 	} else {
-		printk("======== PULL WL_REG_ON HIGH! (flag = %d) ========\n", flag);
-		amba_gpio_set(GPIO_BCM_WL_REG_ON, 1);
+		printk("======== PULL WL_REG_ON[%d], active[%d], HIGH! (flag = %d) ========\n",
+			GPIO_BCM_WL_REG_ON, GPIO_BCM_WL_REG_ON_ACTIVE, flag);
+		amba_gpio_request(GPIO_BCM_WL_REG_ON);
+		amba_gpio_output(GPIO_BCM_WL_REG_ON, GPIO_BCM_WL_REG_ON_ACTIVE);
 	}
 #endif
 }
@@ -228,26 +145,32 @@ void bcm_wlan_power_off(int flag)
 
 #ifdef CONFIG_PLAT_AMBARELLA
 	if (flag == 1) {
-		printk("======== Disable sdhci presence change! ========\n");
+		printk("======== Disable sdhci presence change! Slot.num[%d] ========\n",
+			WIFI_CONN_SD_SLOT_NUM);
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3, 9, 0)
-		ambarella_detect_sd_slot(0, 0);
+		if (WIFI_CONN_SD_SLOT_NUM >= 0 && WIFI_CONN_SD_SLOT_NUM < 5) {
+			ambarella_detect_sd_slot(WIFI_CONN_SD_SLOT_NUM, 0);
+		}
 #else
-		ambarella_detect_sd_slot(ambarella_board_generic.wifi_sd_bus,
-			ambarella_board_generic.wifi_sd_slot, 0);
+		if (ambarella_board_generic.wifi_sd_bus >= 0 && ambarella_board_generic.wifi_sd_bus < 5) {
+			ambarella_detect_sd_slot(ambarella_board_generic.wifi_sd_bus,
+				ambarella_board_generic.wifi_sd_slot, 0);
+		}
 #endif
 		mdelay(100);
-		amba_gpio_set(GPIO_BCM_WL_REG_ON, 0);
+		amba_gpio_output(GPIO_BCM_WL_REG_ON, !GPIO_BCM_WL_REG_ON_ACTIVE);
 		mdelay(50);
-		free_gpio(GPIO_BCM_WL_REG_ON);
-
-		#ifdef CUSTOMER_OOB
-		free_gpio(GPIO_BCM_WL_HOST_WAKE);
-		#endif
-
-		printk("======== PULL WL_REG_ON LOW! ========\n");
+		amba_gpio_free(GPIO_BCM_WL_REG_ON);
+#ifdef CUSTOMER_OOB
+		amba_gpio_free(GPIO_BCM_WL_HOST_WAKE);
+#endif
+		printk("======== PULL WL_REG_ON[%d], inactive[%d], LOW! ========\n",
+			GPIO_BCM_WL_REG_ON, !GPIO_BCM_WL_REG_ON_ACTIVE);
 	} else {
-		printk("======== PULL WL_REG_ON LOW! (flag = %d) ========\n", flag);
-		amba_gpio_set(GPIO_BCM_WL_REG_ON, 0);
+		printk("======== PULL WL_REG_ON[%d], inactive[%d], LOW! (flag = %d) ========\n",
+			GPIO_BCM_WL_REG_ON, !GPIO_BCM_WL_REG_ON_ACTIVE, flag);
+		amba_gpio_output(GPIO_BCM_WL_REG_ON, !GPIO_BCM_WL_REG_ON_ACTIVE);
+		amba_gpio_free(GPIO_BCM_WL_REG_ON);
 	}
 #endif
 }

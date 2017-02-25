@@ -5493,9 +5493,10 @@ wl_cfg80211_mgmt_tx(struct wiphy *wiphy, bcm_struct_cfgdev *cfgdev,
 		if (ieee80211_is_probe_resp(mgmt->frame_control)) {
 			s32 ie_offset =  DOT11_MGMT_HDR_LEN + DOT11_BCN_PRB_FIXED_LEN;
 			s32 ie_len = len - ie_offset;
-			if (dev == wl_to_prmry_ndev(wl))
+			if (dev == wl_to_prmry_ndev(wl)) {
 				bssidx = wl_to_p2p_bss_bssidx(wl, P2PAPI_BSSCFG_DEVICE);
-				wl_cfgp2p_set_management_ie(wl, dev, bssidx,
+			}
+			wl_cfgp2p_set_management_ie(wl, dev, bssidx,
 				VNDR_IE_PRBRSP_FLAG, (u8 *)(buf + ie_offset), ie_len);
 			cfg80211_mgmt_tx_status(cfgdev, *cookie, buf, len, true, GFP_KERNEL);
 			goto exit;
@@ -7079,6 +7080,14 @@ wl_cfg80211_reg_notifier(
 }
 #endif /* CONFIG_CFG80211_INTERNAL_REGDB */
 
+#ifdef CONFIG_PM
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 11, 0))
+static const struct wiphy_wowlan_support brcm_wowlan_support = {
+	.flags = WIPHY_WOWLAN_ANY,
+};
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0) */
+#endif /* CONFIG_PM */
+
 static s32 wl_setup_wiphy(struct wireless_dev *wdev, struct device *sdiofunc_dev, void *data)
 {
 	s32 err = 0;
@@ -7184,6 +7193,21 @@ static s32 wl_setup_wiphy(struct wireless_dev *wdev, struct device *sdiofunc_dev
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(3, 2, 0)) || defined(WL_COMPAT_WIRELESS)
 	wdev->wiphy->flags |= WIPHY_FLAG_SUPPORTS_TDLS;
 #endif
+
+#if defined(CONFIG_PM)
+		/*
+		 * From linux-3.10 kernel, wowlan packet filter is mandated to avoid the
+		 * disconnection of connected network before suspend. So a dummy wowlan
+		 * filter is configured for kernels linux-3.8 and above.
+		 */
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 11, 0))
+		wdev->wiphy->wowlan = &brcm_wowlan_support;
+#else
+		wdev->wiphy->wowlan.flags = WIPHY_WOWLAN_ANY;
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3, 11, 10) */
+#endif /* CONFIG_PM && WL_CFG80211_P2P_DEV_IF */
+
 	WL_DBG(("Registering custom regulatory)\n"));
 	wdev->wiphy->flags |= WIPHY_FLAG_CUSTOM_REGULATORY;
 	wiphy_apply_custom_regulatory(wdev->wiphy, &brcm_regdom);

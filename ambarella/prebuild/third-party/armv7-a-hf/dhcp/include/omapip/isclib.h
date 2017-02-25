@@ -3,7 +3,7 @@
    connections to the isc and dns libraries */
 
 /*
- * Copyright (c) 2009 by Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (c) 2009,2013 by Internet Systems Consortium, Inc. ("ISC")
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -61,6 +61,8 @@
 #include <isc/heap.h>
 #include <isc/random.h>
 
+#include <irs/resconf.h>
+
 #include <dns/client.h>
 #include <dns/fixedname.h>
 #include <dns/keyvalues.h>
@@ -116,7 +118,14 @@ isclib_make_dst_key(char          *inname,
 		    int            length,
 		    dst_key_t    **dstkey);
 
-isc_result_t dhcp_context_create(void);
+#define DHCP_CONTEXT_PRE_DB  1
+#define DHCP_CONTEXT_POST_DB 2
+isc_result_t dhcp_context_create(int              flags,
+				 struct in_addr  *local4,
+				 struct in6_addr *local6);
 void isclib_cleanup(void);
+
+void dhcp_signal_handler(int signal);
+extern int shutdown_signal;
 
 #endif /* ISCLIB_H */

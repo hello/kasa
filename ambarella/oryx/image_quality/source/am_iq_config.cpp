@@ -4,12 +4,29 @@
  * History:
  *   Dec 29, 2014 - [binwang] created file
  *
- * Copyright (C) 2014-2018, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 #include "am_base_include.h"
@@ -35,7 +52,7 @@ AMIQConfig::AMIQConfig() :
     m_loaded(
     { AM_ERROR_LEVEL,
     { AM_AE_CENTER_METERING, AM_DAY_MODE, AM_SLOW_SHUTTER_ON,
-      AM_ANTI_FLICKER_60HZ, 100, AM_BACKLIGHT_COMP_OFF, AM_LE_STOP,
+      AM_ANTI_FLICKER_60HZ, 100, AM_BACKLIGHT_COMP_OFF, 0,
       AM_DC_IRIS_DISABLE, 0, 0, 0, AM_IRLED_AUTO, 0, 0, 0, AM_AE_ENABLE },
       { AM_WB_AUTO },
       { 0 },
@@ -55,7 +72,7 @@ bool AMIQConfig::load_config()
 {
   bool result = true;
   AMIQParam iq_param;
-  AMConfig *config = NULL;
+  AMConfig *config = nullptr;
   std::string config_file_name;
   std::string aeb_fn;
   std::string adj_fn;
@@ -98,6 +115,11 @@ bool AMIQConfig::load_config()
       }
     }
 
+    if (iq_config["notify_3A_to_media_svc"].exists()) {
+      iq_param.notify_3A_to_media_svc =
+        iq_config["notify_3A_to_media_svc"].get<bool>(false);
+    }
+
     if (iq_config["ae"]["anti_flicker_mode"].exists()) {
       iq_param.ae.anti_flicker_mode =
           (AM_ANTI_FLICK_MODE) iq_config["ae"]["anti_flicker_mode"].get<int>(0);
@@ -128,7 +150,7 @@ bool AMIQConfig::load_config()
     }
     if (iq_config["ae"]["ae_metering_table"].exists()) {
       for (int32_t i = 0; i < AE_METERING_TABLE_LEN; i++) {
-        iq_param.ae.ae_metering_table[i] =
+        iq_param.ae.ae_metering_table.metering_weight[i] =
             iq_config["ae"]["ae_metering_table"][i].get<int>(0);
       }
     }
@@ -147,7 +169,7 @@ bool AMIQConfig::load_config()
     }
     if (iq_config["ae"]["local_exposure"].exists()) {
       iq_param.ae.local_exposure =
-          (AM_LOCAL_EXPOSURE_MODE) iq_config["ae"]["local_exposure"].get<int>(0);
+          iq_config["ae"]["local_exposure"].get<int>(0);
     }
     if (iq_config["ae"]["dc_iris_enable"].exists()) {
       iq_param.ae.dc_iris_enable =
@@ -185,6 +207,10 @@ bool AMIQConfig::load_config()
     if (iq_config["style"]["sharpness"].exists()) {
       iq_param.style.sharpness = iq_config["style"]["sharpness"].get<int>(6);
     }
+    if (iq_config["style"]["auto_contrast_mode"].exists()) {
+      iq_param.style.auto_contrast_mode = iq_config["style"]["auto_contrast_mode"].get<int>(0);
+    }
+
     m_loaded = iq_param;
     m_changed = !!memcmp(&m_using, &m_loaded, sizeof(m_using));
 
@@ -197,7 +223,7 @@ bool AMIQConfig::load_config()
 bool AMIQConfig::save_config()
 {
   bool result = true;
-  AMConfig *config = NULL;
+  AMConfig *config = nullptr;
   std::string config_file_name;
 
   do {
@@ -246,6 +272,7 @@ bool AMIQConfig::save_config()
     iq_config["style"]["hue"] = iq_param->style.hue;
     iq_config["style"]["contrast"] = iq_param->style.contrast;
     iq_config["style"]["sharpness"] = iq_param->style.sharpness;
+    iq_config["style"]["auto_contrast_mode"] = iq_param->style.auto_contrast_mode;
 
     if (!iq_config.save()) {
       ERROR("AMIQConfig::failed to save_config\n");

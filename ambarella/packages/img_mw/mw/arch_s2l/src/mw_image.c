@@ -1,4 +1,4 @@
-/**********************************************************************
+/*
  *
  * mw_image.c
  *
@@ -6,14 +6,31 @@
  *	2010/02/28 - [Jian Tang] Created this file
  *	2011/06/20 - [Jian Tang] Modified this file
  *
- * Copyright (C) 2007 - 2011, Ambarella, Inc.
+ * Copyright (C) 2015 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
  *
- *********************************************************************/
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -71,7 +88,7 @@ _mw_global_config G_mw_config = {
 		.slow_shutter_enable  = 0,
 		.ir_led_mode          = MW_IR_LED_MODE_AUTO,
 		.current_vin_fps      = AMBA_VIDEO_FPS_60,
-		.ae_metering_mode    = MW_AE_CENTER_METERING,
+		.ae_metering_mode     = MW_AE_CENTER_METERING,
 		.ae_metering_table    = {
 			.metering_weight  = {			//AE_METER_CENTER
 				1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -87,6 +104,7 @@ _mw_global_config G_mw_config = {
 		.ae_level             = {
 		100,
 		},
+		.tone_curve_duration    = MAX_TONE_CURVE_DURATION,
 	},
 	.iris_params = {
 		.iris_type      = 0,
@@ -135,6 +153,8 @@ _mw_global_config G_mw_config = {
 				1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024
 			},
 		},
+		.auto_knee_strength = 100,
+		.auto_dump_cfg = 0,
 	},
 };
 
@@ -207,16 +227,17 @@ int mw_start_aaa(int fd)
 	int retry = 3;
 	if (G_mw_config.init_params.mw_enable == 1) {
 		MW_MSG("Already start!\n");
-		return -1;
+		return MW_AAA_SUCCESS;
 	}
 
 	G_mw_config.fd = fd;
 
 	if (init_netlink() < 0) {
 		MW_ERROR("init_netlink \n");
-		return -1;
+		return MW_AAA_NL_INIT_FAIL;
 	}
 
+	G_mw_config.init_params.mw_enable = 1;
 	G_mw_config.init_params.wait_3a = 1;
 	while (G_mw_config.init_params.wait_3a) {
 		if (0 != wait_sem(0)) {
@@ -231,33 +252,40 @@ int mw_start_aaa(int fd)
 		}
 	}
 	G_mw_config.init_params.wait_3a = 0;
-	G_mw_config.init_params.mw_enable = 1;
 
 	MW_MSG("======= [DONE] mw_start_aaa ======= \n");
-	return 0;
+	if (!G_mw_config.init_params.aaa_active) {
+		return MW_AAA_INTERRUPTED;
+	}
+	return MW_AAA_SUCCESS;
 }
 
 int mw_stop_aaa(void)
 {
+	int ret = 0;
+	if (G_mw_config.init_params.mw_enable == 0) {
+		MW_INFO("3A is not enabled. Quit silently.\n");
+		return MW_AAA_SUCCESS;
+	}
+
 	if (G_mw_config.init_params.wait_3a) {
 		G_mw_config.init_params.wait_3a = 0;
 		signal_sem();
 	}
-	if (G_mw_config.init_params.mw_enable == 0) {
-		MW_INFO("3A is not enabled. Quit silently.\n");
-		return 0;
-	}
 
-	if (send_image_msg_stop_aaa() < 0) {
+	if ((ret = send_image_msg_stop_aaa()) < 0) {
 		MW_ERROR("stop_aaa_task\n");
-		return -1;
 	}
 	deinit_netlink();
 	G_mw_config.init_params.mw_enable = 0;
 
 	MW_MSG("======= [DONE] mw_stop_aaa ======= \n");
 
-	return 0;
+	if (ret < 0) {
+		return MW_AAA_SET_FAIL;
+	}
+
+	return MW_AAA_SUCCESS;
 }
 
 int mw_init_mctf(int fd)
@@ -398,18 +426,7 @@ int mw_get_image_statistics(mw_image_stat_info *pInfo)
 		return -1;
 	}
 
-	u32 agc;
-	u32 shutter;
-
-	if (G_mw_config.sensor.is_rgb_sensor == 0) {
-		agc = 0;
-		shutter = Q9_BASE;
-	} else {
-		img_get_ae_system_gain(&agc);
-		get_shutter_time(&shutter);
-	}
-	pInfo->agc = agc * 1024 * 6 / 128;		//expressed in db x 1024
-	pInfo->shutter = shutter;
+	MW_MSG("Not support\n");
 
 	return 0;
 }
@@ -433,7 +450,8 @@ int mw_enable_ae(int enable)
 
 int mw_set_ae_param(mw_ae_param *pAe_param)
 {
-	u32 hdr_shutter_max = 0;
+	u64 hdr_shutter_max = 0;
+	hdr_blend_info_t hdr_blend_cfg;
 
 	if (pAe_param == NULL) {
 		MW_ERROR("mw_set_ae_param pointer is NULL!\n");
@@ -489,33 +507,44 @@ int mw_set_ae_param(mw_ae_param *pAe_param)
 	}
 
 	if (G_mw_config.res.hdr_expo_num == HDR_2X) {
-		hdr_shutter_max = HDR_2X_MAX_SHUTTER(pAe_param->current_vin_fps);
+		if ((pAe_param->tone_curve_duration > MAX_TONE_CURVE_DURATION) ||
+			(pAe_param->tone_curve_duration == 0)) {
+			MW_ERROR("Only support tone curver in 2X hdr mode with duration [1~%d]\n",
+				MAX_TONE_CURVE_DURATION);
+			return -1;
+		}
+	}
+
+	if (G_mw_config.res.hdr_expo_num == HDR_2X) {
+		img_get_hdr_blend_config(&hdr_blend_cfg);
+		hdr_shutter_max = HDR_2X_MAX_SHUTTER((u64)pAe_param->current_vin_fps, (u64)hdr_blend_cfg.expo_ratio);
 		if (pAe_param->shutter_time_max > hdr_shutter_max) {
 			MW_ERROR("Shutter time max [1/%d s] is longer than HDR shutter limit "
-				"[1/%d s]. Ignore this change!\n",
+				"[1/%llu s]. Ignore this change!\n",
 				SHT_TIME(pAe_param->shutter_time_max),
 				SHT_TIME(hdr_shutter_max));
 			return -1;
 		}
 		if (pAe_param->shutter_time_min > hdr_shutter_max) {
 			MW_ERROR("Shutter time min [1/%d s] is longer than HDR shutter limit "
-				"[1/%d s]. Ignore this change!\n",
+				"[1/%llu s]. Ignore this change!\n",
 				SHT_TIME(pAe_param->shutter_time_min),
 				SHT_TIME(hdr_shutter_max));
 			return -1;
 		}
 	} else if (G_mw_config.res.hdr_expo_num == HDR_3X) {
-		hdr_shutter_max = HDR_3X_MAX_SHUTTER(pAe_param->current_vin_fps);
+		img_get_hdr_blend_config(&hdr_blend_cfg);
+		hdr_shutter_max = HDR_3X_MAX_SHUTTER((u64)pAe_param->current_vin_fps, (u64)hdr_blend_cfg.expo_ratio);
 		if (pAe_param->shutter_time_max > hdr_shutter_max) {
 			MW_ERROR("Shutter time max [1/%d s] is longer than HDR shutter limit "
-				"[1/%d s]. Ignore this change!\n",
+				"[1/%llu s]. Ignore this change!\n",
 				SHT_TIME(pAe_param->shutter_time_max),
 				SHT_TIME(hdr_shutter_max));
 			return -1;
 		}
 		if (pAe_param->shutter_time_min > hdr_shutter_max) {
 			MW_ERROR("Shutter time min [1/%d s] is longer than HDR shutter limit "
-				"[1/%d s]. Ignore this change!\n",
+				"[1/%llu s]. Ignore this change!\n",
 				SHT_TIME(pAe_param->shutter_time_min),
 				SHT_TIME(hdr_shutter_max));
 			return -1;
@@ -581,11 +610,11 @@ int mw_set_exposure_level(int *pExposure_level)
 		if (pExposure_level[i] > MW_EXPOSURE_LEVEL_MAX - 1) {
 			pExposure_level[i] = MW_EXPOSURE_LEVEL_MAX - 1;
 		}
+		ae_target[i] = (u16)((pExposure_level[i] << 10) / 100);
 		if (G_mw_config.ae_params.ae_level[i] == pExposure_level[i]) {
 			is_same++;
 			continue;
 		}
-		ae_target[i] = (u16)((pExposure_level[i] << 10) / 100);
 		G_mw_config.ae_params.ae_level[i] = pExposure_level[i];
 	}
 	if (is_same == G_mw_config.res.hdr_expo_num) {
@@ -712,6 +741,11 @@ int mw_get_shutter_time(int fd, int *pShutter_time)
 			return -1;
 		}
 		*pShutter_time = vsrc_shutter.shutter;
+	}
+
+	if (pShutter_time[0] == 0) {
+		MW_ERROR("AE is not ready or get incorrect value!\n");
+		return -1;
 	}
 
 	return 0;
@@ -1478,6 +1512,10 @@ int mw_set_auto_color_contrast(u32 enable)
 		MW_ERROR("The value must be 0 or 1\n");
 		return -1;
 	}
+	if (img_set_auto_color_contrast(enable) < 0) {
+		MW_ERROR("img_set_auto_color_contrast failed\n");
+		return -1;
+	}
 
 	G_mw_config.enh_params.auto_contrast = enable;
 	return 0;
@@ -1501,6 +1539,10 @@ int mw_set_auto_color_contrast_strength (u32 value)
 	}
 	if (value > 128) {
 		MW_ERROR("\nThe value must be 0~128\n");
+		return -1;
+	}
+	if (img_set_auto_color_contrast_strength(value) < 0) {
+		MW_ERROR("img_set_auto_color_contrast_strength failed\n");
 		return -1;
 	}
 
@@ -1585,21 +1627,23 @@ int mw_set_auto_wdr_strength(int strength)
 int mw_load_adj_param(mw_adj_file_param *contents)
 {
 	int i;
+	int file_name_len = 0;
 
 	if (contents->filename == NULL) {
 		MW_ERROR("%s error: pFile_name is null\n", __func__);
 		return -1;
 	}
+	file_name_len = strlen(contents->filename);
 
-	if (strlen(contents->filename) > (FILE_NAME_LENGTH - 1)) {
+	if (file_name_len > (FILE_NAME_LENGTH - 1)) {
 		MW_ERROR("%s error: the file name length must be < %d\n",
 			__func__, FILE_NAME_LENGTH);
 		return -1;
 
 	}
 
-	memcpy(G_mw_config.adj.filename, contents->filename,
-		strlen(contents->filename));
+	memcpy(G_mw_config.adj.filename, contents->filename, file_name_len);
+	G_mw_config.adj.filename[file_name_len] = '\0';
 	for (i = 0; i < ADJ_FILTER_NUM; i++) {
 		G_mw_config.adj.flag[i].apply = contents->flag[i].apply;
 		G_mw_config.adj.flag[i].done = 0;
@@ -1622,21 +1666,23 @@ int mw_load_adj_param(mw_adj_file_param *contents)
 int mw_save_adj_param(mw_adj_file_param *contents)
 {
 	int i;
+	int file_name_len = 0;
 
 	if (contents->filename == NULL) {
 		MW_ERROR("%s error: pFile_name is null\n", __func__);
 		return -1;
 	}
+	file_name_len = strlen(contents->filename);
 
-	if (strlen(contents->filename) > (FILE_NAME_LENGTH - 1)) {
+	if (file_name_len > (FILE_NAME_LENGTH - 1)) {
 		MW_ERROR("%s error: the file name length must be < %d\n",
 			__func__, FILE_NAME_LENGTH);
 		return -1;
 
 	}
 
-	memcpy(G_mw_config.adj.filename, contents->filename,
-		strlen(contents->filename));
+	memcpy(G_mw_config.adj.filename, contents->filename, file_name_len);
+	G_mw_config.adj.filename[file_name_len] = '\0';
 	for (i = 0; i < ADJ_FILTER_NUM; i++) {
 		G_mw_config.adj.flag[i].apply = contents->flag[i].apply;
 		G_mw_config.adj.flag[i].done = 0;
@@ -1658,12 +1704,14 @@ int mw_save_adj_param(mw_adj_file_param *contents)
 
 int mw_load_aaa_param_file(char *pFile_name, int type)
 {
+	int file_name_len = 0;
 	if (pFile_name == NULL) {
 		MW_ERROR("%s error: pFile_name is null\n", __func__);
 		return -1;
 	}
+	file_name_len = strlen(pFile_name);
 
-	if (strlen(pFile_name) > (FILE_NAME_LENGTH - 1)) {
+	if (file_name_len > (FILE_NAME_LENGTH - 1)) {
 		MW_ERROR("%s error: the file name length must be < %d\n",
 			__func__, FILE_NAME_LENGTH);
 		return -1;
@@ -1674,14 +1722,17 @@ int mw_load_aaa_param_file(char *pFile_name, int type)
 	case FILE_TYPE_ADJ:
 		memcpy(G_mw_config.sensor.load_files.adj_file, pFile_name,
 			sizeof(G_mw_config.sensor.load_files.adj_file));
+		G_mw_config.sensor.load_files.adj_file[file_name_len] = '\0';
 		break;
 	case FILE_TYPE_AEB:
 		memcpy(G_mw_config.sensor.load_files.aeb_file, pFile_name,
 			sizeof(G_mw_config.sensor.load_files.aeb_file));
+		G_mw_config.sensor.load_files.aeb_file[file_name_len] = '\0';
 		break;
 	case FILE_TYPE_PIRIS:
 		memcpy(G_mw_config.sensor.load_files.lens_file, pFile_name,
 			sizeof(G_mw_config.sensor.load_files.lens_file));
+		G_mw_config.sensor.load_files.lens_file[file_name_len] = '\0';
 		break;
 	default:
 		MW_ERROR("No the type\n");
@@ -1694,6 +1745,180 @@ int mw_set_lens_id(int lens_id)
 {
 	G_mw_config.sensor.lens_id = lens_id;
 	return 0;
+}
+
+int mw_set_auto_knee_strength (int strength)
+{
+	u8 auto_knee_strength = 0;
+	if (G_mw_config.enh_params.auto_knee_strength == strength) {
+		return 0;
+	}
+
+	if (strength < MW_AUTO_KNEE_MIN || strength > MW_AUTO_KNEE_MAX) {
+		return -1;
+	} else {
+		auto_knee_strength = strength;
+	}
+	if (img_set_ae_auto_knee(&auto_knee_strength) < 0) {
+		return -1;
+	}
+	G_mw_config.enh_params.auto_knee_strength = strength;
+
+	return 0;
+}
+
+int mw_get_auto_knee_strength (int *pStrength)
+{
+	if (pStrength == NULL) {
+		MW_ERROR("NULL pointer, mw_get_auto_knee_strength failed\n");
+		return -1;
+	}
+	*pStrength = G_mw_config.enh_params.auto_knee_strength;
+	return 0;
+}
+
+int mw_enable_auto_dump_cfg(int enable)
+{
+	G_mw_config.enh_params.auto_dump_cfg = !!enable;
+	return 0;
+}
+
+int mw_set_hdr_blend_config(mw_hdr_blend_info *pBlend_cfg)
+{
+	hdr_blend_info_t hdr_blend_cfg;
+	if (pBlend_cfg->boost_factor < MW_HDR_BLEND_BOOST_FACTOR_MIN ||
+			pBlend_cfg->boost_factor > MW_HDR_BLEND_BOOST_FACTOR_MAX) {
+		MW_ERROR("Invalid param: boost factor %d is out of range [%d, %d]",
+				pBlend_cfg->boost_factor, MW_HDR_BLEND_BOOST_FACTOR_MIN,
+				MW_HDR_BLEND_BOOST_FACTOR_MAX);
+		return -1;
+	}
+	if (pBlend_cfg->expo_ratio < MW_HDR_BLEND_EXPO_RATIO_MIN ||
+			pBlend_cfg->expo_ratio > MW_HDR_BLEND_EXPO_RATIO_MAX) {
+		MW_ERROR("Invalid param: exposure ratio %d is out of range [%d, %d]",
+				pBlend_cfg->expo_ratio, MW_HDR_BLEND_EXPO_RATIO_MIN,
+				MW_HDR_BLEND_EXPO_RATIO_MAX);
+		return -1;
+	}
+	hdr_blend_cfg.boost_factor = pBlend_cfg->boost_factor;
+	hdr_blend_cfg.expo_ratio = pBlend_cfg->expo_ratio;
+	if (img_set_hdr_blend_config(&hdr_blend_cfg) < 0) {
+		MW_ERROR("img_set_hdr_blend_config failed!\n");
+		return -1;
+	}
+
+	return 0;
+}
+
+int mw_get_hdr_blend_config(mw_hdr_blend_info *pBlend_cfg)
+{
+	hdr_blend_info_t hdr_blend_cfg;
+	if (img_get_hdr_blend_config(&hdr_blend_cfg) < 0) {
+		MW_ERROR("img_get_hdr_blend_config failed!\n");
+		return -1;
+	}
+	pBlend_cfg->boost_factor = hdr_blend_cfg.boost_factor;
+	pBlend_cfg->expo_ratio = hdr_blend_cfg.expo_ratio;
+
+	return 0;
+}
+
+int mw_set_wdr_luma_config(mw_wdr_luma_info *pWdr_luma_cfg)
+{
+	wdr_luma_config_info_t wdr_luma_cfg;
+	int retv = -1;
+
+	if (pWdr_luma_cfg == NULL) {
+		MW_ERROR("NULL pointer, mw_set_wdr_luma_config failed\n");
+		retv = -1;
+		goto EXIT;
+	}
+
+	if ((pWdr_luma_cfg->radius < MW_WDR_LUMA_RADIUS_MIN) || (pWdr_luma_cfg->radius > MW_WDR_LUMA_RADIUS_MAX)) {
+		MW_ERROR("Invalid param: radius %d is out of range [%d, %d]",
+				pWdr_luma_cfg->radius, MW_WDR_LUMA_RADIUS_MIN,
+				MW_WDR_LUMA_RADIUS_MAX);
+		retv = -1;
+		goto EXIT;
+	}
+
+	if ((pWdr_luma_cfg->luma_weight_red < MW_WDR_LUMA_WEIGHT_MIN) || (pWdr_luma_cfg->luma_weight_red > MW_WDR_LUMA_WEIGHT_MAX)) {
+		MW_ERROR("Invalid param: luma_weight_red %d is out of range [%d, %d]",
+				pWdr_luma_cfg->luma_weight_red, MW_WDR_LUMA_WEIGHT_MIN,
+				MW_WDR_LUMA_WEIGHT_MAX);
+		retv = -1;
+		goto EXIT;
+	}
+
+	if ((pWdr_luma_cfg->luma_weight_green < MW_WDR_LUMA_WEIGHT_MIN) || (pWdr_luma_cfg->luma_weight_green > MW_WDR_LUMA_WEIGHT_MAX)) {
+		MW_ERROR("Invalid param: luma_weight_green %d is out of range [%d, %d]",
+				pWdr_luma_cfg->luma_weight_green, MW_WDR_LUMA_WEIGHT_MIN,
+				MW_WDR_LUMA_WEIGHT_MAX);
+		retv = -1;
+		goto EXIT;
+	}
+
+	if ((pWdr_luma_cfg->luma_weight_blue < MW_WDR_LUMA_WEIGHT_MIN) || (pWdr_luma_cfg->luma_weight_blue > MW_WDR_LUMA_WEIGHT_MAX)) {
+		MW_ERROR("Invalid param: luma_weight_blue %d is out of range [%d, %d]",
+				pWdr_luma_cfg->luma_weight_blue, MW_WDR_LUMA_WEIGHT_MIN,
+				MW_WDR_LUMA_WEIGHT_MAX);
+		retv = -1;
+		goto EXIT;
+	}
+
+	if ((pWdr_luma_cfg->luma_weight_shift < MW_WDR_LUMA_WEIGHT_MIN) || (pWdr_luma_cfg->luma_weight_shift > MW_WDR_LUMA_WEIGHT_MAX)) {
+		MW_ERROR("Invalid param: luma_weight_shift %d is out of range [%d, %d]",
+				pWdr_luma_cfg->luma_weight_shift, MW_WDR_LUMA_WEIGHT_MIN,
+				MW_WDR_LUMA_WEIGHT_MAX);
+		retv = -1;
+		goto EXIT;
+	}
+
+	wdr_luma_cfg.radius = pWdr_luma_cfg->radius;
+	wdr_luma_cfg.luma_weight_red = pWdr_luma_cfg->luma_weight_red;
+	wdr_luma_cfg.luma_weight_green = pWdr_luma_cfg->luma_weight_green;
+	wdr_luma_cfg.luma_weight_blue = pWdr_luma_cfg->luma_weight_blue;
+	wdr_luma_cfg.luma_weight_shift = pWdr_luma_cfg->luma_weight_shift;
+
+	if (img_set_wdr_luma_config(&wdr_luma_cfg) < 0) {
+		MW_ERROR("img_set_wdr_luma_config failed!\n");
+		retv = -1;
+		goto EXIT;
+	}
+
+	retv = 0;
+
+EXIT:
+	return retv;
+}
+
+int mw_get_wdr_luma_config(mw_wdr_luma_info *pWdr_luma_cfg)
+{
+	wdr_luma_config_info_t wdr_luma_cfg;
+	int retv = -1;
+
+	if (pWdr_luma_cfg == NULL) {
+		MW_ERROR("NULL pointer, mw_get_wdr_luma_config failed\n");
+		retv = -1;
+		goto EXIT;
+	}
+
+	if (img_get_wdr_luma_config(&wdr_luma_cfg) < 0) {
+		MW_ERROR("img_get_wdr_luma_config failed!\n");
+		retv = -1;
+		goto EXIT;
+	}
+
+	pWdr_luma_cfg->radius = wdr_luma_cfg.radius;
+	pWdr_luma_cfg->luma_weight_red = wdr_luma_cfg.luma_weight_red;
+	pWdr_luma_cfg->luma_weight_green = wdr_luma_cfg.luma_weight_green;
+	pWdr_luma_cfg->luma_weight_blue = wdr_luma_cfg.luma_weight_blue;
+	pWdr_luma_cfg->luma_weight_shift = wdr_luma_cfg.luma_weight_shift;
+
+	retv = 0;
+
+EXIT:
+	return retv;
 }
 
 #define __END_OF_FILE__

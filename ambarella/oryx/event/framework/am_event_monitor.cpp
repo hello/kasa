@@ -7,12 +7,29 @@
  *                  and change to am_event_monitor.cpp
  *  2014-11-20     [Dongge Wu] reconstruct and refine
  *
- * Copyright (C) 2008-2016, Ambarella ShangHai Co,Ltd
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -20,9 +37,10 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <dlfcn.h>
+#include <mutex>
 
-#include "am_log.h"
 #include "am_base_include.h"
+#include "am_log.h"
 #include "am_event_types.h"
 #include "am_base_event_plugin.h"
 #include "am_event_monitor_if.h"
@@ -37,6 +55,7 @@
 #endif
 
 #define PLUGIN_PATH(s) (CAMERA_EVENT_PLUGIN_DIR s)
+#define AUTO_LOCK_EVENT(mtx) std::lock_guard<std::mutex> lck(mtx)
 
 static std::mutex event_mtx;
 
@@ -49,7 +68,7 @@ AMIEventMonitorPtr AMIEventMonitor::get_instance()
 
 AMEventMonitor* AMEventMonitor::get_instance()
 {
-  AUTO_LOCK(event_mtx);
+  AUTO_LOCK_EVENT(event_mtx);
   if (!this_instance) {
     if ((this_instance = new AMEventMonitor())
         && (!this_instance->construct())) {
@@ -171,7 +190,7 @@ bool AMEventMonitor::register_module(EVENT_MODULE_ID id,
     return false;
   }
 
-  AUTO_LOCK(event_mtx);
+  AUTO_LOCK_EVENT(event_mtx);
   if (m_module_files[id] != nullptr
       && strcmp(m_module_files[id], module_path)) {
     dlclose(m_module_handles[id]);
@@ -230,7 +249,7 @@ bool AMEventMonitor::destroy_event_monitor(EVENT_MODULE_ID id)
     return false;
   }
 
-  AUTO_LOCK(event_mtx);
+  AUTO_LOCK_EVENT(event_mtx);
   if (m_module_files[id] == nullptr) {
     WARN("This module[id:%d] is not registered !\n", id);
     return true;
@@ -260,7 +279,7 @@ bool AMEventMonitor::start_all_event_monitor()
 
   for (id = 0; id < EV_ALL_MODULE_NUM; id ++) {
     if (m_module_files[id]) {
-      ret = start_event_monitor((EVENT_MODULE_ID) id);
+      ret = start_event_monitor(EVENT_MODULE_ID(id));
     }
     if (!ret) {
       ERROR("Fail to start module[%d]!\n", id);
@@ -278,7 +297,7 @@ bool AMEventMonitor::stop_all_event_monitor()
 
   for (id = 0; id < EV_ALL_MODULE_NUM; id ++) {
     if (m_module_files[id]) {
-      ret = stop_event_monitor((EVENT_MODULE_ID) id);
+      ret = stop_event_monitor(EVENT_MODULE_ID(id));
     }
     if (!ret) {
       ERROR("Fail to stop module[%d]!\n", id);
@@ -351,7 +370,7 @@ bool AMEventMonitor::get_monitor_config(EVENT_MODULE_ID id,
 
 inline AMIEventPlugin* AMEventMonitor::get_event_plugin(EVENT_MODULE_ID id)
 {
-  AUTO_LOCK(event_mtx);
+  AUTO_LOCK_EVENT(event_mtx);
   if (m_module_files[id] == nullptr) {
     WARN("This module[id:%d] is not registered !\n", id);
     return nullptr;
@@ -381,5 +400,5 @@ inline AMIEventPlugin* AMEventMonitor::get_event_plugin(EVENT_MODULE_ID id)
 
 inline bool AMEventMonitor::valid_module_id(EVENT_MODULE_ID id)
 {
-  return (id >= EV_MOTION_DECT) && (id < EV_ALL_MODULE_NUM);
+  return (id >= EV_AUDIO_ALERT_DECT) && (id < EV_ALL_MODULE_NUM);
 }

@@ -31,6 +31,18 @@ EXTERN_C_BEGIN
 // neither tgid nor tid seemed correct. (in other words, FIXME)
 #define XXXID tid
 
+enum ns_type {
+    IPCNS = 0,
+    MNTNS,
+    NETNS,
+    PIDNS,
+    USERNS,
+    UTSNS,
+    NUM_NS         // total namespaces (fencepost)
+};
+extern const char *get_ns_name(int id);
+extern int get_ns_id(const char *name);
+
 // Basic data structure which holds all information we can get about a process.
 // (unless otherwise specified, fields are read from /proc/#/stat)
 //
@@ -157,6 +169,18 @@ typedef struct proc_t {
         oom_score,      // oom_score       (badness for OOM killer)
         oom_adj;        // oom_adj         (adjustment to OOM score)
 #endif
+    long
+        ns[NUM_NS];     // (ns subdir)     inode number of namespaces
+#ifdef WITH_SYSTEMD
+    char
+        *sd_mach,       // n/a             systemd vm/container name
+        *sd_ouid,       // n/a             systemd session owner uid
+        *sd_seat,       // n/a             systemd login session seat
+        *sd_sess,       // n/a             systemd login session id
+        *sd_slice,      // n/a             systemd slice unit
+        *sd_unit,       // n/a             systemd system unit id
+        *sd_uunit;      // n/a             systemd user unit id
+#endif
 } proc_t;
 
 // PROCTAB: data structure holding the persistent information readproc needs
@@ -266,10 +290,12 @@ extern proc_t * get_proc_stats(pid_t pid, proc_t *p);
 #define PROC_FILLCGROUP      0x0200 // alloc and fill in `cgroup`
 #define PROC_FILLSUPGRP      0x0400 // resolve supplementary group id -> group name
 #define PROC_FILLOOM         0x0800 // fill in proc_t oom_score and oom_adj
+#define PROC_FILLNS          0x8000 // fill in proc_t namespace information
+#define PROC_FILLSYSTEMD    0x80000 // fill in proc_t systemd information
 
 #define PROC_LOOSE_TASKS     0x2000 // treat threads as if they were processes
 
-// Obsolete, consider only processes with one of the passed:
+// consider only processes with one of the passed:
 #define PROC_PID             0x1000  // process id numbers ( 0   terminated)
 #define PROC_UID             0x4000  // user id numbers    ( length needed )
 

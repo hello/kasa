@@ -3,12 +3,29 @@
  *
  * History:
  *  2014/03/19 - [ywang] created file
- * Copyrigt (C) 2007-2011, Ambarella, Inc
+ * Copyright (C) 2015 Ambarella, Inc.
  *
- *  All rights reserved. No Part of this file may be reproduced, stored in a
- *  retrieval system, or transmitterd, in any form, or any means,
- *  electronic, mechanical, photocopying, recording, or otherwise, without the
- *  prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
 #include <stdio.h>
@@ -30,6 +47,7 @@
 
 #include <basetypes.h>
 #include <iav_ioctl.h>
+#include <locale.h>
 #include "text_insert.h"
 
 #define MAX_ENCODE_STREAM_NUM	(4)
@@ -169,8 +187,13 @@ wchar_t wText[][STRING_SIZE] = {
 	L"安霸中国(Chinese)"
 };
 
-#define FONTTYPE_NUM		4
-char font_type[][MAX_BYTE_SIZE] = {
+enum font_type {
+	FONT_TYPE_ENGLISH		= 0,
+	FONT_TYPE_CHINESE		= 1,
+	FONT_TYPE_NUM
+};
+
+char font_type[FONT_TYPE_NUM][MAX_BYTE_SIZE] = {
 	"/usr/share/fonts/DroidSans.ttf",
 	"/usr/share/fonts/DroidSansFallbackFull.ttf"
 };
@@ -278,8 +301,20 @@ static void get_time_string(char *str)
 	        (1 + p->tm_mon), p->tm_mday, p->tm_hour, p->tm_min, p->tm_sec);
 }
 
-static int char_to_wchar(const char* orig_str, wchar_t *wtext, int max_length)
+static int char_to_wchar(int font_type, const char* orig_str, wchar_t *wtext, int max_length)
 {
+	switch (font_type) {
+	case FONT_TYPE_ENGLISH:
+		setlocale(LC_ALL,"");
+		break;
+	case FONT_TYPE_CHINESE:
+		setlocale(LC_ALL,"zh_CN.utf8");
+		break;
+	default:
+		setlocale(LC_ALL,"");
+		break;
+	}
+
 	if (-1 == mbstowcs(wtext, orig_str, max_length - 1))
 		return -1;
 	if (wcscat(wtext, L"") == NULL)
@@ -393,7 +428,7 @@ static int init_param(int argc, char **argv)
 		case SPECIFY_STRING:
 			VERIFY_STREAMID(stream_id);
 			VERIFY_AREAID(area_id);
-			if (char_to_wchar(optarg,
+			if (char_to_wchar(stream_text_info[stream_id].textbox[area_id].font_type, optarg,
 				stream_text_info[stream_id].textbox[area_id].content,
 				sizeof(stream_text_info[stream_id].textbox[area_id].content)) < 0) {
 				printf("Convert to wchar failed. Use default string.\n");
@@ -514,7 +549,7 @@ static int check_param(void)
 				box = &stream_text_info[i].textbox[j];
 				if (box->enable) {
 					sprintf(str, "Stream %c Textbox %d", 'A' + i, j);
-					if (box->font_type < 0 || box->font_type >= FONTTYPE_NUM)
+					if (box->font_type < 0 || box->font_type >= FONT_TYPE_NUM)
 						box->font_type = 0;
 					if (box->font_size <= 0)
 						box->font_size = default_fontsize;
@@ -560,7 +595,7 @@ static int check_param(void)
 							box->italic = 0;
 						}
 						get_time_string(box->time.time_string);
-						char_to_wchar(box->time.time_string, box->content,
+						char_to_wchar(box->font_type, box->time.time_string, box->content,
 						              sizeof(box->content));
 						memset(box->time.osd_x, NOT_CONVERTED, STRING_SIZE);
 						memset(box->time.osd_y, NOT_CONVERTED, STRING_SIZE);

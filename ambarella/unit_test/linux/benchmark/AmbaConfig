@@ -56,6 +56,12 @@ config BUILD_AMBARELLA_UNIT_TESTS_SD_TEST
 	help
 		Build unit tests for sd_test test
 
+config BUILD_AMBARELLA_UNIT_TESTS_SD_BENCHMARK
+	bool "Build unit tests for sd_benchmark test"
+	default n
+	help
+		Build unit tests for sd_benchmark test
+
 config BUILD_AMBARELLA_UNIT_TESTS_NET_TEST
 	bool "Build unit tests for net_test test"
 	default n
@@ -63,7 +69,7 @@ config BUILD_AMBARELLA_UNIT_TESTS_NET_TEST
 		Build unit tests for net_test test
 
 config BUILD_AMBARELLA_UNIT_TESTS_MEMTESTER
-	bool "Build unit tests for memory test"
+	bool "Build unit tests for memory stability test"
 	default n
 	help
 		Build unit tests for memory test

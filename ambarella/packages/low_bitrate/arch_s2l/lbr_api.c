@@ -1,19 +1,85 @@
+/*******************************************************************************
+ * lbr_api.c
+ *
+ * History:
+ *	2014/05/02 - [Jian Tang] created file
+ *
+ * Copyright (c) 2016 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ ******************************************************************************/
+
 #include <stdio.h>
 #include <string.h>
-#include <sys/ioctl.h>
 #include <unistd.h>
-
+#include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <iav_ioctl.h>
 
 #include "basetypes.h"
 #include "lbr_api.h"
 #include "lbr_param_priv.h"
 
+#ifndef ROUND_UP
+#define ROUND_UP(size, align) (((size) + ((align) - 1)) & ~((align) - 1))
+#endif
+
+#define MAX_ENCODE_STREAM_NUM   (IAV_STREAM_MAX_NUM_IMPL)
+#define QP_MATRIX_SINGLE_SIZE   (96 << 10)
+#define TOTAL_FRAME_TYPE        (3) //I, P, B, total frame type is 3
+
 int G_lbr_log_level = 1;
 static lbr_init_t g_lbr_init_data;
 static int g_lbr_init_done = 0;
 static lbr_control_context_t g_lbr_control_context[LBR_PROFILE_NUM];
 static lbr_profile_bitrate_gap_gop_t bitrate_gap;
+static u8 *qp_matrix_addr = NULL;
+static int stream_qp_matrix_size = 0;
+static int single_matrix_size = 0;
+static int stream_matrix_num = 0;
+
+static int map_qp_matrix(void)
+{
+	struct iav_querybuf querybuf;
+
+	querybuf.buf = IAV_BUFFER_QPMATRIX;
+	if (ioctl(g_lbr_init_data.fd_iav, IAV_IOC_QUERY_BUF, &querybuf) < 0) {
+		perror("IAV_IOC_QUERY_BUF");
+		return -1;
+	}
+
+	qp_matrix_addr = mmap(NULL, querybuf.length, PROT_READ | PROT_WRITE,
+		MAP_SHARED, g_lbr_init_data.fd_iav, querybuf.offset);
+	stream_qp_matrix_size = querybuf.length / MAX_ENCODE_STREAM_NUM;
+	stream_matrix_num = stream_qp_matrix_size / QP_MATRIX_SINGLE_SIZE;
+	single_matrix_size = stream_qp_matrix_size / stream_matrix_num;
+
+	LBR_DEBUG("stream_matrix_num=%d, single_matrix_size=0x%x!\n",
+		stream_matrix_num, single_matrix_size);
+
+	return 0;
+}
 
 static inline int calculate_bitrate_target(
             lbr_control_context_t *context,
@@ -201,6 +267,14 @@ static int update_lbr_profile(LBR_PROFILE_TYPE next_profile, int stream_id)
 	struct iav_stream_cfg stream_new_config;
 	struct iav_h264_cfg h264_config;
 	struct iav_bitrate bitrate;
+	struct iav_qproi_data *qproi_daddr = NULL;
+	struct iav_qpmatrix *h264_roi_param = NULL;
+	u8 *daddr = NULL;
+	u32 i = 0;
+	u32 buf_width = 0;
+	u32 buf_pitch = 0;
+	u32 buf_height = 0;
+	u32 buf_size = 0;
 
 	if (!g_lbr_init_done) {
 		return -1;
@@ -295,18 +369,48 @@ static int update_lbr_profile(LBR_PROFILE_TYPE next_profile, int stream_id)
 		AM_IOCTL(fd_iav, IAV_IOC_SET_STREAM_CONFIG, &stream_new_config);
 	}
 
-	//set mv-theshold
+	//set zmv-theshold enable flag
 	memset(&stream_config, 0, sizeof(stream_config));
 	stream_config.id = stream_id;
 	stream_config.cid = IAV_H264_CFG_ZMV_THRESHOLD;
 	AM_IOCTL(fd_iav, IAV_IOC_GET_STREAM_CONFIG, &stream_config);
-	if (stream_config.arg.mv_threshold != lbr_control_param->zmv_threshold) {
+	if (stream_config.arg.mv_threshold != 1) {
 		memset(&stream_new_config, 0, sizeof(stream_new_config));
 		stream_new_config.id = stream_id;
 		stream_new_config.cid = IAV_H264_CFG_ZMV_THRESHOLD;
-		stream_new_config.arg.mv_threshold = lbr_control_param->zmv_threshold;
+		stream_new_config.arg.mv_threshold = 1;
 		AM_IOCTL(fd_iav, IAV_IOC_SET_STREAM_CONFIG, &stream_new_config);
 	}
+
+	//zmv-threshold is MB level. We use CMD IAV_H264_CFG_QP_ROI to get/set it.
+	buf_width = ROUND_UP(format.enc_win.width, 16) / 16;
+	buf_pitch = ROUND_UP(buf_width, 8);
+	buf_height = ROUND_UP(format.enc_win.height, 16) / 16;
+	buf_size = buf_pitch * buf_height;
+	memset(&stream_config, 0, sizeof(stream_config));
+	h264_roi_param = &stream_config.arg.h264_roi;
+	stream_config.id = stream_id;
+	stream_config.cid = IAV_H264_CFG_QP_ROI;
+	h264_roi_param->id = stream_id;
+	h264_roi_param->qpm_no_update = 1;
+	AM_IOCTL(fd_iav, IAV_IOC_GET_STREAM_CONFIG, &stream_config);
+
+	if (stream_matrix_num == TOTAL_FRAME_TYPE) {
+		daddr = qp_matrix_addr + stream_qp_matrix_size * stream_id +
+			single_matrix_size;
+	} else {
+		daddr = qp_matrix_addr + stream_qp_matrix_size * stream_id;
+	}
+	qproi_daddr = (struct iav_qproi_data *)daddr;
+	//All MBs use the same zmv-threshold
+	for (i = 0; i < buf_size; i ++) {
+		qproi_daddr[i].zmv_threshold = lbr_control_param->zmv_threshold;
+	}
+	stream_config.cid = IAV_H264_CFG_QP_ROI;
+	h264_roi_param->enable = 1;
+	h264_roi_param->qpm_no_check = 1;
+	h264_roi_param->qpm_no_update = 0;
+	AM_IOCTL(fd_iav, IAV_IOC_SET_STREAM_CONFIG, &stream_config);
 
 	return 0;
 }
@@ -478,6 +582,10 @@ int lbr_init(lbr_init_t *rc_init)
 	                        - g_lbr_control_param_IBBP_GOP[LBR_PROFILE_STATIC]
 	                                    .bitrate_target.bitrate_per_MB;
 
+	if (map_qp_matrix() < 0) {
+		LBR_ERROR("map QP matrix failed\n");
+		return -1;
+	}
 	g_lbr_init_done = 1;
 	return 0;
 }

@@ -5,12 +5,29 @@
  *  2013-01-24 [Hanbo Xiao] created file
  *  2014-11-19 [Dongge Wu] Reconstruct and porting to oryx
  *
- * Copyright (C) 2009, Ambarella, Inc.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef AM_AUDIO_ALERT_H
@@ -63,11 +80,17 @@ class AMAudioAlert: public AMIEventPlugin
     bool set_audio_format(AM_AUDIO_SAMPLE_FORMAT format);
 
   private:
+    int64_t  m_volume_sum;
+    uint64_t m_seq_num;
+    int32_t *m_micro_history;
+    int64_t *m_macro_history;
+    AM_EVENT_CALLBACK   m_callback;
+    AMIAudioCapture    *m_audio_capture;
+    AMAudioAlertConfig *m_alert_config;
     EVENT_MODULE_ID m_plugin_id;
     int32_t m_alert_sensitivity;
     int32_t m_alert_threshold;
     int32_t m_alert_direction;
-    int64_t m_volume_sum;
     int32_t m_sample_num;
     int32_t m_bits_per_sample;
     int32_t m_maximum_peak;
@@ -75,18 +98,12 @@ class AMAudioAlert: public AMIEventPlugin
     int32_t m_macro_history_head;
     int32_t m_micro_history_tail;
     int32_t m_macro_history_tail;
-    int32_t *m_micro_history;
-    int64_t *m_macro_history;
-    AM_EVENT_CALLBACK m_callback;
     snd_pcm_format_t m_snd_pcm_format;
     AM_AUDIO_SAMPLE_FORMAT m_audio_format;
-    AMIAudioCapture *m_audio_capture;
-    uint64_t m_seq_num;
-    bool m_enable_alert_detect;
     int32_t m_reference_count;
-    AMAudioAlertConfig *m_alert_config;
-    std::string m_conf_path;
+    bool m_enable_alert_detect;
     bool m_running_state;
+    std::string m_conf_path;
 };
 
 #endif

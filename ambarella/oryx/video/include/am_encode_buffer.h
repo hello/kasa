@@ -1,62 +1,64 @@
-/*******************************************************************************
+/**
  * am_encode_buffer.h
  *
- * History:
- *  July 10, 2014 - [Louis] created file
+ *  History:
+ *    Jul 10, 2015 - [Shupeng Ren] created file
  *
- * Copyright (C) 2012-2016, Ambarella ShangHai Co,Ltd
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
  *
- ******************************************************************************/
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
+#ifndef ORYX_VIDEO_INCLUDE_AM_ENCODE_BUFFER_H_
+#define ORYX_VIDEO_INCLUDE_AM_ENCODE_BUFFER_H_
 
-#ifndef AM_ENCODE_BUFFER_H_
-#define AM_ENCODE_BUFFER_H_
+#include "am_platform_if.h"
 
-#include <mutex>  //using C++11 mutex
-
-#include "am_encode_device_if.h"
-#include "am_video_device.h"
-#include "am_video_dsp.h"
-#include "am_lbr_control.h"
-
-class AMVideoDevice;
-class AMEncodeDevice;
-
-class AMEncodeSourceBuffer
+class AMEncodeBuffer
 {
   public:
-    AMEncodeSourceBuffer();
-    virtual ~AMEncodeSourceBuffer();
+    static AMEncodeBuffer* create();
+    virtual void destroy();
 
-    virtual AM_RESULT init(AMEncodeDevice *encode_device,
-                           AM_ENCODE_SOURCE_BUFFER_ID id,
-                           int iav_hd);
-    virtual AM_RESULT setup_source_buffer_all(
-        AMEncodeSourceBufferFormatAll *source_buffer_format_all);
-    virtual AM_RESULT set_source_buffer_format(
-        AMEncodeSourceBufferFormat *buffer_format);
-    virtual AM_RESULT get_source_buffer_format(
-        AMEncodeSourceBufferFormat *buffer_format);
+    AM_RESULT setup();
+    AM_RESULT load_config();
+    AM_RESULT get_param(AMBufferParamMap &param);
+    AM_RESULT set_param(const AMBufferParamMap &param);
+    AM_RESULT save_config();
 
-    //ref counter is used to identify whether the buffer is being used
-    //(is it useful?)
-    virtual AM_RESULT IncRef();
-    virtual AM_RESULT DecRef();
+    AM_RESULT get_buffer_state(AM_SOURCE_BUFFER_ID id,
+                               AM_SRCBUF_STATE &state);
+    AM_RESULT get_buffer_format(AMBufferConfigParam &param);
+    AM_RESULT set_buffer_format(const AMBufferConfigParam &param);
 
-  public:
-    AMEncodeSourceBufferFormat m_format;
-    AM_ENCODE_SOURCE_BUFFER_STATE m_state;
+  private:
+    AMEncodeBuffer();
+    virtual ~AMEncodeBuffer();
+    AM_RESULT init();
 
-  protected:
-    int32_t m_max_source_buffer_num;
-    int32_t m_ref_counter; //init zero, once used,  will increase
-    AMEncodeDevice *m_encode_device;
-    AM_ENCODE_SOURCE_BUFFER_ID m_id;
-    int m_iav;
+  private:
+    AMIPlatformPtr      m_platform;
+    AMBufferConfigPtr   m_config;
+    AMBufferParamMap    m_param;
 };
 
-#endif /* AM_SOURCE_BUFFER_H_ */
+#endif /* ORYX_VIDEO_INCLUDE_AM_ENCODE_BUFFER_H_ */

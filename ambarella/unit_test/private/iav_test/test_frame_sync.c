@@ -1,18 +1,34 @@
-/*
+/*******************************************************************************
  * test_frame_sync.c
  *
  * History:
- *	2015/02/11 - [Zhaoyang Chen] Created file
+ *    2015/02/11 - [Zhaoyang Chen] Created file
  *
- * Copyright (C) 2015-2019, Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ( "Software" ) are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
  *
- */
-
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+******************************************************************************/
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -55,6 +71,7 @@
 #endif
 
 #define MAX_ENCODE_STREAM_NUM		(IAV_STREAM_MAX_NUM_IMPL)
+#define QP_MATRIX_SINGLE_SIZE		(96 << 10)
 #define MAX_SRC_BUFFER_NUM			(IAV_SRCBUF_NUM)
 
 // the device file handle
@@ -63,12 +80,20 @@ static u8 *dsp_mem = NULL;
 static u32 dsp_size = 0;
 static u8 *qp_matrix_addr = NULL;
 static int stream_qp_matrix_size = 0;
-
+static int single_matrix_size = 0;
+static int stream_matrix_num = 0;
 
 
 #define VERIFY_STREAMID(x)   do {		\
 			if (((x) < 0) || ((x) >= MAX_ENCODE_STREAM_NUM)) {	\
 				printf ("stream id wrong %d \n", (x));			\
+				return -1; 	\
+			}	\
+		} while (0)
+
+#define VERIFY_MATRIXID(x)   do {		\
+			if (((x) < 0) || ((x) >= QP_FRAME_TYPE_NUM)) {	\
+				printf ("matrix id wrong %d \n", (x));			\
 				return -1; 	\
 			}	\
 		} while (0)
@@ -87,19 +112,23 @@ typedef struct h264_mv_threshold_param_s {
 	u8	mv_threshold_flag;
 } h264_mv_threshold_param_t;
 
-typedef struct h264_qproi_param_t {
-	int	type;
-	int	type_flag;
+typedef struct h264_roi_param_t {
+	int	qp_quality[QP_FRAME_TYPE_NUM];
+	int	qp_quality_flag[QP_FRAME_TYPE_NUM];
 
-	int	qp_quality;
-	int	qp_quality_flag;
+	int	qp_offset[QP_FRAME_TYPE_NUM];
+	int	qp_offset_flag[QP_FRAME_TYPE_NUM];
 
-	int qp_offset;
-	int qp_offset_flag;
+	int	zmv_threshold[QP_FRAME_TYPE_NUM];
+	int	zmv_threshold_flag[QP_FRAME_TYPE_NUM];
 
 	int	encode_width;
 	int	encode_height;
-} h264_qproi_param_t;
+
+	int	qp_offset_roi_map;
+	int	qp_quality_roi_map;
+	int	zmv_threshold_roi_map;
+} h264_roi_param_t;
 
 typedef struct h264_qp_limit_param_s {
 	u8	qp_min_i;
@@ -108,25 +137,26 @@ typedef struct h264_qp_limit_param_s {
 	u8	qp_max_p;
 	u8	qp_min_b;
 	u8	qp_max_b;
+	u8	qp_min_q;
+	u8	qp_max_q;
 	u8	adapt_qp;
 	u8	i_qp_reduce;
 	u8	p_qp_reduce;
+	u8	q_qp_reduce;
+	u8	log_q_num_plus_1;
 	u8	skip_frame;
 
 	u8	qp_i_flag;
 	u8	qp_p_flag;
 	u8	qp_b_flag;
+	u8	qp_q_flag;
 	u8	adapt_qp_flag;
 	u8	i_qp_reduce_flag;
 	u8	p_qp_reduce_flag;
+	u8	q_qp_reduce_flag;
+	u8	log_q_num_plus_1_flag;
 	u8	skip_frame_flag;
 } h264_qp_limit_param_t;
-
-typedef struct iav_qproi_data_s {
-	u8 qp_quality;
-	u8 qp_value;
-	u8 reserved[2];
-}  iav_qproi_data_t;
 
 typedef struct h264_frame_drop_param_s {
 	u8	frame_drop;
@@ -154,13 +184,21 @@ typedef struct h264_enc_param_s {
 	u8	user3_direct_bias_flag;
 } h264_enc_param_t;
 
+typedef struct h264_force_pskip_param_s {
+	u8	repeat_enable;
+	u8	repeat_num;
+} h264_force_pskip_param_t;
 
 static int current_stream = -1;
+static int current_idx = 0;
 
 //encoding settings
 static u32 force_idr_id_map = 0;
 
 static u32 force_fast_seek_map = 0;
+
+static h264_force_pskip_param_t h264_force_pskip_param[MAX_ENCODE_STREAM_NUM];
+static u32 force_pskip_id_map = 0;
 
 static h264_gop_param_t h264_gop_param[MAX_ENCODE_STREAM_NUM];
 static u32 h264_gop_param_changed_map = 0;
@@ -168,8 +206,9 @@ static u32 h264_gop_param_changed_map = 0;
 static h264_mv_threshold_param_t h264_mv_threshold_param[MAX_ENCODE_STREAM_NUM];
 static u32 h264_mv_threshold_changed_map = 0;
 
-static h264_qproi_param_t h264_qproi_param[MAX_ENCODE_STREAM_NUM];
-static u32 h264_qproi_changed_map = 0;
+static h264_roi_param_t h264_roi_param[MAX_ENCODE_STREAM_NUM];
+static u32 h264_roi_changed_map = 0;
+static u32 h264_ipb_matrix_changed_map = 0;
 
 static h264_qp_limit_param_t h264_qp_limit_param[MAX_ENCODE_STREAM_NUM];
 static u32 h264_qp_limit_changed_map = 0;
@@ -184,6 +223,9 @@ static u32 force_update_map = 0;
 
 static u32 show_params_map = 0;
 static int sleep_time = 1;
+static int roi_reset_flag = 0;
+
+static u32 long_ref_p_id_map = 0;
 
 #define	NO_ARG		0
 #define	HAS_ARG		1
@@ -195,18 +237,25 @@ enum numeric_short_options {
 
 	SPECIFY_MV_THRESHOLD,
 
-	SPECIFY_QP_ROI_TYPE,
-	SPECIFY_QP_ROI_QUALITY,
-	SPECIFY_QP_ROI_OFFSET,
+	SPECIFY_ROI_QP_MATRIX_IDX,
+	SPECIFY_ROI_QP_QUALITY,
+	SPECIFY_ROI_QP_OFFSET,
+	SPECIFY_ROI_ZMV_THRESHOLD,
+
+	SPECIFY_REGION_QP_QUALITY,
+	SPECIFY_REGION_QP_OFFSET,
+	SPECIFY_REGION_ZMV_THRESHOLD,
 
 	SPECIFY_QP_LIMIT_I,
 	SPECIFY_QP_LIMIT_P,
 	SPECIFY_QP_LIMIT_B,
+	SPECIFY_QP_LIMIT_Q,
 	SPECIFY_ADAPT_QP,
 	SPECIFY_I_QP_REDUCE,
 	SPECIFY_P_QP_REDUCE,
+	SPECIFY_Q_QP_REDUCE,
+	SPECIFY_LOG_Q_NUM_PLUS_1,
 	SPECIFY_SKIP_FRAME_MODE,
-
 	SPECIFY_FORCE_FAST_SEEK,
 	SPECIFY_FRAME_DROP,
 	SPECIFY_INTRABIAS_P,
@@ -219,6 +268,11 @@ enum numeric_short_options {
 	SPECIFY_USER3_DIRECTBIAS,
 
 	SPECIFY_FORCE_UPDATE,
+
+	SPECIFY_LONG_REF_P,
+
+	SPECIFY_FORCE_PSKIP_REPEAT,
+	SPECIFY_REPEAT_PSKIP_NUM,
 
 	SHOW_PARAMETERS,
 };
@@ -240,17 +294,25 @@ static struct option long_options[] = {
 	{"idr",		HAS_ARG,			0,	SPECIFY_GOP_IDR},
 
 	// qp roi setting
-	{"qproi-type",	HAS_ARG,		0,	 SPECIFY_QP_ROI_TYPE},
-	{"qproi-quality",	HAS_ARG,	0,	 SPECIFY_QP_ROI_QUALITY},
-	{"qproi-offset",	HAS_ARG,	0,	 SPECIFY_QP_ROI_OFFSET},
+	{"qproi-matrix-idx", 	HAS_ARG,	0,	SPECIFY_ROI_QP_MATRIX_IDX},
+	{"qproi-quality",		HAS_ARG,	0,	SPECIFY_ROI_QP_QUALITY},
+	{"qproi-offset",		HAS_ARG,	0,	SPECIFY_ROI_QP_OFFSET},
+	{"zmvroi-threshold",	HAS_ARG,	0,	SPECIFY_ROI_ZMV_THRESHOLD},
+
+	{"qproi-quality-region",		HAS_ARG,	0,	SPECIFY_REGION_QP_QUALITY},
+	{"qproi-offset-region",		HAS_ARG,	0,	SPECIFY_REGION_QP_OFFSET},
+	{"zmvroi-threshold-region",	HAS_ARG,	0,	SPECIFY_REGION_ZMV_THRESHOLD},
 
 	// qp limit setting
 	{"qp-limit-i",	HAS_ARG,		0,	SPECIFY_QP_LIMIT_I},
 	{"qp-limit-p",	HAS_ARG,		0,	SPECIFY_QP_LIMIT_P},
 	{"qp-limit-b",	HAS_ARG,		0,	SPECIFY_QP_LIMIT_B},
+	{"qp-limit-q",	HAS_ARG,		0,	SPECIFY_QP_LIMIT_Q},
 	{"adapt-qp",	HAS_ARG,		0,	SPECIFY_ADAPT_QP},
 	{"i-qp-reduce",	HAS_ARG,		0,	SPECIFY_I_QP_REDUCE},
 	{"p-qp-reduce",	HAS_ARG,		0,	SPECIFY_P_QP_REDUCE},
+	{"q-qp-reduce", HAS_ARG,		0,	SPECIFY_Q_QP_REDUCE},
+	{"log-q-num-plus-1", HAS_ARG,	0,	SPECIFY_LOG_Q_NUM_PLUS_1},
 	{"skip-frame-mode",	HAS_ARG,	0,	SPECIFY_SKIP_FRAME_MODE},
 
 	{"force-fast-seek",	NO_ARG,		0,	SPECIFY_FORCE_FAST_SEEK},
@@ -267,13 +329,19 @@ static struct option long_options[] = {
 	// force update frame sync or not
 	{"force-update",	HAS_ARG,	0,	SPECIFY_FORCE_UPDATE},
 
+	{"long-ref-p",	NO_ARG,			0,	SPECIFY_LONG_REF_P},
+
+	{"force-pskip-repeat",	HAS_ARG,	0,	SPECIFY_FORCE_PSKIP_REPEAT},
+	{"repeat-pskip-num",	HAS_ARG,	0,	SPECIFY_REPEAT_PSKIP_NUM},
+
 	{"show-param",	NO_ARG,	0,	SHOW_PARAMETERS},
 	{"sleep",	HAS_ARG,	0,	's' },
+	{"reset-roi",	NO_ARG,	0,	'r'},
 
 	{0, 0, 0, 0}
 };
 
-static const char *short_options = "ABCDN:s:";
+static const char *short_options = "ABCDN:s:r";
 
 struct hint_s {
 	const char *arg;
@@ -289,21 +357,32 @@ static const struct hint_s hint[] = {
 	//immediate action, configure encode stream on the fly
 	{"", "\t\tforce IDR at once for current stream"},
 
-	{"0~255", "set zmv threshold for current stream, value 0 means disable it"},
+	{"0|1", "\tdisable/enable zmv threshold roi for current stream, 0: disable, 1: enable, default 0"},
 
 	//h264 gop encode configurations
 	{"1~4095", "\t\tH.264 GOP parameter N, must be multiple of M, can be changed during encoding"},
 	{"1~128", "\tthe number of GOP per an IDR picture, can be changed during encoding"},
-	{"0|1", "\tsetting qp roi type, 0:base type, 1: adv type, default 1"},
+	{"0~2", "\tsetting qproi matrix index, 0: idx for I, 1: idx for P, 2: idx for B, default 0"},
 	{"0~3", "setting qp quality level for qp roi"},
 	{"-51~51", "setting qp offset for qp roi"},
+	{"0~255", "setting zmv threshold for zmv roi"},
+	{"0~4", "setting the region of qp quality roi"	\
+		"\n\t\t\t\t0:top left, 1:top right, 2: down left, 3: down right, 4: all the screen"},
+	{"0~4", "setting the region of qp offset roi"		\
+		"\n\t\t\t\t0:top left, 1:top right, 2: down left, 3: down right, 4: all the screen"},
+	{"0~4", "\n\t\t\t\tsetting the region of zmv threshold roi"	\
+		"\n\t\t\t\t0:top left, 1:top right, 2: down left, 3: down right, 4: all the screen"},
 
 	{"0~51", "\tset I-frame qp limit range, 0:auto 1~51:qp limit range"},
 	{"0~51", "\tset P-frame qp limit range, 0:auto 1~51:qp limit range"},
 	{"0~51", "\tset B-frame qp limit range, 0:auto 1~51:qp limit range"},
+	{"0~51", "\tset Q-frame qp limit range, 0:auto 1~51:qp limit range"},
 	{"0~4", "\tset strength of adaptive qp"},
 	{"1~10", "\tset diff of I QP less than P QP"},
 	{"1~5", "\tset diff of P QP less than B QP"},
+	{"1~10", "\tset diff of Q QP less than P QP"},
+	{"0~4", "set Q frame number for one GOP"	\
+		"\n\t\t\t\t0: no Q frame, 1: 1 Q frame, 2: 3 Q frames, 3: 7 Q frames, 4: 15 Q frames"},
 	{"0|1|2", "0: disable, 1: skip based on CPB size, 2: skip based on target bitrate and max QP"},
 
 	//immediate action, configure encode stream on the fly
@@ -311,17 +390,23 @@ static const struct hint_s hint[] = {
 	{"0~255", "\tSpecify how many frames encoder will drop, can update on the fly"},
 	{"1~4000", "Specify intrabias for P frames of current stream"},
 	{"1~4000", "Specify intrabias for B frames of current stream"},
-	{"0~128", "Specify user1 intra bias strength, 0: no bias, 128: the strongest."},
-	{"0~128", "Specify user1 direct bias strength, 0: no bias, 128: the strongest."},
-	{"0~128", "Specify user2 intra bias strength, 0: no bias, 128: the strongest."},
-	{"0~128", "Specify user2 direct bias strength, 0: no bias, 128: the strongest."},
-	{"0~128", "Specify user3 intra bias strength, 0: no bias, 128: the strongest."},
-	{"0~128", "Specify user3 direct bias strength, 0: no bias, 128: the strongest."},
+	{"0~9", "Specify user1 intra bias strength, 0: no bias, 9: the strongest."},
+	{"0~9", "Specify user1 direct bias strength, 0: no bias, 9: the strongest."},
+	{"0~9", "Specify user2 intra bias strength, 0: no bias, 9: the strongest."},
+	{"0~9", "Specify user2 direct bias strength, 0: no bias, 9: the strongest."},
+	{"0~9", "Specify user3 intra bias strength, 0: no bias, 9: the strongest."},
+	{"0~9", "Specify user3 direct bias strength, 0: no bias, 9: the strongest."},
 
 	{"0|1", "\tSpecify force update encode parameters or not"},
 
+	{"", "\t\tInsert a long term reference P frame which will replace IDR and be referenced by later frames."},
+
+	{"0|1", "Repeatly generate P-skip or force pskip at once for current stream. 0: no-repeat, 1: repeat"},
+	{"0~254", "P-skip number when repeat pattern is ON"},
+
 	{"", "\t\tshow parameters.\n"},
 	{"", "\t\tSleep time, unit:ms\n"},
+	{"", "\t\tReset parameters in ROI buffer.\n"}
 
 };
 
@@ -343,8 +428,12 @@ static void usage(void)
 	printf("\nExamples:\n"
 			"  Add force idr for the frame in stream A:\n"
 			"    test_frame_sync -A --force-idr\n"
-			"  Set qp offset = -10 for the left top region in steam A:\n"
-			"    test_frame_sync -A --qproi-type 1 --qproi-offset -10\n"
+			"  Set qp offset = -10 to I/P/B frames for the left top region in steam A:\n"
+			"    test_frame_sync -A --qproi-offset -10 --qproi-offset-region 0\n"
+			"  Set qp offset = -10 to P frame for the left top region in stream A with IPB mode:\n"
+			"    test_frame_sync -A --qproi-matrix-idx 1 --qproi-offset -10 --qproi-offset-region 0\n"
+			"  Set zmv threshold = 32 to P frame for the top right region in stream A with IPB mode:\n"
+			"    test_frame_sync -A --mv-threshold 1 --qproi-matrix-idx 1 --zmvroi-threshold 32 --zmvroi-threshold-region 1\n"
 			"  Update qp limit p in stream A :\n"
 			"    test_frame_sync -A --qp-limit-p 20~20\n"
 			"  Add force fast seek frame in stream A:\n"
@@ -354,7 +443,16 @@ static void usage(void)
 			"  Set intra bias for P frame = 1000 in steam A:\n"
 			"    test_frame_sync -A --intrabias-p 1000\n"
 			"  Set adaptive qp to 4 in steam A, and update anyway:\n"
-			"    test_frame_sync -A --adapt-qp 4 --force-update 1\n");
+			"    test_frame_sync -A --adapt-qp 4 --force-update 1\n"
+			"  Set zmv threshold for all the screen in steam A:\n"
+			"    test_frame_sync -A --mv-threshold 1 --zmvroi-threshold 128 --zmvroi-threshold-region 4\n"
+			"  Reset P frame ROI buffer for stream A with IPB mode:\n"
+			"    test_frame_sync -A --qproi-matrix-idx 1 -r\n"
+			"  Add force p-skip frame in stream A:\n"
+			"    test_frame_sync -A --force-pskip-repeat 0\n"
+			"  Add repeat p-skip frame in stream A as IPPPPsssPsss:\n"
+			"    test_frame_sync -A --force-pskip-repeat 1 --repeat-pskip-num 3\n");
+
 	printf("\n");
 
 }
@@ -411,6 +509,8 @@ static int map_buffer(void)
 		return -1;
 	}
 	stream_qp_matrix_size = querybuf.length / MAX_ENCODE_STREAM_NUM;
+	stream_matrix_num = stream_qp_matrix_size / QP_MATRIX_SINGLE_SIZE;
+	single_matrix_size = stream_qp_matrix_size / stream_matrix_num;
 
 	return 0;
 }
@@ -448,13 +548,7 @@ int init_param(int argc, char **argv)
 
 			case SPECIFY_MV_THRESHOLD:
 				VERIFY_STREAMID(current_stream);
-				min_value = atoi(optarg);
-				if (min_value > 255 || min_value < 0) {
-					printf("Invalid zmv threshold value [%d], please choose from [%d~%d].\n",
-						min_value, 0, 255);
-					return -1;
-				}
-				h264_mv_threshold_param[current_stream].mv_threshold = min_value;
+				h264_mv_threshold_param[current_stream].mv_threshold = !!(atoi(optarg));
 				h264_mv_threshold_param[current_stream].mv_threshold_flag = 1;
 				h264_mv_threshold_changed_map |= (1 << current_stream);
 				break;
@@ -474,25 +568,86 @@ int init_param(int argc, char **argv)
 				h264_gop_param_changed_map |= (1 << current_stream);
 				break;
 
-			case SPECIFY_QP_ROI_TYPE:
+			case SPECIFY_ROI_QP_QUALITY:
 				VERIFY_STREAMID(current_stream);
-				h264_qproi_param[current_stream].type = atoi(optarg);
-				h264_qproi_param[current_stream].type_flag = 1;
-				h264_qproi_changed_map |= (1 << current_stream);
+				VERIFY_MATRIXID(current_idx);
+				h264_roi_param[current_stream].qp_quality[current_idx] = atoi(optarg);
+				h264_roi_param[current_stream].qp_quality_flag[current_idx] = 1;
+				h264_roi_changed_map |= (1 << current_stream);
+				h264_ipb_matrix_changed_map |= (1 << current_idx);
 				break;
 
-			case SPECIFY_QP_ROI_QUALITY:
+			case SPECIFY_ROI_QP_MATRIX_IDX:
 				VERIFY_STREAMID(current_stream);
-				h264_qproi_param[current_stream].qp_quality = atoi(optarg);
-				h264_qproi_param[current_stream].qp_quality_flag = 1;
-				h264_qproi_changed_map |= (1 << current_stream);
+				min_value = atoi(optarg);
+				VERIFY_MATRIXID(min_value);
+				current_idx = min_value;
 				break;
 
-			case SPECIFY_QP_ROI_OFFSET:
+			case SPECIFY_ROI_QP_OFFSET:
 				VERIFY_STREAMID(current_stream);
-				h264_qproi_param[current_stream].qp_offset = atoi(optarg);
-				h264_qproi_param[current_stream].qp_offset_flag = 1;
-				h264_qproi_changed_map |= (1 << current_stream);
+				VERIFY_MATRIXID(current_idx);
+				h264_roi_param[current_stream].qp_offset[current_idx] = atoi(optarg);
+				h264_roi_param[current_stream].qp_offset_flag[current_idx] = 1;
+				h264_roi_changed_map |= (1 << current_stream);
+				h264_ipb_matrix_changed_map |= (1 << current_idx);
+				break;
+
+			case SPECIFY_ROI_ZMV_THRESHOLD:
+				VERIFY_STREAMID(current_stream);
+				VERIFY_MATRIXID(current_idx);
+				min_value = atoi(optarg);
+				if (min_value > 255 || min_value < 0) {
+					printf("Invalid zmv threshold value [%d], please choose from [%d~%d].\n",
+						min_value, 0, 255);
+					return -1;
+				}
+				h264_roi_param[current_stream].zmv_threshold[current_idx] = min_value;
+				h264_roi_param[current_stream].zmv_threshold_flag[current_idx] = 1;
+				h264_roi_changed_map |= (1 << current_stream);
+				h264_ipb_matrix_changed_map |= (1 << current_idx);
+				break;
+
+			case SPECIFY_REGION_QP_QUALITY:
+				VERIFY_STREAMID(current_stream);
+				min_value = atoi(optarg);
+				if (min_value > 4 || min_value < 0) {
+					printf("Only support Region 0~4.\n");
+					return -1;
+				}
+				if (min_value == 4) {
+					h264_roi_param[current_stream].qp_quality_roi_map |= 0xff;
+				} else {
+					h264_roi_param[current_stream].qp_quality_roi_map |= (1 << min_value);
+				}
+				break;
+
+			case SPECIFY_REGION_QP_OFFSET:
+				VERIFY_STREAMID(current_stream);
+				min_value = atoi(optarg);
+				if (min_value > 4 || min_value < 0) {
+					printf("Only support Region 0~4.\n");
+					return -1;
+				}
+				if (min_value == 4) {
+					h264_roi_param[current_stream].qp_offset_roi_map |= 0xff;
+				} else {
+					h264_roi_param[current_stream].qp_offset_roi_map |= (1 << min_value);
+				}
+				break;
+
+			case SPECIFY_REGION_ZMV_THRESHOLD:
+				VERIFY_STREAMID(current_stream);
+				min_value = atoi(optarg);
+				if (min_value > 4 || min_value < 0) {
+					printf("Only support Region 0~4.\n");
+					return -1;
+				}
+				if (min_value == 4) {
+					h264_roi_param[current_stream].zmv_threshold_roi_map |= 0xff;
+				} else {
+					h264_roi_param[current_stream].zmv_threshold_roi_map |= (1 << min_value);
+				}
 				break;
 
 			case SPECIFY_QP_LIMIT_I:
@@ -528,6 +683,17 @@ int init_param(int argc, char **argv)
 				h264_qp_limit_changed_map |= (1 << current_stream);
 				break;
 
+			case SPECIFY_QP_LIMIT_Q:
+				VERIFY_STREAMID(current_stream);
+				if (get_two_unsigned_int(optarg, &min_value, &max_value, '~') < 0) {
+					return -1;
+				}
+				h264_qp_limit_param[current_stream].qp_min_q= min_value;
+				h264_qp_limit_param[current_stream].qp_max_q = max_value;
+				h264_qp_limit_param[current_stream].qp_q_flag = 1;
+				h264_qp_limit_changed_map |= (1 << current_stream);
+				break;
+
 			case SPECIFY_ADAPT_QP:
 				VERIFY_STREAMID(current_stream);
 				h264_qp_limit_param[current_stream].adapt_qp = atoi(optarg);
@@ -546,6 +712,20 @@ int init_param(int argc, char **argv)
 				VERIFY_STREAMID(current_stream);
 				h264_qp_limit_param[current_stream].p_qp_reduce = atoi(optarg);
 				h264_qp_limit_param[current_stream].p_qp_reduce_flag = 1;
+				h264_qp_limit_changed_map |= (1 << current_stream);
+				break;
+
+			case SPECIFY_Q_QP_REDUCE:
+				VERIFY_STREAMID(current_stream);
+				h264_qp_limit_param[current_stream].q_qp_reduce = atoi(optarg);
+				h264_qp_limit_param[current_stream].q_qp_reduce_flag = 1;
+				h264_qp_limit_changed_map |= (1 << current_stream);
+				break;
+
+			case SPECIFY_LOG_Q_NUM_PLUS_1:
+				VERIFY_STREAMID(current_stream);
+				h264_qp_limit_param[current_stream].log_q_num_plus_1 = atoi(optarg);
+				h264_qp_limit_param[current_stream].log_q_num_plus_1_flag = 1;
 				h264_qp_limit_changed_map |= (1 << current_stream);
 				break;
 
@@ -634,6 +814,23 @@ int init_param(int argc, char **argv)
 				force_update_map = (min_value << current_stream);
 				break;
 
+			case SPECIFY_LONG_REF_P:
+				VERIFY_STREAMID(current_stream);
+				//long ref p
+				long_ref_p_id_map |= (1 << current_stream);
+				break;
+
+			case SPECIFY_FORCE_PSKIP_REPEAT:
+				VERIFY_STREAMID(current_stream);
+				h264_force_pskip_param[current_stream].repeat_enable = !!(atoi(optarg));
+				force_pskip_id_map |= (1 << current_stream);
+				break;
+
+			case SPECIFY_REPEAT_PSKIP_NUM:
+				VERIFY_STREAMID(current_stream);
+				h264_force_pskip_param[current_stream].repeat_num = atoi(optarg);
+				break;
+
 			case SHOW_PARAMETERS:
 				VERIFY_STREAMID(current_stream);
 				show_params_map |= (1 << current_stream);
@@ -641,6 +838,14 @@ int init_param(int argc, char **argv)
 
 			case 's':
 				sleep_time = atoi(optarg);
+				break;
+
+			case 'r':
+				VERIFY_STREAMID(current_stream);
+				VERIFY_MATRIXID(current_idx);
+				roi_reset_flag = 1;
+				h264_roi_changed_map |= (1 << current_stream);
+				h264_ipb_matrix_changed_map |= (1 << current_idx);
 				break;
 
 			default:
@@ -696,12 +901,33 @@ static int cfg_sync_frame_mv_threshold_param(int stream)
 	return 0;
 }
 
-static int check_for_qp_roi(int stream_id)
+static int check_for_roi(int stream_id)
 {
 	struct iav_stream_info stream_info;
 	struct iav_stream_format stream_format;
 
 	VERIFY_STREAMID(stream_id);
+
+	if (h264_ipb_matrix_changed_map > 1 && stream_matrix_num == 1) {
+		printf("please enable CONFIG_AMBARELLA_IAV_ROI_IPB in menuconfig first.\n");
+		return -1;
+	}
+
+	// Only P frame setting is valid
+	if (stream_matrix_num == 3 &&
+		(h264_roi_param[stream_id].zmv_threshold_flag[QP_FRAME_I] ||
+		h264_roi_param[stream_id].zmv_threshold_flag[QP_FRAME_B])) {
+		printf("Only support P frame setting for ZMV.\n");
+		return -1;
+	}
+
+	// Always use I frame buffer no matter in IPB mode or not
+	if (stream_matrix_num == 3 &&
+		(h264_roi_param[stream_id].qp_quality_flag[QP_FRAME_P] ||
+		h264_roi_param[stream_id].qp_quality_flag[QP_FRAME_B])) {
+		printf("Always share I frame buffer for QP quality.\n");
+		return -1;
+	}
 
 	memset(&stream_info, 0, sizeof(stream_info));
 	stream_info.id = stream_id;
@@ -724,8 +950,14 @@ static int check_for_qp_roi(int stream_id)
 		printf("Stream %c encode format shall be H.264.\n", 'A' + stream_id);
 		return -1;
 	}
-	h264_qproi_param[stream_id].encode_width = stream_format.enc_win.width;
-	h264_qproi_param[stream_id].encode_height = stream_format.enc_win.height;
+
+	if (stream_format.rotate_cw == 0) {
+		h264_roi_param[stream_id].encode_width = stream_format.enc_win.width;
+		h264_roi_param[stream_id].encode_height = stream_format.enc_win.height;
+	} else {
+		h264_roi_param[stream_id].encode_width = stream_format.enc_win.height;
+		h264_roi_param[stream_id].encode_height = stream_format.enc_win.width;
+	}
 
 	return 0;
 }
@@ -753,6 +985,10 @@ static int cfg_sync_frame_qp_limit_param(int stream)
 		h264_bitrate->qp_min_on_B = param->qp_min_b;
 		h264_bitrate->qp_max_on_B = param->qp_max_b;
 	}
+	if (param->qp_q_flag) {
+		h264_bitrate->qp_min_on_Q = param->qp_min_q;
+		h264_bitrate->qp_max_on_Q = param->qp_max_q;
+	}
 	if (param->adapt_qp_flag) {
 		h264_bitrate->adapt_qp = param->adapt_qp;
 	}
@@ -761,6 +997,12 @@ static int cfg_sync_frame_qp_limit_param(int stream)
 	}
 	if (param->p_qp_reduce_flag) {
 		h264_bitrate->p_qp_reduce = param->p_qp_reduce;
+	}
+	if (param->q_qp_reduce_flag) {
+		h264_bitrate->q_qp_reduce = param->q_qp_reduce;
+	}
+	if (param->log_q_num_plus_1_flag) {
+		h264_bitrate->log_q_num_plus_1 = param->log_q_num_plus_1;
 	}
 	if (param->skip_frame_flag) {
 		h264_bitrate->skip_flag = param->skip_frame;
@@ -771,18 +1013,18 @@ static int cfg_sync_frame_qp_limit_param(int stream)
 	return 0;
 }
 
-static int cfg_sync_frame_qproi_param(int stream)
+static int cfg_sync_frame_roi_param(int stream)
 {
 	struct iav_stream_cfg sync_frame;
 	struct iav_qpmatrix *h264_qp_param = &sync_frame.arg.h264_roi;
 	struct iav_qproi_data *qproi_daddr = NULL;
 	u8 *daddr;
-	u32 size, i, j;
+	u32 size, i, j, k, region;
 	u32 buf_width, buf_pitch, buf_height;
 	u32 start_x, start_y, end_x, end_y;
 
-	if (check_for_qp_roi(stream) < 0) {
-		perror("check_for_qp_roi!\n");
+	if (check_for_roi(stream) < 0) {
+		perror("check_for_roi!\n");
 		return -1;
 	}
 
@@ -791,9 +1033,9 @@ static int cfg_sync_frame_qproi_param(int stream)
 	h264_qp_param->id = stream;
 
 	// QP matrix is MB level. One MB is 16x16 pixels.
-	buf_width = ROUND_UP(h264_qproi_param[stream].encode_width, 16) / 16;
+	buf_width = ROUND_UP(h264_roi_param[stream].encode_width, 16) / 16;
 	buf_pitch = ROUND_UP(buf_width, 8);
-	buf_height = ROUND_UP(h264_qproi_param[stream].encode_height, 16) / 16;
+	buf_height = ROUND_UP(h264_roi_param[stream].encode_height, 16) / 16;
 	size = buf_pitch * buf_height;
 
 	h264_qp_param->size = size * sizeof(struct iav_qproi_data);
@@ -801,46 +1043,69 @@ static int cfg_sync_frame_qproi_param(int stream)
 	h264_qp_param->qpm_no_update = 1;
 	AM_IOCTL(fd_iav, IAV_IOC_GET_FRAME_SYNC_PROC, &sync_frame);
 
-	/*	get the last qp roi setting	*/
-	daddr = qp_matrix_addr + h264_qp_param->data_offset;
-	qproi_daddr = (struct iav_qproi_data *)daddr;
+	for (k = 0; k < QP_FRAME_TYPE_NUM; ++k) {
+		if (h264_ipb_matrix_changed_map & (1 << k)) {
+			/*	get the last qp roi setting	*/
+			if (stream_matrix_num == 3) {
+				daddr = qp_matrix_addr + h264_qp_param->data_offset +
+					k * single_matrix_size;
+			} else {
+				daddr = qp_matrix_addr + h264_qp_param->data_offset;
+			}
+			qproi_daddr = (struct iav_qproi_data *)daddr;
 
-	/* clear buf for qp roi */
-	if (h264_qproi_param[stream].type == QPROI_TYPE_QP_OFFSET) {
-		for (i = 0; i < size; i++) {
-			qproi_daddr[i].qp_offset = 0;
-		}
-	} else if (h264_qproi_param[stream].type == QPROI_TYPE_QP_QUALITY) {
-		for (i = 0; i < size; i++) {
-			qproi_daddr[i].qp_quality = 0;
-		}
-	} else {
-		perror("Invalid QP type for qproi!\n");
-		return -1;
-	}
-
-	/* Just test with a fix area (left top)	*/
-	start_x = 0;
-	start_y = 0;
-	end_x = buf_width / 2 + start_x;
-	end_y =  buf_height / 2 + start_y;
-
-	if (h264_qproi_param[stream].type == QPROI_TYPE_QP_OFFSET) {
-		if (h264_qproi_param[stream].qp_offset_flag) {
-			for (i = start_y; i < end_y && i < buf_height; i++) {
-				for (j = start_x; j < end_x && j < buf_width; j++) {
-					/* bit 8~15 is used for setting qp offset directly */
-					qproi_daddr[i * buf_pitch + j].qp_offset =
-						h264_qproi_param[stream].qp_offset;
+			/* clear buf for qp roi */
+			if (h264_roi_param[stream].qp_offset_flag[k] || roi_reset_flag) {
+				for (i = 0; i < size; i++) {
+					qproi_daddr[i].qp_offset = 0;
 				}
 			}
-		}
-	} else {
-		// setting qp quality
-		for (i = start_y; i < end_y && i < buf_height; i++) {
-			for (j = start_x; j < end_x && j < buf_width; j++) {
-				qproi_daddr[i * buf_pitch + j].qp_quality =
-					h264_qproi_param[stream].qp_quality;
+			if (h264_roi_param[stream].qp_quality_flag[k] || roi_reset_flag) {
+				for (i = 0; i < size; i++) {
+					qproi_daddr[i].qp_quality = 0;
+				}
+			}
+			if (h264_roi_param[stream].zmv_threshold_flag[k] || roi_reset_flag) {
+				for (i = 0; i < size; i++) {
+					qproi_daddr[i].zmv_threshold = 0;
+				}
+			}
+
+			for (region = 0; region < 4; region++) {
+				start_x = (region % 2 == 1) ? (buf_width / 2): 0;
+				start_y = (region > 1) ? (buf_height / 2): 0;
+				end_x = (region % 2 == 1) ? buf_width: (buf_width / 2);
+				end_y = (region > 1) ? buf_height : (buf_height / 2);
+
+				if (h264_roi_param[stream].qp_offset_flag[k]
+					&& (h264_roi_param[stream].qp_offset_roi_map & (1 << region))) {
+					for (i = start_y; i < end_y; i++) {
+						for (j = start_x; j < end_x; j++) {
+							qproi_daddr[i * buf_pitch + j].qp_offset =
+								h264_roi_param[stream].qp_offset[k];
+						}
+					}
+				}
+
+				if (h264_roi_param[stream].qp_quality_flag[k]
+					&& (h264_roi_param[stream].qp_quality_roi_map & (1 << region))) {
+					for (i = start_y; i < end_y; i++) {
+						for (j = start_x; j < end_x; j++) {
+							qproi_daddr[i * buf_pitch + j].qp_quality =
+								h264_roi_param[stream].qp_quality[k];
+						}
+					}
+				}
+
+				if (h264_roi_param[stream].zmv_threshold_flag[k]
+					&& (h264_roi_param[stream].zmv_threshold_roi_map & (1 << region))) {
+					for (i = start_y; i < end_y; i++) {
+						for (j = start_x; j < end_x; j++) {
+							qproi_daddr[i * buf_pitch + j].zmv_threshold =
+								h264_roi_param[stream].zmv_threshold[k];
+						}
+					}
+				}
 			}
 		}
 	}
@@ -850,7 +1115,6 @@ static int cfg_sync_frame_qproi_param(int stream)
 	h264_qp_param->enable = 1;
 	h264_qp_param->qpm_no_check = 0;
 	h264_qp_param->qpm_no_update = 0;
-	h264_qp_param->type = h264_qproi_param[stream].type;
 
 	AM_IOCTL(fd_iav, IAV_IOC_CFG_FRAME_SYNC_PROC, &sync_frame);
 
@@ -865,6 +1129,19 @@ static int cfg_sync_frame_force_idr(int stream)
 	sync_frame.id = stream;
 	sync_frame.cid = IAV_H264_CFG_FORCE_IDR;
 	sync_frame.arg.h264_force_idr = 1;
+
+	AM_IOCTL(fd_iav, IAV_IOC_CFG_FRAME_SYNC_PROC, &sync_frame);
+
+	return 0;
+}
+
+static int cfg_sync_frame_long_ref_p(int stream)
+{
+	struct iav_stream_cfg sync_frame;
+	memset(&sync_frame, 0, sizeof(sync_frame));
+
+	sync_frame.id = stream;
+	sync_frame.cid = IAV_H264_CFG_LONG_REF_P;
 
 	AM_IOCTL(fd_iav, IAV_IOC_CFG_FRAME_SYNC_PROC, &sync_frame);
 
@@ -943,14 +1220,29 @@ static int cfg_sync_frame_enc_param(int stream)
 	return 0;
 }
 
+static int cfg_sync_frame_force_pskip_param(int stream)
+{
+	struct iav_stream_cfg sync_frame;
+	h264_force_pskip_param_t *param = &h264_force_pskip_param[stream];
+
+	memset(&sync_frame, 0, sizeof(sync_frame));
+	sync_frame.id = stream;
+	sync_frame.cid = IAV_H264_CFG_FORCE_PSKIP;
+	sync_frame.arg.h264_pskip.repeat_enable = param->repeat_enable;
+	sync_frame.arg.h264_pskip.repeat_num =
+		(param->repeat_enable ? param->repeat_num : 0);
+	AM_IOCTL(fd_iav, IAV_IOC_CFG_FRAME_SYNC_PROC, &sync_frame);
+
+	return 0;
+}
+
 static int do_vca_on_yuv(struct iav_yuvbufdesc *info)
 {
 	struct iav_querydesc query_desc;
 	struct iav_yuvbufdesc *yuv;
 	u8* luma_addr;
-
 	int i;
-#define TEST_PATTERN	128
+
 
 	if (info == NULL) {
 		printf("The point is NULL\n");
@@ -968,8 +1260,8 @@ static int do_vca_on_yuv(struct iav_yuvbufdesc *info)
 
 	/*	To do,  run VCA algorithm here	*/
 	luma_addr = dsp_mem + yuv->y_addr_offset;
-	for (i = 0; i < TEST_PATTERN; i++) {
-		memset(luma_addr + (16 + i) * yuv->pitch, 0x0, TEST_PATTERN);
+	for (i = 0; i < yuv->height / 4; i++) {
+		memset(luma_addr + (16 + i) * yuv->pitch, 0x0, yuv->width / 4);
 	}
 	usleep(1000 * sleep_time);
 
@@ -1056,19 +1348,8 @@ static int do_iav_sync_frame(u32 sync_frame_map)
 				buffer_map |= 1 << format.buf_id;
 			}
 
-			if (h264_qproi_changed_map & (1 << info.id)) {
-				if (!h264_qproi_param[i].type_flag)
-					h264_qproi_param[i].type = QPROI_TYPE_QP_OFFSET;
-				if (h264_qproi_param[i].type == QPROI_TYPE_QP_OFFSET) {
-					if (!h264_qproi_param[i].qp_offset_flag) {
-						h264_qproi_param[i].qp_offset = 25;
-					}
-				} else {
-					if (!h264_qproi_param[i].qp_quality_flag) {
-						h264_qproi_param[i].qp_quality = 0;
-					}
-				}
-				if (cfg_sync_frame_qproi_param(i) < 0) {
+			if (h264_roi_changed_map & (1 << info.id)) {
+				if (cfg_sync_frame_roi_param(i) < 0) {
 					return -1;
 				}
 				apply_map |= 1 << info.id;
@@ -1115,6 +1396,18 @@ static int do_iav_sync_frame(u32 sync_frame_map)
 				}
 				apply_map |= 1 << info.id;
 			}
+			if (long_ref_p_id_map & (1 << info.id)) {
+				if (cfg_sync_frame_long_ref_p(i) < 0) {
+					return -1;
+				}
+				apply_map |= 1 << info.id;
+			}
+			if (force_pskip_id_map & (1 << info.id)) {
+				if (cfg_sync_frame_force_pskip_param(i) < 0) {
+					return -1;
+				}
+				apply_map |= 1 << info.id;
+			}
 		}
 
 		if (apply_map) {
@@ -1144,34 +1437,31 @@ static int show_iav_sync_frame(void)
 		sync_frame.id = i;
 		sync_frame.cid = IAV_H264_CFG_ZMV_THRESHOLD;
 		AM_IOCTL(fd_iav, IAV_IOC_GET_FRAME_SYNC_PROC, &sync_frame);
-		printf("\t mv_threshold:%d\n", sync_frame.arg.mv_threshold);
+		printf("\t mv_threshold: %s\n", sync_frame.arg.mv_threshold ? "Enable" : "Disable");
 
 		sync_frame.cid = IAV_H264_CFG_QP_ROI;
 		sync_frame.arg.h264_roi.id = ((1 << i) & show_params_map);
 
-		buf_width = ROUND_UP(h264_qproi_param[i].encode_width, 16) / 16;
+		buf_width = ROUND_UP(h264_roi_param[i].encode_width, 16) / 16;
 		buf_pitch = ROUND_UP(buf_width, 8);
-		buf_height = ROUND_UP(h264_qproi_param[i].encode_height, 16) / 16;
+		buf_height = ROUND_UP(h264_roi_param[i].encode_height, 16) / 16;
 
 		sync_frame.arg.h264_roi.size = buf_pitch * buf_height *
 			sizeof(struct iav_qproi_data);
 		sync_frame.arg.h264_roi.qpm_no_update = 1;
 		AM_IOCTL(fd_iav, IAV_IOC_GET_FRAME_SYNC_PROC, &sync_frame);
 		printf("\t qp roi: enable:%d\n", sync_frame.arg.h264_roi.enable);
-		printf("\t qp roi: type:%d\n", sync_frame.arg.h264_roi.type);
-		if (sync_frame.arg.h264_roi.type == QPROI_TYPE_QP_QUALITY) {
-			for (j = 0; j < 4; j++) {
-				printf("\t qp roi: qp delta of quality %d for I frame:%d\n",
-					j, sync_frame.arg.h264_roi.qp_delta[QP_FRAME_I][j]);
-			}
-			for (j = 0; j < 4; j++) {
-				printf("\t qp roi: qp delta of quality %d for P frame:%d\n",
-					j, sync_frame.arg.h264_roi.qp_delta[QP_FRAME_P][j]);
-			}
-			for (j = 0; j < 4; j++) {
-				printf("\t qp roi: qp delta of quality %d for B frame:%d\n",
-					j, sync_frame.arg.h264_roi.qp_delta[QP_FRAME_B][j]);
-			}
+		for (j = 0; j < 4; j++) {
+			printf("\t qp roi: qp delta of quality %d for I frame:%d\n",
+				j, sync_frame.arg.h264_roi.qp_delta[QP_FRAME_I][j]);
+		}
+		for (j = 0; j < 4; j++) {
+			printf("\t qp roi: qp delta of quality %d for P frame:%d\n",
+				j, sync_frame.arg.h264_roi.qp_delta[QP_FRAME_P][j]);
+		}
+		for (j = 0; j < 4; j++) {
+			printf("\t qp roi: qp delta of quality %d for B frame:%d\n",
+				j, sync_frame.arg.h264_roi.qp_delta[QP_FRAME_B][j]);
 		}
 
 		sync_frame.cid = IAV_H264_CFG_BITRATE;
@@ -1184,9 +1474,13 @@ static int show_iav_sync_frame(void)
 			h264_rc->qp_min_on_P, h264_rc->qp_max_on_P);
 		printf("\t qp limit: qp_limit_b:%d~%d\n",
 			h264_rc->qp_min_on_B, h264_rc->qp_max_on_B);
+		printf("\t qp limit: qp_limit_q:%d~%d\n",
+			h264_rc->qp_min_on_Q, h264_rc->qp_max_on_Q);
 		printf("\t qp limit: adapt_qp:%d\n", h264_rc->adapt_qp);
 		printf("\t qp limit: i_qp_reduce:%d\n", h264_rc->i_qp_reduce);
 		printf("\t qp limit: p_qp_reduce:%d\n", h264_rc->p_qp_reduce);
+		printf("\t qp limit: q_qp_reduce:%d\n", h264_rc->q_qp_reduce);
+		printf("\t qp limit: log_q_num_plus_1:%d\n", h264_rc->log_q_num_plus_1);
 		printf("\t qp limit: skip_flag:%d\n", h264_rc->skip_flag);
 
 		sync_frame.cid = IAV_H264_CFG_GOP;
@@ -1245,12 +1539,14 @@ int main(int argc, char **argv)
 	// updated streams
 	sync_frame_map = h264_mv_threshold_changed_map |
 		h264_gop_param_changed_map |
-		h264_qproi_changed_map |
+		h264_roi_changed_map |
 		h264_qp_limit_changed_map |
 		force_idr_id_map |
 		force_fast_seek_map |
 		h264_frame_drop_map |
-		h264_enc_param_map;
+		h264_enc_param_map |
+		long_ref_p_id_map |
+		force_pskip_id_map;
 
 /********************************************************
  *  execution base on flag

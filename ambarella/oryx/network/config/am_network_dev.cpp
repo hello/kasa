@@ -4,12 +4,29 @@
  * History:
  *   2015-1-12 - [Tao Wu] created file
  *
- * Copyright (C) 2008-2015, Ambarella ShangHai Co,Ltd
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -38,8 +55,8 @@ bool operator!=(DnsIPv4 &dns1, DnsIPv4 &dns2)
 }
 
 DnsIPv4::DnsIPv4() :
-  dns(0),
-  dns_next(NULL)
+  dns_next(nullptr),
+  dns(0)
 {
   memset(dns_string, 0, sizeof(dns_string));
 }
@@ -66,7 +83,7 @@ void DnsIPv4::set_dns(uint32_t d)
 {
   dns = d;
   memset(dns_string, 0, sizeof(dns_string));
-  if (AM_UNLIKELY(NULL == inet_ntop(AF_INET, (void*)&dns,
+  if (AM_UNLIKELY(nullptr == inet_ntop(AF_INET, (void*)&dns,
                                     dns_string, INET_ADDRSTRLEN))) {
     PERROR("inet_ntop");
   }
@@ -105,7 +122,7 @@ bool operator!=(DnsIPv6 &addr1, DnsIPv6 &addr2)
 }
 
 DnsIPv6::DnsIPv6() :
-    dns_next(NULL)
+    dns_next(nullptr)
 {
   memset(&dns, 0, sizeof(dns));
   memset(dns_string, 0, sizeof(dns_string));
@@ -149,7 +166,7 @@ struct in6_addr* DnsIPv6::get_dns()
 char* DnsIPv6::get_dns_string()
 {
   memset(&dns_string, 0, sizeof(struct in6_addr));
-  if (AM_UNLIKELY(NULL == inet_ntop(AF_INET6, (void*)&dns,
+  if (AM_UNLIKELY(nullptr == inet_ntop(AF_INET6, (void*)&dns,
                                     dns_string, INET6_ADDRSTRLEN))) {
     PERROR("inet_ntop");
   }
@@ -161,12 +178,12 @@ char* DnsIPv6::get_dns_string()
  * NetInfoIPv4
  */
 NetInfoIPv4::NetInfoIPv4() :
+    dns(nullptr),
+    info_next(nullptr),
     netdev_address(0),
     netdev_netmask(0),
     netdev_gateway(0),
-    netdev_prefix(0),
-    dns(NULL),
-    info_next(NULL)
+    netdev_prefix(0)
 {
 }
 
@@ -225,7 +242,7 @@ void NetInfoIPv4::set_address(uint32_t addr)
 {
   netdev_address = addr;
   memset(address_string, 0, sizeof(address_string));
-  if (AM_UNLIKELY(NULL == inet_ntop(AF_INET, (void*)&netdev_address,
+  if (AM_UNLIKELY(nullptr == inet_ntop(AF_INET, (void*)&netdev_address,
           address_string, INET_ADDRSTRLEN))) {
     PERROR("inet_ntop");
   }
@@ -258,7 +275,7 @@ void NetInfoIPv4::set_netmask(uint32_t mask)
 {
   netdev_netmask = mask;
   memset(netmask_string, 0, sizeof(netmask_string));
-  if (AM_UNLIKELY(NULL == inet_ntop(AF_INET, (void*)&netdev_netmask,
+  if (AM_UNLIKELY(nullptr == inet_ntop(AF_INET, (void*)&netdev_netmask,
           netmask_string, INET_ADDRSTRLEN))) {
     PERROR("inet_ntop");
   }
@@ -296,7 +313,7 @@ void NetInfoIPv4::set_gateway(uint32_t gw)
 {
   netdev_gateway = gw;
   memset(gateway_string, 0, sizeof(gateway_string));
-  if (AM_UNLIKELY(NULL == inet_ntop(AF_INET, (void*)&netdev_gateway,
+  if (AM_UNLIKELY(nullptr == inet_ntop(AF_INET, (void*)&netdev_gateway,
           gateway_string, INET_ADDRSTRLEN))) {
     PERROR("inet_ntop");
   }
@@ -338,9 +355,9 @@ uint32_t NetInfoIPv4::get_prefix()
  * NetInfoIPv6
  */
 NetInfoIPv6::NetInfoIPv6() :
-    netdev_prefix(0),
-    info_next(NULL),
-    dns(NULL)
+    info_next(nullptr),
+    dns(nullptr),
+    netdev_prefix(0)
 {
   netdev_address = in6addr_any;
   netdev_netmask = in6addr_any;
@@ -430,7 +447,7 @@ struct in6_addr* NetInfoIPv6::get_address()
 char* NetInfoIPv6::get_address_string()
 {
   memset(&address_string, 0, sizeof(struct in6_addr));
-  if (AM_UNLIKELY(NULL == inet_ntop(AF_INET6, (void*)&netdev_address,
+  if (AM_UNLIKELY(nullptr == inet_ntop(AF_INET6, (void*)&netdev_address,
           address_string, INET6_ADDRSTRLEN))) {
     PERROR("inet_ntop");
   }
@@ -470,7 +487,7 @@ struct in6_addr* NetInfoIPv6::get_netmask()
 char* NetInfoIPv6::get_netmask_string()
 {
   memset(&netmask_string, 0, sizeof(struct in6_addr));
-  if (AM_UNLIKELY(NULL == inet_ntop(AF_INET6, (void*)&netdev_netmask,
+  if (AM_UNLIKELY(nullptr == inet_ntop(AF_INET6, (void*)&netdev_netmask,
           netmask_string, INET6_ADDRSTRLEN))) {
     PERROR("inet_ntop");
   }
@@ -511,7 +528,7 @@ struct in6_addr* NetInfoIPv6::get_gateway()
 char* NetInfoIPv6::get_gateway_string()
 {
   memset(&gateway_string, 0, sizeof(struct in6_addr));
-  if (AM_UNLIKELY(NULL == inet_ntop(AF_INET6, (void*)&netdev_gateway,
+  if (AM_UNLIKELY(nullptr == inet_ntop(AF_INET6, (void*)&netdev_gateway,
           gateway_string, INET6_ADDRSTRLEN))) {
     PERROR("inet_ntop");
   }
@@ -542,14 +559,14 @@ uint32_t NetInfoIPv6::get_prefix()
  * NetDeviceInfo
  */
 NetDeviceInfo::NetDeviceInfo() :
-    is_default(false),
+    netdev_name(nullptr),
+    netdev_mac(nullptr),
+    ipv4(nullptr),
+    ipv6(nullptr),
+    info_next(nullptr),
     netdev_index(0),
     netdev_mtu(0),
-    netdev_name(NULL),
-    netdev_mac(NULL),
-    ipv4(NULL),
-    ipv6(NULL),
-    info_next(NULL)
+    is_default(false)
 {
 }
 NetDeviceInfo::~NetDeviceInfo()
@@ -633,7 +650,7 @@ int32_t NetDeviceInfo::get_netdev_mtu()
 void NetDeviceInfo::set_netdev_name(const char *name)
 {
   delete[] netdev_name;
-  netdev_name = NULL;
+  netdev_name = nullptr;
   if (AM_LIKELY(name)) {
     netdev_name = amstrdup(name);
     netdev_index = if_nametoindex(netdev_name);
@@ -647,7 +664,7 @@ char* NetDeviceInfo::get_netdev_name()
 void NetDeviceInfo::set_netdev_mac(const char *mac)
 {
   delete[] netdev_mac;
-  netdev_mac = NULL;
+  netdev_mac = nullptr;
   if (AM_LIKELY(mac)) {
     netdev_mac = amstrdup(mac);
   }

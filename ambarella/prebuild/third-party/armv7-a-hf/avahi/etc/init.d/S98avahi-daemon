@@ -60,7 +60,7 @@ stop()
     /usr/sbin/avahi-daemon --check
     if [ $? -eq 0 ]
     then
-        /usr//sbin/avahi-daemon --kill
+        /usr/sbin/avahi-daemon --kill
     fi
     /usr/sbin/avahi-autoipd --check eth0
     if [ $? -eq 0 ]

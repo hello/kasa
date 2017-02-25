@@ -1,16 +1,34 @@
-/*
+/*******************************************************************************
  * openssl_wrapper.cpp
  *
  * History:
- *	2015/04/14 - [Zhi He] create file
+ *  2015/04/14 - [Zhi He] create file
  *
- * Copyright (C) 2014 - 2024, the Ambarella Inc.
+ * Copyright (C) 2015 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of the Ambarella Inc.
- */
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ ******************************************************************************/
 
 #include <stdio.h>
 #include <string.h>
@@ -672,8 +690,8 @@ s_symmetric_cypher* create_symmetric_cypher(unsigned char cypher_type, unsigned 
         return NULL;
     }
 
-    if (BLOCK_CYPHER_MODE_CTR != cypher_mode) {
-        printf("[error]: create_symmetric_cypher: only support CTR mode now\n");
+    if ((BLOCK_CYPHER_MODE_CTR != cypher_mode) && (BLOCK_CYPHER_MODE_CBC != cypher_mode)) {
+        printf("[error]: create_symmetric_cypher: only support CTR and CBC mode now\n");
         return NULL;
     }
 
@@ -767,7 +785,14 @@ int begin_symmetric_cryption(s_symmetric_cypher* cypher, int enc)
     EVP_CIPHER_CTX* p_ctx = (EVP_CIPHER_CTX*) cypher->p_cypher_private_context;
     EVP_CIPHER_CTX_init(p_ctx);
 
-    EVP_CipherInit_ex(p_ctx, EVP_aes_128_ctr(), NULL, NULL, NULL, enc);
+    if (BLOCK_CYPHER_MODE_CTR == cypher->cypher_mode) {
+        EVP_CipherInit_ex(p_ctx, EVP_aes_128_ctr(), NULL, NULL, NULL, enc);
+    } else if (BLOCK_CYPHER_MODE_CBC == cypher->cypher_mode) {
+        EVP_CipherInit_ex(p_ctx, EVP_aes_128_cbc(), NULL, NULL, NULL, enc);
+    } else {
+        printf("[error]: only support CTR, CBC mode, %d\n", cypher->cypher_mode);
+        return (-4);
+    }
     EVP_CipherInit_ex(p_ctx, NULL, NULL, cypher->key, cypher->iv, enc);
 
     if (enc) {

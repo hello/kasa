@@ -1,0 +1,190 @@
+/*******************************************************************************
+ * oryx.css
+ *
+ * History:
+ *   2015/9/29 - [Huaiqing Wang] created file
+ *
+ * Copyright (c) 2016 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ ******************************************************************************/
+body{
+font: 80% Verdana, Arial, sans-serif;
+}
+.wrapper{
+margin:0 20px;
+width:100%;
+}
+body, div, dl, dt, dd, ul, li, h1, h2, h3, h4, h5, h6, pre, code, form, fieldset, legend, input, button, textarea, blockquote {
+margin: 0;
+padding: 0;
+}
+h2{
+font-size: 1.2em;
+margin-top:10px;
+}
+div {
+display: block;
+}
+#top-nav {
+width: 100%;
+height: 49px;
+margin: 0px auto;
+z-index:100;
+overflow: visible;
+top: 0px;
+position:fixed;
+_position: absolute;
+_top: expression(documentElement.scrollTop + "px");
+padding: 0 30px;
+}
+#nav-logo a{
+width: 98px;
+float: left;
+display: block;
+overflow:hidden;
+z-index: 100;
+background-repeat: no-repeat;
+background-position: right;
+height: 49px;
+background:url(images/logo.gif) no-repeat 0 0;
+background-image:-webkit-image-set(url(images/logo.gif) 1x);
+background-image:-moz-image-set(url(images/logo.gif) 1x);
+background-image:-ms-image-set(url(images/logo.gif) 1x);
+background-image:-o-image-set(url(images/logo.gif) 1x);
+line-height:100em
+}
+ul#menu{
+height:50px;
+}
+ul#menu li{
+float:left;
+display:inline;
+width:95px;
+list-style:none;
+text-align:center;
+margin-left:20px;
+}
+#nav-menu li a{
+display:block;
+height:50px;
+text-align:center;
+line-height:49px;
+}
+ul#menu li a:link{
+color:green;
+text-decoration:none;
+}
+ul#menu li a:hover,.green{
+font-weight:bold;
+text-decoration:none;
+cursor:pointer;
+color:green!important;
+}
+ul#menu li ul{
+display:none;
+text-align:left;
+float:right;
+position:relative;
+}
+#nav-menu li a ul li a{
+display: block;
+list-style:none;
+width:100px;
+height:auto;
+}
+.oryx-border{
+  border-style: solid;
+  border-color: rgb(221, 221, 221);
+  border-width: 2px;
+  border-radius: 8px;
+  padding: 20px;
+}
+div{
+  margin-bottom:20px;
+}
+
+.fouth-arrow-pan {
+  position:relative;
+}
+
+.arrow {
+  position:absolute;
+  -webkit-box-shadow:0 0 10px 0 #2e6e9e;
+  -webkit-transform:rotate(45deg);
+  background:none repeat scroll 0 0 #FFFFFF;
+  width:40px;
+  height:40px;
+}
+.arrow-up {
+  top:10px;
+  left:60px;
+}
+.arrow-down {
+  top:110px;
+  left:60px;
+}
+.arrow-left {
+  top:60px;
+  left:10px;
+}
+.arrow-right {
+  top:60px;
+  left:110px;
+}
+.arrow:active {
+  -webkit-box-shadow:0 0 10px 0 #0f0;
+}
+.arrow-inner {
+  position:relative;
+  left:30px;
+  top:30px;
+  height:90px;
+  width:90px;
+  background:#fff;
+  border:5px solid transparent;
+}
+.row_div{
+  width:88px;
+  height: 2px;
+  background-color:#d8d8d8;
+  position: absolute;
+  top:68px;
+  margin:-25px 0 0 0;
+}
+.clu_div{
+  width:2px;
+  height: 88px;
+  background-color: #d8d8d8;
+  left:68px;
+  position: absolute;
+  margin:0 0 0 -25px;
+}
+
+.slider_color_r .ui-slider-range { background: #ef2929; }
+.slider_color_r .ui-slider-handle { border-color: #ef2929; }
+.slider_color_g .ui-slider-range { background: #8ae234; }
+.slider_color_g .ui-slider-handle { border-color: #8ae234; }
+.slider_color_b .ui-slider-range { background: #729fcf; }
+.slider_color_b .ui-slider-handle { border-color: #729fcf; }

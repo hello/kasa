@@ -40,7 +40,7 @@ then
     if grep /etc/mtab -qe "^$dev"
     then
         log "Device $dev is removed, umounting and cleaning ${mdir}"
-        if umount -l "$dev"
+        if umount -l "$dev" || umount -l "$dir"
         then
             exitcode=0
         else
@@ -61,12 +61,26 @@ then
 else
     if blkid -po export $dev 2>&1 | grep -q "No medium found"
     then
-        for medium in $(find /dev -name "${dev##*/}[0-9]*")
-        do
-            mountpoint=$(grep /etc/mtab -e "^${medium}" | awk '{print $2}')
-            log "Unmounting device ${medium} from ${mountpoint}"
-            umount -l "${medium}" && ! mountpoint -q ${mountpoint} && rmdir "${mountpoint}"
-        done
+        devlist=$(find /dev -name "${dev##*/}[0-9]*")
+        devnum=$(echo ${devlist} | awk '{print NF}')
+        if [ ${devnum} -gt 0 ]
+        then
+            # If device has partition, devnum should be greater than 0
+            for medium in $(echo ${devlist})
+            do
+                mountpoint=$(grep /etc/mtab -e "^${medium}" | awk '{print $2}')
+                log "Unmounting device ${medium} from ${mountpoint}"
+                umount -l "${medium}" && ! mountpoint -q ${mountpoint} && rmdir "${mountpoint}"
+            done
+        else
+            # If device doesn't have partition, just find this device and umount it
+            for medium in $(find /dev -name "${dev##*/}*")
+            do
+                mountpoint=$(grep /etc/mtab -e "^${medium}" | awk '{print $2}')
+                log "Unmounting device ${medium} from ${mountpoint}"
+                umount -l "${medium}" && ! mountpoint -q ${mountpoint} && rmdir "${mountpoint}"
+            done
+        fi
         exit 0
     fi
 fi

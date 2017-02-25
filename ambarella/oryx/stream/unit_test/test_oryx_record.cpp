@@ -4,12 +4,29 @@
  * History:
  *   2015-1-14 - [ypchang] created file
  *
- * Copyright (C) 2008-2015, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -19,8 +36,9 @@
 
 #include "am_record_if.h"
 
+#include "am_io.h"
 #include "am_thread.h"
-
+#include <iostream>
 #include <signal.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -137,19 +155,68 @@ static void mainloop(AMIRecord &record)
         }
           break;
         case 'e':
-        case 'E':
+        case 'E': {
+          std::string param;
+          AMEventStruct event;
+          printf("please input the event type : 'h' for h264 and h265 video,"
+              " 'm' for mjpeg : ");
+          std::cin >> param;
+          if (param[0] == 'h') {
+            event.attr = AM_EVENT_H26X;
+            printf("Please input event id : ");
+            param.clear();
+            std::cin >> param;
+            event.h26x.stream_id = atoi(param.c_str());
+            printf("Please input history duration.");
+            std::cin >> param;
+            event.h26x.history_duration = atoi(param.c_str());
+            printf("Please input future duration.");
+            std::cin >> param;
+            event.h26x.future_duration = atoi(param.c_str());
+          } else if (param[0] == 'm') {
+            event.attr = AM_EVENT_MJPEG;
+            printf("Please input stream id : ");
+            param.clear();
+            std::cin >> param;
+            event.mjpeg.stream_id = atoi(param.c_str());
+            printf("Please input the jpeg number of pre-current pts. "
+                "If you want to set closest current pts jpeg, This should"
+                "be set to zero : ");
+            param.clear();
+            std::cin >> param;
+            event.mjpeg.pre_cur_pts_num = atoi(param.c_str());
+            printf("Please input the jpeg number of after current pts. "
+                "If you want to set closest current pts jpeg, This should"
+                "be set to zero : ");
+            param.clear();
+            std::cin >> param;
+            event.mjpeg.after_cur_pts_num = atoi(param.c_str());
+            printf("Please input the jpeg number of closest to current pts : ");
+            param.clear();
+            std::cin >> param;
+            event.mjpeg.closest_cur_pts_num = atoi(param.c_str());
+          } else if (param[0] == 's') {
+            event.attr = AM_EVENT_STOP_CMD;
+            printf("Please input stream id :");
+            param.clear();
+            std::cin >> param;
+            event.stop_cmd.stream_id = atoi(param.c_str());
+          } else {
+            ERROR("Event type '%s'is error", param.c_str());
+            break;
+          }
           if (record.is_recording()) {
-            if (record.is_ready_for_event()) {
-              if (!record.send_event()) {
+            if (record.is_ready_for_event(event)) {
+              if (!record.send_event(event)) {
                 ERROR("Failed to send event!");
               }
             } else {
-              ERROR("It's not ready to send event, please try later!");
+              ERROR("It's not available for sending event!");
             }
           } else {
             ERROR("Please start recording first!");
           }
-          break;
+        } break;
         case '\n':
           continue; /* skip "show_menu()" */
         default:
@@ -193,7 +260,11 @@ int main()
           usleep(100000);
         }
         if (isrunning) {
-          write(CTRL_W, "e", 1);
+          ssize_t ret = am_write(CTRL_W, "e", 1, 5);
+          if (AM_UNLIKELY(ret != 1)) {
+            ERROR("Failed to write exit command to mainloop! %s",
+                  strerror(errno));
+          }
         }
         work_thread->destroy();
       }

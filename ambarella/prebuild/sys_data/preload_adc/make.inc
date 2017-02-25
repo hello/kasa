@@ -1,16 +1,34 @@
-##
-## prebuild/imgproc/img_data/arch_s2l/preload_idsp/make.inc
-##
-## History:
-##    2015/01/21 - [Roy Su] Created file
-##
-## Copyright (C) 2012-2016, Ambarella, Inc.
-##
-## All rights reserved. No Part of this file may be reproduced, stored
-## in a retrieval system, or transmitted, in any form, or by any means,
-## electronic, mechanical, photocopying, recording, or otherwise,
-## without the prior consent of Ambarella, Inc.
-##
+################################################################################
+ #  prebuild/sys_data/preload_adc/make.inc
+ #
+ # History:
+ #    2016/01/15 - [Tao Wu] Created file
+ #
+ # Copyright (c) 2016 Ambarella, Inc.
+ #
+ # This file and its contents ( "Software" ) are protected by intellectual
+ # property rights including, without limitation, U.S. and/or foreign
+ # copyrights. This Software is also the confidential and proprietary
+ # information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ # disclose, distribute, modify, or otherwise prepare derivative works of this
+ # Software or any portion thereof except pursuant to a signed license agreement
+ # or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ # In the absence of such an agreement, you agree to promptly notify and return
+ # this Software to Ambarella, Inc.
+ #
+ # THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ # INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ # MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ # IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ # INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ # (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ # LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ # INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ # POSSIBILITY OF SUCH DAMAGE.
+ #
+################################################################################
 
 ifeq ($(CONFIG_AMBARELLA_PRELOAD_ADC), y)
 
@@ -22,14 +40,19 @@ include $(CLEAR_VARS)
 
 HOST_CC	:= gcc
 HOST_ADCFW	:= host_adcfw
-HOST_SRC1 	:= $(PRELOAD_ADC_PATH)/$(HOST_ADCFW).c
-HOST_CFLAGS 	:= -I$(AMB_TOPDIR)/amboot/include -I$(AMB_BOARD_DIR)
+HOST_SRC1	:= $(PRELOAD_ADC_PATH)/arch_$(AMBARELLA_ARCH)/$(HOST_ADCFW).c
+HOST_CFLAGS	:= -I$(AMB_TOPDIR)/amboot/include -I$(AMB_BOARD_DIR) \
+				-I$(PRELOAD_ADC_PATH)/arch_$(AMBARELLA_ARCH)
 
 ADCFW_OUT_DIR	:= $(AMB_BOARD_OUT)/prebuild/sys_data
 ADCFW_OUT	:= $(ADCFW_OUT_DIR)/adc.bin
-IDSPCFG_DIR	:= $(PRELOAD_ADC_PATH)
-IDSPCFG_LIST 	:= $(PRELOAD_ADC_PATH)/idspcfg.list
-############################
+IDSPCFG_DIR	:= $(PRELOAD_ADC_PATH)/arch_$(AMBARELLA_ARCH)
+
+include $(IDSPCFG_DIR)/make.inc
+
+ifndef IDSPCFG_LIST
+$(error IDSPCFG_LIST is not defined. Please specify your AMBARELLA_ARCH.)
+endif
 
 LOCAL_TARGET	:= preload_adc
 
@@ -44,6 +67,4 @@ $(LOCAL_TARGET):
 	@echo "Build $@ Done."
 
 $(call add-target-into-build, $(LOCAL_TARGET))
-
 endif
-

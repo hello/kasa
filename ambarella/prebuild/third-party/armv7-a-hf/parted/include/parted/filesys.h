@@ -1,6 +1,6 @@
 /*
     libparted - a library for manipulating disk partitions
-    Copyright (C) 1999-2001, 2006-2007, 2009-2012 Free Software Foundation,
+    Copyright (C) 1999-2001, 2006-2007, 2009-2014 Free Software Foundation,
     Inc.
 
     This program is free software; you can redistribute it and/or modify
@@ -46,7 +46,6 @@ struct _PedFileSystemOps {
 struct _PedFileSystemType {
 	PedFileSystemType*	next;
 	const char* const	name;		/**< name of the file system type */
-        const int*              block_sizes;
 	PedFileSystemOps* const	ops;
 };
 

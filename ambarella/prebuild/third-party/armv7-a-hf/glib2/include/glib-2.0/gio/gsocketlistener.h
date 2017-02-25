@@ -52,6 +52,8 @@ typedef struct _GSocketListenerClass                        GSocketListenerClass
 /**
  * GSocketListenerClass:
  * @changed: virtual method called when the set of socket listened to changes
+ *
+ * Class structure for #GSocketListener.
  **/
 struct _GSocketListenerClass
 {
@@ -59,8 +61,11 @@ struct _GSocketListenerClass
 
   void (* changed) (GSocketListener *listener);
 
+  void (* event) (GSocketListener      *listener,
+                  GSocketListenerEvent *event,
+                  GSocket              *socket);
+
   /* Padding for future expansion */
-  void (*_g_reserved1) (void);
   void (*_g_reserved2) (void);
   void (*_g_reserved3) (void);
   void (*_g_reserved4) (void);

@@ -4,12 +4,29 @@
  *  History:
  *    Nov 18, 2014 - [Dongge Wu] created file
  *
- * Copyright (C) 2007-2014, Ambarella, Inc.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 /*! @file am_api_event.h
@@ -41,12 +58,11 @@
  */
 enum am_event_module_id
 {
-  MOTION_DECT = 0,    //!< Plugin ID of motion detect
-  AUDIO_ALERT_DECT,   //!< Plugin ID of audio alert
-  AUDIO_ANALYSIS_DECT,//!< Plugin ID of audio analysis
-  FACE_DECT,          //!< Plugin ID of face detection
-  KEY_INPUT_DECT,     //!< Plugin ID of key press detection
-  ALL_MODULE_NUM,     //!< Total number of Plugins
+  AUDIO_ALERT_DECT = 0,//!< Plugin ID of audio alert
+  AUDIO_ANALYSIS_DECT, //!< Plugin ID of audio analysis
+  FACE_DECT,           //!< Plugin ID of face detection
+  KEY_INPUT_DECT,      //!< Plugin ID of key press detection
+  ALL_MODULE_NUM,      //!< Total number of Plugins
 };
 
 /*! @typedef am_event_callback
@@ -65,15 +81,15 @@ typedef int32_t (*am_event_callback)(void *event_msg);
 struct am_event_module_path
 {
     /*!
+     * Event plugin's full path
+     */
+    char *path_name;
+
+    /*!
      * Module ID
      * @sa am_event_module_id
      */
     uint32_t id;
-
-    /*!
-     * Event plugin's full path
-     */
-    char *path_name;
 };
 
 /*! @struct am_event_module_register_state
@@ -94,130 +110,6 @@ struct am_event_module_register_state
      * - false: not registered
      */
     bool state;
-};
-/*! @} */
-
-/*! @defgroup airapi-datastructure-event-md Motion Detection
- *  @ingroup airapi-datastructure-event
- *  @brief Motion Detection related data structure,
- *         refer to @ref airapi-commandid-event-md "Motion Detection" to see
- *         related commands.
- *  @{
- */
-
-/*! @enum Defines motion detection ROI maximum number
- *
- *  ROI: Region Of Interest\n
- *  Only motions happend in ROI will trigger motion event.
- */
-enum AM_MD_ROI_ID
-{
-  MD_ROI_ID_0 = 0, //!< ROI region 0
-  MD_ROI_ID_1 = 1, //!< ROI region 1
-  MD_ROI_ID_2 = 2, //!< ROI region 2
-  MD_ROI_ID_3 = 3, //!< ROI region 3
-  MD_MAX_ROI,      //!< ROI region number
-};
-
-/*! @enum Defines motion level
- *  Currently there are 3 levels of motion:\n
- *  - 0: Means no motion
- *  - 1: Small motion
- *  - 2: Big motion
- */
-enum AM_MOTION_LEVEL_NUMBER
-{
-  MOTION_LEVEL_0 = 0, //!< No motion
-  MOTION_LEVEL_1 = 1, //!< Small motion
-  MOTION_LEVEL_2 = 2, //!< Big motion
-  MOTION_LEVEL_NUM    //!< Motion level number
-};
-
-/*! @struct am_event_md_threshold_s
- *  This structure describes motion detection related info
- */
-struct am_event_md_threshold_s
-{
-    /*!
-     * @sa AM_MD_ROI_ID
-     */
-    uint32_t roi_id;
-
-    /*!
-     * Threshold of motion events
-     */
-    uint32_t threshold[MOTION_LEVEL_NUM - 1];
-};
-
-/*! @struct am_event_md_level_change_delay_s
- *  This structure describes motion level change number
- *
- *  We must make sure that the motion change is surely happened, if a motion
- *  level change happened a number of time described in this data structure,
- *  we can say that the motion level has changed.
- */
-struct am_event_md_level_change_delay_s
-{
-    /*!
-     * @sa AM_MD_ROI_ID
-     */
-    uint32_t roi_id;
-
-    /*!
-     *  Motion level change times
-     */
-    uint32_t lc_delay[MOTION_LEVEL_NUM - 1];
-};
-
-/*! @enum AM_EVENT_MD_CONFIG_BITS
- *
- */
-enum AM_EVENT_MD_CONFIG_BITS
-{
-  /*! Config enabled */
-  AM_EVENT_MD_CONFIG_ENABLE = 0,
-
-  /*! Config @ref am_event_md_threshold_s */
-  AM_EVENT_MD_CONFIG_THRESHOLD0 = 1,
-
-  /*! Config @ref am_event_md_threshold_s */
-  AM_EVENT_MD_CONFIG_THRESHOLD1 = 2,
-
-  /*! Config @ref am_event_md_level_change_delay_s */
-  AM_EVENT_MD_CONFIG_LEVEL0_CHANGE_DELAY = 3,
-
-  /*! Config @ref am_event_md_level_change_delay_s */
-  AM_EVENT_MD_CONFIG_LEVEL1_CHANGE_DELAY = 4,
-};
-
-/*! @struct am_event_md_config_s
- *  This data structure defines motion detection related config
- *
- *  @sa AM_IPC_MW_CMD_EVENT_MOTION_DETECT_CONFIG_SET
- *  @sa AM_IPC_MW_CMD_EVENT_MOTION_DETECT_CONFIG_GET
- */
-struct am_event_md_config_s
-{
-    /*!
-     * @sa AM_EVENT_MD_CONFIG_BITS
-     */
-    uint32_t enable_bits;
-
-    /*!
-     * - true: enable motion detection
-     * - false: disable motion detection
-     */
-    bool enable;
-
-    /*!
-     * @sa am_event_md_threshold_s
-     */
-    am_event_md_threshold_s threshold;
-
-    /*!
-     * @sa am_event_md_level_change_delay_s
-     */
-    am_event_md_level_change_delay_s level_change_delay;
 };
 /*! @} */
 
@@ -354,12 +246,6 @@ struct am_event_audio_alert_config_s
     uint32_t sample_format;
 
     /*!
-     * - true: enable audio alert
-     * - false: disable audio alert
-     */
-    bool enable;
-
-    /*!
      * Audio alert sensitivity
      */
     uint32_t sensitivity;
@@ -377,6 +263,12 @@ struct am_event_audio_alert_config_s
      * - 1: Alert when audio becomes quite
      */
     uint32_t direction;
+
+    /*!
+     * - true: enable audio alert
+     * - false: disable audio alert
+     */
+    bool enable;
 };
 /*! @} */
 

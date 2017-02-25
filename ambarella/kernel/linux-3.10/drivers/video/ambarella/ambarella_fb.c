@@ -406,7 +406,6 @@ ambfb_setup_exit:
 	return retval;
 }
 
-//do not support amboot BAPI
 static int ambfb_probe(struct platform_device *pdev)
 {
 	int                                errorCode = 0;
@@ -687,24 +686,14 @@ static struct platform_driver ambfb_driver = {
 	},
 };
 
-static void ambfb_dev_release(struct device *dev)
-{
-}
-
 static struct platform_device ambarella_fb0 = {
 	.name			= "ambarella-fb",
 	.id			= 0,
-	.dev		= {
-		.release      = &ambfb_dev_release,
-	}
 };
 
 static struct platform_device ambarella_fb1 = {
 	.name			= "ambarella-fb",
 	.id			= 1,
-	.dev		= {
-		.release      = &ambfb_dev_release,
-	}
 };
 
 static int __init ambavoutfb_init(void)

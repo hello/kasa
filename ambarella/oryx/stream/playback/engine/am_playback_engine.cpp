@@ -4,16 +4,32 @@
  * History:
  *   2014-7-25 - [ypchang] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
-#include <unistd.h>
 #include "am_base_include.h"
 #include "am_define.h"
 #include "am_log.h"
@@ -32,10 +48,15 @@
 #include "am_audio_decoder_if.h"
 #include "am_player_if.h"
 
-#include "am_mutex.h"
 #include "am_event.h"
 #include "am_thread.h"
 #include "am_plugin.h"
+
+#include <netinet/in.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <signal.h>
 
 AMIPlaybackEngine* AMIPlaybackEngine::create()
 {
@@ -69,7 +90,7 @@ void AMPlaybackEngine::destroy()
 AMIPlaybackEngine::AM_PLAYBACK_ENGINE_STATUS
 AMPlaybackEngine::get_engine_status()
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   return m_status;
 }
 
@@ -151,13 +172,17 @@ bool AMPlaybackEngine::create_graph()
 
 bool AMPlaybackEngine::add_uri(const AMPlaybackUri& uri)
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   bool ret = false;
   AMIFileDemuxer *demuxer =
       (AMIFileDemuxer*)get_filter_by_iid(IID_AMIFileDemuxer);
   //INFO("Add URI: %s", uri.c_str());
   if (AM_LIKELY(demuxer)) {
     ret = (AM_STATE_OK == demuxer->add_media(uri));
+    if (ret && (m_status == AM_PLAYBACK_ENGINE_IDLE)) {
+      NOTICE("Add uri, engine status is idle, change it into playing");
+      m_status = AM_PLAYBACK_ENGINE_PLAYING;
+    }
   } else {
     ERROR("Can NOT find filter IID_AMIFileDemuxer!");
   }
@@ -202,6 +227,14 @@ void AMPlaybackEngine::set_app_msg_callback(AMPlaybackCallback callback,
   m_app_data     = data;
 }
 
+void AMPlaybackEngine::set_aec_enabled(bool enabled)
+{
+  AMIPlayer *player = (AMIPlayer*)get_filter_by_iid(IID_AMIPlayer);
+  if (AM_LIKELY(player)) {
+    player->set_aec_enabled(enabled);
+  }
+}
+
 void AMPlaybackEngine::static_app_msg_callback(void *context, AmMsg& msg)
 {
   ((AMPlaybackEngine*)context)->app_msg_callback(
@@ -234,7 +267,7 @@ void AMPlaybackEngine::msg_proc(AmMsg& msg)
       }break;
       case ENG_MSG_ABORT: {
         m_status = AM_PLAYBACK_ENGINE_ERROR;
-        send_engine_cmd(AM_ENGINE_CMD_ABORT, false);
+        send_engine_cmd(AM_ENGINE_CMD_ABORT);
         post_app_msg(AM_PLAYBACK_MSG_ABORT);
       }break;
       case ENG_MSG_OK: {
@@ -258,8 +291,11 @@ void AMPlaybackEngine::msg_proc(AmMsg& msg)
         }
       }break;
       case ENG_MSG_EOF: {
-        m_status = AM_PLAYBACK_ENGINE_STOPPED;
-        post_app_msg(AM_PLAYBACK_MSG_EOS);
+        post_app_msg(AM_PLAYBACK_MSG_EOF);
+      }break;
+      case ENG_MSG_EOL: {
+        m_status = AM_PLAYBACK_ENGINE_IDLE;
+        post_app_msg(AM_PLAYBACK_MSG_IDLE);
       }break;
       default: {
         ERROR("Invalid message!");
@@ -270,12 +306,12 @@ void AMPlaybackEngine::msg_proc(AmMsg& msg)
 }
 
 bool AMPlaybackEngine::change_engine_status(
-        AMIPlaybackEngine::AM_PLAYBACK_ENGINE_STATUS targetStatus,
+        AMIPlaybackEngine::AM_PLAYBACK_ENGINE_STATUS target_status,
         AMPlaybackUri* uri)
 {
   bool ret = true;
 
-  DEBUG("Target status is %u", targetStatus);
+  DEBUG("Target status is %u", target_status);
    do {
     switch(m_status) {
       case AM_PLAYBACK_ENGINE_ERROR: {
@@ -289,10 +325,32 @@ bool AMPlaybackEngine::change_engine_status(
         m_status = AM_PLAYBACK_ENGINE_STOPPED;
         ret = false;
       }break;
+      case AM_PLAYBACK_ENGINE_IDLE : {
+        AMIPlayer *player = (AMIPlayer*)get_filter_by_iid(IID_AMIPlayer);
+        if (AM_LIKELY(player)) {
+          switch (target_status) {
+            case AM_PLAYBACK_ENGINE_STOPPED : {
+              m_status = AM_PLAYBACK_ENGINE_STOPPING;
+              /* Just make sure "ret" is true,
+               * player will post engine message,
+               * let engine message handler change engine status
+               */
+              ret = (AM_STATE_OK == player->stop()) || true;
+            } break;
+            default : {
+              ERROR("Invalid operation when engine is idle!");
+              ret = false;
+            } break;
+          }
+        } else {
+          ERROR("Failed to get filter(IID_AMIPlayer)!");
+          ret = false;
+        }
+      } break;
       case AM_PLAYBACK_ENGINE_PLAYING: { /* Engine status is playing */
         AMIPlayer *player = (AMIPlayer*)get_filter_by_iid(IID_AMIPlayer);
         if (AM_LIKELY(player)) {
-          switch(targetStatus) {
+          switch(target_status) {
             case AM_PLAYBACK_ENGINE_PAUSED: {
               m_status = AM_PLAYBACK_ENGINE_PAUSING;
               /* Just make sure "ret" is true,
@@ -314,6 +372,7 @@ bool AMPlaybackEngine::change_engine_status(
             }break;
             default: {
               ERROR("Invalid operation when engine is playing!");
+              ret = false;
             }break;
           }
         } else {
@@ -324,7 +383,7 @@ bool AMPlaybackEngine::change_engine_status(
       case AM_PLAYBACK_ENGINE_PAUSED: { /* Engine status is paused */
         AMIPlayer *player = (AMIPlayer*)get_filter_by_iid(IID_AMIPlayer);
         if (AM_LIKELY(player)) {
-          switch(targetStatus) {
+          switch(target_status) {
             case AM_PLAYBACK_ENGINE_PLAYING: {
               if (AM_LIKELY(uri != NULL)) {
                 /* New file is added, need to stop first */
@@ -344,6 +403,7 @@ bool AMPlaybackEngine::change_engine_status(
             }break;
             default: {
               ERROR("Invalid operation when engine is paused!");
+              ret = false;
             }break;
           }
         } else {
@@ -352,7 +412,7 @@ bool AMPlaybackEngine::change_engine_status(
         }
       }break;
       case AM_PLAYBACK_ENGINE_STOPPED: { /* Engine status is stopped */
-        switch(targetStatus) {
+        switch(target_status) {
           case AM_PLAYBACK_ENGINE_PLAYING: {
             m_status = AM_PLAYBACK_ENGINE_STARTING;
             if (AM_LIKELY(AM_STATE_OK == run_all_filters())) {
@@ -454,30 +514,29 @@ bool AMPlaybackEngine::change_engine_status(
       stop_all_filters();
       purge_all_filters();
     }
-  } while(ret && (m_status != targetStatus));
+  } while(ret && (m_status != target_status));
 
-  if (AM_LIKELY(ret && (m_status == targetStatus))) {
-    DEBUG("Target %u finished!", targetStatus);
+  if (AM_LIKELY(ret && (m_status == target_status))) {
+    DEBUG("Target %u finished!", target_status);
   } else {
-    DEBUG("Current status %u, target status %u", m_status, targetStatus);
+    DEBUG("Current status %u, target status %u", m_status, target_status);
   }
 
   return ret;
 }
 
 AMPlaybackEngine::AMPlaybackEngine() :
-    m_lock(nullptr),
     m_config(nullptr),
     m_engine_config(nullptr),
     m_engine_filter(nullptr),
     m_app_data(nullptr),
     m_thread(nullptr),
     m_event(nullptr),
+    m_uri(nullptr),
     m_app_callback(nullptr),
     m_status(AMIPlaybackEngine::AM_PLAYBACK_ENGINE_STOPPED),
     m_graph_created(false),
-    m_mainloop_run(false),
-    m_uri(NULL)
+    m_mainloop_run(false)
 {
   MSG_R = -1;
   MSG_W = -1;
@@ -485,15 +544,11 @@ AMPlaybackEngine::AMPlaybackEngine() :
 
 AMPlaybackEngine::~AMPlaybackEngine()
 {
-  send_engine_cmd(AM_ENGINE_CMD_ABORT);
+  send_engine_cmd(AM_ENGINE_CMD_EXIT);
   clear_graph(); /* Must be called in the destructor of sub-class */
   delete m_config;
   delete[] m_engine_filter;
-  if(m_uri) {
-    delete m_uri;
-    m_uri = NULL;
-  }
-  AM_DESTROY(m_lock);
+  delete m_uri;
   AM_DESTROY(m_thread);
   AM_DESTROY(m_event);
   if (AM_LIKELY(MSG_R >= 0)) {
@@ -510,14 +565,10 @@ AM_STATE AMPlaybackEngine::init(const std::string& config)
   AM_STATE state = AM_STATE_ERROR;
 
   do {
-    if (AM_UNLIKELY(pipe(m_msg_ctrl) == -1)) {
-      PERROR("pipe");
+    if (AM_UNLIKELY(socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP,
+                               m_msg_ctrl) < 0)) {
+      PERROR("socketpair");
       state = AM_STATE_ERROR;
-      break;
-    }
-    m_lock = AMSpinLock::create();
-    if (AM_UNLIKELY(nullptr == m_lock)) {
-      ERROR("Failed to create spin lock!");
       break;
     }
     m_event = AMEvent::create();
@@ -673,7 +724,21 @@ void AMPlaybackEngine::static_mainloop(void *data)
 void AMPlaybackEngine::mainloop()
 {
   fd_set fdset;
+  sigset_t mask;
+  sigset_t mask_orig;
+
   int maxfd = MSG_R;
+
+  /* Block out interrupts */
+  sigemptyset(&mask);
+  sigaddset(&mask, SIGINT);
+  sigaddset(&mask, SIGTERM);
+  sigaddset(&mask, SIGQUIT);
+
+  if (AM_UNLIKELY(sigprocmask(SIG_BLOCK, &mask, &mask_orig) < 0)) {
+    PERROR("sigprocmask");
+  }
+
   m_mainloop_run = true;
 
   while(m_mainloop_run) {
@@ -681,7 +746,9 @@ void AMPlaybackEngine::mainloop()
     FD_ZERO(&fdset);
     FD_SET(MSG_R, &fdset);
 
-    if (AM_LIKELY(select(maxfd + 1, &fdset, nullptr, nullptr, nullptr) > 0)) {
+    if (AM_LIKELY(pselect(maxfd + 1, &fdset,
+                          nullptr, nullptr,
+                          nullptr, &mask) > 0)) {
       if (AM_LIKELY(FD_ISSET(MSG_R, &fdset))) {
         if (AM_UNLIKELY(read(MSG_R, cmd, 1) < 0)) {
           ERROR("Failed to read command! ABORT!");
@@ -697,7 +764,7 @@ void AMPlaybackEngine::mainloop()
     switch(cmd[0]) {
       case AM_ENGINE_CMD_ABORT : {
         change_engine_status(AM_PLAYBACK_ENGINE_STOPPED);
-        m_mainloop_run = false;
+        //m_mainloop_run = false;
       }break;
       case AM_ENGINE_CMD_START : {
         change_engine_status(AM_PLAYBACK_ENGINE_PLAYING, m_uri);
@@ -709,6 +776,7 @@ void AMPlaybackEngine::mainloop()
         change_engine_status(AM_PLAYBACK_ENGINE_PAUSED);
       }break;
       case AM_ENGINE_CMD_EXIT: {
+        change_engine_status(AM_PLAYBACK_ENGINE_STOPPED);
         m_mainloop_run = false;
       }break;
     }
@@ -719,7 +787,7 @@ void AMPlaybackEngine::mainloop()
 
 bool AMPlaybackEngine::send_engine_cmd(AM_PLAYBACK_ENGINE_CMD cmd, bool block)
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   bool ret = true;
   char command = cmd;
   if (AM_UNLIKELY(write(MSG_W, &command, sizeof(command)) != sizeof(command))) {
@@ -739,6 +807,5 @@ bool AMPlaybackEngine::send_engine_cmd(AM_PLAYBACK_ENGINE_CMD cmd, bool block)
         ret = true; break;
     }
   }
-
   return ret;
 }

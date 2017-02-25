@@ -105,6 +105,17 @@ extern int bcmsdh_probe(struct device *dev);
 extern int bcmsdh_remove(struct device *dev);
 extern volatile bool dhd_mmc_suspend;
 
+#ifdef HACK_TCPINFO_IN_RESUME
+extern volatile bool g_is_after_resume;
+extern volatile tcpka_conn_sess_info_t g_tcp_info;
+extern volatile tcpka_conn_sess_info_t g_tcp_info_diff;
+#endif
+
+#ifdef ADD_PROC_PM_STATE
+extern wait_queue_head_t wifi_pm_state_waitq;
+extern int wifi_pm_state;
+#endif
+
 static int bcmsdh_sdmmc_probe(struct sdio_func *func,
                               const struct sdio_device_id *id)
 {
@@ -233,7 +244,20 @@ static int bcmsdh_sdmmc_suspend(struct device *pdev)
 	bcmsdh_oob_intr_set(0);
 #endif
 #endif
+
+	/* Do not set dhd_mmc_suspend if call dhd_sleep_pm_callback() */
+#if !defined(CONFIG_PM_SLEEP)
 	dhd_mmc_suspend = TRUE;
+#endif
+
+#ifdef ADD_PROC_PM_STATE
+	wifi_pm_state = CPU_SUSPEND;
+#endif
+
+#ifdef HACK_TCPINFO_IN_RESUME
+	g_is_after_resume = FALSE;
+#endif
+
 	smp_mb();
 
 	return 0;
@@ -241,21 +265,77 @@ static int bcmsdh_sdmmc_suspend(struct device *pdev)
 
 static int bcmsdh_sdmmc_resume(struct device *pdev)
 {
+
+#ifdef HACK_TCPINFO_IN_RESUME
+	int ret = 0;
+	uint32 id = 1;
+	void *tmp = NULL;
+	dhd_pub_t *dhdp = NULL;
+	char iovbuf[WLC_IOCTL_SMLEN];
+	tcpka_conn_sess_ctl_t conn;
+	tcpka_conn_sess_info_t tcp_info;
+#endif
+
 #if defined(OOB_INTR_ONLY) || defined(POWER_OFF_IN_SUSPEND)
 	struct sdio_func *func = dev_to_sdio_func(pdev);
 #endif
 	printk("%s Enter\n", __FUNCTION__);
+
+	/* Do not set dhd_mmc_suspend if call dhd_sleep_pm_callback() */
+#if !defined(CONFIG_PM_SLEEP)
 	dhd_mmc_suspend = FALSE;
-	
+#endif
+
 #ifdef POWER_OFF_IN_SUSPEND
 	gInstance->func[func->num] = func;
 #else
 #if defined(OOB_INTR_ONLY)
 	if ((func->num == 2) && dhd_os_check_if_up(bcmsdh_get_drvdata()))
 		bcmsdh_oob_intr_set(1);
-#endif 
 #endif
+#endif
+
+#ifdef ADD_PROC_PM_STATE
+	wifi_pm_state = CPU_NORMAL;
+	wake_up_interruptible(&wifi_pm_state_waitq);
+#endif
+
+#ifdef HACK_TCPINFO_IN_RESUME
+	if (!g_is_after_resume) {
+		g_is_after_resume = TRUE;
+		conn.sess_id = 1;
+		conn.flag = 0;
+		tmp = bcmsdh_get_drvdata();
+		dhdp = (dhd_pub_t *)tmp;
+
+		/* Disable TCP KeepAlive */
+		memset(iovbuf, 0, sizeof(iovbuf));
+		bcm_mkiovar("tcpka_conn_enable", (char *)&conn, sizeof(conn), iovbuf, sizeof(iovbuf));
+		ret = dhd_wl_ioctl_cmd(dhdp, WLC_SET_VAR, iovbuf, sizeof(iovbuf), TRUE, 0);
+		if (ret) {
+			DHD_ERROR(("%s: tcpka_conn_enable failed %d\n", __FUNCTION__, ret));
+		}
+
+		/* Get TCP info */
+		memset(iovbuf, 0, sizeof(iovbuf));
+		bcm_mkiovar("tcpka_conn_sess_info", (char *)&id, sizeof(uint32), iovbuf, sizeof(iovbuf));
+		ret = dhd_wl_ioctl_cmd(dhdp, WLC_GET_VAR, iovbuf, sizeof(iovbuf), FALSE, 0);
+		if (ret) {
+			DHD_ERROR(("%s: tcpka_conn_enable failed %d\n", __FUNCTION__, ret));
+		}
+
+		memcpy((char *)&tcp_info, iovbuf, sizeof(tcp_info));
+		g_tcp_info.tcpka_sess_ipid = tcp_info.tcpka_sess_ipid;
+		g_tcp_info.tcpka_sess_seq = tcp_info.tcpka_sess_seq;
+		g_tcp_info.tcpka_sess_ack = tcp_info.tcpka_sess_ack;
+
+		printk(KERN_DEBUG "%s(%d): ipid[%u], seq[%u], ack[%u]\n", __FUNCTION__, __LINE__,
+			g_tcp_info.tcpka_sess_ipid, g_tcp_info.tcpka_sess_seq, g_tcp_info.tcpka_sess_ack);
+	}
+#endif
+
 	smp_mb();
+
 	return 0;
 }
 

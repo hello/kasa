@@ -35,6 +35,8 @@ G_BEGIN_DECLS
 typedef struct _GDesktopAppInfo        GDesktopAppInfo;
 typedef struct _GDesktopAppInfoClass   GDesktopAppInfoClass;
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(GDesktopAppInfo, g_object_unref)
+
 struct _GDesktopAppInfoClass
 {
   GObjectClass parent_class;
@@ -114,7 +116,9 @@ gchar *                 g_desktop_app_info_get_action_name              (GDeskto
 #endif /* G_DISABLE_DEPRECATED */
 
 /**
- * GDesktopAppInfoLookup:
+ * GDesktopAppInfoLookupIface:
+ * @get_default_for_uri_scheme: Virtual method for
+ *  g_desktop_app_info_lookup_get_default_for_uri_scheme().
  *
  * Interface that is used by backends to associate default
  * handlers with URI schemes.

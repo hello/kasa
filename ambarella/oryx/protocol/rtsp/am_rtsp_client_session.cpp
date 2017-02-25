@@ -4,12 +4,29 @@
  * History:
  *   2014-12-29 - [Shiming Dong] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co,Ltd.
+ * Copyright (c) 2015 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -21,6 +38,7 @@
 #include "rtcp.h"
 #include "am_rtp_msg.h"
 #include "am_fd.h"
+#include "am_io.h"
 
 #include "am_rtsp_server_config.h"
 #include "am_rtsp_authenticator.h"
@@ -43,9 +61,6 @@
 #define  RTSP_PARAM_STRING_MAX     4096
 #define  RTCP_TIMEOUT_THRESHOLD    30
 
-#define  CMD_CLIENT_ABORT          'a'
-#define  CMD_CLIENT_STOP           'e'
-
 #define  ALLOWED_COMMAND \
   "OPTIONS, DESCRIBE, SETUP, TEARDOWN, PLAY, GET_PARAMETER, SET_PARAMETER"
 
@@ -61,12 +76,12 @@ const char* media_type_to_str(AM_RTP_MEDIA_TYPE type)
 }
 
 AMRtspClientSession::MediaInfo::MediaInfo() :
-    is_alive(false),
     event_msg_seqntp(NULL),
     event_ssrc(NULL),
     event_kill(NULL),
     ssrc(0),
-    stream_id(0)
+    stream_id(0),
+    is_alive(false)
 {
   media.clear();
   seq_ntp.clear();
@@ -83,18 +98,18 @@ AMRtspClientSession::MediaInfo::~MediaInfo()
 
 AMRtspClientSession::AMRtspClientSession(AMRtspServer *server,
                                          uint16_t udp_rtp_port) :
-  m_authenticator(NULL),
+  m_authenticator(nullptr),
   m_rtsp_server(server),
-  m_client_thread(NULL),
-  m_event_msg_sdp(NULL),
-  m_session_state(CLIENT_SESSION_INIT),
+  m_client_thread(nullptr),
+  m_event_msg_sdp(nullptr),
+  m_rtcp_rr_interval(0),
   m_tcp_sock(-1),
   m_client_session_id(0),
   m_rtcp_rr_ssrc(0),
-  m_rtcp_rr_interval(0),
   m_identify(0),
-  m_client_id(0),
-  m_dynamic_timeout_sec(CLIENT_TIMEOUT_THRESHOLD)
+  m_dynamic_timeout_sec(CLIENT_TIMEOUT_THRESHOLD),
+  m_session_state(CLIENT_SESSION_INIT),
+  m_is_tearing_down(false)
 
 {
   memset(&m_client_addr, 0, sizeof(m_client_addr));
@@ -105,14 +120,18 @@ AMRtspClientSession::AMRtspClientSession(AMRtspServer *server,
     m_media_info[i].udp_port[PORT_RTP]  = udp_rtp_port + i * 2;
     m_media_info[i].udp_port[PORT_RTCP] = udp_rtp_port + i * 2 + 1;
   }
+  m_identify = udp_rtp_port << 16;
 }
 
 AMRtspClientSession::~AMRtspClientSession()
 {
+  std::string name = m_client_name;
+  INFO("Destroying RTSP client %s", name.c_str());
   close_all_socket();
   AM_DESTROY(m_client_thread);
   AM_DESTROY(m_event_msg_sdp);
   delete m_authenticator;
+  INFO("RTSP client %s is destroyed!", name.c_str());
 }
 
 bool AMRtspClientSession::init_client_session(int32_t server_tcp_sock)
@@ -175,11 +194,9 @@ bool AMRtspClientSession::init_client_session(int32_t server_tcp_sock)
       uint32_t accept_cnt = 0;
       socklen_t sock_len = sizeof(m_client_addr);
 
-      m_client_id = m_rtsp_server->get_random_number();
       for (uint32_t i = 0; i < AM_RTP_MEDIA_NUM; ++ i) {
         m_media_info[i].stream_id = m_rtsp_server->get_random_number();
       }
-      m_identify = ((m_client_id & 0x0000ffff) << 16);
 
       m_client_session_id = m_rtsp_server->get_random_number();
       do {
@@ -260,64 +277,12 @@ bool AMRtspClientSession::init_client_session(int32_t server_tcp_sock)
 
 void AMRtspClientSession::abort_client()
 {
-  while (m_session_state == CLIENT_SESSION_INIT) {
-    usleep(100000);
-  }
-  if (AM_LIKELY((m_session_state == CLIENT_SESSION_OK) ||
-                 m_session_state == CLIENT_SESSION_THREAD_RUN)) {
-    char cmd[1] = {CMD_CLIENT_ABORT};
-    int count = 0;
-    while ((++ count < 5) && (1 != write(CLIENT_CTRL_WRITE, cmd, 1))) {
-      if (AM_LIKELY((errno != EAGAIN) &&
-                    (errno != EWOULDBLOCK) &&
-                    (errno != EINTR))) {
-        PERROR("write");
-        break;
-      }
-    }
-    NOTICE("Sent abort command to client: %s", m_client_name.c_str());
-  } else {
-    ERROR("This client is not initialized successfully!");
-  }
-
+  send_client_ctrl_cmd(CMD_CLIENT_ABORT);
 }
 
 bool AMRtspClientSession::kill_client()
 {
-  bool ret = true;
-  while (m_session_state == CLIENT_SESSION_INIT) {
-    usleep(100000);
-  }
-  switch(m_session_state) {
-    case CLIENT_SESSION_OK: {
-      char cmd[1] = {CMD_CLIENT_STOP};
-      int count = 0;
-      while ((++count < 5) && (1 != write(CLIENT_CTRL_WRITE, cmd, 1))) {
-        ret = false;
-        if (AM_LIKELY((errno != EAGAIN) &&
-                      (errno != EWOULDBLOCK) &&
-                      (errno != EINTR))) {
-          PERROR("write");
-          break;
-        }
-      }
-      if(AM_LIKELY(ret && ( false == m_client_thread->\
-          set_priority(AMThread::AM_THREAD_PRIO_HIGHEST)))) {
-        /* We need the client session to handle this as soon as possible */
-        WARN("Failed to change thread %s to highest priority!");
-      }
-    }break;
-    case CLIENT_SESSION_FAILED: {
-      WARN("This client is not initialized successfully!");
-    }break;
-    case CLIENT_SESSION_STOPPED: {
-      NOTICE("This client is already stopped, no need to kill again!");
-      ret = true;
-    }break;
-    default: break;
-
-  }
-  return ret;
+  return send_client_ctrl_cmd(CMD_CLIENT_STOP);
 }
 
 void AMRtspClientSession::set_client_name(const char *name)
@@ -334,6 +299,7 @@ void AMRtspClientSession::client_thread()
 {
   bool run  = true;
   bool enable_timeout = true;
+  bool need_tear_down = false;
   int maxfd = -1;
   fd_set allset;
   fd_set fdset;
@@ -343,6 +309,7 @@ void AMRtspClientSession::client_thread()
   bool ret = true;
   int32_t received = 0;
   int32_t read_ret = 0;
+  uint32_t timeout_count = 0;
   timeval timeout = {CLIENT_TIMEOUT_THRESHOLD, 0};
 
   FD_ZERO(&allset);
@@ -361,29 +328,40 @@ void AMRtspClientSession::client_thread()
     fdset = allset;
     if (AM_LIKELY((ret_val = select(maxfd + 1 , &fdset, NULL, NULL, tm)) > 0)) {
       if (FD_ISSET(CLIENT_CTRL_READ, &fdset)) {
-        char      cmd[1] = {0};
+        CLIENT_CTRL_CMD cmd;
         uint32_t read_cnt = 0;
         ssize_t read_ret = 0;
         do {
           read_ret = read(CLIENT_CTRL_READ, &cmd, sizeof(cmd));
-        } while ((++ read_cnt < 5) && ((read_ret == 0) || ((read_ret < 0) &&
-                 ((errno == EAGAIN) || (errno == EWOULDBLOCK) ||
-                 (errno == EINTR)))));
+        } while ((++ read_cnt < 5) && ((read_ret == 0) ||
+                                       ((read_ret < 0) &&
+                                        ((errno == EINTR) ||
+                                         (errno == EAGAIN) ||
+                                         (errno == EWOULDBLOCK)))));
         if (AM_UNLIKELY(read_ret <= 0)) {
           PERROR("read");
-        } else if (cmd[0] == CMD_CLIENT_STOP) {
-          NOTICE("Client:%s received stop signal!", m_client_name.c_str());
-          run = false;
-          teardown();
-          close_all_socket();
-          break;
-        } else if (cmd[0] == CMD_CLIENT_ABORT) {
-          NOTICE("Client:%s received abort signal!", m_client_name.c_str());
+        } else {
+          switch(cmd) {
+            case CMD_CLIENT_STOP: {
+              NOTICE("Client:%s received stop signal!", m_client_name.c_str());
+              run = false;
+              need_tear_down = true;
+            }break;
+            case CMD_CLIENT_ABORT: {
+              NOTICE("Client:%s received abort signal!", m_client_name.c_str());
+              run = false;
+              need_tear_down = true;
+            }break;
+            default: break;
+          }
           break;
         }
       } else if (FD_ISSET(m_tcp_sock, &fdset)) {
         RtspRequest rtsp_req;
         uint32_t read_cnt = 0;
+
+        timeout_count = 0; /* reset timeout_count */
+
         if (AM_LIKELY(ret && ((state == PARSE_COMPLETE) ||
                               (state == PARSE_RTCP)))) {
           received = 0;
@@ -395,8 +373,10 @@ void AMRtspClientSession::client_thread()
           read_ret = recv(m_tcp_sock, &rtsp_req_str[received],
                           sizeof(rtsp_req_str) - received, 0);
         } while ((++ read_cnt < 5) && ((read_ret == 0) ||
-            ((read_ret < 0) && ((errno == EINTR) || (errno == EAGAIN) ||
-                (errno == EWOULDBLOCK)))));
+                                       ((read_ret < 0) &&
+                                        ((errno == EINTR) ||
+                                         (errno == EAGAIN) ||
+                                         (errno == EWOULDBLOCK)))));
         if (AM_LIKELY(read_ret > 0 )) {
           received += read_ret;
           ret = parse_client_request(rtsp_req, state,
@@ -417,20 +397,25 @@ void AMRtspClientSession::client_thread()
                    ntohs(m_client_addr.sin_port),
                    received, rtsp_req_str);
           }
-        } else if (AM_UNLIKELY(read_ret <= 0)) {
-          if (AM_LIKELY((errno == ECONNRESET) || (read_ret == 0))) {
+        } else if (AM_UNLIKELY(read_ret < 0)) {
+          if (AM_LIKELY((errno == ECONNRESET) || (errno == EPIPE))) {
             if( AM_LIKELY(m_tcp_sock >= 0)) {
               /* socket maybe closed */
               close(m_tcp_sock);
               m_tcp_sock = -1;
             }
-            WARN("client closed socket!");
+            NOTICE("Client %s has closed the socket!", m_client_name.c_str());
           } else {
             PERROR("recv");
             ERROR("Server is going to close this socket!");
           }
           run = false;
-          teardown();
+          need_tear_down = true;
+          continue;
+        } else {
+          NOTICE("Client %s has closed the socket!", m_client_name.c_str());
+          run = false;
+          need_tear_down = true;
           continue;
         }
         if (AM_UNLIKELY(ret && ((state == PARSE_INCOMPLETE) ||
@@ -597,31 +582,44 @@ void AMRtspClientSession::client_thread()
           rtsp_req.set_command((char*)"BAD_REQUEST");
           WARN("RTSP Server has not connected to RTP muxer!");
         }
-        run = handle_client_request(rtsp_req);
+        run = handle_client_request(rtsp_req, need_tear_down);
       }
     } else if ((ret_val == 0)) {
-      WARN("Client: %s is not responding within %d seconds, shutdown!",
-           m_client_name.c_str(), m_dynamic_timeout_sec);
-      run = false;
-      teardown();
-      close_all_socket();
+      ++ timeout_count;
+      WARN("Client: %s is not responding within %d seconds %u %s!",
+           m_client_name.c_str(), m_dynamic_timeout_sec,
+           timeout_count, (timeout_count > 1 ? "times" : "time"));
+      if (AM_UNLIKELY(timeout_count >= 5)) {
+        WARN("Client %s is not responding 5 times, it's probably dead! "
+             "Shutdown");
+        run = false;
+        need_tear_down = true;
+      }
     } else {
       PERROR("select");
       run = false;
+      need_tear_down = true;
+    }
+  }
+  m_session_state = CLIENT_SESSION_STOPPING;
+  if (AM_LIKELY(!run)) {
+    int count = 0;
+    bool val  = false;
+    if (AM_LIKELY(m_rtsp_server->m_unix_sock_con && need_tear_down)) {
+      /* RTSP server disconnected with clients */
+      m_is_tearing_down = true;
+      teardown();
+    }
+    close_all_socket();
+    while ((++count < 5) &&
+        !(val = m_rtsp_server->delete_client_session(m_identify))) {
+      usleep(5000);
+    }
+    if (AM_UNLIKELY((count >= 5) && !val)) {
+      WARN("RtspServer is dead before client session exit!");
     }
   }
   m_session_state = CLIENT_SESSION_STOPPED;
-   if (AM_LIKELY(!run)) {
-     int count = 0;
-     bool val  = false;
-     while ((++count < 5) &&
-            !(val = m_rtsp_server->delete_client_session(m_identify))) {
-       usleep(5000);
-     }
-     if (AM_UNLIKELY((count >= 5) && !val)) {
-       WARN("RtspServer is dead before client session exit!");
-     }
-   }
 }
 
 void AMRtspClientSession::close_all_socket()
@@ -637,6 +635,47 @@ void AMRtspClientSession::close_all_socket()
       m_client_ctrl_sock[i] = -1;
     }
   }
+}
+
+bool AMRtspClientSession::send_client_ctrl_cmd(CLIENT_CTRL_CMD cmd)
+{
+  bool ret = true;
+  while (m_session_state == CLIENT_SESSION_INIT) {
+    usleep(100000);
+  }
+  switch(m_session_state) {
+    case CLIENT_SESSION_OK: {
+      ssize_t ret = am_write(CLIENT_CTRL_WRITE, &cmd, sizeof(cmd), 5);
+      if (AM_UNLIKELY(ret != (ssize_t)sizeof(cmd))) {
+        ERROR("Failed to send command '%c' to client: %s!",
+              cmd,
+              m_client_name.c_str());
+        ret = false;
+      } else {
+        NOTICE("Sent command '%c' to client: %s!", cmd, m_client_name.c_str());
+        if (!m_client_thread->\
+            set_priority(AMThread::AM_THREAD_PRIO_HIGHEST)) {
+          /* We need the client session to handle this as soon as possible */
+          WARN("Failed to change thread %s to highest priority!");
+        }
+      }
+    }break;
+    case CLIENT_SESSION_FAILED: {
+      WARN("This client is not initialized successfully!");
+      ret = false;
+    }break;
+    case CLIENT_SESSION_STOPPING: {
+      NOTICE("Client %s is exiting!", m_client_name.c_str());
+      ret = true;
+    }break;
+    case CLIENT_SESSION_STOPPED: {
+      NOTICE("This client is already stopped!");
+      ret = true;
+    }break;
+    default: break;
+  }
+
+  return ret;
 }
 
 bool AMRtspClientSession::parse_transport_header(RtspTransHeader& header,
@@ -779,7 +818,7 @@ void AMRtspClientSession::handle_rtcp_packet(char *rtcp)
 {
   if (AM_LIKELY(rtcp)) {
     AMRtcpHeader *rtcp_hdr = (AMRtcpHeader*)rtcp;
-    switch(rtcp[1]) {
+    switch(rtcp_hdr->pkt_type) {
       case AM_RTCP_RR: { /* Receiver Report */
         timeval rtcp_recv_time;
         gettimeofday(&rtcp_recv_time, NULL);
@@ -788,12 +827,36 @@ void AMRtspClientSession::handle_rtcp_packet(char *rtcp)
           m_rtcp_rr_ssrc = rtcp_cur_ssrc;
         }
         if (AM_LIKELY(rtcp_cur_ssrc == m_rtcp_rr_ssrc)) {
+          AMRtcpRRPayload *rr_payload =
+              (AMRtcpRRPayload*)(rtcp + sizeof(AMRtcpHeader));
+          for (uint8_t i = 0; i < rtcp_hdr->get_count(); ++ i) {
+            INFO("%s(TCP) received RTCP packet(%u) of source %08X from %08X",
+                 m_client_name.c_str(),
+                 rtcp_hdr->pkt_type,
+                 rr_payload[i].get_source_ssrc(),
+                 rtcp_cur_ssrc);
+            INFO("\nReceived RR of source %08X:"
+                 "\n              Fraction Lost: %hhu"
+                 "\n         Total Packets Lost: %d"
+                 "\nReceived Packets Seq Number: %u"
+                 "\n        Interarrival Jitter: %u"
+                 "\n                    Last SR: %u"
+                 "\n        Delay Since Last SR: %u",
+                 rr_payload[i].get_source_ssrc(),
+                 rr_payload[i].get_fraction_lost(),
+                 rr_payload[i].get_packet_lost(),
+                 rr_payload[i].get_sequence_number(),
+                 rr_payload[i].get_jitter(),
+                 rr_payload[i].get_lsr(),
+                 rr_payload[i].get_dlsr());
+          }
           if (AM_LIKELY((m_rtcp_rr_last_recv_time.tv_sec > 0) &&
                  (rtcp_recv_time.tv_sec > m_rtcp_rr_last_recv_time.tv_sec))) {
             m_rtcp_rr_interval = rtcp_recv_time.tv_sec -
                                                m_rtcp_rr_last_recv_time.tv_sec;
           }
-          memcpy(&m_rtcp_rr_last_recv_time, &rtcp_recv_time, sizeof(timeval));
+          m_rtcp_rr_last_recv_time.tv_sec = rtcp_recv_time.tv_sec;
+          m_rtcp_rr_last_recv_time.tv_usec = rtcp_recv_time.tv_usec;
           m_dynamic_timeout_sec = m_rtcp_rr_interval ?
               (m_rtcp_rr_interval * 3) : RTCP_TIMEOUT_THRESHOLD;
           INFO("RTCP Dynamic TimeOut Sec is %d", m_dynamic_timeout_sec);
@@ -828,7 +891,6 @@ bool AMRtspClientSession::parse_client_request(RtspRequest     &request,
         return true;
       } else {
         char rtcp[rtcp_pkt_size];
-        memset(rtcp, 0, sizeof(rtcp));
         memcpy(rtcp, &req_str[cnt + 4], rtcp_pkt_size);
         handle_rtcp_packet(rtcp);
         /* Skip over RTCP packet */
@@ -947,7 +1009,7 @@ bool AMRtspClientSession::parse_client_request(RtspRequest     &request,
       int field_num = 0;
 
       memset(field, 0, sizeof(field));
-      field_num = sscanf(url_suffix, "%[^,.:- \n]%*[,.:- \n]", field);
+      field_num = sscanf(url_suffix, "%[^,:. \n]%*[,:. \n]", field);
 
       if (AM_LIKELY(1 == field_num)) {
         char type[strlen(field) + 1];
@@ -984,9 +1046,9 @@ bool AMRtspClientSession::parse_client_request(RtspRequest     &request,
         url_suffix += strlen(field);
       }
       while(((size_t)(url_suffix - suffix) < strlen(suffix)) &&
-            ((url_suffix[0] == ',') || (url_suffix[0] == '.') ||
-             (url_suffix[0] == ':') || (url_suffix[0] == '-') ||
-             (url_suffix[0] == ' ') || (url_suffix[0] == '\n'))) {
+            ((url_suffix[0] == ',') || (url_suffix[0] == ':') ||
+             (url_suffix[0] == '.') || (url_suffix[0] == ' ') ||
+             (url_suffix[0] == '\n'))) {
         ++ url_suffix;
       }
     }while((size_t)(url_suffix - suffix) < strlen(suffix));
@@ -1035,10 +1097,12 @@ bool AMRtspClientSession::parse_client_request(RtspRequest     &request,
   return true;
 }
 
-bool AMRtspClientSession::handle_client_request(RtspRequest& request)
+bool AMRtspClientSession::handle_client_request(RtspRequest& request,
+                                                bool& need_tear_down)
 {
   char response_buf[8192] = {0};
   bool ret = false;
+  need_tear_down = false;
   if (is_str_same((const char*)request.command, "OPTIONS")) {
     ret = cmd_options(request, response_buf, sizeof(response_buf));
   } else if (is_str_same((const char*)request.command, "DESCRIBE")) {
@@ -1047,6 +1111,7 @@ bool AMRtspClientSession::handle_client_request(RtspRequest& request)
     ret = cmd_setup(request, response_buf, sizeof(response_buf));
   } else if (is_str_same((const char*)request.command, "TEARDOWN")) {
     ret = cmd_teardown(request, response_buf, sizeof(response_buf));
+    need_tear_down = !ret;
   } else if (is_str_same((const char*)request.command, "PLAY")) {
     ret = cmd_play(request, response_buf, sizeof(response_buf));
   } else if (is_str_same((const char*)request.command, "GET_PARAMETER")) {
@@ -1060,15 +1125,32 @@ bool AMRtspClientSession::handle_client_request(RtspRequest& request)
   }
 
   INFO("\nServer respond to %s:\n%s", m_client_name.c_str(), response_buf);
-  if (AM_UNLIKELY((m_tcp_sock >= 0) && ((ssize_t)strlen(response_buf) !=
-      write(m_tcp_sock, response_buf, strlen(response_buf))))) {
-    if (AM_LIKELY(errno == ECONNRESET)) {
-      WARN("Client closed socket!");
-    } else {
-      PERROR("write");
+  if (AM_LIKELY(m_tcp_sock >= 0)) {
+    ssize_t data_size = strlen(response_buf);
+    ssize_t sent_size = am_write(m_tcp_sock, response_buf, data_size, 10);
+    if (AM_LIKELY(sent_size != data_size)) {
+      if (AM_LIKELY(sent_size < 0)) {
+        switch(errno) {
+          case ECONNRESET: {
+            WARN("Client closed socket while sending request response!");
+          }break;
+          case EPIPE: {
+            WARN("Socket has been shut down!");
+          }break;
+          default: {
+            PERROR("write:");
+          }break;
+        }
+      }
+      if (AM_LIKELY(!need_tear_down)) {
+        ERROR("Failed to send client request(%s)'s response. Tear down!",
+              request.command);
+      }
+      ret = false;
+      need_tear_down = true;
     }
-    ret = false;
   }
+
   return ret;
 }
 
@@ -1217,7 +1299,8 @@ bool AMRtspClientSession::cmd_teardown(RtspRequest& req,
       INFO("Client %s teardown!", m_client_name.c_str());
       snprintf(buf, size, "RTSP/1.0 200 OK\r\nCSeq: %s\r\n\r\n",
                req.cseq);
-      teardown();
+      m_is_tearing_down = true;
+      //teardown();
     }
   }
   return !ret;
@@ -1439,7 +1522,10 @@ void AMRtspClientSession::teardown()
                  (m_identify | m_media_info[i].stream_id),
                  m_media_info[i].ssrc);
         } else {
-          ERROR("Failed to receive response from RTP muxer!");
+          ERROR("Failed to receive TEARDOWN response of "
+                "client(identify: %08X, SSRC: %08X) from RTP muxer!",
+                (m_identify | m_media_info[i].stream_id),
+                m_media_info[i].ssrc);
         }
       }
     }
@@ -1495,9 +1581,24 @@ void AMRtspClientSession::ssrc_ack(AM_RTP_MEDIA_TYPE type)
 
 void AMRtspClientSession::kill_ack(AM_RTP_MEDIA_TYPE type)
 {
+  bool need_abort = true;
   if (AM_LIKELY((type >= 0) && (type < AM_RTP_MEDIA_NUM))) {
-    m_media_info[type].event_kill->signal();
     m_media_info[type].is_alive = false;
+    m_media_info[type].event_kill->signal();
+  }
+  for (int32_t i = 0; i < AM_RTP_MEDIA_NUM; ++ i) {
+    if (AM_LIKELY(m_media_info[i].is_alive)) {
+      need_abort = false;
+      break;
+    }
+  }
+  if (AM_LIKELY(need_abort && !m_is_tearing_down)) {
+    /* When all the media session are killed, but this client is not
+     * tearing down, it is probably disconnected, we need to stop this client
+     */
+    NOTICE("All the media session are killed! Abort client: %s",
+           m_client_name.c_str());
+    abort_client();
   }
 }
 

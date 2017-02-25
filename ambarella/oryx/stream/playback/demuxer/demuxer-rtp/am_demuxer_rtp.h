@@ -4,19 +4,40 @@
  * History:
  *   2014-11-16 - [ccjing] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 #ifndef AM_DEMUXER_RTP_H_
 #define AM_DEMUXER_RTP_H_
 
 #include "am_audio_type.h"
-typedef std::queue<AMPacket*> packet_queue;
+#include "am_queue.h"
+#include "am_mutex.h"
+#include <atomic>
+
+typedef AMSafeQueue<AMPacket*> packet_queue;
 struct AMPlaybackRtpUri;
 
 class AMDemuxerRtp: public AMDemuxer
@@ -28,6 +49,7 @@ class AMDemuxerRtp: public AMDemuxer
   public:
     virtual void destroy();
     virtual void enable(bool enabled);//rewrite enable
+    virtual bool is_drained();
     virtual bool is_play_list_empty();//rewrite is_play_list_empty
     virtual bool add_uri(const AMPlaybackUri& uri);//rewrite add_uri
     virtual AM_DEMUXER_STATE get_packet(AMPacket *&packet);
@@ -45,21 +67,18 @@ class AMDemuxerRtp: public AMDemuxer
     std::string audio_type_to_string(AM_AUDIO_TYPE type);
 
   private:
-    AM_AUDIO_INFO      *m_audio_info;
-    AMSpinLock         *m_sock_lock;
-    AMSpinLock         *m_packet_queue_lock;
-    char               *m_recv_buf;
-    AMThread           *m_thread;//create in the add_udp_port
-    packet_queue       *m_packet_queue;
-    int                 m_sock_fd;
-    uint32_t            m_packet_count;
-    bool                m_run;/* running flag of the thread*/
-    bool                m_is_new_sock;
-    bool                m_is_info_ready;
-    uint8_t             m_audio_rtp_type;/*parse rtp packet header*/
-    AM_AUDIO_CODEC_TYPE m_audio_codec_type; /*used in packet->set_frame_type()*/
+    AM_AUDIO_INFO      *m_audio_info       = nullptr;
+    char               *m_recv_buf         = nullptr;
+    AMThread           *m_thread           = nullptr;//create in the add_udp_port
+    packet_queue       *m_packet_queue     = nullptr;
+    int                 m_sock_fd          = -1;
+    uint32_t            m_packet_count     = 0;
+    AM_AUDIO_CODEC_TYPE m_audio_codec_type = AM_AUDIO_CODEC_NONE; /*used in packet->set_frame_type()*/
+    bool                m_is_new_sock      = true;
+    bool                m_is_info_ready    = false;
+    uint8_t             m_audio_rtp_type   = (uint8_t)-1;/*parse rtp packet header*/
+    std::atomic_bool    m_run              = {false};/* running flag of the thread*/
+    AMMemLock           m_sock_lock;
 };
-
-
 
 #endif /* AM_DEMUXER_RTP_H_ */

@@ -1,17 +1,34 @@
-/*******************************************************************************
+/*
  * priv.c
  *
  * History:
  *  2015/04/01 - [Zhaoyang Chen] created file
  *
- * Copyright (C) 2015-2019, Ambarella ShangHai Co,Ltd
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
  *
- ******************************************************************************/
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -125,28 +142,28 @@ inline void rect_to_rectmb(struct iav_rect* rect_mb, const struct iav_rect* rect
 	rect_mb->height = roundup_to_mb(rect->y + rect->height, pair) - rect_mb->y;
 }
 
-int rect_vin_to_main(struct iav_rect* rect_in_main,
-    const struct iav_rect* rect_in_vin)
+int rect_vin_to_main(struct iav_rect* rect_main, const struct iav_rect* rect_vin)
 {
-	struct iav_rect* input = &vproc.dptz[IAV_SRCBUF_MN]->input;
-	struct iav_window* output = &vproc.srcbuf[IAV_SRCBUF_MN].size;
+	struct iav_rect* in = &vproc.dptz[IAV_SRCBUF_MN]->input;
+	struct iav_window* out = &vproc.srcbuf[IAV_SRCBUF_MN].size;
 
-	TRACE_RECTP("rect in vin", rect_in_vin);
-	if (!is_rect_overlap(rect_in_vin, input)) {
+	TRACE_RECTP("rect in vin", rect_vin);
+	if (!is_rect_overlap(rect_vin, in)) {
 		TRACE("not in main buffer.\n");
 		return -1;
 	}
-	get_overlap_rect(rect_in_main, rect_in_vin, input);
+	get_overlap_rect(rect_main, rect_vin, in);
 	// Convert offset to dptz I input
-	rect_in_main->x = (rect_in_main->x - input->x) * output->width
-	    / input->width;
-	rect_in_main->y = (rect_in_main->y - input->y) * output->height
-	    / input->height;
-	rect_in_main->width = rect_in_main->width * output->width / input->width;
-	rect_in_main->height = rect_in_main->height * output->height
-	    / input->height;
+	rect_main->x = ((rect_main->x - in->x) * out->width + (in->width >> 1))
+		/ in->width;
+	rect_main->y = ((rect_main->y - in->y) * out->height + (in->height >> 1))
+	    / in->height;
+	rect_main->width = (rect_main->width * out->width + (in->width >> 1))
+		/ in->width;
+	rect_main->height = (rect_main->height * out->height + (in->height >> 1))
+	    / in->height;
 
-	TRACE_RECTP("\t\t=> rect in main buffer", rect_in_main);
+	TRACE_RECTP("\t\t=> rect in main buffer", rect_main);
 	return 0;
 
 }
@@ -166,20 +183,23 @@ void rect_vin_to_buf(struct iav_rect* rect_in_buf,
 	TRACE_RECTP("\t\t=> rect in the buffer", rect_in_buf);
 }
 
-void rect_main_to_vin(struct iav_rect* rect_in_vin,
-    const struct iav_rect* rect_in_main)
+void rect_main_to_vin(struct iav_rect* rect_vin,
+	const struct iav_rect* rect_main)
 {
-	struct iav_rect* input = &vproc.dptz[IAV_SRCBUF_MN]->input;
-	struct iav_window* output = &vproc.srcbuf[IAV_SRCBUF_MN].size;
+	struct iav_rect* in = &vproc.dptz[IAV_SRCBUF_MN]->input;
+	struct iav_window* out = &vproc.srcbuf[IAV_SRCBUF_MN].size;
 
-	rect_in_vin->x = input->x + input->width * rect_in_main->x / output->width;
-	rect_in_vin->width = input->width * rect_in_main->width / output->width;
-	rect_in_vin->y = input->y +
-		input->height * rect_in_main->y / output->height;
-	rect_in_vin->height = input->height * rect_in_main->height / output->height;
+	rect_vin->x = in->x + (in->width * rect_main->x + (out->width >> 1))
+		/ out->width;
+	rect_vin->width = (in->width * rect_main->width + (out->width >> 1))
+		/ out->width;
+	rect_vin->y = in->y + (in->height * rect_main->y + (out->height >> 1))
+		/ out->height;
+	rect_vin->height = (in->height * rect_main->height + (out->height >> 1))
+		/ out->height;
 
-	TRACE_RECTP("rect in main", rect_in_main);
-	TRACE_RECTP("\t\t=> rect in vin", rect_in_vin);
+	TRACE_RECTP("rect in main", rect_main);
+	TRACE_RECTP("\t\t=> rect in vin", rect_vin);
 }
 
 int rect_main_to_srcbuf(struct iav_rect* rect_in_srcbuf,

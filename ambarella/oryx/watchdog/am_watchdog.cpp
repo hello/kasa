@@ -4,22 +4,38 @@
  * History:
  *   2014年5月14日 - [ypchang] created file
  *
- * Copyright (C) 2008-2014, Ambarella ShangHai Co,Ltd
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 #include "am_base_include.h"
-#include "am_watchdog_semaphore.h"
 #include "am_define.h"
-#include "am_base_include.h"
 #include "am_log.h"
 #include "am_pid_lock.h"
 #include "am_service_manager.h"
 #include "am_watchdog.h"
+#include "am_watchdog_semaphore.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,18 +50,24 @@
 
 
 #define INTR_FILE       (char*)"/proc/interrupts"
-#define INIT_TIMEOUT    50
-#define WORK_TIMEOUT    15
+
 
 #define SRV_CTRL_R      mSrvCtrl[0]
 #define SRV_CTRL_W      mSrvCtrl[1]
 
 struct SrvData
 {
-  const char* sem_name;
-  const char* srv_name;
-  sem_t*      sem;
-  bool enable;
+  sem_t      *sem      = SEM_FAILED;
+  bool        enable   = false;
+  std::string sem_name;
+  std::string srv_name;
+  ~SrvData()
+  {
+    if (sem != SEM_FAILED) {
+      sem_close(sem);
+      sem = SEM_FAILED;
+    }
+  }
 };
 
 struct WdData
@@ -53,37 +75,14 @@ struct WdData
   AMWatchdogService* self;
   void* data;
   WdData() :
-    self(NULL),
-    data(NULL)
+    self(nullptr),
+    data(nullptr)
   {}
 };
 
-struct DspData
+AMWatchdogService::AMWatchdogService()
 {
-  const char* intr_name;
-  uint32_t    intr_value;
-  DspData() :
-    intr_name(NULL),
-    intr_value(0)
-  {}
-};
-
-AMWatchdogService::AMWatchdogService() :
-  mWdFeedingThread(0),
-  mWdFd(-1),
-  mInitTimeout(INIT_TIMEOUT),
-  mWorkTimeout(WORK_TIMEOUT),
-  mIsInited(false),
-  mIsDspEncoding(true),
-  mIsFeeding(false),
-  mRun(true),
-  mNeedReboot(false),
-  mSrvDataList(NULL),
-  mDspData(NULL),
-  mWdData(NULL)
-{
-  SRV_CTRL_R = -1;
-  SRV_CTRL_W = -1;
+  mServiceDataList.clear();
 }
 
 AMWatchdogService::~AMWatchdogService()
@@ -91,7 +90,7 @@ AMWatchdogService::~AMWatchdogService()
   stop();
   /* Need to close log file before system rebooting */
   close_log_file();
-  delete[] mSrvDataList;
+  mServiceDataList.clear();
   delete   mWdData;
 
   if (AM_LIKELY(SRV_CTRL_R >= 0)) {
@@ -102,13 +101,12 @@ AMWatchdogService::~AMWatchdogService()
   }
 }
 
-bool AMWatchdogService::init(am_service_attribute *m_service_list)
+bool AMWatchdogService::init(
+    const std::list<am_service_attribute> &service_list)
 {
   if (AM_LIKELY(!mIsInited)) {
     do {
-
-      pthread_mutex_init(&mDspLock, NULL);
-      pthread_mutex_init(&mSrvLock, NULL);
+      pthread_mutex_init(&mSrvLock, nullptr);
 
       if (AM_UNLIKELY(!set_timestamp_enabled(true))) {
         ERROR("Failed to enable log time stamp!");
@@ -117,51 +115,18 @@ bool AMWatchdogService::init(am_service_attribute *m_service_list)
         PERROR("pipe");
         break;
       }
-      if (AM_LIKELY(!mSrvDataList)) {
-        mSrvDataList = new SrvData[MAX_SERVICE_NUM - 1];
-      }
-      if (AM_LIKELY(mSrvDataList)) {
-        memset(mSrvDataList, 0, sizeof(SrvData)*(MAX_SERVICE_NUM - 1));
-        mSrvDataList[SYSTEM_SERVICE].sem_name = SEM_SYS_SERVICE;
-        mSrvDataList[SYSTEM_SERVICE].srv_name = SYS_SERVICE_NAME;
-        mSrvDataList[SYSTEM_SERVICE].enable = m_service_list[SYSTEM_SERVICE].enable;
+      mServiceDataList.clear();
+      for (auto &srv : service_list) {
+        SrvData srv_data;
+        srv_data.enable   = srv.enable,
+        srv_data.sem_name = "/" + std::string(srv.filename) + ".watchdog",
+        srv_data.srv_name = std::string(srv.name),
 
-        mSrvDataList[MEDIA_SERVICE].sem_name = SEM_MED_SERVICE;
-        mSrvDataList[MEDIA_SERVICE].srv_name = MED_SERVICE_NAME;
-        mSrvDataList[MEDIA_SERVICE].enable = m_service_list[MEDIA_SERVICE].enable;
-
-        mSrvDataList[EVENT_SERVICE].sem_name = SEM_EVT_SERVICE;
-        mSrvDataList[EVENT_SERVICE].srv_name = EVT_SERVICE_NAME;
-        mSrvDataList[EVENT_SERVICE].enable = m_service_list[EVENT_SERVICE].enable;
-
-        mSrvDataList[IMAGE_SERVICE].sem_name = SEM_IMG_SERVICE;
-        mSrvDataList[IMAGE_SERVICE].srv_name = IMG_SERVICE_NAME;
-        mSrvDataList[IMAGE_SERVICE].enable = m_service_list[IMAGE_SERVICE].enable;
-
-        mSrvDataList[VIDEO_CONTROL_SERVICE].sem_name = SEM_VCTRL_SERVICE;
-        mSrvDataList[VIDEO_CONTROL_SERVICE].srv_name  = VCTRL_SERVICE_NAME;
-        mSrvDataList[VIDEO_CONTROL_SERVICE].enable = m_service_list[VIDEO_CONTROL_SERVICE].enable;
-
-        mSrvDataList[NETWORK_CONTROL_SERVICE].sem_name = SEM_NET_SERVICE;
-        mSrvDataList[NETWORK_CONTROL_SERVICE].srv_name = NET_SERVICE_NAME;
-        mSrvDataList[NETWORK_CONTROL_SERVICE].enable = m_service_list[NETWORK_CONTROL_SERVICE].enable;
-
-        mSrvDataList[AUDIO_CONTROL_SERVICE].sem_name = SEM_AUD_SERVICE;
-        mSrvDataList[AUDIO_CONTROL_SERVICE].srv_name = AUD_SERVICE_NAME;
-        mSrvDataList[AUDIO_CONTROL_SERVICE].enable = m_service_list[AUDIO_CONTROL_SERVICE].enable;
-
-        mSrvDataList[RTSP_CONTROL_SERVICE].sem_name = SEM_RTSP_SERVICE;
-        mSrvDataList[RTSP_CONTROL_SERVICE].srv_name = RTSP_SERVICE_NAME;
-        mSrvDataList[RTSP_CONTROL_SERVICE].enable = m_service_list[RTSP_CONTROL_SERVICE].enable;
-
-        mSrvDataList[SIP_SERVICE].sem_name = SEM_SIP_SERVICE;
-        mSrvDataList[SIP_SERVICE].srv_name = SIP_SERVICE_NAME;
-        mSrvDataList[SIP_SERVICE].enable = m_service_list[SIP_SERVICE].enable;
-
-        mSrvDataList[USER_SERVICE].enable = m_service_list[USER_SERVICE].enable;
-      } else {
-        ERROR("Failed to allocate data for service data list!");
-        break;
+        INFO("[%32s], sem_name: %32s, %s",
+             srv_data.srv_name.c_str(),
+             srv_data.sem_name.c_str(),
+             srv_data.enable ? "Enabled" : "Disabled");
+        mServiceDataList.push_back(srv_data);
       }
 
       if (AM_LIKELY(!mWdData)) {
@@ -254,7 +219,7 @@ void AMWatchdogService::run()
 
   while (mRun) {
     fdset = allset;
-    if (AM_LIKELY(select(maxfd + 1, &fdset, NULL, NULL, NULL) > 0)) {
+    if (AM_LIKELY(select(maxfd + 1, &fdset, nullptr, nullptr, nullptr) > 0)) {
       if (AM_LIKELY(FD_ISSET(SRV_CTRL_R, &fdset))) {
         char cmd[1] = {0};
         if (AM_LIKELY(read(SRV_CTRL_R, cmd, sizeof(cmd)) < 0)) {
@@ -297,7 +262,7 @@ bool AMWatchdogService::start_feeding_thread()
     mIsFeeding = true;
     mWdData->self = this;
     if (AM_UNLIKELY(pthread_create(&mWdFeedingThread,
-                                   NULL,
+                                   nullptr,
                                    static_watchdog_feeding_thread,
                                    (void*)mWdData) < 0)) {
       PERROR("Failed to create watchdog_feeding_thread");
@@ -313,7 +278,7 @@ bool AMWatchdogService::stop_feeding_thread()
 {
   if (AM_LIKELY(mWdFeedingThread > 0)) {
     mIsFeeding = false;
-    pthread_join(mWdFeedingThread, NULL);
+    pthread_join(mWdFeedingThread, nullptr);
     disable_watchdog();
     mWdFeedingThread = 0;
   }
@@ -376,12 +341,13 @@ bool AMWatchdogService::disable_watchdog()
 inline bool AMWatchdogService::init_semaphore(SrvData& data)
 {
   if (AM_LIKELY(!data.sem)) {
-    data.sem = sem_open(data.sem_name, O_CREAT|O_EXCL,0644, 0);
+    data.sem = sem_open(data.sem_name.c_str(), O_CREAT|O_EXCL,0644, 0);
     if (AM_UNLIKELY((data.sem == SEM_FAILED) && (errno == EEXIST))) {
-      data.sem = sem_open(data.sem_name, 0);
+      data.sem = sem_open(data.sem_name.c_str(), 0);
     }
     if (AM_UNLIKELY(data.sem == SEM_FAILED)) {
-      PERROR(data.sem_name);
+      ERROR("Service[%s]: %s - %s",
+            data.srv_name.c_str(), data.sem_name.c_str(), strerror(errno));
     }
   }
 
@@ -391,23 +357,25 @@ inline bool AMWatchdogService::init_semaphore(SrvData& data)
 bool AMWatchdogService::init_service_data()
 {
   bool ret= true;
-  for (int i = 0; i < (MAX_SERVICE_NUM - 1); ++ i) {
-    if (mSrvDataList[i].enable) {
-      if (AM_UNLIKELY(false == (ret = init_semaphore(mSrvDataList[i])))) {
+  for (auto &svc_data : mServiceDataList) {
+    if (svc_data.enable) {
+      ret = init_semaphore(svc_data);
+      if (!ret) {
         break;
       }
     }
   }
+
   return ret;
 }
 
 bool AMWatchdogService::clean_service_data()
 {
-  for (int i = 0; i < (MAX_SERVICE_NUM - 1); ++ i) {
-    if (mSrvDataList[i].enable) {
-      if (mSrvDataList[i].sem != SEM_FAILED) {
-        sem_close(mSrvDataList[i].sem);
-        mSrvDataList[i].sem = NULL;
+  for (auto &svc_data : mServiceDataList) {
+    if (svc_data.enable) {
+      if (svc_data.sem != SEM_FAILED) {
+        sem_close(svc_data.sem);
+        svc_data.sem = nullptr;
       }
     }
   }
@@ -418,89 +386,31 @@ bool AMWatchdogService::clean_service_data()
 bool AMWatchdogService::check_service_timeout()
 {
   bool ret = true;
-  for (int i = 0; i < (MAX_SERVICE_NUM - 1); ++ i) {
+  for (auto &svc_data : mServiceDataList) {
     int value = 0;
-    if (mSrvDataList[i].enable) {
-      if (AM_UNLIKELY(sem_getvalue(mSrvDataList[i].sem, &value) < 0)) {
+    if (svc_data.enable) {
+      if (sem_getvalue(svc_data.sem, &value) < 0) {
         ERROR("sem_getvalue");
         ret = (errno != EINVAL);
       } else {
-        if (AM_UNLIKELY( (value >= SERVICE_TIMEOUT_SECONDS))) {
-          ERROR("%s is timeout!value is %d.", mSrvDataList[i].srv_name,value);
-          ret=false;
-        } else if (AM_UNLIKELY(sem_post(mSrvDataList[i].sem) < 0)) {
-          if (AM_LIKELY(errno == EOVERFLOW)) {
-            ERROR("%s is overflow!", mSrvDataList[i].srv_name);
-          } else {
-            ERROR("sem_post %s: %s", mSrvDataList[i].srv_name, strerror(errno));
+        if (value >= SERVICE_TIMEOUT_SECONDS) {
+          ERROR("%s is timeout! Value is %d.",
+                svc_data.srv_name.c_str(), value);
+          ret = false;
+        } else if (sem_post(svc_data.sem) < 0) {
+          switch(errno) {
+            case EOVERFLOW: {
+              ERROR("[%s] is overflow!", svc_data.srv_name.c_str());
+            }break;
+            default: {
+              ERROR("sem_poist [%s]: %s",
+                    svc_data.srv_name.c_str(), strerror(errno));
+            }break;
           }
           ret = false;
         }
       }
     }
-  }
-
-  return ret;
-}
-bool AMWatchdogService::get_dsp_intr_value(FILE* intr,
-                                         const char* intr_name,
-                                         uint32_t& intr_val)
-{
-  bool ret = false;
-
-  if (AM_LIKELY(intr && intr_name)) {
-    if (fseek(intr, 0, SEEK_SET) < 0) {
-      PERROR("fseek");
-    } else {
-      char* begin = NULL;
-      intr_val = 0;
-      while (!feof(intr)) {
-        char line[1024] = {0};
-        if (fscanf(intr, "%[^\n]\n", line) > 0) {
-          char section[128] = {0};
-          begin = strstr(line, intr_name);
-
-          if (begin && (1 == sscanf(begin, "%127s", section)) &&
-              (strlen(section) == strlen(intr_name))) {
-            char intrnum[128] = {0};
-            if (sscanf(line, "%*[0-9]:%*[ ]%[0-9] ", intrnum) == 1) {
-              intr_val += strtoul((const char*)intrnum, (char**)NULL, 10);
-              ret = true;
-            }
-          }
-        }
-      }
-      if (AM_UNLIKELY(!begin && (0 == intr_val))) {
-        ERROR("Interrupt %s NOT FOUND!", intr_name);
-      }
-    }
-  }
-
-  return ret;
-}
-
-bool AMWatchdogService::check_dsp_intr(FILE* intr)
-{
-  bool ret = true;
-  uint32_t value = 0;
-
-  for (int i = 0; i < AMBA_DSP_INTR_NUM; ++ i) {
-    pthread_mutex_lock(&mDspLock);
-    if (AM_LIKELY(get_dsp_intr_value(intr, mDspData[i].intr_name, value))) {
-      if (AM_LIKELY(value != mDspData[i].intr_value)) {
-        mDspData[i].intr_value = value;
-      } else if (((i == AMBA_VDSP) || mIsDspEncoding) &&
-                 (value != 0) && (value == mDspData[i].intr_value)) {
-        ERROR("%s interrupt remains the same, DSP is not working, "
-              "current %u, last %u!",
-              mDspData[i].intr_name, value, mDspData[i].intr_value);
-        ret = false;
-        break;
-      }
-    } else {
-      ret = false;
-    }
-    pthread_mutex_unlock(&mDspLock);
   }
 
   return ret;
@@ -518,7 +428,7 @@ void* AMWatchdogService::watchdog_feeding_thread(void* data)
    while(mIsFeeding) {
     feed_interval.tv_sec = HEART_BEAT_INTERVAL;
     feed_interval.tv_usec = 0;
-    if (AM_UNLIKELY(select(0, NULL, NULL, NULL, &feed_interval) < 0)) {
+    if (AM_UNLIKELY(select(0, nullptr, nullptr, nullptr, &feed_interval) < 0)) {
       ERROR("select error.\n");
       break;
     }
@@ -539,7 +449,7 @@ void* AMWatchdogService::watchdog_feeding_thread(void* data)
     abort();
   }
 
-  return NULL;
+  return nullptr;
 }
 
 void* AMWatchdogService::static_watchdog_feeding_thread(void* data)

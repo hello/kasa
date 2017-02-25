@@ -4,14 +4,33 @@
  * History:
  *    2015/03/23 - [Long Zhao] Create
  *
- * Copyright (C) 2004-2015, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 #include <linux/module.h>
 #include <linux/ambpriv_device.h>
 #include <linux/interrupt.h>
@@ -121,7 +140,9 @@ static int imx290_set_vin_mode(struct vin_device *vdev, struct vin_video_format 
 	imx290_config.interface_type = SENSOR_SERIAL_LVDS;
 	imx290_config.sync_mode = SENSOR_SYNC_MODE_MASTER;
 
-	if (format->device_mode == 1 || format->device_mode == 4) {/* 720p120 and 1080p30 12 bits */
+	if (format->video_mode == AMBA_VIDEO_MODE_720P ||
+		format->device_mode == 4 ||
+		format->device_mode == 7) {/* 1080p 12bits and 720p */
 		imx290_config.slvds_cfg.lane_number = SENSOR_4_LANE;
 	} else {
 		imx290_config.slvds_cfg.lane_number = SENSOR_8_LANE;
@@ -132,7 +153,12 @@ static int imx290_set_vin_mode(struct vin_device *vdev, struct vin_video_format 
 	} else {
 		imx290_config.slvds_cfg.sync_code_style = SENSOR_SYNC_STYLE_SONY_DOL;
 		/* use split width to make VIN divide the long expo lines */
-		imx290_config.hdr_cfg.split_width = (format->bits == AMBA_VIDEO_BITS_10)? IMX290_1080P_H_PERIOD : IMX290_1080P_12B_H_PERIOD;
+
+		if (format->video_mode == AMBA_VIDEO_MODE_1080P) {
+			imx290_config.hdr_cfg.split_width = (format->bits == AMBA_VIDEO_BITS_10)? IMX290_1080P_H_PERIOD : IMX290_1080P_12B_H_PERIOD;
+		} else {
+			imx290_config.hdr_cfg.split_width = IMX290_720P_H_PERIOD;
+		}
 	}
 
 	imx290_config.cap_win.x = format->def_start_x;
@@ -173,17 +199,7 @@ static void imx290_start_streaming(struct vin_device *vdev)
 
 static int imx290_init_device(struct vin_device *vdev)
 {
-	struct vin_reg_16_8 *regs;
-	int i, regs_num;
-
 	imx290_sw_reset(vdev);
-
-	regs = imx290_share_regs;
-	regs_num = ARRAY_SIZE(imx290_share_regs);
-
-	for (i = 0; i < regs_num; i++)
-		imx290_write_reg(vdev, regs[i].addr, regs[i].data);
-
 	return 0;
 }
 
@@ -240,37 +256,47 @@ static int imx290_set_format(struct vin_device *vdev, struct vin_video_format *f
 	struct vin_reg_16_8 *regs;
 	int i, regs_num, rval;
 
+	regs = imx290_share_regs;
+	regs_num = ARRAY_SIZE(imx290_share_regs);
+	for (i = 0; i < regs_num; i++)
+		imx290_write_reg(vdev, regs[i].addr, regs[i].data);
+
 	regs = imx290_mode_regs[format->device_mode];
 	regs_num = ARRAY_SIZE(imx290_mode_regs[format->device_mode]);
-
 	for (i = 0; i < regs_num; i++)
 		imx290_write_reg(vdev, regs[i].addr, regs[i].data);
 
 	/* for DOL mode, set RHS registers */
 	if (format->hdr_mode == AMBA_VIDEO_2X_HDR_MODE) {
-		u32 rhs1;
+		if (format->video_mode == AMBA_VIDEO_MODE_1080P) {
+			pinfo->rhs1 = (format->bits == AMBA_VIDEO_BITS_10) ?
+				IMX290_1080P_2X_RHS1 : IMX290_1080P_2X_12B_RHS1;
+		} else if (format->video_mode == AMBA_VIDEO_MODE_1080P_A) {
+			pinfo->rhs1 = IMX290_1080P_2X_RATIO_RHS1;
+		} else {
+			pinfo->rhs1 = IMX290_720P_2X_RHS1;
+		}
+		pinfo->rhs2 = 0;
 
-		rhs1 = (format->bits == AMBA_VIDEO_BITS_10)?IMX290_1080P_2X_RHS1 : IMX290_1080P_2X_12B_RHS1;
+		imx290_write_reg(vdev, IMX290_RHS1_HSB, pinfo->rhs1 >> 16);
+		imx290_write_reg(vdev, IMX290_RHS1_MSB, pinfo->rhs1 >> 8);
+		imx290_write_reg(vdev, IMX290_RHS1_LSB, pinfo->rhs1 & 0xff);
+	} else if (format->hdr_mode == AMBA_VIDEO_3X_HDR_MODE) {
+		if (format->video_mode == AMBA_VIDEO_MODE_1080P) {
+			pinfo->rhs1 = IMX290_1080P_3X_RHS1;
+			pinfo->rhs2 = IMX290_1080P_3X_RHS2;
+		} else {
+			pinfo->rhs1 = IMX290_720P_3X_RHS1;
+			pinfo->rhs2 = IMX290_720P_3X_RHS2;
+		}
+		imx290_write_reg(vdev, IMX290_RHS1_HSB, pinfo->rhs1 >> 16);
+		imx290_write_reg(vdev, IMX290_RHS1_MSB, pinfo->rhs1 >> 8);
+		imx290_write_reg(vdev, IMX290_RHS1_LSB, pinfo->rhs1 & 0xff);
 
-		imx290_write_reg(vdev, IMX290_RHS1_HSB, rhs1 >> 16);
-		imx290_write_reg(vdev, IMX290_RHS1_MSB, rhs1 >> 8);
-		imx290_write_reg(vdev, IMX290_RHS1_LSB, rhs1 & 0xff);
-
-		pinfo->rhs1 = rhs1;
-	} else if (format->hdr_mode == AMBA_VIDEO_3X_HDR_MODE){
-		imx290_write_reg(vdev, IMX290_RHS1_HSB, IMX290_1080P_3X_RHS1 >> 16);
-		imx290_write_reg(vdev, IMX290_RHS1_MSB, IMX290_1080P_3X_RHS1 >> 8);
-		imx290_write_reg(vdev, IMX290_RHS1_LSB, IMX290_1080P_3X_RHS1 & 0xff);
-
-		imx290_write_reg(vdev, IMX290_RHS2_HSB, IMX290_1080P_3X_RHS2 >> 16);
-		imx290_write_reg(vdev, IMX290_RHS2_MSB, IMX290_1080P_3X_RHS2 >> 8);
-		imx290_write_reg(vdev, IMX290_RHS2_LSB, IMX290_1080P_3X_RHS2 & 0xff);
-
-		pinfo->rhs1 = IMX290_1080P_3X_RHS1;
-		pinfo->rhs2 = IMX290_1080P_3X_RHS2;
+		imx290_write_reg(vdev, IMX290_RHS2_HSB, pinfo->rhs2 >> 16);
+		imx290_write_reg(vdev, IMX290_RHS2_MSB, pinfo->rhs2 >> 8);
+		imx290_write_reg(vdev, IMX290_RHS2_LSB, pinfo->rhs2 & 0xff);
 	}
-
-	imx290_set_pll(vdev, vdev->cur_format->pll_idx);
 
 	rval = imx290_update_hv_info(vdev);
 	if (rval < 0)
@@ -304,7 +330,7 @@ static int imx290_set_shutter_row(struct vin_device *vdev, u32 row)
 	num_line = clamp(num_line, min_line, max_line);
 
 	/* get the shutter sweep time */
-	blank_lines = pinfo->frame_length_lines - num_line;
+	blank_lines = pinfo->frame_length_lines - num_line - 1;
 	imx290_write_reg(vdev, IMX290_SHS1_HSB, blank_lines >> 16);
 	imx290_write_reg(vdev, IMX290_SHS1_MSB, blank_lines >> 8);
 	imx290_write_reg(vdev, IMX290_SHS1_LSB, blank_lines & 0xff);
@@ -650,6 +676,19 @@ static int imx290_set_mirror_mode(struct vin_device *vdev,
 	return 0;
 }
 
+static int imx290_get_aaa_info(struct vin_device *vdev,
+		struct vindev_aaa_info *aaa_info)
+{
+	struct imx290_priv *pinfo = (struct imx290_priv *)vdev->priv;
+
+	aaa_info->sht0_max = pinfo->fsc - 4;
+	aaa_info->sht1_max = pinfo->rhs1 - 2;
+	aaa_info->sht2_max = (vdev->cur_format->hdr_mode == AMBA_VIDEO_3X_HDR_MODE) ?
+		(pinfo->rhs2 - pinfo->rhs1 - 4) : 0;
+
+	return 0;
+}
+
 #ifdef CONFIG_PM
 static int imx290_suspend(struct vin_device *vdev)
 {
@@ -657,17 +696,18 @@ static int imx290_suspend(struct vin_device *vdev)
 
 	for (i = 0; i < ARRAY_SIZE(pm_regs); i++) {
 		imx290_read_reg(vdev, pm_regs[i].addr, &tmp);
-		pm_regs[i].data = (u16) tmp;
+		pm_regs[i].data = (u8)tmp;
 	}
 
 	return 0;
 }
+
 static int imx290_resume(struct vin_device *vdev)
 {
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(pm_regs); i++) {
-		imx290_write_reg(vdev, pm_regs[i].addr, (u32)pm_regs[i].data);
+		imx290_write_reg(vdev, pm_regs[i].addr, pm_regs[i].data);
 	}
 
 	return 0;
@@ -686,6 +726,7 @@ static struct vin_ops imx290_ops = {
 	.set_mirror_mode	= imx290_set_mirror_mode,
 	.read_reg			= imx290_read_reg,
 	.write_reg		= imx290_write_reg,
+	.get_aaa_info		= imx290_get_aaa_info,
 #ifdef CONFIG_PM
 	.suspend 			= imx290_suspend,
 	.resume 			= imx290_resume,
@@ -725,6 +766,9 @@ static int imx290_probe(struct i2c_client *client,
 	vdev->agc_db_step = 0x004CCCCC;	/* 0.3dB */
 	vdev->wdr_again_idx_min = 0;
 	vdev->wdr_again_idx_max = IMX290_GAIN_MAX_DB;
+
+	/* mode switch needs hw reset */
+	vdev->reset_for_mode_switch = true;
 
 	i2c_set_clientdata(client, vdev);
 

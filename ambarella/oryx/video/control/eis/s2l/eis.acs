@@ -1,0 +1,64 @@
+--[[
+/S2L/oryx/video/control/eis/eis.acs
+
+History:
+  Feb 26, 2016 - [smdong] created file
+
+Copyright (c) 2016 Ambarella, Inc.
+
+This file and its contents ("Software") are protected by intellectual
+property rights including, without limitation, U.S. and/or foreign
+copyrights. This Software is also the confidential and proprietary
+information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+disclose, distribute, modify, or otherwise prepare derivative works of this
+Software or any portion thereof except pursuant to a signed license agreement
+or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+In the absence of such an agreement, you agree to promptly notify and return
+this Software to Ambarella, Inc.
+
+THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+
+--]]
+
+-- This is the configuration of EIS
+
+eis = {
+  eis_mode = 4, --[[5: eis_full, 4: rotate + pitch, 3: yaw, 2: rotate,
+                    1: pitch, 0: disable]]
+  cali_num = 3000,
+
+  accel_full_scale_range = 2,
+  accel_lsb = 16384,
+  gyro_full_scale_range = 250.0,
+  gyro_lsb = 131.0,
+  gyro_sample_rate_in_hz = 500,
+  gyro_shift = {
+    gyro_x = -594,
+    gyro_y = -266,
+    gyro_z = -23,
+    accel_x = 464,
+    accel_y = 40,
+    accel_z = 14175,
+  },
+  gravity = 0, --gravity [0|1|2] The axis of gravity. 0: Z, 1: Y, 2: X
+
+  file_name = "",
+
+  lens_focal_length_in_um = 3600,
+  threshhold = 0.0001,
+  frame_buffer_num = 20,
+  avg_mode = 0, --avg-mode [0|1] 0: Moving Average, 1: Absolute Value
+
+}
+
+return eis

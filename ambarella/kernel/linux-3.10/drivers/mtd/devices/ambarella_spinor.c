@@ -65,7 +65,7 @@
 #define JEDEC_MFR(_jedec_id)    ((_jedec_id) >> 16)
 
 #define PART_DEV_SPINOR		(0x08)
-
+static u16 spi_addr_mode = 3;
 
 /****************************************************************************/
 
@@ -116,11 +116,43 @@ static inline int write_disable(struct amb_norflash *flash)
  */
 static inline int set_4byte(struct amb_norflash *flash, u32 jedec_id, int enable)
 {
-    flash->command[0] = OPCODE_BRWR;
-    ambspi_send_cmd(flash, flash->command[0], 0, (enable << 7), 1);
-    return 0;
-}
+	int ret = 0;
 
+	switch (JEDEC_MFR(jedec_id)) {
+		case CFI_MFR_MACRONIX:
+		case 0xEF: /* winbond */
+		case 0xC8: /* GD */
+			flash->command[0] = enable ? OPCODE_EN4B : OPCODE_EX4B;
+			return ambspi_send_cmd(flash, flash->command[0], 0, 0, 0);
+		case CFI_MFR_ST: /*Micron*/
+			write_enable(flash);
+			flash->command[0] = enable ? OPCODE_EN4B : OPCODE_EX4B;
+			ret = ambspi_send_cmd(flash, flash->command[0], 0, 0, 0);
+			write_disable(flash);
+			return ret;
+		default:
+			/* Spansion style */
+			flash->command[0] = OPCODE_BRWR;
+			flash->command[1] = enable << 7;
+			return ambspi_send_cmd(flash, flash->command[0], 0, flash->command[1], 1);
+	}
+}
+/*
+mode 1 - enter 4 byte spi addr mode
+	 0 - exit  4 byte spi addr mode
+*/
+static void check_set_spinor_addr_mode(struct amb_norflash *flash, int mode)
+{
+	if (flash->addr_width == 4) {
+		if (spi_addr_mode == 3 && mode){
+			set_4byte(flash, flash->jedec_id, 1);
+			spi_addr_mode = 4;
+		} else if (spi_addr_mode == 4 && mode == 0){
+			set_4byte(flash, flash->jedec_id, 0);
+			spi_addr_mode = 3;
+		}
+	}
+}
 /*
  * Service routine to read status register until ready, or timeout occurs.
  * Returns non-zero if error.
@@ -214,11 +246,12 @@ static int amba_erase(struct mtd_info *mtd, struct erase_info *instr)
     len = instr->len;
 
     mutex_lock(&flash->lock);
-
+	check_set_spinor_addr_mode(flash, 1);
     /* whole-chip erase? */
     if (len == flash->mtd.size) {
         if (erase_chip(flash)) {
             instr->state = MTD_ERASE_FAILED;
+			check_set_spinor_addr_mode(flash, 0);
             mutex_unlock(&flash->lock);
             return -EIO;
         }
@@ -233,15 +266,16 @@ static int amba_erase(struct mtd_info *mtd, struct erase_info *instr)
         while (len) {
             if (erase_sector(flash, addr)) {
                 instr->state = MTD_ERASE_FAILED;
+				check_set_spinor_addr_mode(flash, 0);
                 mutex_unlock(&flash->lock);
-                return -EIO;
+				return -EIO;
             }
 
             addr += mtd->erasesize;
             len -= mtd->erasesize;
         }
     }
-
+	check_set_spinor_addr_mode(flash, 0);
     mutex_unlock(&flash->lock);
 
     instr->state = MTD_ERASE_DONE;
@@ -271,7 +305,7 @@ static int amba_erase(struct mtd_info *mtd, struct erase_info *instr)
         mutex_unlock(&flash->lock);
         return 1;
     }
-
+	check_set_spinor_addr_mode(flash, 1);
     /* Set up the write data buffer. */
     opcode = flash->fast_read ? OPCODE_FAST_READ : OPCODE_NORM_READ;
     flash->command[0] = opcode;
@@ -282,24 +316,29 @@ static int amba_erase(struct mtd_info *mtd, struct erase_info *instr)
         if (needread >= AMBA_SPINOR_DMA_BUFF_SIZE) {
             ret = ambspi_read_data(flash, from+offset, AMBA_SPINOR_DMA_BUFF_SIZE);
             if(ret) {
-                dev_err((const struct device *)&flash->dev,
-                        "SPI NOR read error from=%x len=%d\r\n", (u32)(from+offset), AMBA_SPINOR_DMA_BUFF_SIZE);
-                return -1;
+				dev_err((const struct device *)&flash->dev,
+						"SPI NOR read error from=%x len=%d\r\n", (u32)(from+offset), AMBA_SPINOR_DMA_BUFF_SIZE);
+				check_set_spinor_addr_mode(flash, 0);
+				mutex_unlock(&flash->lock);
+				return -1;
             }
-            memcpy(buf+offset, flash->dmabuf, AMBA_SPINOR_DMA_BUFF_SIZE);
-            offset += AMBA_SPINOR_DMA_BUFF_SIZE;
+			memcpy(buf+offset, flash->dmabuf, AMBA_SPINOR_DMA_BUFF_SIZE);
+			offset += AMBA_SPINOR_DMA_BUFF_SIZE;
         }else{
-            ret = ambspi_read_data(flash, from+offset, needread);
-            if(ret) {
-                dev_err((const struct device *)&flash->dev,
-                    "SPI NOR read error from=%x len=%d\r\n", (u32)(from+offset), needread);
-                return -1;
+			ret = ambspi_read_data(flash, from+offset, needread);
+			if(ret) {
+				dev_err((const struct device *)&flash->dev,
+						"SPI NOR read error from=%x len=%d\r\n", (u32)(from+offset), needread);
+				check_set_spinor_addr_mode(flash, 0);
+				mutex_unlock(&flash->lock);
+				return -1;
             }
             memcpy(buf+offset, flash->dmabuf, needread);
             offset += needread;
         }
     }
     *retlen = offset;
+	check_set_spinor_addr_mode(flash, 0);
     mutex_unlock(&flash->lock);
     return 0;
 }
@@ -321,7 +360,7 @@ static int amba_write(struct mtd_info *mtd, loff_t to, size_t len,
         mutex_unlock(&flash->lock);
         return 1;
     }
-
+	check_set_spinor_addr_mode(flash, 1);
     write_enable(flash);
 
     /* Set up the opcode in the write buffer. */
@@ -357,6 +396,7 @@ static int amba_write(struct mtd_info *mtd, loff_t to, size_t len,
                 }
                 /* write the next page to flash */
                 if (wait_till_ready(flash)) {
+					check_set_spinor_addr_mode(flash, 0);
                     mutex_unlock(&flash->lock);
                     return 1;
                 }
@@ -366,7 +406,7 @@ static int amba_write(struct mtd_info *mtd, loff_t to, size_t len,
             }
         }
     }
-
+	check_set_spinor_addr_mode(flash, 0);
     mutex_unlock(&flash->lock);
     return 0;
 }
@@ -416,6 +456,7 @@ static const struct ambid_t amb_ids[] = {
     { "s70fl01gs", INFO(0x010220, 0x4d00, 256 * 1024, 256, 512, 50000000, 0) },
 	{ "n25q256a", INFO(0x20ba19, 0, 64 * 1024, 512, 256, 50000000, 0) },
 	{ "mx25l25645g", INFO(0xc22019, 0, 64 * 1024, 512, 256, 50000000, 0) },
+	{ "mx66l51235f", INFO(0xc2201a, 0, 64 * 1024, 1024, 256, 50000000, 0) },
 	{ "w25q128", INFO(0xef4018, 0, 64 * 1024, 256, 256, 50000000, 0) },
 	{ "w25q256", INFO(0xef4019, 0, 64 * 1024, 512, 256, 50000000, 0) },
 	{ "gd25q128", INFO(0xc84018, 0, 64 * 1024, 256, 256, 50000000, 0) },
@@ -588,9 +629,13 @@ static int    amb_spi_nor_probe(struct platform_device *pdev)
         /* enable 4-byte addressing if the device exceeds 16MiB */
         if (flash->mtd.size > 0x1000000) {
             flash->addr_width = 4;
-            set_4byte(flash, info->jedec_id, 1);
-        } else
-            flash->addr_width = 3;
+			/* We have set 4-bytes mode in bootloader */
+            //set_4byte(flash, info->jedec_id, 1);
+			spi_addr_mode = 4;
+        } else {
+			flash->addr_width = 3;
+			spi_addr_mode = 3;
+		}
     }
 
 	flash->jedec_id	= info->jedec_id;
@@ -617,6 +662,7 @@ static int    amb_spi_nor_probe(struct platform_device *pdev)
 	if (errCode < 0)
 		goto amb_spi_nor_probe_free_command;
 
+	check_set_spinor_addr_mode(flash, 0);
     printk("SPI NOR Controller probed\r\n");
     return 0;
 
@@ -676,6 +722,37 @@ static void amb_spi_nor_shutdown(struct platform_device *pdev)
 	}
 }
 
+#ifdef CONFIG_PM
+static int amb_spi_nor_suspend(struct platform_device *pdev,
+	pm_message_t state)
+{
+	int	errorCode = 0;
+	struct amb_norflash	*flash;
+
+	flash = platform_get_drvdata(pdev);
+
+	dev_dbg(&pdev->dev, "%s exit with %d @ %d\n",
+		__func__, errorCode, state.event);
+
+	return errorCode;
+}
+
+static int amb_spi_nor_resume(struct platform_device *pdev)
+{
+	int	errorCode = 0;
+	struct amb_norflash	*flash;
+
+	flash = platform_get_drvdata(pdev);
+	ambspi_init(flash);
+	if (flash->addr_width == 4)
+		set_4byte(flash, flash->jedec_id, 1);
+
+	dev_dbg(&pdev->dev, "%s exit with %d\n", __func__, errorCode);
+
+	return errorCode;
+}
+#endif
+
 static const struct of_device_id ambarella_spi_nor_of_match[] = {
     {.compatible = "ambarella,spinor", },
     {},
@@ -691,7 +768,10 @@ static struct platform_driver amb_spi_nor_driver = {
 	.probe = amb_spi_nor_probe,
 	.remove = amb_spi_nor_remove,
 	.shutdown = amb_spi_nor_shutdown,
-
+#ifdef CONFIG_PM
+	.suspend	= amb_spi_nor_suspend,
+	.resume		= amb_spi_nor_resume,
+#endif
 	/* REVISIT: many of these chips have deep power-down modes, which
 	 * should clearly be entered on suspend() to minimize power use.
 	 * And also when they're otherwise idle...

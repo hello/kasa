@@ -52,6 +52,7 @@
  *     EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+
 #ifndef __ASSEMBLY__
 
 struct fdt_header {

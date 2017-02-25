@@ -209,6 +209,17 @@ dbus_flowctrl_tx(void *dbi, bool on)
 		dbus_info->cbs->txflowcontrol(dbus_info->cbarg, on);
 }
 
+int dbus_dump_benson(dbus_pub_t *pub, struct bcmstrbuf *strbuf)
+{
+	dbus_info_t *dbus_info = (dbus_info_t *) pub;
+
+	bcm_bprintf(strbuf,"Dbus onoff %d\r\n",dbus_info->txoff);
+	if(dbus_info->drvintf->dump)
+		dbus_info->drvintf->dump(dbus_info->bus_info, strbuf);
+
+	return 0;
+}
+
 /**
  * if lower level DBUS signaled a rx error, more free rx IRBs should be allocated or flow control
  * should kick in to make more free rx IRBs available.
@@ -935,6 +946,14 @@ dbus_if_send_irb_complete(void *handle, dbus_irb_tx_t *txirb, int status)
 		} else {
 			DBUSERR(("%s: %d WARNING freeing orphan pkt %p\n", __FUNCTION__, __LINE__,
 				pktinfo));
+			/* We have to restore the flowcontrol even that it is failed */
+			{
+				txirb_pending = dbus_info->pub.ntxq - dbus_info->tx_q->cnt;
+				if ((txirb_pending < dbus_info->tx_low_watermark) &&
+					dbus_info->txoff && !dbus_info->txoverride) {
+					dbus_flowctrl_tx(dbus_info, OFF);
+				}
+			}
 #if defined(BCM_RPC_NOCOPY) || defined(BCM_RPC_TXNOCOPY) || defined(BCM_RPC_TOC)
 			if (pktinfo)
 				if (dbus_info->cbs && dbus_info->cbs->send_complete)

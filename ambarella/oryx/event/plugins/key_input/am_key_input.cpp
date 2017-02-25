@@ -4,21 +4,30 @@
  * Histroy:
  *  2014-11-19 [Dongge Wu] Create file
  *
- * Copyright (C) 2009, Ambarella, Inc.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
-
-#include <time.h>
-#include <sys/select.h>
-#include <linux/input.h>
-#include <sys/timerfd.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <map>
 
 #include "am_base_include.h"
 #include "am_log.h"
@@ -30,6 +39,13 @@
 #include "am_base_event_plugin.h"
 #include "am_key_input_config.h"
 #include "am_key_input.h"
+
+#include <time.h>
+#include <linux/input.h>
+#include <sys/timerfd.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 
 #define HW_TIMER ((const char*)"/proc/ambarella/ambarella_hwtimer")
 
@@ -44,37 +60,21 @@ AMIEventPlugin* AMKeyInput::create(EVENT_MODULE_ID mid)
   if (result && result->construct() < 0) {
     ERROR("Failed to create an instance of AMKeyInput");
     delete result;
-    result = NULL;
+    result = nullptr;
   }
 
   return result;
 }
 
 AMKeyInput::AMKeyInput(EVENT_MODULE_ID mid) :
-    m_plugin_id(mid),
-    m_seq_num(0UL),
-    m_hw_timer_fd(-1),
-    m_long_pressed_time(LONG_PRESS_MAX_TIME),
-    m_event_capture_thread(NULL),
-    m_event_timer_thread(NULL),
-    m_key_event_running(false),
-    m_wait_key_pressed(false),
-    m_key_event_timer(false),
-    m_key_input_mutex(NULL),
-    m_key_map_mutex(NULL),
-    m_callback_map_mutex(NULL),
-    m_key_pressed_cond(NULL),
-    m_key_released_cond(NULL),
-    m_key_input_config(NULL),
-    m_conf_path(ORYX_EVENT_CONF_DIR)
+  m_plugin_id(mid)
 {
-
 }
 
 AMKeyInput::~AMKeyInput()
 {
   /*save config*/
-  if (!sync_config()) {
+  if (AM_UNLIKELY(!sync_config())) {
     ERROR("save config file failed!\n");
   }
 
@@ -90,52 +90,39 @@ AMKeyInput::~AMKeyInput()
     m_key_released_cond->signal_all();
   }
 
-  if (AM_LIKELY(m_event_capture_thread)) {
-    m_event_capture_thread->destroy();
-  }
-
-  if (AM_LIKELY(m_event_timer_thread)) {
-    m_event_timer_thread->destroy();
-  }
-
-  if (AM_LIKELY(m_key_map_mutex)) {
-    m_key_map_mutex->destroy();
-  }
-
-  if (AM_LIKELY(m_callback_map_mutex)) {
-    m_callback_map_mutex->destroy();
-  }
-
-  if (AM_LIKELY(m_key_input_mutex)) {
-    m_key_input_mutex->destroy();
-  }
-
-  if (AM_LIKELY(m_key_pressed_cond)) {
-    m_key_pressed_cond->destroy();
-  }
-
-  if (AM_LIKELY(m_key_released_cond)) {
-    m_key_released_cond->destroy();
-  }
-
-  if (m_key_input_config) {
-    delete m_key_input_config;
-  }
+  AM_DESTROY(m_event_capture_thread);
+  AM_DESTROY(m_event_timer_thread);
+  AM_DESTROY(m_key_map_mutex);
+  AM_DESTROY(m_callback_map_mutex);
+  AM_DESTROY(m_key_input_mutex);
+  AM_DESTROY(m_key_pressed_cond);
+  AM_DESTROY(m_key_released_cond);
+  delete m_key_input_config;
 
   if (AM_LIKELY(m_hw_timer_fd >= 0)) {
     close(m_hw_timer_fd);
-    m_hw_timer_fd = -1;
+  }
+  if (AM_LIKELY(EVT_CAP_CTRL_R >= 0)) {
+    close(EVT_CAP_CTRL_R);
+  }
+  if (AM_LIKELY(EVT_CAP_CTRL_W >= 0)) {
+    close(EVT_CAP_CTRL_W);
   }
 }
 
 int32_t AMKeyInput::construct()
 {
-  KeyInputConfig *key_config = NULL;
+  KeyInputConfig *key_config = nullptr;
   if (AM_LIKELY(m_hw_timer_fd < 0)) {
     if (AM_UNLIKELY((m_hw_timer_fd = open(HW_TIMER, O_RDONLY)) < 0)) {
       ERROR("Failed to open %s: %s", HW_TIMER, strerror(errno));
       return -1;
     }
+  }
+  if (AM_UNLIKELY(socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP,
+                             m_event_cap_ctrl_sock))) {
+    PERROR("socketpair");
+    return -1;
   }
 
   m_key_map_mutex = AMMutex::create(false);
@@ -189,7 +176,7 @@ int32_t AMKeyInput::construct()
 
 bool AMKeyInput::get_key_state(AM_KEY_CODE key_code, AM_KEY_STATE *state)
 {
-  AUTO_LOCK(m_key_input_mutex);
+  AUTO_MTX_LOCK(m_key_input_mutex);
   if (AM_UNLIKELY(!m_key_event_running)) {
     ERROR("Key input plugin is not running!");
     return false;
@@ -214,7 +201,7 @@ bool AMKeyInput::wait_key_pressed(AM_KEY_CODE key_code, AM_KEY_STATE *pResult)
 {
   struct timeval pressed_time;
 
-  AUTO_LOCK(m_key_input_mutex);
+  AUTO_MTX_LOCK(m_key_input_mutex);
   if (AM_UNLIKELY(!m_key_event_running)) {
     ERROR("Key input plugin is not running!");
     return false;
@@ -235,7 +222,7 @@ bool AMKeyInput::wait_key_pressed(AM_KEY_CODE key_code, AM_KEY_STATE *pResult)
     if (it != m_pressed_key_map.end() && it->second.key_state == AM_KEY_UP) {
       *pResult =
           time_diff(&pressed_time, &it->second.time_stamp)
-              < m_long_pressed_time ? AM_KEY_CLICKED : AM_KEY_LONG_PREESED;
+              < m_long_pressed_time ? AM_KEY_CLICKED : AM_KEY_LONG_PRESSED;
       m_key_map_mutex->unlock();
       break;
     }
@@ -247,8 +234,11 @@ bool AMKeyInput::wait_key_pressed(AM_KEY_CODE key_code, AM_KEY_STATE *pResult)
 bool AMKeyInput::set_key_callback(AM_KEY_CODE key_code,
                                   AM_EVENT_CALLBACK callback)
 {
-  AUTO_LOCK(m_key_input_mutex);
+  AUTO_MTX_LOCK(m_key_input_mutex);
   m_key_map_mutex->lock();
+  if (key_code == -1) {
+    m_default_callback = callback;
+  }
   m_key_callback_map[key_code] = callback;
   m_key_map_mutex->unlock();
   return true;
@@ -256,7 +246,7 @@ bool AMKeyInput::set_key_callback(AM_KEY_CODE key_code,
 
 bool AMKeyInput::set_long_pressed_time(uint32_t ms)
 {
-  AUTO_LOCK(m_key_input_mutex);
+  AUTO_MTX_LOCK(m_key_input_mutex);
   if (ms > LONG_PRESS_MAX_TIME || ms < LONG_PRESS_MIN_TIME) {
     ERROR("press time is out of valid range");
     return false;
@@ -268,13 +258,13 @@ bool AMKeyInput::set_long_pressed_time(uint32_t ms)
 
 uint32_t AMKeyInput::get_long_pressed_time()
 {
-  AUTO_LOCK(m_key_input_mutex);
+  AUTO_MTX_LOCK(m_key_input_mutex);
   return m_long_pressed_time;
 }
 
 bool AMKeyInput::sync_config()
 {
-  AUTO_LOCK(m_key_input_mutex);
+  AUTO_MTX_LOCK(m_key_input_mutex);
   /*save config file*/
   KeyInputConfig *key_config;
   key_config = m_key_input_config->get_config(m_conf_path);
@@ -289,9 +279,9 @@ bool AMKeyInput::sync_config()
 
 bool AMKeyInput::start_plugin()
 {
-  AUTO_LOCK(m_key_input_mutex);
+  AUTO_MTX_LOCK(m_key_input_mutex);
   if (!m_key_event_running) {
-    m_event_capture_thread = AMThread::create("key_input_event_capture",
+    m_event_capture_thread = AMThread::create("KeyInput.cap",
                                               static_key_event_capture,
                                               (void*) this);
     if (AM_UNLIKELY(!m_event_capture_thread)) {
@@ -304,7 +294,7 @@ bool AMKeyInput::start_plugin()
   }
 
   if (!m_key_event_timer) {
-    m_event_timer_thread = AMThread::create("key_input_event_timer",
+    m_event_timer_thread = AMThread::create("KeyInput.timer",
                                             static_key_event_timer,
                                             (void*) this);
     if (AM_UNLIKELY(!m_event_timer_thread)) {
@@ -322,32 +312,43 @@ bool AMKeyInput::start_plugin()
 
 bool AMKeyInput::stop_plugin()
 {
-  AUTO_LOCK(m_key_input_mutex);
-  if (!m_key_event_running || !m_wait_key_pressed || !m_key_event_timer) {
-    NOTICE("key input plugin is already stopped!");
-    return true;
-  }
+  AUTO_MTX_LOCK(m_key_input_mutex);
+  if (!m_key_event_running && !m_wait_key_pressed && !m_key_event_timer) {
+    NOTICE("key input plugin has been stopped already!");
+  } else {
+    int ret = 0;
+    int count = 0;
+    char cmd[1] = {'q'};
 
-  m_key_event_running = false;
-  m_wait_key_pressed = false;
-  m_key_event_timer = false;
+    INFO("stop key input plugin!");
 
-  if (AM_LIKELY(m_key_pressed_cond)) {
-    m_key_pressed_cond->signal();
-  }
+    m_key_event_running = false;
+    m_key_event_timer = false;
+    m_wait_key_pressed = false;
 
-  if (AM_LIKELY(m_key_released_cond)) {
-    m_key_released_cond->signal_all();
-  }
+    do {
+      ret = write(EVT_CAP_CTRL_W, cmd, sizeof(cmd));
+      if (AM_UNLIKELY(ret <= 0)) {
+        if (AM_LIKELY((errno != EAGAIN) &&
+                      (errno != EWOULDBLOCK) &&
+                      (errno != EINTR))) {
+          ERROR("Failed to send stop command(%c) to Key Event Capture Thread!",
+                cmd);
+          break;
+        }
+      }
+    }while((++ count < 5) && ((ret > 0) && (ret < (int)sizeof(cmd))));
 
-  if (AM_LIKELY(m_event_capture_thread)) {
-    m_event_capture_thread->destroy();
-    m_event_capture_thread = NULL;
-  }
+    if (AM_LIKELY(m_key_pressed_cond)) {
+      m_key_pressed_cond->signal();
+    }
 
-  if (AM_LIKELY(m_event_timer_thread)) {
-    m_event_timer_thread->destroy();
-    m_event_timer_thread = NULL;
+    if (AM_LIKELY(m_key_released_cond)) {
+      m_key_released_cond->signal_all();
+    }
+
+    AM_DESTROY(m_event_capture_thread);
+    AM_DESTROY(m_event_timer_thread);
   }
 
   return true;
@@ -357,7 +358,7 @@ bool AMKeyInput::set_plugin_config(EVENT_MODULE_CONFIG *pConfig)
 {
   bool ret = true;
 
-  if (pConfig == NULL || pConfig->value == NULL) {
+  if (pConfig == nullptr || pConfig->value == nullptr) {
     ERROR("Invalid argument!\n");
     return false;
   }
@@ -387,7 +388,7 @@ bool AMKeyInput::get_plugin_config(EVENT_MODULE_CONFIG *pConfig)
 {
   bool ret = true;
 
-  if (pConfig == NULL || pConfig->value == NULL) {
+  if (pConfig == nullptr || pConfig->value == nullptr) {
     ERROR("Invalid argument!\n");
     return false;
   }
@@ -398,9 +399,8 @@ bool AMKeyInput::get_plugin_config(EVENT_MODULE_CONFIG *pConfig)
                           &((AM_KEY_INPUT_EVENT*) pConfig->value)->key_state);
       break;
     case AM_WAIT_KEY_PRESSED:
-      ret =
-          wait_key_pressed(((AM_KEY_INPUT_EVENT*) pConfig->value)->key_value,
-                           &((AM_KEY_INPUT_EVENT*) pConfig->value)->key_state);
+      ret = wait_key_pressed(((AM_KEY_INPUT_EVENT*) pConfig->value)->key_value,
+                            &((AM_KEY_INPUT_EVENT*) pConfig->value)->key_state);
       break;
     case AM_LONG_PRESSED_TIME:
       *(uint32_t *) pConfig->value = get_long_pressed_time();
@@ -421,14 +421,15 @@ EVENT_MODULE_ID AMKeyInput::get_plugin_ID()
 
 void AMKeyInput::key_event_timer()
 {
-  AUTO_LOCK(m_key_map_mutex);
+  AUTO_MTX_LOCK(m_key_map_mutex);
   m_key_event_timer = true;
 
   while (m_key_event_timer) {
     /* wait key pressed event*/
     m_key_pressed_cond->wait(m_key_map_mutex);
     /* wait key released event if time out*/
-    if (!m_key_released_cond->wait(m_key_map_mutex, m_long_pressed_time)) {
+    if (m_key_event_timer &&
+        !m_key_released_cond->wait(m_key_map_mutex, m_long_pressed_time)) {
       std::map<AM_KEY_CODE, AM_KEY_NODE>::iterator it =
           m_pressed_key_map.begin();
       for (; it != m_pressed_key_map.end(); it ++) {
@@ -443,7 +444,7 @@ void AMKeyInput::key_event_timer()
             msg.seq_num = m_seq_num ++;
             msg.pts = get_current_pts();
             msg.key_event.key_value = it->first;
-            msg.key_event.key_state = AM_KEY_LONG_PREESED;
+            msg.key_event.key_state = AM_KEY_LONG_PRESSED;
             it_callback->second(&msg);
           }
           it->second.key_state = AM_KEY_UP;
@@ -470,6 +471,7 @@ inline void AMKeyInput::event_process(const struct input_event &event)
       it->second = key_node;
     } else {
       m_pressed_key_map[event.code] = key_node;
+      m_key_callback_map[event.code] = m_default_callback;
     }
 
     m_key_pressed_cond->signal();
@@ -514,47 +516,73 @@ void AMKeyInput::key_event_capture()
 {
   struct input_event event;
   fd_set rfds;
+  fd_set allfds;
+  int maxfd = -1;
   int ret = 0;
-  int i = 0;
-  char str[64] =
-  { 0 };
-  int fd[EVENT_MAX_CHANNEL];
-  m_key_event_running = true;
+  char str[64] = { 0 };
+  int fd[EVENT_MAX_CHANNEL] = {-1};
+  bool run = true;
 
-  for (i = 0; i < EVENT_MAX_CHANNEL; i ++) {
+  FD_ZERO(&allfds);
+  FD_ZERO(&rfds);
+
+  FD_SET(EVT_CAP_CTRL_R, &allfds);
+  maxfd = AM_MAX(maxfd, EVT_CAP_CTRL_R);
+
+  for (int i = 0; i < EVENT_MAX_CHANNEL; i ++) {
     sprintf(str, "%s%d", EVENT_PATH, i);
     fd[i] = open(str, O_NONBLOCK);
     if (AM_UNLIKELY(fd[i] < 0)) {
-      printf("open %s error", str);
-      goto done;
+      WARN("open %s error: %s", str, strerror(errno));
+      continue;
+    } else {
+      FD_SET(fd[i], &allfds);
+      maxfd = AM_MAX(maxfd, fd[i]);
+      m_key_event_running = true;
     }
   }
 
-  while (m_key_event_running) {
-    struct timeval timeout =
-    { 0, 200000 };
-    FD_ZERO(&rfds);
-    for (i = 0; i < EVENT_MAX_CHANNEL; i ++) {
-      FD_SET(fd[i], &rfds);
-    }
+  if (m_key_event_running == false) {
+    WARN("open event device failed!");
+    return;
+  }
 
-    ret = select(FD_SETSIZE, &rfds, NULL, NULL, &timeout);
+  while (run && m_key_event_running) {
+    struct timeval timeout = { 0, 200000 };
+    rfds = allfds;
+
+    ret = select(maxfd + 1, &rfds, nullptr, nullptr, &timeout);
     if (ret < 0) {
-      perror("select error!");
-      if (AM_UNLIKELY(errno == EINTR)) {
-        continue;
+      if (AM_UNLIKELY(errno != EINTR)) {
+        PERROR("select");
+        m_key_event_running = false;
       }
-      goto done;
+      continue;
     } else if (AM_LIKELY(ret == 0)) {
       continue;
     }
 
-    for (i = 0; i < EVENT_MAX_CHANNEL; i ++) {
+    if (AM_LIKELY(FD_ISSET(EVT_CAP_CTRL_R, &rfds))) {
+      char cmd[1] = {0};
+      if (AM_LIKELY(read(EVT_CAP_CTRL_R, cmd, sizeof(cmd)) < 0)) {
+        ERROR("Failed to read Key Event Capture Control Command! Quit anyway!");
+        cmd[0] = 'q';
+      } else {
+        NOTICE("Received command from Key Event Capture Control Socket: %c",
+               cmd[0]);
+      }
+      switch(cmd[0]) {
+        case 'q': run = false; break;
+        default:break;
+      }
+    }
+    for (int i = 0; i < EVENT_MAX_CHANNEL; i ++) {
       if (AM_LIKELY(FD_ISSET(fd[i], &rfds))) {
         ret = read(fd[i], &event, sizeof(event));
         if (AM_UNLIKELY(ret < 0)) {
-          printf("read fd[%d] error \n", i);
-          goto done;
+          ERROR("read fd[%d] error: %s", i, strerror(errno));
+          m_key_event_running= false;
+          break;
         }
 
         if (event.type != EV_KEY) {
@@ -566,13 +594,12 @@ void AMKeyInput::key_event_capture()
     }
   }
 
-  done: m_key_event_running = false;
-  for (i = 0; i < EVENT_MAX_CHANNEL; i ++) {
-    close(fd[i]);
+  for (int i = 0; i < EVENT_MAX_CHANNEL; i ++) {
+    if (fd[i] >= 0) {
+      close(fd[i]);
+    }
     fd[i] = -1;
   }
-
-  return;
 }
 
 void AMKeyInput::static_key_event_capture(void* arg)
@@ -603,7 +630,7 @@ inline uint64_t AMKeyInput::get_current_pts()
     if (AM_UNLIKELY(read(m_hw_timer_fd, pts, sizeof(pts)) < 0)) {
       PERROR("read");
     } else {
-      cur_pts = strtoull((const char*) pts, (char**) NULL, 10);
+      cur_pts = strtoull((const char*) pts, (char**) nullptr, 10);
     }
   }
 

@@ -156,18 +156,18 @@ enum {
 
 /* Bluetooth unaligned access */
 #define bt_get_unaligned(ptr)			\
-({						\
+__extension__ ({				\
 	struct __attribute__((packed)) {	\
-		typeof(*(ptr)) __v;		\
-	} *__p = (typeof(__p)) (ptr);		\
+		__typeof__(*(ptr)) __v;		\
+	} *__p = (__typeof__(__p)) (ptr);	\
 	__p->__v;				\
 })
 
 #define bt_put_unaligned(val, ptr)		\
 do {						\
 	struct __attribute__((packed)) {	\
-		typeof(*(ptr)) __v;		\
-	} *__p = (typeof(__p)) (ptr);		\
+		__typeof__(*(ptr)) __v;		\
+	} *__p = (__typeof__(__p)) (ptr);	\
 	__p->__v = (val);			\
 } while(0)
 
@@ -343,6 +343,16 @@ typedef struct {
 	uint8_t data[16];
 } uint128_t;
 
+static inline void bswap_128(const void *src, void *dst)
+{
+	const uint8_t *s = (const uint8_t *) src;
+	uint8_t *d = (uint8_t *) dst;
+	int i;
+
+	for (i = 0; i < 16; i++)
+		d[15 - i] = s[i];
+}
+
 #if __BYTE_ORDER == __BIG_ENDIAN
 
 #define ntoh64(x) (x)
@@ -354,10 +364,7 @@ static inline void ntoh128(const uint128_t *src, uint128_t *dst)
 
 static inline void btoh128(const uint128_t *src, uint128_t *dst)
 {
-	int i;
-
-	for (i = 0; i < 16; i++)
-		dst->data[15 - i] = src->data[i];
+	bswap_128(src, dst);
 }
 
 #else
@@ -375,10 +382,7 @@ static inline uint64_t ntoh64(uint64_t n)
 
 static inline void ntoh128(const uint128_t *src, uint128_t *dst)
 {
-	int i;
-
-	for (i = 0; i < 16; i++)
-		dst->data[15 - i] = src->data[i];
+	bswap_128(src, dst);
 }
 
 static inline void btoh128(const uint128_t *src, uint128_t *dst)

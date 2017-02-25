@@ -4,12 +4,29 @@
  * History:
  *   2014-12-19 - [Shiming Dong] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co,Ltd.
+ * Copyright (c) 2015 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -22,6 +39,7 @@
 #include "am_rtsp_server_config.h"
 #include "am_rtsp_client_session.h"
 
+#include "am_io.h"
 #include "am_event.h"
 #include "am_mutex.h"
 #include "am_thread.h"
@@ -29,6 +47,7 @@
 
 #include <sys/un.h>
 #include <sys/time.h>
+#include <sys/epoll.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -93,8 +112,8 @@ AMIRtspServer* AMRtspServer::get_instance()
 bool AMRtspServer::start()
 {
   if (AM_LIKELY(m_run == false)) {
-    m_run = (start_server_thread() && start_connect_unix_thread()
-             && setup_server_socket_tcp(m_rtsp_config->rtsp_server_port));
+    m_run = (setup_server_socket_tcp(m_rtsp_config->rtsp_server_port) &&
+             start_connect_unix_thread() && start_server_thread());
     m_event->signal();
   }
 
@@ -104,15 +123,20 @@ bool AMRtspServer::start()
 
 void AMRtspServer::stop()
 {
-  destroy_all_client_session();
-
+  abort_all_client_session();
   while (m_run) {
     INFO("Sending stop to %s", m_server_thread->name());
     if (AM_LIKELY(SERVER_CTRL_W >= 0)) {
-      ServerCtrlMsg msg;
-      msg.code = CMD_STOP_ALL;
-      msg.data = 0;
-      write(SERVER_CTRL_W, &msg, sizeof(msg));
+      ServerCtrlMsg msg =
+      {
+        .code = CMD_STOP_ALL,
+        .data = 0
+      };
+      ssize_t ret = am_write(SERVER_CTRL_W, &msg, sizeof(msg), 10);
+      if (AM_UNLIKELY(ret != (ssize_t)sizeof(msg))) {
+        ERROR("Failed to send stop command to RTSP.server thread! %s",
+              strerror(errno));
+      }
       usleep(30000);
     }
   }
@@ -120,10 +144,16 @@ void AMRtspServer::stop()
   while (m_unix_sock_run) {
     INFO("Sending stop to %s", m_sock_thread->name());
     if (AM_LIKELY(UNIX_SOCK_CTRL_W >= 0)) {
-      ServerCtrlMsg msg;
-      msg.code = CMD_STOP_ALL;
-      msg.data = 0;
-      write(UNIX_SOCK_CTRL_W, &msg, sizeof(msg));
+      ServerCtrlMsg msg =
+      {
+        .code = CMD_STOP_ALL,
+        .data = 0
+      };
+      ssize_t ret = am_write(UNIX_SOCK_CTRL_W, &msg, sizeof(msg), 10);
+      if (AM_UNLIKELY(ret != (ssize_t)sizeof(msg))) {
+        ERROR("Failed to send stop command to RTSP.Unix thread! %s",
+              strerror(errno));
+      }
       usleep(30000);
     }
   }
@@ -168,12 +198,16 @@ uint32_t AMRtspServer::get_random_number()
 
 void AMRtspServer::static_server_thread(void *data)
 {
-  ((AMRtspServer*)data)->server_thread();
+  AMRtspServer *svr = ((AMRtspServer*)data);
+  svr->m_rtsp_config->use_epoll ?
+      svr->server_thread_epoll() : svr->server_thread();
 }
 
 void AMRtspServer::static_unix_thread(void *data)
 {
-  ((AMRtspServer*)data)->connect_unix_thread();
+  AMRtspServer *svr = ((AMRtspServer*)data);
+  svr->m_rtsp_config->use_epoll ?
+      svr->connect_unix_thread_epoll() : svr->connect_unix_thread();
 }
 
 void AMRtspServer::server_thread()
@@ -193,70 +227,12 @@ void AMRtspServer::server_thread()
 
     if (AM_LIKELY(select(maxfd + 1, &fdset, NULL, NULL, NULL) > 0)) {
       if (FD_ISSET(SERVER_CTRL_R, &fdset)) {
-        ServerCtrlMsg msg  = {0};
-        uint32_t   read_cnt = 0;
-        ssize_t   read_ret = 0;
-        do {
-          read_ret = read(SERVER_CTRL_R, &msg, sizeof(msg));
-        } while ((++ read_cnt < 5) && ((read_ret == 0) || ((read_ret < 0) &&
-                 ((errno == EAGAIN) || (errno == EWOULDBLOCK) ||
-                  (errno == EINTR)))));
-        if (AM_UNLIKELY(read_ret < 0)) {
-          PERROR("read");
-        } else {
-          if (msg.code == CMD_DEL_CLIENT) {
-            AUTO_LOCK(m_client_mutex);
-            AMRtspClientMap::iterator iter = m_client_map.find(msg.data);
-            if (AM_LIKELY(iter != m_client_map.end())) {
-              AMRtspClientSession *&client = iter->second;
-              NOTICE("RTSP server is asked to delete client %s",
-                     client->m_client_name.c_str());
-              delete client;
-              m_client_map.erase(msg.data);
-            }
-          } else if ((msg.code == CMD_ABRT_ALL) || (msg.code == CMD_STOP_ALL)) {
-            AUTO_LOCK(m_client_mutex);
-            close(m_srv_sock_tcp);
-
-            m_srv_sock_tcp = -1;
-            switch (msg.code) {
-              case CMD_ABRT_ALL:
-                ERROR("Fatal error occurred, RTSP server abort!");
-                break;
-              case CMD_STOP_ALL:
-                m_run = false;
-                NOTICE("RTSP server received stop signal!");
-                break;
-              default:
-                break;
-            }
-            break;
-          }
+        if (AM_UNLIKELY(!process_ctrl_data(SERVER_CTRL_R))) {
+          break;
         }
       } else if (FD_ISSET(m_srv_sock_tcp, &fdset)) {
-        AUTO_LOCK(m_client_mutex);
-        AMRtspClientSession *session = new AMRtspClientSession(
-            this, (m_rtsp_config->rtp_stream_port_base +
-                   m_client_map.size() * AM_RTP_MEDIA_NUM * 2));
-        if (AM_LIKELY(session)) {
-          bool need_abort = false;
-          if (AM_UNLIKELY(!session->init_client_session(m_srv_sock_tcp))) {
-            ERROR("Failed to initialize client session");
-            need_abort = true;
-          } else if (AM_LIKELY(m_client_map.size() <
-                               m_rtsp_config->max_client_num)) {
-            m_client_map[session->m_identify] = session;
-          } else {
-            NOTICE("Maximum client number(%u) has reached!",
-                   m_rtsp_config->max_client_num);
-            need_abort = true;
-          }
-          if (AM_UNLIKELY(need_abort)) {
-            abort_client(*session);
-            delete session;
-          }
-        } else {
-          ERROR("Failed to create AMRtspClientSession!");
+        if (AM_UNLIKELY(!process_client_connect_request(m_srv_sock_tcp))) {
+          break;
         }
       }
     } else {
@@ -265,6 +241,106 @@ void AMRtspServer::server_thread()
         break;
       }
     }
+  }
+
+  if (AM_UNLIKELY(m_run)) {
+    ERROR("RTSP Server exited abnormally.");
+  } else {
+    INFO("RTSP Server exit mainloop.");
+  }
+  m_run = false;
+}
+
+void AMRtspServer::server_thread_epoll()
+{
+  sigset_t mask;
+  sigset_t mask_orig;
+  struct epoll_event ev[2];
+  int epfd = epoll_create1(EPOLL_CLOEXEC);
+
+  do {
+    if (AM_UNLIKELY(epfd < 0)) {
+      PERROR("epoll_create1");
+      m_run = false;
+      break;
+    }
+
+    ev[0].data.fd = m_srv_sock_tcp;
+    ev[0].events  = EPOLLIN | EPOLLRDHUP;
+    if (AM_UNLIKELY(epoll_ctl(epfd, EPOLL_CTL_ADD,
+                              m_srv_sock_tcp, &ev[0]) < 0)) {
+      PERROR("epoll_ctrl EPOLL_CTL_ADD m_srv_sock_tcp");
+      m_run = false;
+      break;
+    }
+
+    ev[1].data.fd = SERVER_CTRL_R;
+    ev[1].events  = EPOLLIN | EPOLLRDHUP;
+    if (AM_UNLIKELY(epoll_ctl(epfd, EPOLL_CTL_ADD,
+                              SERVER_CTRL_R, &ev[1]) < 0)) {
+      PERROR("epoll_ctrl EPOLL_CTL_ADD SERVER_CTRL_R");
+      m_run = false;
+      break;
+    }
+  }while(0);
+
+  if (AM_LIKELY(m_run)) {
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGINT);
+    sigaddset(&mask, SIGTERM);
+    sigaddset(&mask, SIGQUIT);
+    if (AM_UNLIKELY(sigprocmask(SIG_BLOCK, &mask, &mask_orig))) {
+      PERROR("sigprocmask");
+    }
+  }
+
+  m_event->wait();
+
+  while(m_run) {
+    int nfds = epoll_pwait(epfd, ev, sizeof(ev)/sizeof(epoll_event), -1, &mask);
+    if (AM_LIKELY(nfds > 0)) {
+      bool need_break = false;
+      for (int i = 0; i < nfds; ++ i) {
+        if (AM_LIKELY(ev[i].events & EPOLLIN)) {
+          if (ev[i].data.fd == SERVER_CTRL_R) {
+            need_break = !process_ctrl_data(SERVER_CTRL_R);
+          } else if (ev[i].data.fd == m_srv_sock_tcp) {
+            need_break = !process_client_connect_request(m_srv_sock_tcp);
+          } else {
+            ERROR("Unknown socket!");
+          }
+        } else if (AM_LIKELY((ev[i].events & EPOLLHUP) ||
+                             (ev[i].events & EPOLLRDHUP))) {
+          if (ev[i].data.fd == SERVER_CTRL_R) {
+            WARN("SERVER_CTRL socket is closed!");
+          } else if (ev[i].data.fd == m_srv_sock_tcp) {
+            ERROR("Server is down!");
+          } else {
+            ERROR("Unknown socket!");
+          }
+        } else {
+          if (ev[i].data.fd == SERVER_CTRL_R) {
+            PERROR("SERVER_CTRL");
+          } else if (ev[i].data.fd == m_srv_sock_tcp) {
+            PERROR("RTSP");
+          } else {
+            ERROR("Unknown socket!");
+          }
+        }
+      }
+      if (AM_LIKELY(need_break)) {
+        break;
+      }
+    } else {
+      if (AM_UNLIKELY(errno != EINTR)) {
+        PERROR("epoll_pwait");
+        break;
+      }
+    }
+  }
+
+  if (AM_LIKELY(epfd >= 0)) {
+    close(epfd);
   }
 
   if (AM_UNLIKELY(m_run)) {
@@ -317,34 +393,11 @@ void AMRtspServer::connect_unix_thread()
                     &fdset, NULL, NULL, tm);
     if (AM_LIKELY(retval > 0)) {
       if (FD_ISSET(UNIX_SOCK_CTRL_R, &fdset)) {
-        ServerCtrlMsg msg = {0};
-        uint32_t read_cnt = 0;
-        ssize_t  read_ret = 0;
-        do {
-          read_ret = read(UNIX_SOCK_CTRL_R, &msg, sizeof(msg));
-        }while ((++ read_cnt < 5) && ((read_ret == 0) || ((read_ret < 0) &&
-                ((errno == EAGAIN) || (errno == EWOULDBLOCK) ||
-                    (errno == EINTR)))));
-
-        if (AM_UNLIKELY(read_ret < 0)) {
-          PERROR("read");
-        } else if (AM_LIKELY((msg.code == CMD_ABRT_ALL) ||
-                             (msg.code == CMD_STOP_ALL))) {
-          switch (msg.code) {
-            case CMD_ABRT_ALL:
-              ERROR("Fatal error occurred, RTSP.unix abort!");
-              break;
-            case CMD_STOP_ALL:
-              m_unix_sock_run = false;
-              NOTICE("RTSP.unix received stop signal!");
-              break;
-            default:
-              break;
-          }
-          isok = false;
+        isok = process_ctrl_data(UNIX_SOCK_CTRL_R);
+        if (AM_LIKELY(!isok)) {
           NOTICE("Close unix socket connection with RTP Muxer!");
           unix_socket_close();
-          break; /* break while() */
+          break;
         }
       } else if (FD_ISSET(m_unix_sock_fd, &fdset)) {
         INFO("Received message from RTP muxer!");
@@ -363,9 +416,165 @@ void AMRtspServer::connect_unix_thread()
     if (AM_UNLIKELY(!isok)) {
       NOTICE("Close unix socket connection with RTP Muxer!");
       unix_socket_close();
+      NOTICE("Destroy all clients!");
+      abort_all_client_session(false);
     }
   } /* while */
 
+  if (AM_LIKELY(m_unix_sock_run)) {
+    INFO("RTSP.Unix exits due to server abort!");
+  } else {
+    INFO("RTSP.Unix exits mainloop!");
+  }
+  m_unix_sock_run = false;
+}
+
+void AMRtspServer::connect_unix_thread_epoll()
+{
+  sigset_t mask;
+  sigset_t mask_orig;
+  struct epoll_event ev[2];
+  int epfd = epoll_create1(EPOLL_CLOEXEC);
+  int fdcount = 0;
+
+  m_unix_sock_run = true;
+  do {
+    if (AM_UNLIKELY(epfd < 0)) {
+      PERROR("epoll_create1");
+      m_unix_sock_run = false;
+      break;
+    }
+
+    struct epoll_event event;
+    event.data.fd = UNIX_SOCK_CTRL_R;
+    event.events  = EPOLLIN | EPOLLRDHUP;
+    if (AM_UNLIKELY(epoll_ctl(epfd, EPOLL_CTL_ADD,
+                              UNIX_SOCK_CTRL_R, &event) < 0)) {
+      PERROR("epoll_ctrl EPOLL_CTL_ADD UNIX_SOCK_CTRL_R");
+      m_unix_sock_run = false;
+      break;
+    }
+    fdcount = 1;
+  }while(0);
+
+  if (AM_LIKELY(m_unix_sock_run)) {
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGINT);
+    sigaddset(&mask, SIGTERM);
+    sigaddset(&mask, SIGQUIT);
+    if (AM_UNLIKELY(sigprocmask(SIG_BLOCK, &mask, &mask_orig))) {
+      PERROR("sigprocmask");
+    }
+  }
+
+  while (m_unix_sock_run) {
+    bool       isok = true;
+    bool need_break = false;
+    int        nfds = -1;
+    int     timeout = m_rtsp_config->rtsp_retry_interval;
+
+    if (AM_LIKELY(m_unix_sock_fd >= 0)) {
+      if (AM_UNLIKELY(!m_unix_sock_con)) { /* Just connected */
+        int send_bytes = -1;
+        AMRtpClientMsgProto proto_msg;
+        proto_msg.proto = AM_RTP_CLIENT_PROTO_RTSP;
+
+        if (AM_UNLIKELY((send_bytes = send(m_unix_sock_fd,
+                                           &proto_msg,
+                                           sizeof(proto_msg),
+                                           0)) == -1)) {
+          ERROR("Send message to RTP muxer error!");
+          close(m_unix_sock_fd);
+          m_unix_sock_fd = -1;
+          m_unix_sock_con = false;
+        } else {
+          INFO("Send %d bytes protocol messages to RTP muxer.", send_bytes);
+          m_unix_sock_con = true;
+        }
+        if (AM_LIKELY(m_unix_sock_con)) {
+          struct epoll_event event;
+          event.data.fd = m_unix_sock_fd;
+          event.events  = EPOLLIN | EPOLLRDHUP;
+          if (AM_UNLIKELY(epoll_ctl(epfd, EPOLL_CTL_ADD,
+                                    m_unix_sock_fd, &event) < 0)) {
+            PERROR("epoll_ctrl EPOLL_CTL_ADD m_unix_sock_fd");
+            break;
+          }
+          fdcount = 2;
+        } else {
+          fdcount = 1;
+        }
+      }
+    } else {
+      fdcount = 1;
+    }
+
+    timeout = m_unix_sock_con ? -1 : m_rtsp_config->rtsp_retry_interval;
+    nfds = epoll_pwait(epfd, ev, fdcount, timeout, &mask);
+    switch(nfds) {
+      case -1: {
+        if (AM_UNLIKELY(errno != EINTR)) {
+          PERROR("epoll_wait");
+        }
+      }break;
+      case 0: break; /* Wait timed out */
+      default: {
+        for (int i = 0; i < nfds; ++ i) {
+          if (ev[i].events & EPOLLIN) {
+            if (ev[i].data.fd == UNIX_SOCK_CTRL_R) {
+              isok = process_ctrl_data(UNIX_SOCK_CTRL_R);
+              if (AM_LIKELY(!isok)) {
+                need_break = true;
+                NOTICE("Close unix socket connection with RTP Muxer!");
+              }
+            } else if ((ev[i].data.fd == m_unix_sock_fd) &&
+                       (m_unix_sock_fd >= 0)) {
+              INFO("Received message from RTP muxer!");
+              isok = recv_rtp_control_data();
+            }
+          } else if ((ev[i].events & EPOLLHUP) ||
+                     (ev[i].events & EPOLLRDHUP)) {
+            if (ev[i].data.fd == UNIX_SOCK_CTRL_R) {
+              NOTICE("RTSP.Unix Control socket is closed!");
+            } else if ((ev[i].data.fd == m_unix_sock_fd) &&
+                       (m_unix_sock_fd >= 0)) {
+              NOTICE("RTP Muxer closed its connection with RTSP server!");
+              isok = false;
+            }
+            if (AM_UNLIKELY(epoll_ctl(epfd, EPOLL_CTL_DEL,
+                                      m_unix_sock_fd, &ev[i]) < 0)) {
+              PERROR("epoll_ctl");
+            }
+          } else {
+            if (ev[i].data.fd == UNIX_SOCK_CTRL_R) {
+              PERROR("UNIX_SOCK_CTRL_R");
+            } else if ((ev[i].data.fd == m_unix_sock_fd) &&
+                       (m_unix_sock_fd >= 0)) {
+              NOTICE("Error occurred between RTP Muxer and RTSP Muxer!");
+              isok = false;
+            }
+          }
+        }
+      }break;
+    }
+    if (AM_UNLIKELY(!m_unix_sock_con)) {
+      m_unix_sock_fd = -1;
+      m_unix_sock_fd = unix_socket_conn(RTP_CONTROL_SOCKET);
+    }
+    if (AM_UNLIKELY(!isok)) {
+      NOTICE("Close UNIX socket connection with RTP Muxer!");
+      unix_socket_close();
+      NOTICE("Destroy all clients!");
+      abort_all_client_session(false);
+    }
+    if (AM_UNLIKELY(need_break)) {
+      break;
+    }
+  } /* while */
+
+  if (AM_LIKELY(epfd >= 0)) {
+    close(epfd);
+  }
   if (AM_LIKELY(m_unix_sock_run)) {
     INFO("RTSP.Unix exits due to server abort!");
   } else {
@@ -406,22 +615,32 @@ bool AMRtspServer::start_connect_unix_thread()
 
 void AMRtspServer::server_abort()
 {
-  destroy_all_client_session();
+  abort_all_client_session();
   while (m_run) {
     if (AM_LIKELY(SERVER_CTRL_W >= 0)) {
-      ServerCtrlMsg msg;
-      msg.code = CMD_ABRT_ALL;
-      msg.data = 0;
-      write(SERVER_CTRL_W, &msg, sizeof(msg));
+      ServerCtrlMsg msg = {
+        .code = CMD_ABRT_ALL,
+        .data = 0
+      };
+      ssize_t ret = am_write(SERVER_CTRL_W, &msg, sizeof(msg), 10);
+      if (AM_UNLIKELY(ret != (ssize_t)sizeof(msg))) {
+        ERROR("Failed to send abort command to RTSP.server thread! %s",
+              strerror(errno));
+      }
       usleep(30000);
     }
   }
   while (m_unix_sock_run) {
     if (AM_LIKELY(UNIX_SOCK_CTRL_W >= 0)) {
-      ServerCtrlMsg msg;
-      msg.code = CMD_ABRT_ALL;
-      msg.data = 0;
-      write(UNIX_SOCK_CTRL_W, &msg, sizeof(msg));
+      ServerCtrlMsg msg = {
+        .code = CMD_ABRT_ALL,
+        .data = 0
+      };
+      ssize_t ret = am_write(UNIX_SOCK_CTRL_W, &msg, sizeof(msg), 10);
+      if (AM_UNLIKELY(ret != (ssize_t)sizeof(msg))) {
+        ERROR("Failed to send abort command to RTSP.Unix thread! %s",
+              strerror(errno));
+      }
       usleep(30000);
     }
   }
@@ -469,16 +688,15 @@ bool AMRtspServer::setup_server_socket_tcp(uint16_t server_port)
   return ret;
 }
 
-void AMRtspServer::abort_client(AMRtspClientSession &client)
+void AMRtspServer::abort_client(AMRtspClientSession &client, bool wait)
 {
-  RtspRequest rtsp_req;
-  rtsp_req.set_command((char*)"TEARDOWN");
-
-  client.handle_client_request(rtsp_req);
+  uint32_t identifier = client.m_identify;
+  std::string name = client.m_client_name;
   client.abort_client();
-  while(client.m_client_thread->is_running()) {
-    NOTICE("Wait for client %s to exit", client.m_client_name.c_str());
-    usleep(10000);
+
+  while(wait && (m_client_map.end() != m_client_map.find(identifier))) {
+    NOTICE("Wait for client %s to be deleted!", name.c_str());
+    usleep(50000);
   }
 }
 
@@ -492,7 +710,7 @@ bool AMRtspServer::delete_client_session(uint32_t identify)
 
 bool AMRtspServer::find_client_and_kill(struct in_addr &addr)
 {
-  AUTO_LOCK(m_client_mutex);
+  AUTO_MTX_LOCK(m_client_mutex);
   AMRtspClientSession *client = NULL;
   for (AMRtspClientMap::iterator iter = m_client_map.begin();
       iter != m_client_map.end(); ++ iter) {
@@ -530,6 +748,7 @@ bool AMRtspServer::get_source_addr(sockaddr_in& client_addr,
     if (AM_UNLIKELY(!temp_if)) {
       ERROR("Can not find the source address!");
     }
+    freeifaddrs(interfaces);
   }
   return ret;
 }
@@ -572,7 +791,7 @@ int AMRtspServer::unix_socket_conn(const char *server_name)
     socklen_t len = 0;
     sockaddr_un un;
 
-    if ((fd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
+    if (AM_UNLIKELY((fd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)) {
       PERROR("unix domain socket");
       isok = false;
       break;
@@ -624,7 +843,8 @@ int AMRtspServer::unix_socket_conn(const char *server_name)
       close(fd);
       fd = -1;
     }
-    if (AM_UNLIKELY(unlink(rtsp_server_name) < 0)) {
+    if (AM_UNLIKELY(AMFile::exists(rtsp_server_name) &&
+                    (unlink(rtsp_server_name) < 0))) {
       PERROR("unlink");
     }
   }
@@ -659,7 +879,7 @@ bool AMRtspServer::recv_rtp_control_data()
       read_ret = recv(m_unix_sock_fd,
                       ((uint8_t*)&union_msg) + received,
                       sizeof(AMRtpClientMsgBase) - received,
-                      0);
+                      MSG_DONTWAIT);
       if (AM_LIKELY(read_ret > 0)) {
         received += read_ret;
       }
@@ -680,12 +900,13 @@ bool AMRtspServer::recv_rtp_control_data()
         read_ret = recv(m_unix_sock_fd,
                         ((uint8_t*) &union_msg) + received,
                         msg->length - received,
-                        0);
+                        MSG_DONTWAIT);
         if (AM_LIKELY(read_ret > 0)) {
           received += read_ret;
         }
       }
       if (AM_LIKELY(received == msg->length)) {
+        AUTO_MTX_LOCK(m_client_mutex);
         uint32_t identify = msg->session_id & 0xffff0000;
         AMRtspClientMap::iterator iter = m_client_map.find(identify);
         AMRtspClientSession *rtsp_client =
@@ -765,9 +986,6 @@ bool AMRtspServer::recv_rtp_control_data()
                   rtsp_client->kill_ack(AM_RTP_MEDIA_TYPE(i));
                 }
               }
-              if (AM_LIKELY(!rtsp_client->is_alive())) {
-                m_client_map.erase(iter);
-              }
             }
           }break;
           case AM_RTP_CLIENT_MSG_CLOSE: {
@@ -788,23 +1006,34 @@ bool AMRtspServer::recv_rtp_control_data()
                     (errno != EAGAIN))) {
         ERROR("Failed to receive message(recv: %s)!", strerror(errno));
         isok = false;
+      } else {
+        WARN("Tried %u times, but got only %u bytes of data(recv: %s)! ",
+             read_cnt, received, strerror(errno));
       }
     }
   }
   return isok;
 }
 
-void AMRtspServer::destroy_all_client_session(bool client_abort)
+void AMRtspServer::destroy_all_client_session()
+{
+  for (AMRtspClientMap::iterator iter = m_client_map.begin();
+      iter != m_client_map.end();) {
+    delete iter->second;
+    iter = m_client_map.erase(iter);
+  }
+  m_client_map.clear();
+}
+
+void AMRtspServer::abort_all_client_session(bool wait)
 {
   for (AMRtspClientMap::iterator iter = m_client_map.begin();
       iter != m_client_map.end(); ++ iter) {
-    if (AM_LIKELY(client_abort)) {
-      abort_client(*iter->second);
-    }
-    delete iter->second;
-    m_client_map.erase(iter);
+    /* Clients will be destroyed in server_thread()
+     * by command CMD_DEL_CLIENT
+     */
+    abort_client(*iter->second, wait);
   }
-  m_client_map.clear();
 }
 
 bool AMRtspServer::need_authentication()
@@ -854,6 +1083,160 @@ bool AMRtspServer::send_rtp_control_data(uint8_t *data, size_t len)
   return ret;
 }
 
+void AMRtspServer::reject_client(int fd)
+{
+  sockaddr_in addr;
+  uint32_t accept_cnt = 0;
+  socklen_t sock_len = sizeof(addr);
+  int client_tcp_sock = -1;
+  do {
+    client_tcp_sock = accept(fd, (sockaddr*)&(addr), &sock_len);
+  } while ((++ accept_cnt < 5) && (client_tcp_sock < 0) &&
+      ((errno == EAGAIN) || (errno == EWOULDBLOCK) ||
+          (errno == EINTR)));
+
+  if (AM_UNLIKELY(client_tcp_sock < 0)) {
+    PERROR("accept");
+  } else {
+    close(client_tcp_sock);
+    NOTICE("Closed connection from client: %s:%u",
+           inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
+  }
+}
+
+bool AMRtspServer::process_ctrl_data(int fd)
+{
+  ServerCtrlMsg msg = {0};
+  uint32_t read_cnt = 0;
+  ssize_t  read_ret = 0;
+  bool          ret = true;
+
+  do {
+    read_ret = read(fd, &msg, sizeof(msg));
+  } while ((++ read_cnt < 5) && ((read_ret == 0) || ((read_ret < 0) &&
+           ((errno == EAGAIN) || (errno == EINTR)))));
+  if (AM_UNLIKELY(read_ret < 0)) {
+    PERROR("read");
+  } else {
+    switch(msg.code) {
+      case CMD_DEL_CLIENT: {
+        if (AM_LIKELY(fd == SERVER_CTRL_R)) {
+          AUTO_MTX_LOCK(m_client_mutex);
+          AMRtspClientMap::iterator iter = m_client_map.find(msg.data);
+          if (AM_LIKELY(iter != m_client_map.end())) {
+            AMRtspClientSession *client = iter->second;
+            NOTICE("RTSP server is asked to delete client %s",
+                   client->m_client_name.c_str());
+            m_client_map.erase(msg.data);
+            if (AM_LIKELY(m_client_map.size())) {
+              NOTICE("%u %s still connected now!",
+                     m_client_map.size(),
+                     (m_client_map.size()>1) ? "clients are" : "client is");
+            } else {
+              NOTICE("No clients are connected now!");
+            }
+            delete client;
+          }
+        } else {
+          ERROR("Impossible!");
+        }
+      }break;
+      case CMD_ABRT_ALL:
+      case CMD_STOP_ALL: {
+        if (fd == SERVER_CTRL_R) {
+          AUTO_MTX_LOCK(m_client_mutex);
+          close(m_srv_sock_tcp);
+
+          m_srv_sock_tcp = -1;
+          switch (msg.code) {
+            case CMD_ABRT_ALL:
+              ERROR("Fatal error occurred, RTSP server abort!");
+              break;
+            case CMD_STOP_ALL:
+              m_run = false;
+              NOTICE("RTSP server received stop signal!");
+              break;
+            default:
+              break;
+          }
+        } else if (fd == UNIX_SOCK_CTRL_R) {
+          switch (msg.code) {
+            case CMD_ABRT_ALL:
+              ERROR("Fatal error occurred, RTSP.unix abort!");
+              break;
+            case CMD_STOP_ALL:
+              m_unix_sock_run = false;
+              NOTICE("RTSP.unix received stop signal!");
+              break;
+            default:
+              break;
+          }
+        }
+        ret = false;
+      }break;
+      default: {
+        WARN("Unknown command!");
+      }break;
+    }
+  }
+
+  return ret;
+}
+
+bool AMRtspServer::process_client_connect_request(int fd)
+{
+  bool ret = true;
+  if(AM_UNLIKELY(!m_unix_sock_con)) {
+    NOTICE("RTSP server is not ready!");
+    reject_client(fd);
+  } else {
+    uint16_t udp_rtp_port = 0;
+    uint32_t count = 0;
+    AMRtspClientSession *session = nullptr;
+
+    AUTO_MTX_LOCK(m_client_mutex);
+    while(udp_rtp_port == 0) {
+      uint32_t identify = (m_rtsp_config->rtp_stream_port_base +
+          count * AM_RTP_MEDIA_NUM * 2) << 16;
+      if (AM_LIKELY(m_client_map.find((const uint32_t)identify) ==
+          m_client_map.end())) {
+        /* If is identify doesn't exist, this port is available */
+        udp_rtp_port = (identify & 0xffff0000) >> 16;
+      } else {
+        udp_rtp_port = 0;
+        ++ count;
+      }
+    }
+    session = new AMRtspClientSession(this, udp_rtp_port);
+    if (AM_LIKELY(session)) {
+      bool need_abort = false;
+
+      if (AM_UNLIKELY(!session->init_client_session(fd))) {
+        ERROR("Failed to initialize client session");
+        need_abort = true;
+      } else if (AM_LIKELY(m_client_map.size() <
+                           m_rtsp_config->max_client_num)) {
+        /* session->m_identify == (udp_rtp_port << 16) */
+        m_client_map[session->m_identify] = session;
+        NOTICE("%u %s now connected!", m_client_map.size(),
+               (m_client_map.size() > 1) ? "clients are" : "client is");
+      } else {
+        NOTICE("Maximum client number(%u) has reached!",
+               m_rtsp_config->max_client_num);
+        need_abort = true;
+      }
+      if (AM_UNLIKELY(need_abort)) {
+        abort_client(*session);
+        delete session;
+      }
+    } else {
+      ERROR("Failed to create AMRtspClientSession!");
+    }
+  }
+
+  return ret;
+}
+
 AMRtspServer::AMRtspServer() :
     m_rtsp_config(nullptr),
     m_config(nullptr),
@@ -861,13 +1244,13 @@ AMRtspServer::AMRtspServer() :
     m_sock_thread(nullptr),
     m_event(nullptr),
     m_client_mutex(nullptr),
+    m_srv_sock_tcp(-1),
+    m_unix_sock_fd(-1),
     m_port_tcp(0),
     m_run(false),
     m_unix_sock_con(false),
     m_unix_sock_run(false),
-    m_ref_count(0),
-    m_srv_sock_tcp(-1),
-    m_unix_sock_fd(-1)
+    m_ref_count(0)
 {
   SERVER_CTRL_R = -1;
   SERVER_CTRL_W = -1;
@@ -878,7 +1261,7 @@ AMRtspServer::AMRtspServer() :
 
 AMRtspServer::~AMRtspServer()
 {
-  destroy_all_client_session(false);
+  destroy_all_client_session();
   AM_DESTROY(m_server_thread);
   AM_DESTROY(m_sock_thread);
   AM_DESTROY(m_event);
@@ -917,13 +1300,13 @@ bool AMRtspServer::construct()
       state = false;
       break;
     }
-    if (AM_UNLIKELY(pipe(m_pipe) < 0)) {
+    if (AM_UNLIKELY(pipe2(m_pipe, O_CLOEXEC) < 0)) {
       PERROR("pipe");
       state = false;
       break;
     }
 
-    if (AM_UNLIKELY(pipe(m_ctrl_unix_fd) < 0)) {
+    if (AM_UNLIKELY(pipe2(m_ctrl_unix_fd, O_CLOEXEC) < 0)) {
       PERROR("pipe");
       state = false;
       break;

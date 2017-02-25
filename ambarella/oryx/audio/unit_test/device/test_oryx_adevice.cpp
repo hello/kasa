@@ -6,12 +6,29 @@
  * @Time  : 28/06/2013 [Created]
  *          11/12/2014 [Modifyed]
  *
- * Copyright (C) 2009, Ambarella, Inc.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 #include "am_base_include.h"
 #include "am_log.h"
@@ -212,9 +229,9 @@ mainloop ()
               new_volume = 0;
             }
 
-            if (adev->set_volume_by_index(dev,
-                                          new_volume,
-                                          dev_index) < 0) {
+            if (!adev->set_volume_by_index(dev,
+                                           new_volume,
+                                           dev_index)) {
               ERROR ("Failed to decrease volume of %s!", dev_str[dev]);
               sub_running = false;
             }
@@ -236,9 +253,9 @@ mainloop ()
               new_volume = cur_volume + 5;
             }
 
-            if (adev->set_volume_by_index(dev,
-                                          new_volume,
-                                          dev_index) < 0) {
+            if (!adev->set_volume_by_index(dev,
+                                           new_volume,
+                                           dev_index)) {
               ERROR ("Failed to decrease volume of %s!", dev_str[dev]);
               sub_running = false;
             }
@@ -275,7 +292,7 @@ mainloop ()
 
         case 'u':
         case 'U': {
-          if (adev->unmute_by_index(dev, dev_index) < 0) {
+          if (!adev->unmute_by_index(dev, dev_index)) {
             ERROR ("Failed to restore %s!", dev_str[dev]);
             sub_running = false;
           }
@@ -283,7 +300,7 @@ mainloop ()
 
         case 'S':
         case 's': {
-          if (adev->get_sample_rate(&sample_rate) < 0) {
+          if (!adev->get_sample_rate(&sample_rate)) {
             ERROR ("Falied to get sample rate!");
           } else {
             PRINTF ("Sample rate: %u", sample_rate);
@@ -292,7 +309,7 @@ mainloop ()
 
         case 'C':
         case 'c': {
-          if (adev->get_channels(&channels) < 0) {
+          if (!adev->get_channels(&channels)) {
             ERROR ("Falied to get channels");
           } else {
             PRINTF ("Channels: %u", channels);
@@ -335,7 +352,7 @@ mainloop ()
 int
 main (int argc, char **argv)
 {
-  if ((adev = create_audio_device ("pulse")) == NULL) {
+  if ((adev = create_audio_device ("pulse")) == nullptr) {
     ERROR ("Failed to create an instance of AmAudioDevice!");
     return -1;
   }

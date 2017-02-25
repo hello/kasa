@@ -1,17 +1,34 @@
-/*******************************************************************************
+/*
  * test_eis_warp.c
  *
  * History:
  *  Oct 25, 2013 - [qianshen] created file
  *
- * Copyright (C) 2012-2016, Ambarella ShangHai Co,Ltd
+ * Copyright (C) 2015 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
  *
- ******************************************************************************/
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -43,7 +60,7 @@ static int fd_iav = -1;
 static int fd_eis = -1;
 static int fd_hwtimer = -1;
 static int cali_num = 3000;
-static int debug_level = LOG_INFO;
+static int debug_level = AMBA_LOG_INFO;
 static char save_file[FILENAME_LENGTH] = {0};
 static int save_file_flag = 0;
 static FILE *fd_save_file = NULL;
@@ -185,7 +202,7 @@ static int init_param(int argc, char** argv)
 	return 0;
 }
 
-inline int set_eis_warp(const struct iav_warp_main* warp_main)
+int set_eis_warp(const struct iav_warp_main* warp_main)
 {
 	struct iav_warp_ctrl warp_control;
 	u32 flags = (1 << IAV_WARP_CTRL_MAIN);
@@ -222,7 +239,7 @@ inline int set_eis_warp(const struct iav_warp_main* warp_main)
 	return 0;
 }
 
-inline int get_eis_stat(amba_eis_stat_t* eis_stat)
+int get_eis_stat(amba_eis_stat_t* eis_stat)
 {
 	int i = 0;
 	u64 hw_pts = 0;
@@ -329,7 +346,7 @@ static int prepare(void)
 	EIS_SETUP.vin_cell_width_in_um = (float) vin_eis_info.sensor_cell_width / 100.0;
 	EIS_SETUP.vin_cell_height_in_um = (float) vin_eis_info.sensor_cell_height / 100.0;
 	EIS_SETUP.vin_frame_rate_in_hz = change_fps_to_hz(vsrc_fps.fps);
-	EIS_SETUP.vin_vblank_in_ms = vin_eis_info.row_time * vin_eis_info.vb_lines / 1000000.0;
+	EIS_SETUP.vin_vblank_in_ms = vin_eis_info.vb_time / 1000000.0;
 
 	EIS_SETUP.premain_input_width = vin_info.info.width;
 	EIS_SETUP.premain_input_height = vin_info.info.height;
@@ -444,6 +461,7 @@ static void* fps_monitor_func(void* arg)
 int main(int argc,  char* argv[])
 {
 	version_t version;
+	int eis_selection = 0;
 
 	if (init_param(argc, argv) < 0) {
 		usage();
@@ -482,15 +500,29 @@ int main(int argc,  char* argv[])
 	}
 
 	while (1) {
-		printf(" enable (1: pitch, disable (0):");
+		printf("enable (5: eis_full, 4: rotate + pitch, 3: yaw, 2: rotate, 1: pitch), disable (0):");
 		scanf("%s", input);
-		if (atoi(input)) {
+		eis_selection = atoi(input);
+
+		switch (eis_selection) {
+		case 0:
+			eis_close();
+			break;
+		case 3:
+		case 5:
+			printf("Unsupported option.\n");
+			break;
+		case 1:
+		case 2:
+		case 4:
 			if (eis_open() < 0) {
 				return -1;
 			}
-			eis_enable(atoi(input));
-		} else {
-			eis_close();
+			eis_enable(eis_selection);
+			break;
+		default:
+			printf("Invalid param.\n");
+			break;
 		}
 	}
 

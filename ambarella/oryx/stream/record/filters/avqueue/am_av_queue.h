@@ -4,18 +4,36 @@
  *  History:
  *		Dec 29, 2014 - [Shupeng Ren] created file
  *
- * Copyright (C) 2007-2014, Ambarella, Inc.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 #ifndef _AM_AV_QUEUE_H_
 #define _AM_AV_QUEUE_H_
-
+#include <atomic>
 #include "am_av_queue_if.h"
 #include "am_audio_define.h"
+#include <atomic>
 
 class AMPlugin;
 class AMAVQueueInput;
@@ -23,6 +41,7 @@ class AMAVQueueOutput;
 class AMAVQueueConfig;
 class AMAVQueuePacketPool;
 struct AVQueueConfig;
+struct ExPayload;
 
 using std::map;
 using std::pair;
@@ -42,15 +61,15 @@ class AMAVQueue: public AMPacketActiveFilter, public AMIAVQueue
     void release_packet(AMPacket *packet);
 
   public:
-    virtual uint32_t        version()                       override;
-    virtual void*           get_interface(AM_REFIID refiid) override;
-    virtual void            destroy()                       override;
-    virtual void            get_info(INFO& info)            override;
-    virtual AMIPacketPin*   get_input_pin(uint32_t index)   override;
-    virtual AMIPacketPin*   get_output_pin(uint32_t index)  override;
-    virtual void            on_run()                        override;
-    virtual AM_STATE        stop()                          override;
-    virtual bool            is_ready_for_event()            override;
+    virtual uint32_t        version()                                 override;
+    virtual void*           get_interface(AM_REFIID refiid)           override;
+    virtual void            destroy()                                 override;
+    virtual void            get_info(INFO& info)                      override;
+    virtual AMIPacketPin*   get_input_pin(uint32_t index)             override;
+    virtual AMIPacketPin*   get_output_pin(uint32_t index)            override;
+    virtual void            on_run()                                  override;
+    virtual AM_STATE        stop()                                    override;
+    virtual bool            is_ready_for_event(AMEventStruct& event)  override;
 
   private:
     inline AM_STATE on_info(AMPacket *packet);
@@ -62,8 +81,9 @@ class AMAVQueue: public AMPacketActiveFilter, public AMIAVQueue
     inline AM_STATE send_event_packet();
     inline AM_STATE send_event_info();
     inline void     process_event();
-    static void     event_thread(void *p);
-
+    static void     static_event_thread(void *p);
+    void            event_thread();
+    bool is_h265_IDR_first_nalu(ExPayload *video_payload);
 
   private:
     AMAVQueue(AMIEngine *engine);
@@ -75,58 +95,53 @@ class AMAVQueue: public AMPacketActiveFilter, public AMIAVQueue
     void reset();
 
   private:
-    uint32_t                        m_input_num;
-    uint32_t                        m_output_num;
+    AM_PTS                          m_event_end_pts;
     AVQueueConfig                  *m_avqueue_config;
     AMAVQueueConfig                *m_config;
     AMAVQueueOutput                *m_direct_out; //No need to delete
     AMAVQueueOutput                *m_file_out;   //No need to delete
+    AMMutex                        *m_send_mutex;
+    AMCondition                    *m_send_cond;
+    AMThread                       *m_event_thread;
+    AMEvent                        *m_event_wait;
+    AMMutex                        *m_event_send_mutex;
+    AMCondition                    *m_event_send_cond;
+    uint32_t                        m_input_num;
+    uint32_t                        m_output_num;
+    uint32_t                        m_run;
+    uint32_t                        m_audio_pts_increment;
+    uint32_t                        m_video_payload_count;
+    uint32_t                        m_audio_payload_count;
+    uint32_t                        m_event_id;
+    uint32_t                        m_event_video_id;
+    uint32_t                        m_event_audio_id;
+    bool                            m_is_in_event;
+    bool                            m_event_video_eos;
+    bool                            m_event_video_block;
+    bool                            m_event_audio_block;
+    std::atomic_bool                m_stop;
+    std::atomic_bool                m_video_come;
     vector<AMAVQueueInput*>         m_input;
     vector<AMAVQueueOutput*>        m_output;
     vector<AMAVQueuePacketPool*>    m_packet_pool;
-
-    bool                            m_stop;
-    uint32_t                        m_run;
-    map<uint32_t, bool>             m_video_come_flag;
-    map<uint32_t, bool>             m_audio_come_flag;
-
-    uint32_t                        m_audio_pts_increment;
     map<uint32_t, AM_PTS>           m_audio_last_pts;
-    map<uint32_t, uint32_t>         m_audio_state;
-
-    uint32_t                        m_video_payload_count;
-    uint32_t                        m_audio_payload_count;
-    uint32_t                        m_video_max_data_size;
-    uint32_t                        m_audio_max_data_size;
+    map<uint32_t, uint32_t>         m_send_audio_state;
     map<uint32_t, AM_VIDEO_INFO>    m_video_info;
     map<uint32_t, AM_AUDIO_INFO>    m_audio_info;
     map<uint32_t, AMRingQueue*>     m_video_queue;
     map<uint32_t, AMRingQueue*>     m_audio_queue;
 
-    map<uint32_t, uint32_t>         m_write_video_state;
-    AMMutex                        *m_send_mutex;
-    AMCondition                    *m_send_cond;
-    pair<uint32_t, bool>            m_video_send_block;
-    pair<uint32_t, bool>            m_audio_send_block;
-
+    map<uint32_t, pair<bool, AM_PTS>>   m_first_video;
+    map<uint32_t, pair<bool, AM_PTS>>   m_first_audio;
+    map<uint32_t, uint32_t>             m_write_video_state;
+    map<uint32_t, uint32_t>             m_write_audio_state;
+    pair<uint32_t, bool>                m_video_send_block;
+    pair<uint32_t, bool>                m_audio_send_block;
     //For Event
-    uint32_t                        m_event_stream_id;
-    uint32_t                        m_event_audio_id;
-    AMThread                       *m_event_thread;
-    AMPacket::Payload              *m_video_info_payload;
-    AMPacket::Payload              *m_audio_info_payload;
-
-    bool                            m_is_in_event;
-    bool                            m_event_video_eos;
-    AM_PTS                          m_event_end_pts;
-    pair<bool, AM_PTS>              m_first_video;
-    pair<bool, AM_PTS>              m_first_audio;
-
-    bool                            m_event_video_block;
-    bool                            m_event_audio_block;
-    AMEvent                        *m_event_wait;
-    AMMutex                        *m_event_send_mutex;
-    AMCondition                    *m_event_send_cond;
+    AVQueueEventConfigMap               m_event_config;
+    map<uint32_t, uint32_t>             m_event_audio_id_map;
+    map<uint32_t, AMPacket::Payload*>   m_video_info_payload;
+    map<uint32_t, AMPacket::Payload*>   m_audio_info_payload;
 };
 
 class AMAVQueueInput: public AMPacketActiveInputPin

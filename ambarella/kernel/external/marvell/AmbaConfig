@@ -66,3 +66,38 @@ config BUILD_MARVELL_WIFI_BT_SD8787_WLAN
 		Select SD8787 wifi driver.
 		Verified on Kernel 2.6.38
 endmenu
+
+############# Marvell SD8977 ############
+
+config BUILD_MARVELL_WIFI_BT_SD8977
+depends on BUILD_WIFI_BLUETOOTH_MODULES
+	bool "Marvell WiFi-Bluetooth SD8977"
+	default n
+	help
+		Select the Marvell WiFi-Bluetooth SD8977 driver.
+
+menu "SD8977 Configuration"
+depends on BUILD_MARVELL_WIFI_BT_SD8977
+
+config BUILD_MARVELL_WIFI_BT_SD8977_BT
+	bool "SD8977 bluetooth driver"
+	default n
+	help
+		Select SD8977 bluetooth driver.
+		Verified on Kernel 3.10
+
+config BUILD_MARVELL_WIFI_BT_SD8977_BTC
+	bool "SD8977 bluetooth char driver"
+	default n
+	help
+		Select SD8977 bluetooth char driver.
+		Verified on Kernel 3.10
+
+config BUILD_MARVELL_WIFI_BT_SD8977_WLAN
+	bool "SD8977 wifi driver"
+	default n
+	help
+		Select SD8977 wifi driver.
+		Verified on Kernel 3.10
+endmenu
+

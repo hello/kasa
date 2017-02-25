@@ -39,6 +39,13 @@
 				compatible = "ambarella,ambvin";
 				reg = <0x01>;	/* fake address, will be overwritten in runtime */
 			};
+
+			mpu6500@68 {
+				compatible = "ambarella,mpu6500";
+				reg = <0x68>;
+				gpios = <&gpio 113 0x0>;
+			};
+
 	        };
 
 		ir@e8006000 {
@@ -69,6 +76,7 @@
 		mac0: ethernet@e000e000 {
 			phy@0 {
 				rst-gpios = <&gpio 104 0x0>;
+				amb,clk-invert;
 			};
 		};
 	};

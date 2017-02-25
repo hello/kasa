@@ -4,17 +4,37 @@
  * History:
  *    2012/03/23 - [Long Zhao] Create
  *
- * Copyright (C) 2004-2013, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
  *
- * This file is produced by perl.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 #ifndef __OV4689_PRI_H__
 #define __OV4689_PRI_H__
+
+#define USE_2X_RATIO			0
 
 #define OV4689_STANDBY			0x0100
 #define OV4689_IMG_ORI			0x0101
@@ -55,10 +75,10 @@
 #define OV4689_S_GAIN_LSB		0x3515
 
 #define OV4689_M_MAX_EXPO_MSB	0x3760
-#define OV4689_M_MAX_EXPO_LSB		0x3761
+#define OV4689_M_MAX_EXPO_LSB	0x3761
 
 #define OV4689_S_MAX_EXPO_MSB	0x3762
-#define OV4689_S_MAX_EXPO_LSB		0x3763
+#define OV4689_S_MAX_EXPO_LSB	0x3763
 
 #define OV4689_L_WB_R_GAIN_MSB	0x500C
 #define OV4689_L_WB_R_GAIN_LSB	0x500D
@@ -91,7 +111,6 @@
 
 #define OV4689_MIPI_GATE		(1<<5)
 
-
 #define OV4689_V_FORMAT		0x3820
 #define OV4689_H_FORMAT		0x3821
 
@@ -101,6 +120,14 @@
 #define OV4689_TPM_TRIGGER		0x4D12
 #define OV4689_TPM_READ		0x4D13
 #define OV4689_TPM_OFFSET		64
+
+#if USE_2X_RATIO
+#define M_MAX_EXPO_4M			0x186
+#define M_MAX_EXPO_3M			0x242
+#else
+#define M_MAX_EXPO_4M			0x80
+#define M_MAX_EXPO_3M			0x16e
+#endif
 
 #endif /* __OV4689_PRI_H__ */
 

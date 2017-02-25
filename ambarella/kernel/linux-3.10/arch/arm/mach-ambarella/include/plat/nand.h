@@ -25,6 +25,14 @@
 #define __PLAT_AMBARELLA_NAND_H__
 
 /* ==========================================================================*/
+
+#if (CHIP_REV == S2E) || (CHIP_REV == S3L)
+#define NAND_ECC_RPT_NUM_SUPPORT	1
+#else
+#define NAND_ECC_RPT_NUM_SUPPORT	0
+#endif
+
+/* ==========================================================================*/
 #define FLASH_CTR_OFFSET		0x120
 #define FLASH_CMD_OFFSET		0x124
 #define FLASH_TIM0_OFFSET		0x128
@@ -40,38 +48,46 @@
 #define FLASH_INT_OFFSET		0x150
 #define FLASH_EX_CTR_OFFSET		0x15c
 #define FLASH_EX_ID_OFFSET		0x160
+/* followings are for customer command, start from S3L */
+#define FLASH_TIM6_OFFSET		0x164
+#define FLASH_CC_OFFSET			0x170
+#define FLASH_CC_WORD_OFFSET		0x174
+#define FLASH_CC_DATA0_OFFSET		0x180
+#define FLASH_CC_DATA1_OFFSET		0x184
+#define FLASH_CC_DATA2_OFFSET		0x188
+#define FLASH_CC_DATA3_OFFSET		0x18c
+#define FLASH_CC_DATA4_OFFSET		0x190
+#define FLASH_CC_DATA5_OFFSET		0x194
+#define FLASH_CC_DATA6_OFFSET		0x198
+#define FLASH_CC_DATA7_OFFSET		0x19c
 
-#define FLASH_CTR_REG			FIO_REG(0x120)
-#define FLASH_CMD_REG			FIO_REG(0x124)
-#define FLASH_TIM0_REG			FIO_REG(0x128)
-#define FLASH_TIM1_REG			FIO_REG(0x12c)
-#define FLASH_TIM2_REG			FIO_REG(0x130)
-#define FLASH_TIM3_REG			FIO_REG(0x134)
-#define FLASH_TIM4_REG			FIO_REG(0x138)
-#define FLASH_TIM5_REG			FIO_REG(0x13c)
-#define FLASH_STA_REG			FIO_REG(0x140)
-#define FLASH_ID_REG			FIO_REG(0x144)
-#define FLASH_CFI_REG			FIO_REG(0x148)
-#define FLASH_LEN_REG			FIO_REG(0x14c)
-#define FLASH_INT_REG			FIO_REG(0x150)
-#define FLASH_EXT_CTR_REG		FIO_REG(0x15c)
-#define FLASH_EXT_ID5_REG		FIO_REG(0x160)
-
-#define NAND_CTR_REG			FLASH_CTR_REG
-#define NAND_CMD_REG			FLASH_CMD_REG
-#define NAND_TIM0_REG			FLASH_TIM0_REG
-#define NAND_TIM1_REG			FLASH_TIM1_REG
-#define NAND_TIM2_REG			FLASH_TIM2_REG
-#define NAND_TIM3_REG			FLASH_TIM3_REG
-#define NAND_TIM4_REG			FLASH_TIM4_REG
-#define NAND_TIM5_REG			FLASH_TIM5_REG
-#define NAND_STA_REG			FLASH_STA_REG
-#define NAND_ID_REG			FLASH_ID_REG
-#define NAND_COPY_ADDR_REG		FLASH_CFI_REG
-#define NAND_LEN_REG			FLASH_LEN_REG
-#define NAND_INT_REG			FLASH_INT_REG
-#define NAND_EXT_CTR_REG		FLASH_EXT_CTR_REG
-#define NAND_EXT_ID5_REG		FLASH_EXT_ID5_REG
+#define NAND_CTR_REG			FIO_REG(0x120)
+#define NAND_CMD_REG			FIO_REG(0x124)
+#define NAND_TIM0_REG			FIO_REG(0x128)
+#define NAND_TIM1_REG			FIO_REG(0x12c)
+#define NAND_TIM2_REG			FIO_REG(0x130)
+#define NAND_TIM3_REG			FIO_REG(0x134)
+#define NAND_TIM4_REG			FIO_REG(0x138)
+#define NAND_TIM5_REG			FIO_REG(0x13c)
+#define NAND_STA_REG			FIO_REG(0x140)
+#define NAND_ID_REG			FIO_REG(0x144)
+#define NAND_COPY_ADDR_REG		FIO_REG(0x148)
+#define NAND_LEN_REG			FIO_REG(0x14c)
+#define NAND_INT_REG			FIO_REG(0x150)
+#define NAND_EXT_CTR_REG		FIO_REG(0x15c)
+#define NAND_EXT_ID5_REG		FIO_REG(0x160)
+/* followings are for customer command, start from S3L */
+#define NAND_TIM6_REG			FIO_REG(0x164)
+#define NAND_CC_REG			FIO_REG(0x170)
+#define NAND_CC_WORD_REG		FIO_REG(0x174)
+#define NAND_CC_DATA0_REG		FIO_REG(0x180)
+#define NAND_CC_DATA1_REG		FIO_REG(0x184)
+#define NAND_CC_DATA2_REG		FIO_REG(0x188)
+#define NAND_CC_DATA3_REG		FIO_REG(0x18c)
+#define NAND_CC_DATA4_REG		FIO_REG(0x190)
+#define NAND_CC_DATA5_REG		FIO_REG(0x194)
+#define NAND_CC_DATA6_REG		FIO_REG(0x198)
+#define NAND_CC_DATA7_REG		FIO_REG(0x19c)
 
 #define NAND_READ_CMDWORD_REG		FIO_REG(0x154)
 #define NAND_PROG_CMDWORD_REG		FIO_REG(0x158)
@@ -144,42 +160,42 @@
 #define NAND_AMB_CMD_READ		0xe
 #define NAND_AMB_CMD_PROGRAM		0xf
 
-/* FLASH_TIM0_REG (NAND mode) */
+/* NAND_TIM0_REG (NAND mode) */
 #define NAND_TIM0_TCLS(x)		((x) << 24)
 #define NAND_TIM0_TALS(x)		((x) << 16)
 #define NAND_TIM0_TCS(x)		((x) << 8)
 #define NAND_TIM0_TDS(x)		(x)
 
-/* FLASH_TIM1_REG (NAND mode) */
+/* NAND_TIM1_REG (NAND mode) */
 #define NAND_TIM1_TCLH(x)		((x) << 24)
 #define NAND_TIM1_TALH(x)		((x) << 16)
 #define NAND_TIM1_TCH(x)		((x) << 8)
 #define NAND_TIM1_TDH(x)		(x)
 
-/* FLASH_TIM2_REG (NAND mode) */
+/* NAND_TIM2_REG (NAND mode) */
 #define NAND_TIM2_TWP(x)		((x) << 24)
 #define NAND_TIM2_TWH(x)		((x) << 16)
 #define NAND_TIM2_TWB(x)		((x) << 8)
 #define NAND_TIM2_TRR(x)		(x)
 
-/* FLASH_TIM3_REG (NAND mode) */
+/* NAND_TIM3_REG (NAND mode) */
 #define NAND_TIM3_TRP(x)		((x) << 24)
 #define NAND_TIM3_TREH(x)		((x) << 16)
 #define NAND_TIM3_TRB(x)		((x) << 8)
 #define NAND_TIM3_TCEH(x)		(x)
 
-/* FLASH_TIM4_REG (NAND mode) */
+/* NAND_TIM4_REG (NAND mode) */
 #define NAND_TIM4_TRDELAY(x)		((x) << 24)
 #define NAND_TIM4_TCLR(x)		((x) << 16)
 #define NAND_TIM4_TWHR(x)		((x) << 8)
 #define NAND_TIM4_TIR(x)		(x)
 
-/* FLASH_TIM5_REG (NAND mode) */
+/* NAND_TIM5_REG (NAND mode) */
 #define NAND_TIM5_TWW(x)		((x) << 16)
 #define NAND_TIM5_TRHZ(x)		((x) << 8)
 #define NAND_TIM5_TAR(x)		(x)
 
-/* FLASH_INT_REG (NAND mode) */
+/* NAND_INT_REG (NAND mode) */
 #define NAND_INT_DI			0x1
 
 /* NAND_EXT_CTR_REG */

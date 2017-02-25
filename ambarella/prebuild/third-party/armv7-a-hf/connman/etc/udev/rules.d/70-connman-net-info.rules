@@ -1,0 +1,3 @@
+# Get network device MAC address
+SUBSYSTEM=="net", ACTION=="add", KERNEL=="eth[0-9]*",  RUN+="/bin/sh -c '/bin/mkdir -p /var/run/connman && /bin/echo %s{address} > /var/run/connman/%k.mac'"
+SUBSYSTEM=="net", ACTION=="add", KERNEL=="wlan[0-9]*", RUN+="/bin/sh -c '/bin/mkdir -p /var/run/connman && /bin/echo %s{address} > /var/run/connman/%k.mac'"

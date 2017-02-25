@@ -1,5 +1,6 @@
 [Unit]
 Description=OpenSSH per-connection server daemon
+Documentation=man:sshd(8) man:sshd_config(5)
 Wants=sshd-keygen.service
 After=sshd-keygen.service
 

@@ -4,12 +4,29 @@
  * Histroy:
  *  2014-11-19  [Dongge Wu] created file
  *
- * Copyright (C) 2008-2016, Ambarella ShangHai Co,Ltd
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -19,23 +36,16 @@
 #ifndef AM_EVENT_TYPES_H_
 #define AM_EVENT_TYPES_H_
 
-#include <mutex>
-
-#ifndef AUTO_LOCK
-#define AUTO_LOCK(mtx) std::lock_guard<std::mutex> lck (mtx)
-#endif
-
 /*! @enum EVENT_MODULE_ID
  * Defines all event modules ID
  */
 enum EVENT_MODULE_ID
 {
-  EV_MOTION_DECT = 0,    //!< Plugin ID of motion detect
-  EV_AUDIO_ALERT_DECT,   //!< Plugin ID of motion detect
-  EV_AUDIO_ANALYSIS_DECT,//!< Plugin ID of audio analysis
-  EV_FACE_DECT,          //!< Plugin ID of face detection
-  EV_KEY_INPUT_DECT,     //!< Plugin ID of key press detection
-  EV_ALL_MODULE_NUM,     //!< Total number of Plugins
+  EV_AUDIO_ALERT_DECT = 0,//!< Plugin ID of audio alert
+  EV_AUDIO_ANALYSIS_DECT, //!< Plugin ID of audio analysis
+  EV_FACE_DECT,           //!< Plugin ID of face detection
+  EV_KEY_INPUT_DECT,      //!< Plugin ID of key press detection
+  EV_ALL_MODULE_NUM,      //!< Total number of Plugins
 };
 
 /*! @struct EVENT_MODULE_CONFIG
@@ -43,8 +53,8 @@ enum EVENT_MODULE_ID
  */
 struct EVENT_MODULE_CONFIG
 {
-    uint32_t key;//!< specifying which configure item it is.
     void *value; //!< specifying the value of configure item.
+    uint32_t key;//!< specifying which configure item it is.
 };
 
 /*! Audio Alert max threshold  */
@@ -100,14 +110,14 @@ enum AM_KEY_STATE
   AM_KEY_UP = 0X01,   //!< key up.
   AM_KEY_DOWN,        //!< key down.
   AM_KEY_CLICKED,     //!< key clicked.
-  AM_KEY_LONG_PREESED,//!< key long time press.
+  AM_KEY_LONG_PRESSED,//!< key long time press.
   AM_KEY_STATE_NUM,   //!< total number of key states.
 };
 
 /*! @typedef AM_KEY_CODE
  *  @brief Defines key ID
  */
-typedef uint32_t AM_KEY_CODE;
+typedef int32_t AM_KEY_CODE;
 
 /*! @struct AM_KEY_INPUT_EVENT
  */
@@ -130,102 +140,11 @@ enum AM_KEY_INPUT_KEY
   AM_KEY_INPUT_KEY_NUM,    //!< total number of key input configure items
 };
 
-/*! @enum AM_MOTION_DETECT_KEY
- *  Defines motion detect event module configure item
- */
-enum AM_MOTION_DETECT_KEY
-{
-  AM_MD_ENABLE = 0,        //!< motion detect enable.
-  AM_MD_BUFFER_ID,         //!< ME1 data buffer ID.
-  AM_MD_ROI,               //!< region of interest.
-  AM_MD_THRESHOLD,         //!< threshold.
-  AM_MD_LEVEL_CHANGE_DELAY,//!< motion level change delay.
-  AM_MD_CALLBACK,          //!< callback function.
-  AM_MD_SYNC_CONFIG,       //!< sync configure item and save to configure file.
-  AM_MD_KEY_NUM            //!< total number of configure items
-};
-
-/*! @enum AM_MOTION_LEVEL
- *  Defines motion level
- */
-enum AM_MOTION_LEVEL
-{
-  AM_MOTION_L0 = 0,//!< motion level 0, smallest motion
-  AM_MOTION_L1,    //!< motion level 1
-  AM_MOTION_L2,    //!< motion level 2, biggest motion
-  AM_MOTION_L_NUM  //!< total number of motion level
-};
-
-/*! @enum AM_MOTION_TYPE
- *  Defines motion event types
- */
-enum AM_MOTION_TYPE
-{
-  AM_MD_MOTION_NONE = 0,     //!< No motion
-  AM_MD_MOTION_START,        //!< motion start
-  AM_MD_MOTION_LEVEL_CHANGED,//!< motion level changed
-  AM_MD_MOTION_END,          //!< motion end
-  AM_MD_MOTION_TYPE_NUM,     //!< total number of motion event type
-};
-
-/*! @struct AM_EVENT_MD_ROI
- *  Defines motion detect event module ROI
- */
-struct AM_EVENT_MD_ROI
-{
-    uint32_t roi_id;//!< ROI ID
-    uint32_t left;  //!< X offset of left edge
-    uint32_t right; //!< X offset of right edge
-    uint32_t top;   //!< Y offset of top edge
-    uint32_t bottom;//!< Y offset of bottom edge
-
-    /*!
-     * - true: Valid ROI
-     * - false: Invalid ROI
-     */
-    bool valid;
-};
-
-/*! @struct AM_EVENT_MD_THRESHOLD
- *  Defines ROI's threshold of motion detect event module
- */
-struct AM_EVENT_MD_THRESHOLD
-{
-    uint32_t roi_id;                        //!< ROI ID
-    uint32_t threshold[AM_MOTION_L_NUM - 1];//!< threshold of this ROI
-};
-
-/*! @struct AM_EVENT_MD_LEVEL_CHANGE_DELAY
- *  Defines how many counts to confirm motion level changed
- */
-struct AM_EVENT_MD_LEVEL_CHANGE_DELAY
-{
-    uint32_t roi_id;                                    //!< ROI ID
-    uint32_t mt_level_change_delay[AM_MOTION_L_NUM - 1];//!< motion level change delay
-};
-
-/*! @struct AM_MD_MESSAGE
- *  Defines motion detect event message
- */
-struct AM_MD_MESSAGE
-{
-    uint32_t roi_id;         //!< ROI ID
-    AM_MOTION_TYPE mt_type;  //!< Motion type. @sa AM_MOTION_TYPE
-    AM_MOTION_LEVEL mt_level;//!< motion level. @sa AM_MOTION_LEVEL
-    uint32_t mt_value;       //!< motion value
-};
-
 /*! @struct AM_EVENT_MESSAGE
  *  Defines event message for all event modules
  */
 struct AM_EVENT_MESSAGE
 {
-    /*!
-     * event type.
-     * @sa EVENT_MODULE_ID
-     */
-    EVENT_MODULE_ID event_type;
-
     /*!
      * sequence number of events
      */
@@ -236,13 +155,14 @@ struct AM_EVENT_MESSAGE
      */
     uint64_t pts;
 
+    /*!
+     * event type.
+     * @sa EVENT_MODULE_ID
+     */
+    EVENT_MODULE_ID event_type;
+
     union
     {
-        /*!
-         * event message of motion detect event module.
-         * @sa AM_MD_MESSAGE
-         */
-        AM_MD_MESSAGE md_msg;
         /*!
          * event message of key input event module.
          * @sa AM_KEY_INPUT_EVENT

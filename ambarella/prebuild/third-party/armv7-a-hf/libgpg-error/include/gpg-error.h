@@ -303,6 +303,12 @@ typedef enum
     GPG_ERR_UNKNOWN_CURVE = 188,
     GPG_ERR_DUP_KEY = 189,
     GPG_ERR_AMBIGUOUS = 190,
+    GPG_ERR_NO_CRYPT_CTX = 191,
+    GPG_ERR_WRONG_CRYPT_CTX = 192,
+    GPG_ERR_BAD_CRYPT_CTX = 193,
+    GPG_ERR_CRYPT_CTX_CONFLICT = 194,
+    GPG_ERR_BROKEN_PUBKEY = 195,
+    GPG_ERR_BROKEN_SECKEY = 196,
     GPG_ERR_FULLY_CANCELED = 198,
     GPG_ERR_UNFINISHED = 199,
     GPG_ERR_BUFFER_TOO_SHORT = 200,
@@ -660,10 +666,10 @@ void gpg_err_set_errno (int err);
 const char *gpg_error_check_version (const char *req_version);
 
 /* The version string of this header. */
-#define GPG_ERROR_VERSION "1.11"
+#define GPG_ERROR_VERSION "1.12"
 
 /* The version number of this header. */
-#define GPG_ERROR_VERSION_NUMBER 0x010b00
+#define GPG_ERROR_VERSION_NUMBER 0x010c00
 
 
 /* Self-documenting convenience functions.  */

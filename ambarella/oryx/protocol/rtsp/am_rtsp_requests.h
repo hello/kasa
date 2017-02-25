@@ -4,12 +4,29 @@
  * History:
  *   2015-1-4 - [Shiming Dong] created file
  *
- * Copyright (C) 2008-2014, Ambarella ShangHai Co,Ltd
+ * Copyright (c) 2015 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -23,9 +40,9 @@ const char* media_type_to_str(AM_RTP_MEDIA_TYPE type);
 
 struct RtspTransHeader
 {
+    char *mode_string;
+    char *client_dst_addr_string;
     AM_RTP_MODE mode;
-    char* mode_string;
-    char* client_dst_addr_string;
     uint16_t client_rtp_port;
     uint16_t client_rtcp_port;
     uint8_t  rtp_channel_id;
@@ -33,9 +50,9 @@ struct RtspTransHeader
     uint8_t  client_dst_ttl;
     uint8_t  reserved;
     RtspTransHeader() :
-      mode(AM_RTP_UDP),
       mode_string(NULL),
       client_dst_addr_string(NULL),
+      mode(AM_RTP_UDP),
       client_rtp_port(0),
       client_rtcp_port(0),
       rtp_channel_id(0),
@@ -85,11 +102,11 @@ struct RtspTransHeader
 
 struct RtspAuthHeader
 {
-    char* realm;
-    char* nonce;
-    char* uri;
-    char* username;
-    char* response;
+    char *realm;
+    char *nonce;
+    char *uri;
+    char *username;
+    char *response;
 
     RtspAuthHeader() :
       realm(NULL),

@@ -4,12 +4,29 @@
  * History:
  *   2015-1-8 - [longli] created file
  *
- * Copyright (C) 2008-2015, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -18,6 +35,7 @@
 #include <sys/stat.h>
 #include <sys/mount.h>
 #include <sys/reboot.h>
+#include <dirent.h>
 #include <mutex>
 #include <string>
 #include <fstream>
@@ -27,7 +45,7 @@
 #include "am_upgrade.h"
 
 #include "pba_upgrade.h"
-#include "am_dec7z.h"
+#include "am_libarchive_if.h"
 
 using namespace std;
 
@@ -37,32 +55,40 @@ static mutex m_mtx;
 #define  DECLARE_MUTEX  lock_guard<mutex> lck(m_mtx);
 
 #define BUFF_LEN                4096
+#define PATH_LEN                128
 #define LOW_SPEED_LIMIT         5
 #define LOW_SPEED_TIMEOUT       5
 #define SHOW_DOWNLOAD_PROGRESS  true
 #define PROC_MOUNTS_FILE        "/proc/mounts"
 #define DEFAULT_CONFIG_CONTENT  \
-  ("abc={\nfilepath=\"/dev/adc/CloudCamUpgrade.7z\",\n"\
-  "status=0,\n}\n return abc\n")
+    ("abc={\nfilepath=\"/dev/adc/CloudCamUpgrade.7z\",\n"\
+           "status=0,\nsdcard=0\n}\n return abc\n")
+#ifdef CONFIG_ARCH_S5
 #define PBA_CMD_LINE \
-  ("console=ttyS0 rootfs=ramfs root=/dev/ram rw "\
-  "rdinit=/linuxrc mem=220M dsp=0xC0000000,0x00000000 "\
-  "bsb=0xC0000000,0x00000000")
-
-AMFWUpgrade *AMFWUpgrade::m_instance = NULL;
+    ("console=ttyS0 rootfs=ramfs root=/dev/ram rw "\
+        "rdinit=/linuxrc mem=450M dsp=0xC0000000,0x00000000 "\
+        "bsb=0xC0000000,0x00000000")
+#else
+#define PBA_CMD_LINE \
+    ("console=ttyS0 rootfs=ramfs root=/dev/ram rw "\
+        "rdinit=/linuxrc mem=220M dsp=0xC0000000,0x00000000 "\
+        "bsb=0xC0000000,0x00000000")
+#endif
+AMFWUpgrade *AMFWUpgrade::m_instance = nullptr;
 
 AMFWUpgrade::AMFWUpgrade():
-  m_fw_path(""),
-  m_adc_dir(ADC_MOUNT_DIR),
-  m_ref_counter(0),
-  m_mode(AM_MODE_NOT_SET),
-  m_state(AM_NOT_KNOWN),
-  m_config(NULL),
-  m_updl(NULL),
-  m_init(false),
-  m_dl_ready(false),
-  m_mounted(false),
-  m_in_progress(false)
+      m_config(nullptr),
+      m_updl(nullptr),
+      m_mode(AM_MODE_NOT_SET),
+      m_state(AM_NOT_KNOWN),
+      m_use_sdcard(0),
+      m_init(false),
+      m_dl_ready(false),
+      m_mounted(false),
+      m_in_progress(false),
+      m_fw_path(""),
+      m_adc_dir(ADC_MOUNT_DIR),
+      m_ref_counter(0)
 {
 }
 
@@ -71,12 +97,12 @@ AMFWUpgrade::~AMFWUpgrade()
   NOTICE("~AMFWUpgrade is called.");
   if (m_updl) {
     m_updl->destroy();
-    m_updl = NULL;
+    m_updl = nullptr;
   }
 
   if (m_config) {
     delete m_config;
-    m_config = NULL;
+    m_config = nullptr;
   }
 
   if (m_mounted) {
@@ -84,7 +110,7 @@ AMFWUpgrade::~AMFWUpgrade()
     m_mounted = false;
   }
 
-  m_instance = NULL;
+  m_instance = nullptr;
 }
 
 AMIFWUpgradePtr AMIFWUpgrade::get_instance()
@@ -121,7 +147,7 @@ void AMFWUpgrade::release()
     NOTICE("This is the last reference of AMFWUpgrade's object, "
         "delete object instance 0x%p", m_instance);
     delete m_instance;
-    m_instance = NULL;
+    m_instance = nullptr;
   }
 }
 
@@ -133,7 +159,7 @@ bool AMFWUpgrade::init()
   if (!m_init) {
     if (!init_config_file(UPGRADE_CFG_PARTITION_NAME,
                           ADD_MOUNT_DIR,
-                          DEFAULT_MOUNT_FS_TYPE,
+                          MOUNT_FS_TYPE,
                           UPGRADE_CFG_FILE_NAME)) {
       ERROR("AMFWUpgrade::init() fail.");
       ret = false;
@@ -183,7 +209,7 @@ bool AMFWUpgrade::init_config_file(const string &parti_name,
 
     if (m_config) {
       delete m_config;
-      m_config = NULL;
+      m_config = nullptr;
     }
 
     m_config = AMConfig::create(config_file.c_str());
@@ -197,7 +223,7 @@ bool AMFWUpgrade::init_config_file(const string &parti_name,
       ERROR("AMFWUpgrade::save_fw_path: fail to serialize lua table\n");
       ret = false;
       delete m_config;
-      m_config = NULL;
+      m_config = nullptr;
       break;
     }
   } while (0);
@@ -209,18 +235,20 @@ bool AMFWUpgrade::set_upgrade_status(const AM_UPGRADE_STATUS state)
 {
   bool ret = true;
 
-  INFO("AMFWUpgrade::set_upgrade_status %d", state);
-  if (state != m_state) {
-    if (m_config) {
-      m_state = state;
-      (*m_config)[UPGRADE_STATE_NAME].set<int32_t>((int32_t)m_state);
-      if (!m_config->save()) {
-        ERROR("Failed to save upgrade config.");
+  if (m_init) {
+    INFO("AMFWUpgrade::set_upgrade_status %d", state);
+    if (state != m_state) {
+      if (m_config) {
+        m_state = state;
+        (*m_config)[UPGRADE_STATE_NAME].set<int32_t>((int32_t)m_state);
+        if (!m_config->save()) {
+          ERROR("Failed to save upgrade config.");
+          ret = false;
+        }
+      } else {
+        ERROR("m_config is NULL.");
         ret = false;
       }
-    } else {
-      ERROR("m_config is NULL.");
-      ret = false;
     }
   }
 
@@ -266,6 +294,39 @@ bool AMFWUpgrade::set_mode(AM_UPGRADE_MODE mode)
   return ret;
 }
 
+bool AMFWUpgrade::set_use_sdcard(const uint32_t use_sdcard)
+{
+  DECLARE_MUTEX;
+  bool ret = true;
+  uint32_t use_sd = 0;
+
+  do {
+    if (!init()) {
+      ret = false;
+      break;
+    }
+
+    use_sd = !!(use_sdcard);
+    INFO("set_use_sdcard=%d\n", use_sd);
+    if (m_config) {
+      m_use_sdcard = (*m_config)[USE_SDCARD].get<int32_t>(0);
+      if (use_sd != m_use_sdcard) {
+        m_use_sdcard = use_sd;
+        (*m_config)[USE_SDCARD] = (int32_t)m_use_sdcard;
+        if (!m_config->save()) {
+          ERROR("Failed to save upgrade config.");
+          ret = false;
+        }
+      }
+    } else {
+      ERROR("m_config is NULL.");
+      ret = false;
+    }
+  } while (0);
+
+  return ret;
+}
+
 bool AMFWUpgrade::set_fw_url(const string &fw_url, const string &fw_save_path)
 {
   DECLARE_MUTEX;
@@ -305,14 +366,14 @@ bool AMFWUpgrade::set_fw_url(const string &fw_url, const string &fw_save_path)
 
       /* set dst_file according to src_file */
       if (fw_save_path.empty() || S_ISDIR(buf.st_mode)) {
-        uint32_t pos = fw_url.find_last_of('/');
+        size_t pos = fw_url.find_last_of('/');
         if (pos != string::npos) {
           if (pos != (fw_url.size() - 1)) {
             fw_path += fw_url.substr(pos + 1);
           } else {
             pos = fw_url.find_last_not_of('/');
             if (pos != string::npos) {
-              uint32_t s_pos = fw_url.find_last_of('/', pos);
+              size_t s_pos = fw_url.find_last_of('/', pos);
               if (s_pos != string::npos) {
                 fw_path += fw_url.substr(s_pos + 1, pos - s_pos);
               } else {
@@ -397,7 +458,7 @@ void AMFWUpgrade::remove_previous_fw(const string &fw_path)
   //remove previous image -- only check adc partition
   last_fw_path = (*m_config)[FW_FILE_PATH].get<string>("");
   if (!last_fw_path.empty()) {
-    uint32_t pos = 0;
+    size_t pos = 0;
     pos = last_fw_path.find_last_of("/");
     if (pos != string::npos && (pos != (last_fw_path.size() - 1))) {
       last_fw_name = last_fw_path.substr(pos + 1);
@@ -407,7 +468,7 @@ void AMFWUpgrade::remove_previous_fw(const string &fw_path)
   }
 
   if (!fw_path.empty()) {
-    uint32_t pos = 0;
+    size_t pos = 0;
     pos = fw_path.find_last_of("/");
     if (pos != string::npos && (pos != (fw_path.size() - 1))) {
       fw_name = fw_path.substr(pos + 1);
@@ -416,8 +477,8 @@ void AMFWUpgrade::remove_previous_fw(const string &fw_path)
     }
   }
 
-  if (!last_fw_name.empty() && !m_adc_dir.empty()) {
-    last_fw_path = m_adc_dir + last_fw_name;
+  if (!last_fw_name.empty()) {
+    last_fw_path = m_adc_dir + "/" + last_fw_name;
 
     if (fw_name != last_fw_name && !access(last_fw_path.c_str(), F_OK)) {
       printf("removing previous old firmware ...\n");
@@ -428,7 +489,6 @@ void AMFWUpgrade::remove_previous_fw(const string &fw_path)
 
 bool AMFWUpgrade::save_fw_path(const string &fw_path)
 {
-
 
   bool ret = true;
 
@@ -532,12 +592,20 @@ bool AMFWUpgrade::check_dl_file()
   do {
     if (!m_fw_path.empty()) {
       string files_list;
-
-      AMDec7z *dec = AMDec7z::create(m_fw_path);
+      PRINTF("Checking downloaded file ...");
+      AMIArchive *dec = AMIArchive::create();
       if (!dec) {
+        ERROR("Failed to create AMIArchive instance.");
+        ret = false;
+        break;
+      }
+
+      ret = dec->get_file_list(m_fw_path, files_list);
+      delete dec;
+
+      if (!ret) {
         struct stat statbuff;
 
-        ret = false;
         if (stat(m_fw_path.c_str(), &statbuff) < 0) {
           printf("get %s stat error.", m_fw_path.c_str());
           break;
@@ -545,8 +613,8 @@ bool AMFWUpgrade::check_dl_file()
           if (statbuff.st_size < 4096) {
             ifstream in_file;
             string line_str;
-            uint32_t s_pos = string::npos;
-            uint32_t e_pos = string::npos;
+            size_t s_pos = string::npos;
+            size_t e_pos = string::npos;
 
             in_file.open(m_fw_path.c_str(), ios::in);
             if (!in_file.is_open()) {
@@ -588,16 +656,16 @@ bool AMFWUpgrade::check_dl_file()
         break;
       }
 
-      dec->get_filename_in_7z(files_list);
       if (files_list.empty() ||
-          (files_list.find(KERNERL_NAME) == string::npos &&
+          (files_list.find(DTS_FILE_SUFFIX) == string::npos &&
+              files_list.find(BLD_NAME) == string::npos &&
+              files_list.find(KERNEL_NAME) == string::npos &&
               files_list.find(UBIFS_NAME) == string::npos)) {
-        printf("Upgrade firmware invalid. No '%s' or '%s' found.\n",
-               KERNERL_NAME, UBIFS_NAME);
+        printf("Upgrade firmware invalid. No 'dts.dtb', '%s', '%s' or '%s' found.\n",
+               BLD_NAME, KERNEL_NAME, UBIFS_NAME);
         ret = false;
       }
 
-      dec->destroy();
     }
   } while (0);
 
@@ -686,16 +754,15 @@ bool AMFWUpgrade::copy_fw_to_ADC()
     }
     if (!access(fw_path.c_str(), F_OK)) {
       string sub_str;
-      uint32_t pos = 0;
+      size_t pos = 0;
 
       pos = fw_path.find_last_of('/');
       if (pos != string::npos) {
         sub_str = fw_path.substr(pos);
-        adc_path = m_adc_dir + sub_str;
       } else {
         sub_str = "/" + fw_path;
-        adc_path = m_adc_dir + sub_str;
       }
+      adc_path = m_adc_dir + sub_str;
 
       if (fw_path != adc_path) {
         if (!copy_file(fw_path, adc_path)) {
@@ -749,7 +816,7 @@ bool AMFWUpgrade::upgrade()
         }
         break;
       case AM_UPGRADE_ONLY:
-        if (copy_fw_to_ADC()) {
+        if (m_use_sdcard || copy_fw_to_ADC()) {
           if (!set_upgrade_cmd()) {
             ret = false;
             set_upgrade_status(AM_INIT_PBA_SYS_FAIL);
@@ -810,14 +877,15 @@ void AMFWUpgrade::run_upgrade_thread(void *paras, uint32_t paras_size)
   } else {
     INFO("Begin upgrade thread.");
     if (!m_in_progress) {
+      AMUpgradeArgs up_paras = {0};
+      memcpy(&up_paras, paras, sizeof(AMUpgradeArgs));
       m_in_progress = true;
-      thread upgrade_th(upgrade_thread, paras);
+      thread upgrade_th(upgrade_thread, up_paras);
       upgrade_th.detach();
     } else {
       PRINTF("Upgrade is in progress, please try again later!");
     }
   }
-
 }
 
 bool AMFWUpgrade::download_init()
@@ -892,8 +960,8 @@ bool AMFWUpgrade::get_partition_index_str(const string &partition_name,
     while (!in_file.eof()) {
       getline(in_file, line_str);
       if (line_str.find(p_name) != string::npos) {
-        uint32_t s_pos;
-        uint32_t e_pos;
+        size_t s_pos;
+        size_t e_pos;
 
         s_pos = line_str.find("mtd");
         if (s_pos == string::npos) {
@@ -928,18 +996,19 @@ bool AMFWUpgrade::get_partition_index_str(const string &partition_name,
 
   return ret;
 }
-
-AM_MOUNT_STATUS AMFWUpgrade::is_mounted(const string &device_path,
-                                        const string &mount_dst)
+/* need to do: check ubifs */
+AM_MOUNT_STATUS AMFWUpgrade::is_mounted(const string &mtd_index,
+                                        const string &mount_dst,
+                                        const string &mount_fs_type)
 {
   AM_MOUNT_STATUS ret = AM_NOT_MOUNTED;
   bool last_is_slash = false;
-  int32_t last_char = 0;
+  int32_t len = 0;
   string line_str;
   string dst_dir("");
   ifstream in_file;
 
-  INFO("device_path=%s mount_dst=%s", device_path.c_str(), mount_dst.c_str());
+  INFO("device_path=%s mount_dst=%s", mtd_index.c_str(), mount_dst.c_str());
   do {
     if (mount_dst.empty()) {
       NOTICE("partition_name is NULL.");
@@ -947,9 +1016,9 @@ AM_MOUNT_STATUS AMFWUpgrade::is_mounted(const string &device_path,
       break;
     }
 
-    last_char = mount_dst.length() - 1;
+    len = mount_dst.length();
     //remove duplicated slash
-    for(int i = 0; i < last_char; ++i) {
+    for(int i = 0; i < len; ++i) {
       if(mount_dst[i] != '/') {
         dst_dir += mount_dst[i];
         last_is_slash = false;
@@ -961,9 +1030,9 @@ AM_MOUNT_STATUS AMFWUpgrade::is_mounted(const string &device_path,
       }
     }
 
-    /* if the last character is '/' */
-    if (mount_dst[last_char] != '/' || 0 == last_char) {
-      dst_dir += mount_dst[last_char];
+    len = dst_dir.length();
+    if (len > 1 && dst_dir[len - 1] == '/') {
+      dst_dir = dst_dir.substr(0, len - 1);
     }
 
     dst_dir += " ";
@@ -977,20 +1046,52 @@ AM_MOUNT_STATUS AMFWUpgrade::is_mounted(const string &device_path,
     while (!in_file.eof()) {
       getline(in_file, line_str);
       if (line_str.find(dst_dir) != string::npos) {
-        if (device_path.empty() || line_str.find(device_path) == string::npos) {
+        if (mtd_index.empty()) {
           ret = AM_MOUNTED_OTHER;
           break;
+        }
+        if (mount_fs_type != UBIFS_FS_TYPE) {
+          string device_path(MTDBLOCK_DEVICE_PATH);
+          device_path += mtd_index;
+          if (line_str.find(device_path) == string::npos) {
+            ret = AM_MOUNTED_OTHER;
+            break;
+          } else {
+            ret = AM_ALREADY_MOUNTED;
+            break;
+          }
         } else {
-          ret = AM_ALREADY_MOUNTED;
+          string sub_str;
+          size_t s_pos = 0;
+          size_t e_pos = 0;
+
+          e_pos = line_str.find_first_of('_');
+
+          if (s_pos != string::npos) {
+            string ubi_node;
+            string ubi_node_path;
+
+            sub_str = line_str.substr(0, e_pos);
+            get_ubi_node(mtd_index, ubi_node);
+            if (!ubi_node.empty()) {
+              sub_str = sub_str.substr(0, e_pos);
+              ubi_node_path = "/dev/" + ubi_node;
+              PRINTF("ubi_node_path=%s\n", ubi_node_path.c_str());
+              if (ubi_node_path == sub_str) {
+                ret = AM_ALREADY_MOUNTED;
+                break;
+              }
+            }
+          }
+          ret = AM_MOUNTED_OTHER;
           break;
         }
       }
     }
-  } while (0);
 
-  if (in_file.is_open()) {
     in_file.close();
-  }
+
+  } while (0);
 
   return ret;
 }
@@ -1000,7 +1101,7 @@ bool AMFWUpgrade::umount_dir(const string &umount_dir)
   bool ret = true;
 
   INFO("AMFWUpgrade::umount_dir(%s) is called.", umount_dir.c_str());
-  if (!umount_dir.empty() && is_mounted("", umount_dir) > 0) {
+  if (!umount_dir.empty() && is_mounted("", umount_dir, "") > 0) {
     if (umount(umount_dir.c_str())) {
       NOTICE("Umount %s failed.", umount_dir.c_str());
       ret = false;
@@ -1059,11 +1160,11 @@ AM_MOUNT_STATUS AMFWUpgrade::mount_partition(const string &device_name,
   //record adc partition mount dir
   if (ret == AM_MOUNTED || ret == AM_ALREADY_MOUNTED) {
     if (device_name == UPGRADE_ADC_PARTITION) {
-      uint32_t pos = mount_dst.find_last_not_of("/");
+      size_t pos = mount_dst.find_last_not_of("/");
       if (pos == string::npos) {
-        m_adc_dir = "/";
+        m_adc_dir = "";
       } else {
-        m_adc_dir = mount_dst.substr(0, pos + 1) + "/";
+        m_adc_dir = mount_dst.substr(0, pos + 1);
       }
     }
   }
@@ -1082,11 +1183,52 @@ AM_UPGRADE_STATUS AMFWUpgrade::get_upgrade_status()
   } else {
     if (init() && m_config) {
       AMConfig& cfg = *m_config;
-      state = (AM_UPGRADE_STATUS)(cfg[UPGRADE_STATE_NAME].get<int32_t>(0));
+      state = (AM_UPGRADE_STATUS)(cfg[UPGRADE_STATE_NAME].get<int>(0));
     }
   }
 
   return state;
+}
+
+void AMFWUpgrade::get_ubi_node(const string &index_str, string &ubi_node)
+{
+  char file_path[PATH_LEN] = {0};
+  string line_str;
+  ifstream in_file;
+  DIR *dirp;
+  struct dirent *direntp;
+
+  ubi_node.clear();
+
+  do {
+    if ((dirp = opendir("/sys/class/ubi/")) == nullptr) {
+      ERROR("Failed to open folder /sys/class/ubi/.");
+      break;
+    }
+
+    while ((direntp = readdir(dirp)) != nullptr) {
+      /* the folder name is like ubi1_0 after ubimkvol, so just check "_" */
+      if ( !strncmp(direntp->d_name, "ubi", 3) && !strchr(direntp->d_name, '_')) {
+        snprintf(file_path, PATH_LEN - 1,"/sys/class/ubi/%s/mtd_num", direntp->d_name);
+        in_file.open(file_path, ios::in);
+        if (!in_file.is_open()) {
+          ERROR("Failed to open %s", file_path);
+          break;
+        }
+
+        if (!in_file.eof()) {
+          getline(in_file, line_str);
+          if (line_str == index_str) {
+            ubi_node = direntp->d_name;
+            in_file.close();
+            break;
+          }
+        }
+        in_file.close();
+      }
+    }
+    closedir(dirp);
+  } while (0);
 }
 
 AM_MOUNT_STATUS AMFWUpgrade::m_mount_partition(const string &device_name,
@@ -1116,12 +1258,6 @@ AM_MOUNT_STATUS AMFWUpgrade::m_mount_partition(const string &device_name,
       break;
     }
 
-    if (access(mount_dst.c_str(), F_OK)) {
-      if (!create_dir(mount_dst)) {
-        break;
-      }
-    }
-
     if (!get_partition_index_str(device_name, index_str)) {
       break;
     }
@@ -1132,11 +1268,18 @@ AM_MOUNT_STATUS AMFWUpgrade::m_mount_partition(const string &device_name,
     }
 
     device_path += index_str;
-    ret = is_mounted(device_path, mount_dst);
-    if (ret == AM_MOUNTED_OTHER || ret == AM_UNKNOWN) {
-      PRINTF("%s is already mounted to another device or check mount error",
-             mount_dst.c_str());
-      break;
+
+    if (access(mount_dst.c_str(), F_OK)) {
+      if (!create_dir(mount_dst)) {
+        break;
+      }
+    } else {
+      ret = is_mounted(index_str, mount_dst, fs_type);
+      if (ret == AM_MOUNTED_OTHER || ret == AM_UNKNOWN) {
+        PRINTF("%s is already mounted to another device or check mount error",
+               mount_dst.c_str());
+        break;
+      }
     }
 
     if (ret == AM_ALREADY_MOUNTED) {
@@ -1144,10 +1287,51 @@ AM_MOUNT_STATUS AMFWUpgrade::m_mount_partition(const string &device_name,
              device_name.c_str(), mount_dst.c_str());
       break;
     } else { /* ret == AM_NOT_MOUNTED */
+      if (fs_type_str == UBIFS_FS_TYPE) {
+        int32_t status = 0;
+        string cmd_line("");
+        string ubi_nod("");
+        string ubi_nod_path("");
+
+        if (access("/dev/ubi_ctrl", F_OK)) {
+          ERROR("mount ubifs: /dev/ubi_ctrl not found!");
+          break;
+        }
+
+        get_ubi_node(index_str, ubi_nod);
+        if (ubi_nod.empty()) {
+          cmd_line = "/usr/sbin/ubiattach /dev/ubi_ctrl -m " + index_str;
+          status = system(cmd_line.c_str());
+          if (WEXITSTATUS(status)) {
+            ERROR("%s :failed\n", cmd_line.c_str());
+            break;
+          }
+
+          get_ubi_node(index_str, ubi_nod);
+          if (ubi_nod.empty()) {
+            ERROR("failed to ubiattach to %s partition", device_name.c_str());
+            break;
+          }
+        }
+
+        device_path.clear();
+        device_path = "/dev/"+ ubi_nod + "_0";
+        if (access(device_path.c_str(), F_OK)) {
+          ubi_nod_path = "/dev/"+ ubi_nod;
+          cmd_line.clear();
+          cmd_line = "/usr/sbin/ubimkvol "+ ubi_nod_path + " -N " + device_name + " -m";
+          status = system(cmd_line.c_str());
+          if (WEXITSTATUS(status)) {
+            ERROR("%s :failed\n", cmd_line.c_str());
+            break;
+          }
+        }
+      }
+
       if (mount(device_path.c_str(), mount_dst.c_str(),
                 fs_type_str.c_str(), 0, 0)) {
-        PRINTF("Failed mount %s to %s.",
-               device_path.c_str(), mount_dst.c_str());
+        PRINTF("Failed mount %s to %s, mount fs_type: %s.",
+               device_path.c_str(), mount_dst.c_str(), fs_type_str.c_str());
         PERROR("Mount failed.");
         break;
       } else {
@@ -1165,25 +1349,25 @@ bool AMFWUpgrade::is_in_progress()
   return m_in_progress;
 }
 
-void AMFWUpgrade::upgrade_thread(void *upgrade_args)
+void AMFWUpgrade::upgrade_thread(AMUpgradeArgs upgrade_paras)
 {
   AM_MOUNT_STATUS mounted_status = AM_NOT_MOUNTED;
   AM_UPGRADE_MODE mode = AM_DOWNLOAD_AND_UPGRADE;
   string device_name(UPGRADE_ADC_PARTITION);
   string dst_dir(ADC_MOUNT_DIR);
-  string mount_fs_type(DEFAULT_MOUNT_FS_TYPE);
+  string mount_fs_type(MOUNT_FS_TYPE);
   int32_t array_len = 0;
-  AMUpgradeArgs upgrade_paras;
-  AMFWUpgrade *upgrade_ptr = NULL;
+  AMFWUpgrade *upgrade_ptr = nullptr;
 
   do {
-    memcpy(&upgrade_paras, upgrade_args, sizeof(upgrade_paras));
     if (upgrade_paras.upgrade_mode < AM_DOWNLOAD_ONLY ||
         upgrade_paras.upgrade_mode > AM_DOWNLOAD_AND_UPGRADE) {
       ERROR("Upgrade mode is invalid.\n");
       break;
     }
-
+    INFO("\nUPGRADE SETTINGS:\nMode: %u\nPath: %s\nUseSDcard: %u\ntimeout=%u\n",
+         upgrade_paras.upgrade_mode, upgrade_paras.path_to_upgrade_file,
+         upgrade_paras.use_sdcard, upgrade_paras.timeout);
     upgrade_ptr = AMFWUpgrade::get_instance();
     if (!upgrade_ptr) {
       ERROR("AMIFWUpgrade::get_instance() failed.");
@@ -1192,24 +1376,40 @@ void AMFWUpgrade::upgrade_thread(void *upgrade_args)
 
     upgrade_ptr->inc_ref();
     mode = (AM_UPGRADE_MODE)(upgrade_paras.upgrade_mode);
+    INFO("upgrade mode: %d", upgrade_paras.upgrade_mode);
     if (!upgrade_ptr->set_mode(mode)) {
       ERROR("Initializing mode %d failed.\n", upgrade_paras.upgrade_mode);
       break;
     }
 
-    printf("Mount %s to %s ...\n", device_name.c_str(), dst_dir.c_str());
-    mounted_status = upgrade_ptr->mount_partition(device_name,
-                                                  dst_dir,
-                                                  mount_fs_type);
-    if (mounted_status != AM_MOUNTED &&
-        mounted_status != AM_ALREADY_MOUNTED) {
-      ERROR("Mount %s to %s failed!\n",
-            device_name.c_str(), dst_dir.c_str());
-      break;
+    if (upgrade_paras.use_sdcard) {
+      INFO("sdcard is used.");
+      dst_dir = SD_MOUNT_DIR;
+      if (!upgrade_ptr->set_use_sdcard(1)) {
+        ERROR("set use sdcard failed.");
+        break;
+      }
+    } else {
+      INFO("sdcard is not used.");
+      printf("Mount %s to %s ...\n", device_name.c_str(), dst_dir.c_str());
+      mounted_status = upgrade_ptr->mount_partition(device_name,
+                                                    dst_dir,
+                                                    mount_fs_type);
+      if (mounted_status != AM_MOUNTED &&
+          mounted_status != AM_ALREADY_MOUNTED) {
+        ERROR("Mount %s to %s failed!\n",
+              device_name.c_str(), dst_dir.c_str());
+        break;
+      }
+      if (!upgrade_ptr->set_use_sdcard(0)) {
+        ERROR("set not use sdcard failed.");
+        break;
+      }
     }
 
     array_len = sizeof(upgrade_paras.path_to_upgrade_file);
     upgrade_paras.path_to_upgrade_file[array_len - 1] = '\0';
+    INFO("fw path: %s", upgrade_paras.path_to_upgrade_file);
     if (mode == AM_UPGRADE_ONLY) {
       if (upgrade_paras.path_to_upgrade_file[0]) {
         printf("Setting upgrade firmware path ...\n");
@@ -1245,7 +1445,7 @@ void AMFWUpgrade::upgrade_thread(void *upgrade_args)
       }
 
       if (upgrade_paras.timeout) {
-        printf("Setting connecting timeout ...\n");
+        printf("Setting connecting timeout to %d\n", upgrade_paras.timeout);
         if (!upgrade_ptr->set_dl_connect_timeout(upgrade_paras.timeout)) {
           ERROR("Setting connecting timeout to %u second(s) failed.\n",
                 upgrade_paras.timeout);
@@ -1279,7 +1479,7 @@ void AMFWUpgrade::upgrade_thread(void *upgrade_args)
     if (mode != AM_DOWNLOAD_ONLY) {
       PRINTF("Rebooting to complete upgrade ...\n");
       sync();
-      reboot(RB_AUTOBOOT);
+      system("/sbin/reboot");
     }
   } while (0);
 

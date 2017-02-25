@@ -5,20 +5,40 @@
  * History:
  *	2012/07/05 - [Jian Tang] created file
  *
- * Copyright (C) 2012-2016, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 
 #ifndef	__CMD__MSG_H__
 #define	__CMD__MSG_H__
 
-#define API_REVISION	"$Rev: 245408 $"
-#define API_REVISION_U32		(245408)
-#define IDSP_REVISION_U32		(244992)
+#define API_REVISION	"$Rev: 265457 $"
+#define API_REVISION_U32		(265457)
+#define IDSP_REVISION_U32		(264942)
 
 #define DSP_IN_LINUX_ENV
 
@@ -58,23 +78,6 @@ typedef enum {
 	DSP_UNKNOWN_MODE	= 0x03
 } dsp_op_mode_t;
 
-typedef struct {
-	u32	frame_num;
-	u32	PTS;
-	u32	start_addr;
-	u32	pic_type	: 3;
-	u32	level_idc	: 3;
-	u32	ref_idc		: 1;
-	u32	pic_struct	: 1;
-	u32	pic_size	: 24;
-	u32	stream_id	: 8;
-	u32 session_id	: 4;
-	u32	res_1		: 20;
-	u32 pjpeg_start_addr;
-	u32 pjpeg_size;
-	u32 hw_pts;
-} BIT_STREAM_HDR;
-
 ///////////////
 
 /* General definitions */
@@ -95,6 +98,7 @@ typedef enum {
 	CAT_VCAP = 0,
 	CAT_ENC = 1,
 	CAT_DEC = 2,
+	CAT_VOUT = 7,
 	CAT_AMB_EXP = 254,
 	CAT_INVALID = 255,
 } DSP_CMD_CAT;
@@ -149,7 +153,8 @@ typedef unsigned long   u_long;
 #define DSP_DEBUG_LEVEL_SETUP		0x0000100D
 #define SYSTEM_PARAMETERS_SETUP		0x0000100E
 #define SYSTEM_IDSP_FREQ_SETUP		0x0000100F
-#define HASH_VERIFICATION               0x00001010
+#define HASH_VERIFICATION		0x00001010
+#define HASH_VERIFICATION_EX		0x00001011
 
 #define MCTF_MV_STAB_SETUP		0x0000200D
 #define SET_SLOW_SHUT_UP_SAMPL_RT   	0x0000200E
@@ -401,6 +406,9 @@ typedef enum{
 	AMBA_CHIP_ID_S2L_88 = 6,
 	AMBA_CHIP_ID_S2L_99 = 7,
 	AMBA_CHIP_ID_S2L_TEST = 8,
+	AMBA_CHIP_ID_S2L_22 = 9,
+	AMBA_CHIP_ID_S2L_33MEX = 10,
+	AMBA_CHIP_ID_S2L_33EX = 11,
 } amba_chip_id_t;
 
 /* DSP CMD/MSG protocol version */
@@ -408,6 +416,12 @@ typedef enum {
 	MPV_RING_BUFFER = 0,
 	MPV_FIXED_BUFFER = 1,
 } DSP_MSG_PROTOCOL_VERSION;
+
+/* DSP vout profile field */
+typedef enum {
+	DEFAULT_VOUT_PROFILE = 0,
+	DEFAULT_VOUT0_4M_ROTATE_PROFILE = 1,
+} DSP_VOUT_PROFILE;
 
 /**
  *  DSP_INIT_DATA contains initialization related parameters
@@ -436,7 +450,9 @@ typedef struct dsp_init_data
 	u32 dsp_log_buf_ptr;
 	u32 prev_cmd_seq_num;
 	u32 cmdmsg_protocol_version;
-	u32 reserved_2[11];
+	u32 vout_profile : 3;
+	u32 dsp_log_size : 29;
+	u32 reserved_3[10];
 }dsp_init_data_t;
 
 // Structure that indicate the vdsp interrupt status
@@ -643,6 +659,10 @@ typedef struct h264_encode_setup_s
 	u32 chroma_format : 1 ;
 	u32 reserved : 7 ;
 	u32 custom_encoder_frame_rate ;
+	u32 mvdump_daddr;
+	u32 mvdump_fifo_limit;
+	u32 mvdump_fifo_unit_sz;
+	u32 mvdump_dpitch;
 }h264_encode_setup_t;
 
 typedef h264_encode_setup_t vid_encode_setup_t;
@@ -841,10 +861,13 @@ typedef struct system_setup_info_s
 	u32 adv_iso_disabled : 1;  /* if set, aliso (mode 4) supports 1-pass + temporal adjust */
 	u32 me0_scale_factor : 2; /* 0 - disabled; 1 - 8x; 2 - 16x */
 	u32 vout_swap : 1; /* 0: prev A uses VOUT0, prev B uses VOUT1 ; 1: prev A uses VOUT1, prev B uses VOUT0 */
-	u32 padding : 5;
+	u32 vin_overflow_protection : 1; /* 0: disabled ; 1: enabled */
+	u32 padding : 4;
 
 	applicaton_mode_t  sub_mode_sel; //0: Camcorder mode (single-stream encoder) 1: DVR mode (multiple-stream encoder)
-	u8  reserved1;     // number of input YUV sources muxed together.
+	u8  reserved1 : 3;     // number of input YUV sources muxed together.
+	u8  force_blend_tile : 1; /* mode_flags=5 only. If set, tile size in blend stage is the same as in c2y + LPF. */
+	u8  reserved2 : 4;
 	u8  lcd_3d;                      // need to support LCD 3D rotation
 	u8  iv_360;       // need to support 360 degree image/video playback.
 	u8  mode_flags; /* determines the IDSP pipeline to run */
@@ -2773,7 +2796,8 @@ typedef struct h264_encode_s
 	u8 log2_max_pic_order_cnt_lsb_minus4;
 	u8 sony_avc : 1;
 	u8 gaps_in_frame_num_value_allowed_flag : 1;
-	u8 reserved : 6;
+	u8 custom_bitstream_restriction_cfg : 1; //the SPS bitstreamRestriction syntax will be 0 -- calculated by DSP; 1 -- set by IAV
+	u8 reserved : 5;
 	u16 height_mjpeg_h264_simultaneous;
 
 	u16 width_mjpeg_h264_simultaneous;
@@ -2968,12 +2992,27 @@ typedef struct hash_verfication_s
 	u8 hash_input[8];
 } hash_verification_t;
 
+typedef struct hash_verfication_ex_s
+{
+	u32 cmd_code;
+	u32 reserved; //reserved for future extension like "hash_check_version"
+	u8 hash_input[32];
+} hash_verification_ex_t;
+
 /* use for returning results for command HASH_VERIFICATION */
 typedef struct hash_verification_msg_s
 {
 	u32 msg_code ;
 	u8 hash_output[4];
 }hash_verification_msg_t;
+
+/* use for returning results for command HASH_VERIFICATION_EX */
+typedef struct hash_verification_msg_ex_s
+{
+	u32 msg_code;
+	u32 reserved; //reserved for future extension like "hash_check_version"
+	u8 hash_output[4] ;
+}hash_verification_msg_ex_t;
 
 /**
  * Still capture
@@ -4076,6 +4115,7 @@ typedef enum {
 	DSP_STATUS_MSG_EFM_REQ_FB = 0x00000004,
 	DSP_STATUS_MSG_EFM_HANDSHAKE = 0x00000005,
 	DSP_STATUS_MSG_HASH_VERIFICATION  = 0x00000006,
+	DSP_STATUS_MSG_HASH_VERIFICATION_EX  = 0x00000007,
 } DSP_STATUS_MSG_CODE;
 
 typedef struct encode_msg_s
@@ -4133,6 +4173,8 @@ typedef struct encode_msg_s
 	u32 main_me0_addr;
 	u32 flexible_dram_used;
 	u32 flexible_dram_free;
+	u32 preview_A_y_addr_early;
+	u32 preview_A_uv_addr_early;
 } encode_msg_t;
 
 /*
@@ -4497,14 +4539,33 @@ typedef enum {
 
 typedef enum {
 	OSD_SRC_MAPPED_IN    = 0,
-       OSD_SRC_DIRECT_IN_16 = 1,
+	OSD_SRC_DIRECT_IN_16 = 1,
 } osd_src_t;
 
 typedef enum {
-	OSD_MODE_UYV565    = 0,
-	OSD_MODE_AYUV4444  = 1,
-	OSD_MODE_AYUV1555  = 2,
-	OSD_MODE_YUV1555   = 3,
+	/* 16-bit mode */
+	OSD_MODE_VYU565     = 0, /* 5:6:5 (VYU) or (RGB) */
+	OSD_MODE_RGB565     = 0,
+	OSD_MODE_UYV565     = 1, /* 5:6:5 (UYV) or (BGR) */
+	OSD_MODE_BGR565     = 1,
+	OSD_MODE_AYUV4444   = 2, /* 4:4:4:4 (AYUV) */
+	OSD_MODE_RGBA4444   = 3, /* 4:4:4:4 (RGBA) */
+	OSD_MODE_BGRA4444   = 4, /* 4:4:4:4 (BGRA) */
+	OSD_MODE_ABGR4444   = 5, /* 4:4:4:4 (ABGR) */
+	OSD_MODE_ARGB4444   = 6, /* 4:4:4:4 (ARGB) */
+	OSD_MODE_AYUV1555   = 7, /* 1:5:5:5 (AYUV) */
+	OSD_MODE_YUV1555    = 8, /* 1:5:5:5 (MSB ignored, YUV) */
+	OSD_MODE_RGBA5551   = 9, /* 5:5:5:1 (RGBA) */
+	OSD_MODE_BGRA5551   = 10, /* 5:5:5:1 (BGRA) */
+	OSD_MODE_ABGR1555   = 11, /* 1:5:5:5 (ABGR) */
+	OSD_MODE_ARGB1555   = 12, /* 1:5:5:5 (ARGB) */
+
+	/* 32-bit mode */
+	OSD_MODE_AYUV8888   = 27, /* 8:8:8:8 (AYUV) */
+	OSD_MODE_RGBA8888   = 28, /* 8:8:8:8 (RGBA) */
+	OSD_MODE_BGRA8888   = 29, /* 8:8:8:8 (BGRA) */
+	OSD_MODE_ABGR8888   = 30, /* 8:8:8:8 (ABGR) */
+	OSD_MODE_ARGB8888   = 31, /* 8:8:8:8 (ARGB) */
 } osd_dir_mode_t;
 
 typedef enum {
@@ -4555,7 +4616,7 @@ typedef struct vout_video_setup_s {
   u32 default_img_uv_addr;
   u16 default_img_pitch;
   u8  default_img_repeat_field;
-  u8  reserved2;
+  u8  num_stat_lines_at_top;
 } vout_video_setup_t;
 
 // (cmd code 0x00007003)
@@ -4706,17 +4767,18 @@ typedef struct real_time_cbr_modify_s
 typedef struct ipcam_capture_preview_size_setup_s
 {
 	u32 cmd_code;
-    u32 preview_id : 2 ;
-    u32 output_scan_format : 1 ;
-    u32 deinterlace_mode : 2 ;
-    u32 disabled : 1 ;
-    u32 Reserved1 : 26 ;
-    u16 cap_width ;
-    u16 cap_height ;
-    u16 input_win_offset_x ;
-    u16 input_win_offset_y ;
-    u16 input_win_width ;
-    u16 input_win_height ;
+	u32 preview_id : 2 ;
+	u32 output_scan_format : 1 ;
+	u32 deinterlace_mode : 2 ;
+	u32 disabled : 1 ;
+	u32 skip_interval : 8; /* 0-N. Capture one frame every N+1 frame */
+	u32 Reserved1 : 18 ;
+	u16 cap_width ;
+	u16 cap_height ;
+	u16 input_win_offset_x ;
+	u16 input_win_offset_y ;
+	u16 input_win_width ;
+	u16 input_win_height ;
 } ipcam_capture_preview_size_setup_t ;
 
 /* for capture_source in ipcam_video_encode_size_setup_t */
@@ -4791,10 +4853,41 @@ typedef struct ipcam_video_system_setup_s
 	u16 stream_1_LT_enable : 1;
 	u16 stream_2_LT_enable : 1;
 	u16 stream_3_LT_enable : 1;
-	u16 reserved1 : 4;
-	u16 max_warp_region_input_height;
-	u16 reserved2;
+	u16 B_frame_enable_in_LT_gop : 1;
+	u16 prev_A_extra_line_at_top : 1;
+	u16 vca_preview_id : 2 ;
+	u16 max_warp_region_input_height ;
+	u16 vca_frame_num;
+	u32 vca_daddr_base;
+	u32 vca_daddr_size;
+	u32 enc_buf_extra_MB_row_at_top : 1;
+	u32 reserved : 31;
 }ipcam_video_system_setup_t ;
+
+/* For enable_flags in cmd 0x6004 */
+enum {
+	REALTIME_PARAM_CBR_MODIFY_BIT = (1 << 0),
+	REALTIME_PARAM_CUSTOM_FRAME_RATE_BIT = (1 << 1),
+	REALTIME_PARAM_QP_LIMIT_BIT = (1 << 2),
+	REALTIME_PARAM_GOP_BIT = (1 << 3),
+	REALTIME_PARAM_CUSTOM_VIN_FPS_BIT = (1 << 4),
+	REALTIME_PARAM_INTRA_MB_ROWS_BIT = (1 << 5),
+	REALTIME_PARAM_PREVIEW_A_FRAME_RATE_BIT = (1 << 6),
+	REALTIME_PARAM_QP_ROI_MATRIX_BIT = (1 << 7),
+	REALTIME_PARAM_PANIC_MODE_BIT = (1 << 8),
+	REALTIME_PARAM_QUANT_MATRIX_BIT = (1 << 9),
+	REALTIME_PARAM_MONOCHROME_BIT = (1 << 10),
+	REALTIME_PARAM_INTRA_BIAS_BIT = (1 << 11),
+	REALTIME_PARAM_SCENE_DETECT_BIT = (1 << 12),
+	REALTIME_PARAM_FORCE_IDR_BIT = (1 << 13),
+	REALTIME_PARAM_ZMV_THRESHOLD_BIT = (1 << 14),
+	REALTIME_PARAM_FLAT_AREA_BIT = (1 << 15),
+	REALTIME_PARAM_FORCE_FAST_SEEK_BIT = (1 << 16),
+	REALTIME_PARAM_FRAME_DROP_BIT = (1 << 17),
+	REALTIME_PARAM_MV_DUMP_BIT = (1 << 18),
+	REALTIME_PARAM_LONG_REF_P_BIT = (1 << 19),
+	REALTIME_PARAM_FORCE_PSKIP_BIT = (1 << 20),
+};
 
 /* 0x6004 */
 typedef struct ipcam_real_time_encode_param_setup_s
@@ -4828,7 +4921,8 @@ typedef struct ipcam_real_time_encode_param_setup_s
 	u32 scene_change_detect_on : 1;
 	u32 flat_area_improvement_on : 1;
 	u32 drop_frame : 8;
-	u32 reserved0 : 13 ;
+	u32 mvdump_enable : 1;
+	u32 reserved0 : 12;
 	u32 pic_size_control;
 	u32 quant_matrix_addr ;
 	u16 P_IntraBiasAdd;
@@ -4845,8 +4939,25 @@ typedef struct ipcam_real_time_encode_param_setup_s
 	u8 user2_direct_bias;
 	u8 user3_intra_bias;
 	u8 user3_direct_bias;
-	u8 reserved1[2];
+	u8 force_pskip_num_plus1; /* 0: force one frame encode as pskip frame;
+								>= 1: (force_pskip_num_plus1-1) frames will encodes
+									as pskip between every two normal P frames */
+	u8 reserved1[1];
+	u32 set_I_size;
+	u8 q_qp_reduce;
+	u8 qp_min_on_Q;
+	u8 qp_max_on_Q;
+	u8 log_q_num_per_gop_plus_1;
 } ipcam_real_time_encode_param_setup_t ;
+
+/* mdSwCat structure for AVC per MB control*/
+typedef struct avc_mdSwCat_s
+{
+	u32 user_class : 8;
+	u32 qp_offset : 8;
+	u32 zmv_threshold_val : 8;
+	u32 reserved : 8;
+} avc_mdSwCat;
 
 /* 0x6007 */
 typedef struct ipcam_osd_insert_s
@@ -4857,7 +4968,8 @@ typedef struct ipcam_osd_insert_s
 	u32 osd_num_regions : 2 ;
 	u32 osd_enable_ex : 1 ; /* if set, osd_enable must be set also */
 	u32 osd_num_regions_ex : 2 ;
-	u32 reserved1 : 25 ;
+	u32 osd_insert_always : 1;
+	u32 reserved1 : 24;
 	u32 osd_clut_dram_address[3] ;
 	u32 osd_buf_dram_address[3] ;
 	u16 osd_buf_pitch[3] ;
@@ -5050,6 +5162,8 @@ typedef struct
 	u32 yuv_fId : 16;
 	u32 me1_fId : 16;
 	u32 pts;
+	u32 is_last_frame : 1;
+	u32 reserved : 31;
 } ipcam_efm_handshake_cmd_t;
 
 /* Adding Macros defined in the interface between ARM and VDSP */
@@ -5072,18 +5186,20 @@ typedef struct bit_stream_hdr_s
 	u32    frmNo;
 	u32    pts;
 	u32    start_addr;
-	u32    frameTy     : 3;
-	u32    levelIDC    : 3;
-	u32    refIDC      : 1;
-	u32    picStruct   : 1;
-	u32    length      :24;
-	u32    streamID	: 8;
+	u32    frameTy		: 3;
+	u32    levelIDC		: 3;
+	u32    refIDC		: 1;
+	u32    picStruct	: 1;
+	u32    length		: 24;
+	u32    streamID		: 8;
 	u32    sessionID	: 4;
-	u32    res_1		:20;
-	u32    pjpg_start_addr;
-	u32    pjpg_size;
+	u32    res_1		: 20;
+	u32    reserved;
+	u32    mvdump_curr_daddr;
 	u32    hw_pts;
 } bit_stream_hdr_t ;
+
+typedef bit_stream_hdr_t BIT_STREAM_HDR;
 
 #endif /* __CMD__MSG_H__ */
 

@@ -21,7 +21,232 @@
  *
  */
 #include <linux/module.h>
+#include <linux/io.h>
 #include <plat/clk.h>
+
+int ambarella_rct_clk_set_rate(struct clk *c, unsigned long rate)
+{
+	u32 pre_scaler, post_scaler, middle;
+	u32 intp, sdiv, sout, post, ctrl2, ctrl3;
+	u64 dividend, divider, diff;
+	union ctrl_reg_u ctrl_reg;
+	union frac_reg_u frac_reg;
+
+	if (!rate)
+		return -1;
+
+	BUG_ON(c->ctrl_reg == -1 || c->ctrl2_reg == -1 || c->ctrl3_reg == -1);
+	BUG_ON(c->post_reg != -1 && !c->max_divider);
+	BUG_ON(!c->table || c->table_size == 0);
+#if 0
+	if (c->divider)
+		rate *= c->divider;
+#endif
+	if (c->pres_reg != -1) {
+		if (c->pres_val) {
+			pre_scaler = c->pres_val;
+			if (c->extra_scaler == 1)
+				amba_rct_writel_en(c->pres_reg, (pre_scaler - 1) << 4);
+			else
+				amba_rct_writel(c->pres_reg, pre_scaler);
+		} else {
+			pre_scaler = amba_rct_readl(c->pres_reg);
+			if (c->extra_scaler == 1) {
+				pre_scaler >>= 4;
+				pre_scaler++;
+			}
+		}
+	} else {
+		pre_scaler = 1;
+	}
+
+	middle = ambarella_rct_find_pll_table_index(rate,
+			pre_scaler, c->table, c->table_size);
+	intp = c->table[middle].intp;
+	sdiv = c->table[middle].sdiv;
+	sout = c->table[middle].sout;
+	post = c->post_val ? c->post_val : c->table[middle].post;
+
+	ctrl_reg.w = amba_rct_readl(c->ctrl_reg);
+	ctrl_reg.s.intp = intp;
+	ctrl_reg.s.sdiv = sdiv;
+	ctrl_reg.s.sout = sout;
+	ctrl_reg.s.bypass = 0;
+	ctrl_reg.s.frac_mode = 0;
+	ctrl_reg.s.force_reset = 0;
+	ctrl_reg.s.power_down = 0;
+	ctrl_reg.s.halt_vco = 0;
+	ctrl_reg.s.tristate = 0;
+	ctrl_reg.s.force_lock = 1;
+	ctrl_reg.s.force_bypass = 0;
+	ctrl_reg.s.write_enable = 0;
+	amba_rct_writel_en(c->ctrl_reg, ctrl_reg.w);
+
+	if (c->post_reg != -1) {
+		post_scaler = min(post, c->max_divider);
+		if (c->extra_scaler == 1)
+			amba_rct_writel_en(c->post_reg, (post_scaler - 1) << 4);
+		else
+			amba_rct_writel(c->post_reg, post_scaler);
+	}
+
+	if (c->frac_mode) {
+		c->rate = ambarella_rct_clk_get_rate(c);
+		if (c->rate < rate)
+			diff = rate - c->rate;
+		else
+			diff = c->rate - rate;
+
+		dividend = diff * pre_scaler * (sout + 1) * post;
+		if (c->divider)
+			dividend *= c->divider;
+		dividend = dividend << 32;
+		divider = (u64)ambarella_clk_get_ref_freq() * (sdiv + 1);
+		AMBCLK_DO_DIV_ROUND(dividend, divider);
+		if (c->rate <= rate) {
+			frac_reg.s.nega	= 0;
+			frac_reg.s.frac	= dividend;
+		} else {
+			frac_reg.s.nega	= 1;
+			frac_reg.s.frac	= 0x80000000 - dividend;
+		}
+		amba_rct_writel(c->frac_reg, frac_reg.w);
+
+		ctrl_reg.w = amba_rct_readl(c->ctrl_reg);
+		if (diff)
+			ctrl_reg.s.frac_mode = 1;
+		else
+			ctrl_reg.s.frac_mode = 0;
+
+		ctrl_reg.s.force_lock = 1;
+		ctrl_reg.s.write_enable = 1;
+		amba_rct_writel(c->ctrl_reg, ctrl_reg.w);
+
+		ctrl_reg.s.write_enable	= 0;
+		amba_rct_writel(c->ctrl_reg, ctrl_reg.w);
+	}
+
+	ctrl2 = c->ctrl2_val ? c->ctrl2_val : 0x3f770000;
+	ctrl3 = c->ctrl3_val ? c->ctrl3_val : ctrl_reg.s.frac_mode ? 0x00069300 : 0x00068300;
+	amba_rct_writel(c->ctrl2_reg, ctrl2);
+	amba_rct_writel(c->ctrl3_reg, ctrl3);
+
+	c->rate = ambarella_rct_clk_get_rate(c);
+
+	return 0;
+}
+EXPORT_SYMBOL(ambarella_rct_clk_set_rate);
+
+u32 ambarella_rct_find_pll_table_index(unsigned long rate, u32 pre_scaler,
+	const struct pll_table *table, u32 table_size)
+{
+	u64 dividend;
+	u64 divider;
+	u32 start;
+	u32 middle;
+	u32 end;
+	u32 index_limit;
+	u64 diff = 0;
+	u64 diff_low = 0xFFFFFFFFFFFFFFFF;
+	u64 diff_high = 0xFFFFFFFFFFFFFFFF;
+
+	pr_debug("pre_scaler = [0x%08X]\n", pre_scaler);
+
+	dividend = rate;
+	dividend *= pre_scaler;
+	dividend *= (1000 * 1000 * 1000);
+	divider = ambarella_clk_get_ref_freq() / (1000 * 1000);
+	AMBCLK_DO_DIV(dividend, divider);
+
+	index_limit = (table_size - 1);
+	start = 0;
+	end = index_limit;
+	middle = table_size / 2;
+	while (table[middle].multiplier != dividend) {
+		if (table[middle].multiplier < dividend) {
+			start = middle;
+		} else {
+			end = middle;
+		}
+		middle = (start + end) / 2;
+		if (middle == start || middle == end) {
+			break;
+		}
+	}
+	if ((middle > 0) && ((middle + 1) <= index_limit)) {
+		if (table[middle - 1].multiplier < dividend) {
+			diff_low = dividend - table[middle - 1].multiplier;
+		} else {
+			diff_low = table[middle - 1].multiplier - dividend;
+		}
+		if (table[middle].multiplier < dividend) {
+			diff = dividend - table[middle].multiplier;
+		} else {
+			diff = table[middle].multiplier - dividend;
+		}
+		if (table[middle + 1].multiplier < dividend) {
+			diff_high = dividend - table[middle + 1].multiplier;
+		} else {
+			diff_high = table[middle + 1].multiplier - dividend;
+		}
+		pr_debug("multiplier[%u] = [%llu]\n", (middle - 1),
+			table[middle - 1].multiplier);
+		pr_debug("multiplier[%u] = [%llu]\n", (middle),
+			table[middle].multiplier);
+		pr_debug("multiplier[%u] = [%llu]\n", (middle + 1),
+			table[middle + 1].multiplier);
+	} else if ((middle == 0) && ((middle + 1) <= index_limit)) {
+		if (table[middle].multiplier < dividend) {
+			diff = dividend - table[middle].multiplier;
+		} else {
+			diff = table[middle].multiplier - dividend;
+		}
+		if (table[middle + 1].multiplier < dividend) {
+			diff_high = dividend - table[middle + 1].multiplier;
+		} else {
+			diff_high = table[middle + 1].multiplier - dividend;
+		}
+		pr_debug("multiplier[%u] = [%llu]\n", (middle),
+			table[middle].multiplier);
+		pr_debug("multiplier[%u] = [%llu]\n", (middle + 1),
+			table[middle + 1].multiplier);
+	} else if ((middle > 0) && ((middle + 1) > index_limit)) {
+		if (table[middle - 1].multiplier < dividend) {
+			diff_low = dividend - table[middle - 1].multiplier;
+		} else {
+			diff_low = table[middle - 1].multiplier - dividend;
+		}
+		if (table[middle].multiplier < dividend) {
+			diff = dividend - table[middle].multiplier;
+		} else {
+			diff = table[middle].multiplier - dividend;
+		}
+		pr_debug("multiplier[%u] = [%llu]\n", (middle - 1),
+			table[middle - 1].multiplier);
+		pr_debug("multiplier[%u] = [%llu]\n", (middle),
+			table[middle].multiplier);
+	}
+	pr_debug("diff_low = [%llu]\n", diff_low);
+	pr_debug("diff = [%llu]\n", diff);
+	pr_debug("diff_high = [%llu]\n", diff_high);
+	if (diff_low < diff) {
+		if (middle) {
+			middle--;
+		}
+	}
+	if (diff_high < diff) {
+		middle++;
+		if (middle > index_limit) {
+			middle = index_limit;
+		}
+	}
+	pr_debug("middle = [%u]\n", middle);
+
+	return middle;
+}
+EXPORT_SYMBOL(ambarella_rct_find_pll_table_index);
+
+/* ==========================================================================*/
 
 struct pll_table ambarella_pll_int_table[AMBARELLA_PLL_INT_TABLE_SIZE] =
 {

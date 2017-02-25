@@ -3,14 +3,33 @@
  *
  * History:
  *	2014/03/13 - [Zhikan Yang] created file
- * Copyright (C) 2007-2016, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 #include <config.h>
 #include <linux/random.h>
 #include <linux/slab.h>
@@ -28,6 +47,7 @@
 #include "iav_enc_api.h"
 #include "iav_enc_utils.h"
 
+static struct timer_list sw_timer;
 
 static inline u32 get_pm_mctf_pitch(u32 width)
 {
@@ -41,7 +61,8 @@ static inline u32 get_pm_mctf_pitch(u32 width)
 
 static inline u32 get_pm_mctf_height(u32 height)
 {
-	return ALIGN(height, PIXEL_IN_MB) / PIXEL_IN_MB;
+	/* For mode 2, height should be calculated in MB pair */
+	return ALIGN(height, PIXEL_IN_MB * 2) / PIXEL_IN_MB;
 }
 
 static inline u32 get_pm_bpc_pitch(u32 width)
@@ -54,10 +75,14 @@ static inline u32 get_pm_bpc_pitch(u32 width)
 static void iav_init_pm_bpc(struct ambarella_iav *iav)
 {
 	/* Clear BPC based PM and BPC memory for APP to use */
-	memset((u8 *)iav->mmap[IAV_BUFFER_PM_BPC].virt, 0,
-		PM_BPC_PARTITION_SIZE);
-	memset((u8 *)iav->mmap[IAV_BUFFER_BPC].virt, 0,
-		PAGE_SIZE + PM_BPC_PARTITION_SIZE);
+	if ((u8 *)iav->mmap[IAV_BUFFER_PM_BPC].virt != 0) {
+		memset((u8 *)iav->mmap[IAV_BUFFER_PM_BPC].virt, 0,
+			PM_BPC_PARTITION_SIZE);
+		if ((u8 *)iav->mmap[IAV_BUFFER_BPC].virt != 0) {
+			memset((u8 *)iav->mmap[IAV_BUFFER_BPC].virt, 0,
+				PAGE_SIZE + PM_BPC_PARTITION_SIZE);
+		}
+	}
 
 	iav->pm_bpc_enable = 0;
 	iav->bpc_enable = 0;
@@ -68,23 +93,29 @@ static void iav_init_pm_bpc(struct ambarella_iav *iav)
 static void iav_init_pm_mctf(struct ambarella_iav *iav)
 {
 	/* Clear MCTF based PM memory for APP to use */
-	memset((u8 *)iav->mmap[IAV_BUFFER_PM_MCTF].virt, 0,
-		PM_MCTF_TOTAL_SIZE);
+	if ((u8 *)iav->mmap[IAV_BUFFER_PM_MCTF].virt != 0) {
+		memset((u8 *)iav->mmap[IAV_BUFFER_PM_MCTF].virt, 0,
+			PM_MCTF_TOTAL_SIZE);
+	}
 }
 
 static void reset_pm_bpc(struct ambarella_iav *iav)
 {
-	/* Clear current Privacy mask */
-	memset((u8 *)(iav->mmap[IAV_BUFFER_PM_BPC].virt +
-		PM_BPC_PARTITION_SIZE * iav->curr_pm_index),
-		0, PM_BPC_PARTITION_SIZE);
+	if ((u8 *)iav->mmap[IAV_BUFFER_PM_BPC].virt != 0) {
+		/* Clear current Privacy mask */
+		memset((u8 *)(iav->mmap[IAV_BUFFER_PM_BPC].virt +
+			PM_BPC_PARTITION_SIZE * iav->curr_pm_index),
+			0, PM_BPC_PARTITION_SIZE);
 
-	/* Clear User PM Partition */
-	memset((u8 *)iav->mmap[IAV_BUFFER_PM_BPC].virt, 0, PM_BPC_PARTITION_SIZE);
+		/* Clear User PM Partition */
+		memset((u8 *)iav->mmap[IAV_BUFFER_PM_BPC].virt, 0, PM_BPC_PARTITION_SIZE);
 
-	/* Clear BPC Partition */
-	memset((u8 *)iav->mmap[IAV_BUFFER_BPC].virt, 0,
-		PAGE_SIZE + PM_BPC_PARTITION_SIZE);
+		if ((u8 *)iav->mmap[IAV_BUFFER_BPC].virt != 0) {
+			/* Clear BPC Partition */
+			memset((u8 *)iav->mmap[IAV_BUFFER_BPC].virt, 0,
+				PAGE_SIZE + PM_BPC_PARTITION_SIZE);
+		}
+	}
 
 	iav->pm_bpc_enable = 0;
 	iav->bpc_enable = 0;
@@ -93,7 +124,9 @@ static void reset_pm_bpc(struct ambarella_iav *iav)
 static void reset_pm_mctf(struct ambarella_iav *iav)
 {
 	/* Clear Privacy mask memory */
-	memset((u8 *)iav->mmap[IAV_BUFFER_PM_MCTF].virt, 0, PM_MCTF_TOTAL_SIZE);
+	if ((u8 *)iav->mmap[IAV_BUFFER_PM_MCTF].virt != 0) {
+		memset((u8 *)iav->mmap[IAV_BUFFER_PM_MCTF].virt, 0, PM_MCTF_TOTAL_SIZE);
+	}
 }
 
 void iav_init_pm(struct ambarella_iav *iav)
@@ -130,7 +163,7 @@ int iav_ioc_g_pm_info(struct ambarella_iav *iav, void __user * arg)
 	pm_info.domain = get_pm_domain(iav);
 
 	main_win = &iav->srcbuf[IAV_SRCBUF_MN].win;
-	get_pm_vin_win(iav, &vin_win);
+	get_vin_win(iav, &vin_win, 0);
 	switch (pm_info.unit) {
 	case IAV_PM_UNIT_PIXEL:
 		pm_info.buffer_pitch = get_pm_bpc_pitch(vin_win->width);
@@ -161,9 +194,7 @@ int iav_set_pm_bpc(struct ambarella_iav *iav,
 		return -1;
 	}
 
-	if (get_pm_vin_win(iav, &vin_win) < 0) {
-		return -EFAULT;
-	}
+	get_vin_win(iav, &vin_win, 0);
 
 	iav->pm_bpc_enable = 1;
 	width_in_u8 = ALIGN(vin_win->width, 32) / 8;
@@ -175,7 +206,7 @@ int iav_set_pm_bpc(struct ambarella_iav *iav,
 		PM_BPC_PARTITION_SIZE);
 
 	iav->pm.enable = priv_mask->enable;
-	if (priv_mask->y || priv_mask->u || priv_mask->v){
+	if (priv_mask->y || priv_mask->u || priv_mask->v) {
 		iav->pm.y = priv_mask->y;
 		iav->pm.u = priv_mask->u;
 		iav->pm.v = priv_mask->v;
@@ -213,26 +244,75 @@ int iav_set_pm_mctf(struct ambarella_iav *iav,
 	struct iav_privacy_mask *priv_mask, u32 cmd_delay)
 {
 	cmd_set_pm_mctf(iav, NULL, cmd_delay);
+
 	return 0;
 }
 
-static int check_pm_mctf(struct ambarella_iav *iav,
+static void swtimer_routine(unsigned long data)
+{
+	struct ambarella_iav *iav = (struct ambarella_iav *)data;
+
+	cmd_set_pm_mctf(iav, NULL, 0);
+}
+
+int iav_pm_resume(struct ambarella_iav *iav, int wait)
+{
+	u32 pm_unit;
+
+	if (!is_enc_work_state(iav)) {
+		iav_error("Privacy mask should be set in Preview/Encode state.\n");
+		return -1;
+	}
+
+	mutex_lock(&iav->iav_mutex);
+	pm_unit = get_pm_unit(iav);
+
+	if (pm_unit == IAV_PM_UNIT_PIXEL) {
+		if (iav->bpc_enable) {
+			cmd_bpc_setup(iav, NULL, NULL);
+		}
+		cmd_set_pm_bpc(iav, NULL);
+	} else {
+		if (iav->fast_resume && wait) {
+			init_timer(&sw_timer);
+			sw_timer.data = (unsigned long)iav;
+			sw_timer.function = &swtimer_routine;
+			/* trigger timer 50 ms later */
+			sw_timer.expires = jiffies + HZ / 20;
+			add_timer(&sw_timer);
+		} else {
+			cmd_set_pm_mctf(iav, NULL, 0);
+		}
+	}
+	mutex_unlock(&iav->iav_mutex);
+
+	return 0;
+}
+
+static int check_pm(struct ambarella_iav *iav,
 	struct iav_privacy_mask *pm)
 {
 	u32 buf_size, buf_pitch, buf_height;
+	u32 pm_unit;
 
 	iav_no_check();
 
-	if (pm->enable) {
+	pm_unit = get_pm_unit(iav);
+
+	if (!pm->enable) {
+		return 0;
+	}
+
+	if (pm_unit == IAV_PM_UNIT_MB) {
 		buf_pitch = get_pm_mctf_pitch(iav->srcbuf[IAV_SRCBUF_MN].win.width);
 		if (buf_pitch != pm->buf_pitch) {
-			iav_error("Incorrect buffer pitch %u, should be %d!\n",
+			iav_error("Incorrect buffer pitch %u for PM MCTF, should be %d!\n",
 				pm->buf_pitch, buf_pitch);
 			return -1;
 		}
 		buf_height = get_pm_mctf_height(iav->srcbuf[IAV_SRCBUF_MN].win.height);
 		if (buf_height != pm->buf_height) {
-			iav_error("Incorrect buffer height %u, should be %d!\n",
+			iav_error("Incorrect buffer height %u for PM MCTF, should be %d!\n",
 				pm->buf_height, buf_height);
 			return -1;
 		}
@@ -243,17 +323,7 @@ static int check_pm_mctf(struct ambarella_iav *iav,
 				PM_MCTF_TOTAL_SIZE);
 			return -1;
 		}
-	}
-
-	return 0;
-}
-
-static int check_pm_bpc(struct ambarella_iav *iav,
-	struct iav_privacy_mask *pm)
-{
-	iav_no_check();
-
-	if (pm->enable) {
+	} else {
 		if (pm->data_addr_offset > PM_BPC_PARTITION_SIZE) {
 			iav_error("PM BPC data offset 0x%x is out of range 0x%x!",
 				pm->data_addr_offset, PM_MCTF_TOTAL_SIZE);
@@ -271,16 +341,9 @@ int iav_cfg_vproc_pm(struct ambarella_iav *iav,
 
 	pm_unit = get_pm_unit(iav);
 
-	if (pm_unit == IAV_PM_UNIT_MB) {
-		if (check_pm_mctf(iav, pm) < 0) {
-			iav_error("Check MCTF Privacy Mask failed!\n");
-			return -EINVAL;
-		}
-	} else {
-		if (check_pm_bpc(iav, pm) < 0) {
-			iav_error("Check BPC Privacy Mask failed!\n");
-			return -EINVAL;
-		}
+	if (check_pm(iav, pm) < 0) {
+		iav_error("Check Privacy Mask failed!\n");
+		return -EINVAL;
 	}
 
 	iav->pm = *pm;
@@ -304,6 +367,12 @@ int iav_ioc_s_pm(struct ambarella_iav *iav, void __user * arg)
 	mutex_lock(&iav->iav_mutex);
 	pm_unit = get_pm_unit(iav);
 
+	if (check_pm(iav, &priv_mask) < 0) {
+		iav_error("Check Privacy Mask failed!\n");
+		return -EINVAL;
+	}
+
+	iav->pm = priv_mask;
 	if (pm_unit == IAV_PM_UNIT_PIXEL) {
 		rval = iav_set_pm_bpc(iav, &priv_mask);
 	} else {
@@ -383,9 +452,7 @@ int iav_ioc_s_static_bpc(struct ambarella_iav *iav, void __user * arg)
 		(void*)bpc_fpn.intercepts_and_slopes_addr, 1024))
 				return -EFAULT;
 
-	if (get_pm_vin_win(iav, &vin_win) < 0) {
-		return -EFAULT;
-	}
+	get_vin_win(iav, &vin_win, 0);
 
 	mutex_lock(&iav->iav_mutex);
 	iav->pm_bpc_enable = 1;

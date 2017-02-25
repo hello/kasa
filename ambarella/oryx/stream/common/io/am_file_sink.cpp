@@ -4,12 +4,29 @@
  * History:
  *   2014-12-8 - [ccjing] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -27,7 +44,6 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/time.h>
-
 #define WRITE_STATISTICS_THRESHOLD 100
 /*
  * AMFileReader
@@ -49,18 +65,14 @@ AMFileReader* AMFileReader::create()
 
 bool AMFileReader::init()
 {
-  m_lock = AMSpinLock::create();
   m_file = new AMFile();
-  return (m_lock == NULL || m_file == NULL) ? false : true;
+  return (m_file != nullptr);
 }
 
 AMFileReader::~AMFileReader()
 {
   close_file();
-  m_lock->destroy();
-  m_lock = NULL;
   delete m_file;
-  m_file = NULL;
 }
 
 void AMFileReader::destroy()
@@ -71,7 +83,7 @@ void AMFileReader::destroy()
 bool AMFileReader::open_file(const char* file_name)
 {
   bool ret = true;
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   do{
     m_file->close();
     m_file->set_file_name(file_name);
@@ -87,13 +99,13 @@ bool AMFileReader::open_file(const char* file_name)
 
 void AMFileReader::close_file()
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   m_file->close();
 }
 
 uint64_t AMFileReader::get_file_size()
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   return m_file->size();
 }
 
@@ -102,7 +114,7 @@ bool AMFileReader::tell_file(uint64_t& offset)
   off_t cur_pos = 0;
   bool ret = true;
   do {
-    AUTO_SPIN_LOCK(m_lock);
+    AUTO_MEM_LOCK(m_lock);
     cur_pos = ::lseek(m_file->handle(), 0, SEEK_CUR);
     if(cur_pos < 0) {
       PERROR("tell file :");
@@ -117,7 +129,7 @@ bool AMFileReader::tell_file(uint64_t& offset)
 bool AMFileReader::seek_file(int32_t offset)
 {
   bool ret = true;
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   do{
     if (AM_UNLIKELY(!(m_file->seek(offset, AMFile::AM_FILE_SEEK_SET)))) {
       ERROR("Failed to seek the file: %s", m_file->name());
@@ -132,7 +144,7 @@ bool AMFileReader::seek_file(int32_t offset)
 bool AMFileReader::advance_file(int32_t offset)
 {
   bool ret = true;
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   do{
     if (AM_UNLIKELY(!(m_file->seek(offset, AMFile::AM_FILE_SEEK_CUR)))) {
       ERROR("Failed to advance the file: %s", m_file->name());
@@ -147,7 +159,7 @@ bool AMFileReader::advance_file(int32_t offset)
 int AMFileReader::read_file(void * buffer, uint32_t size)
 {
   int read_size = 0;
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   read_size = m_file->read((char*) buffer, size);
   return read_size;
 }
@@ -172,8 +184,7 @@ AMFileWriter* AMFileWriter::create()
 
 bool AMFileWriter::init()
 {
-  m_lock = AMSpinLock::create();
-  return (m_lock == NULL) ? false : true;
+  return true;
 }
 
 AMFileWriter::~AMFileWriter()
@@ -182,9 +193,6 @@ AMFileWriter::~AMFileWriter()
     close_file();
   }
   delete[] m_custom_buf;
-  m_custom_buf = NULL;
-  m_lock->destroy();
-  m_lock = NULL;
 }
 
 void AMFileWriter::destroy()
@@ -200,7 +208,7 @@ void AMFileWriter::set_enable_direct_IO(bool enable)
 bool AMFileWriter::create_file(const char* file_name)
 {
   bool ret = true;
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   do {
     if (m_file_fd >= 0) {
       _close_file();
@@ -217,7 +225,7 @@ bool AMFileWriter::create_file(const char* file_name)
       ret = false;
       break;
     }
-    INFO("File %s is created successfully!", file_name);
+    DEBUG("File %s is created successfully!", file_name);
     m_data_size = 0;
     m_data_write_addr = m_custom_buf;
     m_data_send_addr = m_custom_buf;
@@ -226,12 +234,12 @@ bool AMFileWriter::create_file(const char* file_name)
   return ret;
 }
 
-void AMFileWriter::close_file()
+void AMFileWriter::close_file(bool need_sync)
 {
-  AUTO_SPIN_LOCK(m_lock);
-  _close_file();
+  AUTO_MEM_LOCK(m_lock);
+  _close_file(need_sync);
 }
-void AMFileWriter::_close_file()
+void AMFileWriter::_close_file(bool need_sync)
 {
   do {
     if (AM_UNLIKELY(m_file_fd < 0)) {
@@ -239,8 +247,11 @@ void AMFileWriter::_close_file()
       break;
     }
     _flush_file();
+    if (AM_UNLIKELY(need_sync && (::fsync(m_file_fd) < 0))) {
+      PERROR("fsync");
+    }
     if (AM_UNLIKELY(::close(m_file_fd) != 0)) {
-      ERROR("Failed to close file!");
+      ERROR("Failed to close file: %s!", strerror(errno));
     }
     m_file_fd = -1;
     m_IO_direct_set = false;
@@ -252,7 +263,8 @@ bool AMFileWriter::tell_file(uint64_t& offset)
   off_t cur_pos = 0;
   bool ret = true;
   do {
-    AUTO_SPIN_LOCK(m_lock);
+    AUTO_MEM_LOCK(m_lock);
+    _flush_file();
     cur_pos = ::lseek(m_file_fd, 0, SEEK_CUR);
     if(cur_pos < 0) {
       PERROR("tell file :");
@@ -269,7 +281,7 @@ bool AMFileWriter::write_file(const void* buf, uint32_t len)
   uint32_t remain_data = len;
   uint8_t* data_addr = (uint8_t*) buf;
   bool ret = true;
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   do {
     if (AM_UNLIKELY(m_file_fd < 0)) {
       ERROR("File is not open!");
@@ -334,7 +346,7 @@ bool AMFileWriter::write_file(const void* buf, uint32_t len)
 
 bool AMFileWriter::flush_file()
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   return _flush_file();
 }
 bool AMFileWriter::_flush_file()
@@ -382,7 +394,7 @@ bool AMFileWriter::_flush_file()
 bool AMFileWriter::set_buf(uint32_t size)
 {
   bool ret = true;
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   do {
     if (AM_UNLIKELY(m_file_fd < 0)) {
       ERROR("Bad file descriptor!");
@@ -526,7 +538,7 @@ ssize_t AMFileWriter::write(const void *buf, size_t nbyte)
 bool AMFileWriter::seek_file(uint32_t offset, uint32_t whence)
 {
   bool ret = true;
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   do {
     if (AM_UNLIKELY(m_file_fd < 0)) {
       ERROR("Bad file descriptor!");
@@ -551,4 +563,18 @@ bool AMFileWriter::seek_file(uint32_t offset, uint32_t whence)
 bool AMFileWriter::is_file_open()
 {
   return (m_file_fd < 0 ? false : true);
+}
+
+uint64_t AMFileWriter::get_file_size()
+{
+  AUTO_MEM_LOCK(m_lock);
+  struct stat fileStat;
+  uint64_t size = 0;
+  if (AM_UNLIKELY(fstat(m_file_fd, &fileStat) < 0)) {
+    ERROR("stat error: %s", strerror(errno));
+  } else {
+    size = fileStat.st_size;
+  }
+
+  return size;
 }

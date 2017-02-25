@@ -4,12 +4,29 @@
  * History:
  *   2014-9-24 - [ypchang] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -126,7 +143,6 @@ AM_STATE AMAudioDecoderPacketPool::init(const char *name, uint32_t count)
     m_payload_mem = new AMPacket::Payload[count];
     if (AM_LIKELY(m_payload_mem)) {
       for (uint32_t i = 0; i < m_packet_count; ++ i) {
-//        m_packet_mem[i].m_payload = &m_payload_mem[i];
         m_packet_mem[i].set_payload(&m_payload_mem[i]);
       }
     } else {
@@ -274,7 +290,7 @@ AM_STATE AMAudioDecoder::stop()
 {
   AM_STATE state = AM_STATE_OK;
 
-  if (AM_LIKELY(m_run)) {
+  if (AM_LIKELY(m_run.load())) {
     m_run = false;
     state = inherited::stop();
   }
@@ -294,9 +310,9 @@ void AMAudioDecoder::on_run()
   m_run = true;
 
   INFO("%s starts to run!", m_name);
-  while (m_run) {
+  while (m_run.load()) {
     if (AM_UNLIKELY(!wait_input_packet(input_pin, input_pkt))) {
-      if (AM_LIKELY(!m_run)) {
+      if (AM_LIKELY(!m_run.load())) {
         NOTICE("Stop is called!");
       } else {
         NOTICE("Filter is aborted!");
@@ -313,6 +329,7 @@ void AMAudioDecoder::on_run()
         case AMPacket::AM_PAYLOAD_TYPE_DATA: {
           data_need_break = (AM_STATE_OK != on_data(input_pkt));
         }break;
+        case AMPacket::AM_PAYLOAD_TYPE_EOL:
         case AMPacket::AM_PAYLOAD_TYPE_EOF: {
           need_break = (AM_STATE_OK != on_eof(input_pkt));
         }break;
@@ -321,7 +338,7 @@ void AMAudioDecoder::on_run()
         }break;
       }
       input_pkt->release();
-      if (AM_UNLIKELY((need_break || data_need_break) && m_run)) {
+      if (AM_UNLIKELY((need_break || data_need_break) && m_run.load())) {
         if (AM_LIKELY(need_break)) {
           break;
         }
@@ -343,7 +360,6 @@ void AMAudioDecoder::on_run()
       ERROR("Invalid packet!");
     }
   }
-
   if (AM_LIKELY(m_audio_codec)) {
     m_audio_codec->finalize();
   }
@@ -407,11 +423,20 @@ AM_STATE AMAudioDecoder::on_info(AMPacket *packet)
   m_is_pass_through = (AM_AUDIO_CODEC_PASS == codecType);
 
   INFO("\nAudio %s Information"
-       "\n     Sample Rate: %u"
-       "\n        Channels: %u",
+       "\n      Sample Rate: %u"
+       "\n         Channels: %u"
+       "\npkt_pts_increment: %u"
+       "\n      sample_size: %u"
+       "\n       chunk_size: %u"
+       "\n    sample_format: %s",
        audio_type_to_str(srcAudioInfo->type),
        srcAudioInfo->sample_rate,
-       srcAudioInfo->channels);
+       srcAudioInfo->channels,
+       srcAudioInfo->pkt_pts_increment,
+       srcAudioInfo->sample_size,
+       srcAudioInfo->chunk_size,
+       sample_format_to_string(AM_AUDIO_SAMPLE_FORMAT(
+           srcAudioInfo->sample_format)).c_str());
 
   if (AM_LIKELY((AM_STATE_OK == state)) && !m_is_pass_through) {
     state = m_audio_codec->initialize(srcAudioInfo,
@@ -556,11 +581,13 @@ AM_STATE AMAudioDecoder::on_eof(AMPacket *packet)
   if (AM_UNLIKELY(m_is_pass_through)) {
     packet->add_ref();
     send_packet(packet);
-    INFO("%s sent EOF to stream%hu", m_name, packet->get_stream_id());
+    INFO("%s sent %s to stream%hu", m_name,
+         (packet->get_type() == AMPacket::AM_PAYLOAD_TYPE_EOF) ? "EOF" : "EOL",
+         packet->get_stream_id());
   } else {
     AMPacket *out_packet = NULL;
     if (AM_UNLIKELY(!m_packet_pool->alloc_packet(out_packet, 0))) {
-      if (AM_LIKELY(!m_run)) {
+      if (AM_LIKELY(!m_run.load())) {
         NOTICE("Stop is called!");
       } else {
         NOTICE("Failed to allocate output packet for sending EOF!");
@@ -570,12 +597,15 @@ AM_STATE AMAudioDecoder::on_eof(AMPacket *packet)
       out_packet->set_data_size(0);
       out_packet->set_pts(0);
       out_packet->set_stream_id(packet->get_stream_id());
-      out_packet->set_type(AMPacket::AM_PAYLOAD_TYPE_EOF);
+      out_packet->set_type(packet->get_type());
       out_packet->set_attr(AMPacket::AM_PAYLOAD_ATTR_AUDIO);
-      out_packet->set_frame_type((uint16_t)m_audio_codec->get_codec_type());
+      out_packet->set_frame_type((uint8_t)m_audio_codec->get_codec_type());
       send_packet(out_packet);
-      INFO("%s sent EOF to stream%hu, remain packet %u", m_name,
-           packet->get_stream_id(), m_packet_pool->get_avail_packet_num());
+      INFO("%s sent %s to stream%hu, remain packet %u",
+           m_name,
+           (packet->get_type() == AMPacket::AM_PAYLOAD_TYPE_EOF)? "EOF" : "EOL",
+           packet->get_stream_id(),
+           m_packet_pool->get_avail_packet_num());
     }
   }
 
@@ -606,7 +636,7 @@ AMAudioDecoder::~AMAudioDecoder()
 {
   AM_DESTROY(m_audio_codec);
   AM_DESTROY(m_plugin);
-  AM_DESTROY(m_packet_pool);
+  AM_RELEASE(m_packet_pool);
   for (uint32_t i = 0; i < m_input_num; ++ i) {
     AM_DESTROY(m_input_pins[i]);
   }
@@ -676,6 +706,15 @@ AM_STATE AMAudioDecoder::init(const std::string& config,
           break;
         }
 
+        m_packet_pool = AMAudioDecoderPacketPool::create(
+            "AudioDecoderPacketPool", m_decoder_config->packet_pool_size);
+        if (AM_UNLIKELY(!m_packet_pool)) {
+          ERROR("Failed to create audio decoder packet pool!");
+          state = AM_STATE_NO_MEMORY;
+          break;
+        }
+        m_packet_pool->add_ref();
+
         m_output_pins = new AMAudioDecoderOutput*[m_output_num];
         if (AM_UNLIKELY(!m_output_pins)) {
           ERROR("Failed to allocate memory for output pin pointers!");
@@ -690,15 +729,9 @@ AM_STATE AMAudioDecoder::init(const std::string& config,
             state = AM_STATE_ERROR;
             break;
           }
+          m_output_pins[i]->set_packet_pool(m_packet_pool);
         }
         if (AM_UNLIKELY(AM_STATE_OK != state)) {
-          break;
-        }
-        m_packet_pool = AMAudioDecoderPacketPool::create(
-            "AudioDecoderPacketPool", m_decoder_config->packet_pool_size);
-        if (AM_UNLIKELY(!m_packet_pool)) {
-          ERROR("Failed to create audio decoder packet pool!");
-          state = AM_STATE_NO_MEMORY;
           break;
         }
       }
@@ -717,4 +750,38 @@ void AMAudioDecoder::send_packet(AMPacket *packet)
     }
     packet->release();
   }
+}
+
+std::string AMAudioDecoder::sample_format_to_string(
+                             AM_AUDIO_SAMPLE_FORMAT format)
+{
+  std::string format_str = "";
+  switch(format) {
+    case AM_SAMPLE_U8:
+      format_str = "AM_SAMPLE_U8";
+      break;
+    case AM_SAMPLE_ALAW :
+      format_str = "AM_SAMPLE_ALAW";
+      break;
+    case AM_SAMPLE_ULAW :
+      format_str = "AM_SAMPLE_ULAW";
+      break;
+    case AM_SAMPLE_S16LE :
+      format_str = "AM_SAMPLE_S16LE";
+      break;
+    case AM_SAMPLE_S16BE :
+      format_str = "AM_SAMPLE_S16BE";
+      break;
+    case AM_SAMPLE_S32LE :
+      format_str = "AM_SAMPLE_S32LE";
+      break;
+    case AM_SAMPLE_S32BE :
+      format_str = "AM_SAMPLE_S32BE";
+      break;
+    case AM_SAMPLE_INVALID :
+    default :
+      format_str = "invalid";
+      break;
+  }
+  return format_str;
 }

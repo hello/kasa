@@ -112,10 +112,13 @@ static void ambarella_timer_resume(u32 is_ce)
 
 	amb_timer_pm->clk_rate = clk_rate;
 
-	if (is_ce)
+	if (is_ce) {
 		clockevents_update_freq(clkevt, clk_rate);
-	else
+	} else {
+		clocksource_change_rating(clksrc, 0);
 		__clocksource_updatefreq_hz(clksrc, clk_rate);
+		clocksource_change_rating(clksrc, AMBARELLA_TIMER_RATING);
+	}
 
 resume_exit:
 	amba_setbitsl(ctrl_reg, amb_timer_pm->ctrl_reg << ctrl_offset);
@@ -306,13 +309,11 @@ static int ambarella_timer_system_event(struct notifier_block *nb,
 
 	case AMBA_EVENT_POST_CPUFREQ:
 		local_irq_save(flags);
-		/* I try to update timer using clockevents_update_freq(&ambarella_clkevt, AMBARELLA_TIMER_FREQ)
-		 * and __clocksource_updatefreq_hz(&ambarella_clksrc, AMBARELLA_TIMER_FREQ), but they both can not work,
-		 * So I try the clocksource_unregister(), and then call clocksource_register_hz(), it seems like it is
-		 * ok for updating the timer.
-		 */
-		clocksource_unregister(&ambarella_clksrc);
-		clocksource_register_hz(&ambarella_clksrc, AMBARELLA_TIMER_FREQ);
+		clockevents_update_freq(&ambarella_clkevt, AMBARELLA_TIMER_FREQ);
+
+		clocksource_change_rating(&ambarella_clksrc, 0);
+		__clocksource_updatefreq_hz(&ambarella_clksrc, AMBARELLA_TIMER_FREQ);
+		clocksource_change_rating(&ambarella_clksrc, AMBARELLA_TIMER_RATING);
 		local_irq_restore(flags);
 		up(&(amba_timer_notifier.system_event_sem));
 		break;

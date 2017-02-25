@@ -3436,7 +3436,7 @@ int i;
 
 error = 0.0;
 sum = 0.0;
-for (i=0; i<numpats; i++)
+for (i=0; i<numpats && i<MAXPATS; i++)
 {
 	if (tot_out_error[i] > error) error = tot_out_error[i];
 	sum += avg_out_error[i];
@@ -3612,7 +3612,7 @@ worst_pass_error();     /* identify the worst error in this pass */
 printf("\n Iteration # %d",iteration_count);
 #endif
 */
-for (i=0; i<numpats; i++)
+for (i=0; i<numpats && i<MAXPATS; i++)
 {
 /*      printf("\n Error pattern %d:   Worst: %8.3f; Average: %8.3f",
 	  i+1,tot_out_error[i], avg_out_error[i]);

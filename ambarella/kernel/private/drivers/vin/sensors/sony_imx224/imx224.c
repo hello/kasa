@@ -4,14 +4,33 @@
  * History:
  *    2014/08/05 - [Long Zhao] Create
  *
- * Copyright (C) 2004-2014, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 #include <linux/module.h>
 #include <linux/ambpriv_device.h>
 #include <linux/interrupt.h>
@@ -288,13 +307,13 @@ static int imx224_set_shutter_row(struct vin_device *vdev, u32 row)
 
 	num_line = row;
 
-	/* FIXME: shutter width: 2 ~ Frame format(V) */
-	min_line = 2;
-	max_line = pinfo->frame_length_lines;
+	/* FIXME: shutter width: 1 ~ (Frame format(V) - 3) */
+	min_line = 1;
+	max_line = pinfo->frame_length_lines - 3;
 	num_line = clamp(num_line, min_line, max_line);
 
 	/* get the shutter sweep time */
-	blank_lines = pinfo->frame_length_lines - num_line;
+	blank_lines = pinfo->frame_length_lines - num_line - 1;
 	imx224_write_reg(vdev, IMX224_SHS1_MSB, blank_lines >> 8);
 	imx224_write_reg(vdev, IMX224_SHS1_LSB, blank_lines & 0xff);
 
@@ -369,8 +388,8 @@ static int imx224_set_agc_index(struct vin_device *vdev, int agc_idx)
 
 	pinfo = (struct imx224_priv *)vdev->priv;
 
-	/* if gain >= 24db, enable HCG, HCG is 6db */
-	if (agc_idx > 240) {
+	/* if gain >= 30db, enable HCG, HCG is 6db */
+	if (agc_idx > 300) {
 		imx224_read_reg(vdev, IMX224_FRSEL, &tmp);
 		tmp |= IMX224_HI_GAIN_MODE;
 		imx224_write_reg(vdev, IMX224_FRSEL, tmp);
@@ -642,6 +661,19 @@ static int imx224_set_mirror_mode(struct vin_device *vdev,
 	return 0;
 }
 
+static int imx224_get_aaa_info(struct vin_device *vdev,
+	struct vindev_aaa_info *aaa_info)
+{
+	struct imx224_priv *pinfo = (struct imx224_priv *)vdev->priv;
+
+	aaa_info->sht0_max = pinfo->frame_length_lines - 8;
+	aaa_info->sht1_max = pinfo->rhs1 - 4;
+	aaa_info->sht2_max = (vdev->cur_format->hdr_mode == AMBA_VIDEO_3X_HDR_MODE) ?
+		(pinfo->rhs2 - pinfo->rhs1 - 5) : 0;
+
+	return 0;
+}
+
 static struct vin_ops imx224_ops = {
 	.init_device		= imx224_init_device,
 	.set_pll			= imx224_set_pll,
@@ -652,6 +684,7 @@ static struct vin_ops imx224_ops = {
 	.set_agc_index		= imx224_set_agc_index,
 	.set_mirror_mode	= imx224_set_mirror_mode,
 	.set_hold_mode		= imx224_set_hold_mode,
+	.get_aaa_info		= imx224_get_aaa_info,
 	.read_reg			= imx224_read_reg,
 	.write_reg		= imx224_write_reg,
 
@@ -685,7 +718,7 @@ static int imx224_probe(struct i2c_client *client,
 	vdev->sub_type = VINDEV_SUBTYPE_CMOS;
 	vdev->default_mode = AMBA_VIDEO_MODE_720P;
 	vdev->frame_rate = AMBA_VIDEO_FPS_29_97;
-	vdev->agc_db_max = 0x30000000;	/* 48dB */
+	vdev->agc_db_max = 0x48000000;	/* 72dB */
 	vdev->agc_db_min = 0x00000000;	/* 0dB */
 	vdev->agc_db_step = 0x00199999;	/*0.1dB */
 	vdev->wdr_again_idx_min = 0;

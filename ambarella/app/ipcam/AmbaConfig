@@ -49,11 +49,10 @@ source app/ipcam/rtsp/AmbaConfig
 source app/ipcam/autorun_services/AmbaConfig
 source app/ipcam/smart_ldc/AmbaConfig
 source app/ipcam/http_uploader/AmbaConfig
+source app/ipcam/wowl/AmbaConfig
 source app/ipcam/fastboot_audio/AmbaConfig
 source app/ipcam/fastboot_smart3a/AmbaConfig
 source app/ipcam/fastboot_app/AmbaConfig
-source app/ipcam/fastboot_app/elektra_boot/AmbaConfig
-source app/ipcam/fastboot_app/darwin_injector/AmbaConfig
 
 endif
 

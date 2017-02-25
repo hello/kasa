@@ -28,11 +28,9 @@
 #include <linux/module.h>
 #include <linux/interrupt.h>
 #include <linux/delay.h>
-
 #include <mach/hardware.h>
 #include <mach/init.h>
-
-#include <plat/ambcache.h>
+#include <plat/iav_helper.h>
 #include <plat/gdma.h>
 
 #define TRANSFER_2D_WIDTH		(1 << 12 )		/* 4096 */

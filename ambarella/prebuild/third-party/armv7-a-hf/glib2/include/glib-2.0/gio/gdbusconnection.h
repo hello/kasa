@@ -261,7 +261,7 @@ GVariant *g_dbus_connection_call_with_unix_fd_list_sync       (GDBusConnection  
  * @interface_name: The D-Bus interface name the method was invoked on.
  * @method_name: The name of the method that was invoked.
  * @parameters: A #GVariant tuple with parameters.
- * @invocation: A #GDBusMethodInvocation object that can be used to return a value or error.
+ * @invocation: (transfer full): A #GDBusMethodInvocation object that must be used to return a value or error.
  * @user_data: The @user_data #gpointer passed to g_dbus_connection_register_object().
  *
  * The type of the @method_call function in #GDBusInterfaceVTable.
@@ -343,6 +343,16 @@ typedef gboolean  (*GDBusInterfaceSetPropertyFunc) (GDBusConnection       *conne
  * function. The D-Bus call will be directed to your @method_call function,
  * with the provided @interface_name set to "org.freedesktop.DBus.Properties".
  *
+ * Ownership of the #GDBusMethodInvocation object passed to the
+ * method_call() function is transferred to your handler; you must
+ * call one of the methods of #GDBusMethodInvocation to return a reply
+ * (possibly empty), or an error. These functions also take ownership
+ * of the passed-in invocation object, so unless the invocation
+ * object has otherwise been referenced, it will be then be freed.
+ * Calling one of these functions may be done within your
+ * method_call() implementation but it also can be done at a later
+ * point to handle the method asynchronously.
+ *
  * The usual checks on the validity of the calls is performed. For
  * `Get` calls, an error is automatically returned if the property does
  * not exist or the permissions do not allow access. The same checks are
@@ -391,6 +401,14 @@ guint            g_dbus_connection_register_object            (GDBusConnection  
                                                                gpointer                    user_data,
                                                                GDestroyNotify              user_data_free_func,
                                                                GError                    **error);
+GLIB_AVAILABLE_IN_2_46
+guint            g_dbus_connection_register_object_with_closures (GDBusConnection         *connection,
+                                                                  const gchar             *object_path,
+                                                                  GDBusInterfaceInfo      *interface_info,
+                                                                  GClosure                *method_call_closure,
+                                                                  GClosure                *get_property_closure,
+                                                                  GClosure                *set_property_closure,
+                                                                  GError                 **error);
 GLIB_AVAILABLE_IN_ALL
 gboolean         g_dbus_connection_unregister_object          (GDBusConnection            *connection,
                                                                guint                       registration_id);
@@ -469,7 +487,7 @@ typedef GDBusInterfaceInfo ** (*GDBusSubtreeIntrospectFunc) (GDBusConnection    
  * @object_path: The object path that was registered with g_dbus_connection_register_subtree().
  * @interface_name: The D-Bus interface name that the method call or property access is for.
  * @node: A node that is a child of @object_path (relative to @object_path) or %NULL for the root of the subtree.
- * @out_user_data: Return location for user data to pass to functions in the returned #GDBusInterfaceVTable (never %NULL).
+ * @out_user_data: (nullable) (not optional): Return location for user data to pass to functions in the returned #GDBusInterfaceVTable (never %NULL).
  * @user_data: The @user_data #gpointer passed to g_dbus_connection_register_subtree().
  *
  * The type of the @dispatch function in #GDBusSubtreeVTable.

@@ -4,18 +4,36 @@
  * History:
  *   2014-12-29 - [Shiming Dong] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co,Ltd.
+ * Copyright (c) 2015 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 #ifndef AM_RTSP_CLIENT_SESSION_H_
 #define AM_RTSP_CLIENT_SESSION_H_
 
 #include "am_rtsp_requests.h"
+#include <atomic>
 
 #define  CLIENT_TIMEOUT_THRESHOLD  30
 
@@ -41,7 +59,13 @@ class AMRtspClientSession
     CLIENT_SESSION_THREAD_RUN,
     CLIENT_SESSION_OK,
     CLIENT_SESSION_FAILED,
+    CLIENT_SESSION_STOPPING,
     CLIENT_SESSION_STOPPED
+  };
+
+  enum CLIENT_CTRL_CMD {
+    CMD_CLIENT_ABORT = 'a',
+    CMD_CLIENT_STOP  = 'e',
   };
 
   enum {
@@ -52,16 +76,16 @@ class AMRtspClientSession
 
   struct MediaInfo
   {
-      bool        is_alive;
       AMEvent    *event_msg_seqntp;
       AMEvent    *event_ssrc;
       AMEvent    *event_kill;
-      std::string media;
-      std::string seq_ntp;
-      std::string sdp;
       uint32_t    ssrc;
       uint16_t    udp_port[PORT_NUM];
       uint16_t    stream_id;
+      bool        is_alive;
+      std::string media;
+      std::string seq_ntp;
+      std::string sdp;
       MediaInfo();
       ~MediaInfo();
   };
@@ -80,6 +104,7 @@ class AMRtspClientSession
     static void static_client_thread(void *data);
     void client_thread();
     void close_all_socket();
+    bool send_client_ctrl_cmd(CLIENT_CTRL_CMD cmd);
     bool parse_transport_header(RtspTransHeader& header,
                                 char*            req_str,
                                 uint32_t         req_len);
@@ -91,7 +116,7 @@ class AMRtspClientSession
                               PARSE_STATE     &state,
                               char*            req_str,
                               uint32_t         req_len);
-    bool handle_client_request(RtspRequest& request);
+    bool handle_client_request(RtspRequest& request, bool& need_tear_down);
     bool cmd_options (RtspRequest& req, char* buf, uint32_t size);
     bool cmd_describe(RtspRequest& req, char* buf, uint32_t size);
     bool cmd_setup(RtspRequest& req, char* buf, uint32_t size);
@@ -124,25 +149,23 @@ class AMRtspClientSession
     AMRtspServer         *m_rtsp_server;
     AMThread             *m_client_thread;
     AMEvent              *m_event_msg_sdp;
-    CLIENT_SESSION_STATE  m_session_state;
+    uint64_t              m_rtcp_rr_interval;
+    int32_t               m_client_ctrl_sock[2];
     int32_t               m_tcp_sock;
     uint32_t              m_client_session_id;
     uint32_t              m_rtcp_rr_ssrc;
-    uint64_t              m_rtcp_rr_interval;
     uint32_t              m_identify;
-    uint16_t              m_client_id;
     int32_t               m_dynamic_timeout_sec;
-    int32_t               m_client_ctrl_sock[2];
-#define CLIENT_CTRL_READ  m_client_ctrl_sock[0]
-#define CLIENT_CTRL_WRITE m_client_ctrl_sock[1]
-
+    CLIENT_SESSION_STATE  m_session_state;
+    std::atomic_bool      m_is_tearing_down;
+    std::string           m_client_name;
     sockaddr_in           m_client_addr;
     timeval               m_rtcp_rr_last_recv_time;
-    std::string           m_client_name;
     MediaInfo             m_media_info[AM_RTP_MEDIA_NUM];
-
     RtspTransHeader       m_rtsp_trans_hdr;
     RtspAuthHeader        m_rtsp_auth_hdr;
+#define CLIENT_CTRL_READ  m_client_ctrl_sock[0]
+#define CLIENT_CTRL_WRITE m_client_ctrl_sock[1]
 };
 
 #endif /* AM_RTSP_CLIENT_SESSION_H_ */

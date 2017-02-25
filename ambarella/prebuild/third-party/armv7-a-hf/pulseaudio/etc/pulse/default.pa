@@ -143,7 +143,7 @@ load-module module-filter-apply
 
 ### Load DBus protocol
 .ifexists module-dbus-protocol.so
-load-module module-dbus-protocol access=local,remote
+load-module module-dbus-protocol access=local
 .endif
 
 

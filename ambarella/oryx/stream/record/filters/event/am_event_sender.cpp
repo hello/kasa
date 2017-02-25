@@ -4,21 +4,35 @@
  *  History:
  *    Mar 6, 2015 - [Shupeng Ren] created file
  *
- * Copyright (C) 2007-2015, Ambarella, Inc.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "am_base_include.h"
 #include "am_define.h"
 #include "am_log.h"
 #include "am_event.h"
-
-#include <vector>
-#include <mutex>
 
 #include "am_amf_types.h"
 #include "am_amf_interface.h"
@@ -33,10 +47,6 @@
 #include "am_event_sender_config.h"
 #include "am_event_sender.h"
 #include "am_event_sender_version.h"
-
-#ifndef AUTO_LOCK
-#define AUTO_LOCK(mtx) std::lock_guard<std::mutex> lck(mtx)
-#endif
 
 #define HW_TIMER  ((const char*)"/proc/ambarella/ambarella_hwtimer")
 
@@ -101,16 +111,15 @@ uint32_t AMEventSender::version()
 
 AMEventSender::AMEventSender(AMIEngine *engine) :
     inherited(engine),
-    m_hw_timer_fd(-1),
-    m_run(false),
     m_last_pts(0),
-    m_input_num(0),
-    m_output_num(0),
     m_config(nullptr),
     m_event_config(nullptr),
-    m_event(nullptr)
+    m_event(nullptr),
+    m_hw_timer_fd(-1),
+    m_input_num(0),
+    m_output_num(0),
+    m_run(false)
 {
-
 }
 
 AMEventSender::~AMEventSender()
@@ -142,6 +151,7 @@ AM_STATE AMEventSender::init(const std::string& config,
 
   do {
     if ((m_hw_timer_fd = open(HW_TIMER, O_RDONLY)) < 0) {
+      ERROR("%s: %s", HW_TIMER, strerror(errno));
       state = AM_STATE_ERROR;
       break;
     }
@@ -187,7 +197,7 @@ AM_STATE AMEventSender::init(const std::string& config,
         ERROR("Failed to create Event Sender packet pool[%d]!", i);
         break;
       } else {
-        output[i].set_packet_pool(pool);
+        output->set_packet_pool(pool);
         m_packet_pool.push_back(pool);
       }
     }
@@ -239,38 +249,59 @@ AM_PTS AMEventSender::get_current_pts()
   return current_pts;
 }
 
-bool AMEventSender::send_event()
+bool AMEventSender::send_event(AMEventStruct& event)
 {
   bool ret = true;
   AMPacket *send_packet = nullptr;
-
-  AUTO_LOCK(m_mutex);
-  for (auto &v : m_output) {
-    if (!v->alloc_packet(send_packet)) {
+  do {
+    if (!check_event_params(event)) {
+      ERROR("Event params is not valid.");
       ret = false;
-      continue;
+      break;
     }
-    send_packet->set_type(AMPacket::AM_PAYLOAD_TYPE_EVENT);
-    send_packet->set_attr(AMPacket::AM_PAYLOAD_ATTR_EVENT_EMG);
-    send_packet->set_data_size(0);
-    send_packet->set_pts(get_current_pts());
-    v->send_packet(send_packet);
-  }
-
+    AUTO_MEM_LOCK(m_mutex);
+    for (auto &v : m_output) {
+      if (!v->alloc_packet(send_packet)) {
+        ret = false;
+        continue;
+      }
+      send_packet->set_packet_type(AMPacket::AM_PACKET_TYPE_EVENT);
+      if (event.attr == AM_EVENT_H26X) {
+        send_packet->set_stream_id(event.h26x.stream_id);
+      } else if (event.attr == AM_EVENT_MJPEG) {
+        send_packet->set_stream_id(event.mjpeg.stream_id);
+      } else if (event.attr == AM_EVENT_PERIODIC_MJPEG) {
+        send_packet->set_stream_id(event.periodic_mjpeg.stream_id);
+      } else if (event.attr == AM_EVENT_STOP_CMD) {
+        send_packet->set_stream_id(event.stop_cmd.stream_id);
+      } else {
+        ERROR("The event attr error.");
+        ret = false;
+        break;
+      }
+      send_packet->set_type(AMPacket::AM_PAYLOAD_TYPE_EVENT);
+      send_packet->set_attr(AMPacket::AM_PAYLOAD_ATTR_EVENT_EMG);
+      send_packet->set_data_size(sizeof(AMEventStruct));
+      uint8_t* data_ptr = send_packet->get_data_ptr();
+      memcpy(data_ptr, (uint8_t*)(&event), sizeof(event));
+      send_packet->set_pts(get_current_pts());
+      v->send_packet(send_packet);
+    }
+  } while(0);
   return ret;
 }
 
 AM_STATE AMEventSender::start()
 {
   AM_STATE state = AM_STATE_OK;
-  AUTO_LOCK(m_mutex);
+  AUTO_MEM_LOCK(m_mutex);
   m_run = true;
   return state;
 }
 
 AM_STATE AMEventSender::stop()
 {
-  AUTO_LOCK(m_mutex);
+  AUTO_MEM_LOCK(m_mutex);
   m_run = false;
   m_event->signal();
   return inherited::stop();
@@ -285,6 +316,70 @@ void AMEventSender::on_run()
 
   do {
     m_event->wait();
-  } while (m_run);
+  } while (m_run.load());
   INFO("%s exits mainloop!", m_name);
+}
+
+bool AMEventSender::check_event_params(AMEventStruct& event)
+{
+  bool ret = true;
+  time_t timep;
+  struct tm *local_time;
+  do {
+    time(&timep);
+    local_time = localtime(&timep);
+    uint32_t current_second = local_time->tm_hour * 3600 +
+        local_time->tm_min * 60 + local_time->tm_sec;
+    switch (event.attr) {
+      case AM_EVENT_H26X : {
+        if (event.h26x.stream_id < 0) {
+          ERROR("AM_EVENT_H26X event id is invalid.");
+          ret = false;
+          break;
+        }
+      } break;
+      case AM_EVENT_MJPEG : {
+        if ((event.mjpeg.stream_id < 0) || (event.mjpeg.pre_cur_pts_num < 0) ||
+            (event.mjpeg.after_cur_pts_num < 0) ||
+            (event.mjpeg.closest_cur_pts_num < 0)) {
+          ERROR("AM_EVENT_MJPEG params are invalid.");
+          ret = false;
+          break;
+        }
+      } break;
+      case AM_EVENT_PERIODIC_MJPEG : {
+        if ((event.periodic_mjpeg.stream_id < 0) ||
+            (event.periodic_mjpeg.interval_second <= 0) ||
+            (event.periodic_mjpeg.once_jpeg_num <= 0)) {
+          ERROR("AM_EVENT_PERIODIC_MJPEG params are invalid.");
+          ret = false;
+          break;
+        }
+        uint32_t start_second = event.periodic_mjpeg.start_time_hour * 3600 +
+            event.periodic_mjpeg.start_time_minute * 60 +
+            event.periodic_mjpeg.start_time_second;
+        uint32_t end_second = event.periodic_mjpeg.end_time_hour * 3600 +
+            event.periodic_mjpeg.end_time_minute * 60 +
+            event.periodic_mjpeg.end_time_second;
+        if (start_second >= end_second) {
+          ERROR("Start time should be smaller than end time.");
+          ret = false;
+          break;
+        }
+        if (current_second > start_second) {
+          ERROR("The start time should be smaller than current time.");
+          ret = false;
+          break;
+        }
+      } break;
+      case AM_EVENT_STOP_CMD : {
+        ret = true;
+      } break;
+      default : {
+        ERROR("Event attr error.");
+        ret = false;
+      } break;
+    }
+  } while(0);
+  return ret;
 }

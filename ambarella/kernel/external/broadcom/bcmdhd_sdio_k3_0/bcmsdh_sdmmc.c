@@ -1505,7 +1505,7 @@ sdioh_sdmmc_card_regwrite(sdioh_info_t *sd, int func, uint32 regaddr, int regsiz
 int
 sdioh_start(sdioh_info_t *si, int stage)
 {
-//	int ret;
+	int ret;
 	sdioh_info_t *sd = gInstance->sd;
 
 	if (!sd) {
@@ -1528,13 +1528,11 @@ sdioh_start(sdioh_info_t *si, int stage)
 		   2.6.27. The implementation prior to that is buggy, and needs broadcom's
 		   patch for it
 		*/
-#if 0
 		if ((ret = sdio_reset_comm(gInstance->func[0]->card))) {
 			sd_err(("%s Failed, error = %d\n", __FUNCTION__, ret));
 			return ret;
 		}
-#endif
-//		else {
+		else {
 			sd->num_funcs = 2;
 			sd->sd_blockmode = TRUE;
 			sd->use_client_ints = TRUE;
@@ -1569,7 +1567,7 @@ sdioh_start(sdioh_info_t *si, int stage)
 			}
 
 			sdioh_sdmmc_card_enablefuncs(sd);
-//			}
+			}
 		} else {
 #if !defined(OOB_INTR_ONLY)
 			sdio_claim_host(gInstance->func[0]);

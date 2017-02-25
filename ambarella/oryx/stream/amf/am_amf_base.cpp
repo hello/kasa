@@ -4,12 +4,29 @@
  * History:
  *   2014-7-23 - [ypchang] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -107,6 +124,11 @@ AMQueue::QTYPE AMWorkQueue::wait_data_msg(void *msg,
                                           AMQueue::WaitResult *result)
 {
   return m_msg_q->wait_data_msg(msg, msgSize, result);
+}
+
+void AMWorkQueue::put_msg(void *msg, uint32_t msgSize)
+{
+  m_msg_q->put_msg(msg, msgSize);
 }
 
 AMWorkQueue::AMWorkQueue(AMIActiveObject *activeObj) :
@@ -239,14 +261,14 @@ AM_STATE AMBaseEngine::post_engine_msg(AmMsg& msg)
 
 AM_STATE AMBaseEngine::set_app_msg_sink(AMIMsgSink *appMsgSink)
 {
-  AUTO_SPIN_LOCK(m_mutex);
+  AUTO_MEM_LOCK(m_mutex);
   m_app_msg_sink = appMsgSink;
   return AM_STATE_OK;
 }
 
 AM_STATE AMBaseEngine::set_app_msg_callback(MsgProcType msgProc, void *data)
 {
-  AUTO_SPIN_LOCK(m_mutex);
+  AUTO_MEM_LOCK(m_mutex);
   m_app_msg_callback = msgProc;
   m_app_msg_data     = data;
   return AM_STATE_OK;
@@ -270,14 +292,13 @@ bool AMBaseEngine::is_session_msg(AmMsg& msg)
 }
 
 AMBaseEngine::AMBaseEngine() :
-    m_session_id(0),
-    m_mutex(NULL),
-    m_msg_sys(NULL),
-    m_app_msg_sink(NULL),
-    m_filter_msg_port(NULL),
-    m_msg_proxy(NULL),
-    m_app_msg_data(NULL),
-    m_app_msg_callback(NULL)
+    m_msg_sys(nullptr),
+    m_app_msg_sink(nullptr),
+    m_filter_msg_port(nullptr),
+    m_msg_proxy(nullptr),
+    m_app_msg_data(nullptr),
+    m_app_msg_callback(nullptr),
+    m_session_id(0)
 {
 }
 
@@ -285,7 +306,6 @@ AMBaseEngine::~AMBaseEngine()
 {
   AM_DESTROY(m_msg_proxy);
   AM_DESTROY(m_filter_msg_port);
-  AM_DESTROY(m_mutex);
   AM_DESTROY(m_msg_sys);
   DEBUG("~AMBaseEngine");
 }
@@ -296,10 +316,6 @@ AM_STATE AMBaseEngine::init()
   do {
     if (AM_UNLIKELY(NULL == (m_msg_sys = AMMsgSys::create()))) {
       state = AM_STATE_NO_MEMORY;
-      break;
-    }
-    if (AM_UNLIKELY(NULL == (m_mutex = AMSpinLock::create()))) {
-      state = AM_STATE_OS_ERROR;
       break;
     }
     m_filter_msg_port = AMMsgPort::create(((AMIMsgSink*)this), m_msg_sys);
@@ -319,7 +335,7 @@ AM_STATE AMBaseEngine::init()
 
 void AMBaseEngine::on_app_msg(AmMsg& msg)
 {
-  AUTO_SPIN_LOCK(m_mutex);
+  AUTO_MEM_LOCK(m_mutex);
   if (AM_LIKELY(msg.session_id == m_session_id)) {
     if (AM_LIKELY(m_app_msg_sink)) {
       m_app_msg_sink->msg_proc(msg);

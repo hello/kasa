@@ -4,12 +4,29 @@
  * History:
  *   2014年5月14日 - [ypchang] created file
  *
- * Copyright (C) 2008-2014, Ambarella ShangHai Co,Ltd
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 #ifndef WATCHDOG_SERVICE_INSTANCE_H_
@@ -30,6 +47,8 @@
 #include <signal.h>
 #include <pthread.h>
 #include "../services/commands/am_service_impl.h"
+#include <list>
+
 #define SERVICE_TIMEOUT_SECONDS 10
 #define WATCHDOG_IOCTL_BASE 'W'
 
@@ -66,43 +85,13 @@
 
 #define WATCHDOG_DEVICE "/dev/watchdog"
 
-#define SYS_SERVICE_NAME   (const char*)"system service"
-#define MED_SERVICE_NAME   (const char*)"media service"
-#define EVT_SERVICE_NAME   (const char*)"event service"
-#define IMG_SERVICE_NAME   (const char*)"image service"
-#define VCTRL_SERVICE_NAME (const char*)"video control service"
-#define NET_SERVICE_NAME   (const char*)"network control service"
-#define AUD_SERVICE_NAME (const char*)"audio control service"
-#define RTSP_SERVICE_NAME (const char*)"rtsp control service"
-#define SIP_SERVICE_NAME (const char*)"sip service"
-typedef enum
-{
-  IMAGE_SERVICE = 0,
-  MEDIA_SERVICE,
-  VIDEO_CONTROL_SERVICE,
-  AUDIO_CONTROL_SERVICE,
-  EVENT_SERVICE,
-  NETWORK_CONTROL_SERVICE,
-  SYSTEM_SERVICE,
-  USER_SERVICE,
-  RTSP_CONTROL_SERVICE,
-  SIP_SERVICE,
-  API_PROXY_SERVER,
-  MAX_SERVICE_NUM,
-} service_num_t;
-typedef enum
-{
-  AMBA_VDSP                 = 0,
-  AMBA_VIN0_IDSP_LAST_PIXEL = 1,
-  AMBA_VNI0_IDSP            = 2,
-  AMBA_DSP_INTR_NUM
-} dsp_intr_t;
+#define INIT_TIMEOUT    50
+#define WORK_TIMEOUT    15
 
 struct SrvData;
 struct WdData;
-struct DspData;
-struct NetDevice;
 
+typedef std::list<SrvData> AMSrvDataList;
 class AMWatchdogService
 {
   public:
@@ -110,12 +99,11 @@ class AMWatchdogService
     virtual ~AMWatchdogService();
 
   public:
-    bool init(am_service_attribute *m_service_list);
+    bool init(const std::list<am_service_attribute> &m_service_list);
     bool start();
     bool stop();
     void run();
     void quit();
-    //void set_encode_state(bool encode);
 
   private:
     bool start_feeding_thread();
@@ -127,33 +115,24 @@ class AMWatchdogService
     bool init_service_data();
     bool clean_service_data();
     bool check_service_timeout();
-    bool get_dsp_intr_value(FILE* intr,
-                            const char* intr_name,
-                            uint32_t& intr_val);
-    bool check_dsp_intr(FILE* intr);
     void abort();
     void* watchdog_feeding_thread(void* data);
     static void* static_watchdog_feeding_thread(void* data);
 
   private:
-    pthread_mutex_t mDspLock;
+    WdData         *mWdData          = nullptr;
+    pthread_t       mWdFeedingThread = 0;
+    int             mSrvCtrl[2]      = {-1};
+    int             mWdFd            = -1;
+    int             mInitTimeout     = INIT_TIMEOUT;
+    int             mWorkTimeout     = WORK_TIMEOUT;
+    bool            mIsInited        = false;
+    bool            mIsDspEncoding   = true;
+    bool            mIsFeeding       = false;
+    bool            mRun             = true;
+    bool            mNeedReboot      = false;
     pthread_mutex_t mSrvLock;
-    pthread_t       mWdFeedingThread;
-    int             mWdFd;
-   // int             mNetDevIdx;
-    int             mSrvCtrl[2];
-    int             mInitTimeout;
-    int             mWorkTimeout;
-    int             mFeedInterval;
-    bool            mIsInited;
-    bool            mIsDspEncoding;
-    bool            mIsFeeding;
-    bool            mRun;
-    bool            mNeedReboot;
-    SrvData        *mSrvDataList;
-    DspData        *mDspData;
-    WdData         *mWdData;
-   // NetDevice      *mNetDevList[2];
+    AMSrvDataList   mServiceDataList;
 };
 
 #endif /* WATCHDOG_SERVICE_INSTANCE_H_ */

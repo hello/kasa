@@ -98,10 +98,11 @@ dhdcdc_msg(dhd_pub_t *dhd)
 	prot->ctl_completed = FALSE;
 	err = dbus_send_ctl(dhd->dbus, (void *)&prot->msg, len);
 	if (err) {
+		dhd->txcnt_timeout++;
 		DHD_ERROR(("dbus_send_ctl error=0x%x\n", err));
-		DHD_OS_WAKE_UNLOCK(dhd);
-		return err;
+		goto done;
 	}
+	dhd->txcnt_timeout = 0;
 #else
 	err = dhd_bus_txctl(dhd->bus, (uchar*)&prot->msg, len);
 #endif
@@ -109,6 +110,7 @@ dhdcdc_msg(dhd_pub_t *dhd)
 #ifdef BCMDBUS
 	timeout = dhd_os_ioctl_resp_wait(dhd, &prot->ctl_completed, &pending);
 	if (!timeout) {
+		dhd->txcnt_timeout++;
 		DHD_ERROR(("Txctl wait timed out\n"));
 		err = -1;
 	}
@@ -132,7 +134,12 @@ dhdcdc_msg(dhd_pub_t *dhd)
 		}
 	}
 #endif /* defined(BCMDBUS) && defined(INTR_EP_ENABLE) */
+done:
 	DHD_OS_WAKE_UNLOCK(dhd);
+	// terence 20150523: send hang event
+	if (dhd->txcnt_timeout >= MAX_CNTL_TIMEOUT)
+		return -ETIMEDOUT;
+
 	return err;
 }
 
@@ -158,11 +165,13 @@ dhdcdc_cmplt(dhd_pub_t *dhd, uint32 id, uint32 len)
 		prot->ctl_completed = FALSE;
 		ret = dbus_recv_ctl(dhd->dbus, (uchar*)&prot->msg, cdc_len);
 		if (ret) {
+			dhd->rxcnt_timeout++;
 			DHD_ERROR(("dbus_recv_ctl error=0x%x(%d)\n", ret, ret));
 			goto done;
 		}
 		timeout = dhd_os_ioctl_resp_wait(dhd, &prot->ctl_completed, &pending);
 		if (!timeout) {
+			dhd->rxcnt_timeout++;
 			DHD_ERROR(("Rxctl wait timed out\n"));
 			ret = -1;
 			goto done;
@@ -183,6 +192,9 @@ dhdcdc_cmplt(dhd_pub_t *dhd, uint32 id, uint32 len)
 #ifdef BCMDBUS
 done:
 #endif /* BCMDBUS */
+	// terence 20150523: send hang event
+	if (dhd->rxcnt_timeout >= MAX_CNTL_TIMEOUT)
+		return -ETIMEDOUT;
 	return ret;
 }
 
@@ -229,7 +241,7 @@ dhdcdc_query_ioctl(dhd_pub_t *dhd, int ifidx, uint cmd, void *buf, uint len, uin
 
 	if ((ret = dhdcdc_msg(dhd)) < 0) {
 		if (!dhd->hang_was_sent)
-		DHD_ERROR(("dhdcdc_query_ioctl: dhdcdc_msg failed w/status %d\n", ret));
+			DHD_ERROR(("dhdcdc_query_ioctl: dhdcdc_msg failed w/status %d\n", ret));
 		goto done;
 	}
 

@@ -1,17 +1,34 @@
-/***********************************************************
+/*
  * test_image.c
  *
  * History:
  *	2010/03/25 - [Jian Tang] created file
  *
- * Copyright (C) 2010-2018, Ambarella, Inc.
+ * Copyright (C) 2015 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
  *
- ***********************************************************/
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
 
 
 #include <unistd.h>
@@ -50,9 +67,28 @@
 #include "img_customer_interface_arch.h"
 #include "img_api_adv_arch.h"
 
+#define WDR_LUMA_RADIUS_MIN			(0)
+#define WDR_LUMA_RADIUS_MAX			(6)
+#define WDR_LUMA_WEIGHT_MIN			(0)
+#define WDR_LUMA_WEIGHT_MAX			(31)
+
 #define	DIV_ROUND(divident, divider)    (((divident) + ((divider) >> 1)) / (divider))
 #define	SENSOR_STEPS_PER_DB		6
 #define	DEFAULT_CFG_FILE		"/etc/idsp/cfg/test_image.cfg"
+
+#define SCANF_INT(addr)		do {	\
+			if (scanf("%d", addr) < 0) {	\
+				printf("input error.\n");	\
+				return -1;					\
+			}							\
+		} while (0)
+
+#define SCANF_STR(addr)		do {	\
+			if (scanf("%s", addr) < 0) {	\
+				printf("input error.\n");	\
+				return -1;					\
+			}							\
+		} while (0)
 
 typedef enum {
 	FETCH_AAA_STATISTICS = 0,
@@ -108,6 +144,8 @@ static mw_ae_param			ae_param;
 static u32	dc_iris_enable		= 0;
 static mw_dc_iris_pid_coef	pid_coef = {2500, 2, 5000};
 static int	load_mctf_flag = 0;
+
+static int auto_dump_cfg_flag = 0;
 
 static int	G_lens_id = LENS_CMOUNT_ID;
 static int	load_file_flag[FILE_TYPE_TOTAL_NUM] = {0};
@@ -314,7 +352,7 @@ static int input_value(int min, int max)
 
 	do {
 		retry = 0;
-		scanf("%s", tmp);
+		SCANF_STR(tmp);
 		for (i = 0; i < MAX_LENGTH; i++) {
 			if ((i == 0) && (tmp[i] == '-')) {
 				continue;
@@ -430,7 +468,10 @@ static int set_sensor_fps(u32 fps)
 		}
 		init_flag = 1;
 	}
-	read(fd_vin, vin_arr, 8);
+	if (read(fd_vin, vin_arr, 8) < 0) {
+		printf("read error.\n");
+		return -1;
+	}
 	if (ioctl(fd_iav, IAV_IOC_VIN_SET_FPS, &vsrc_fps) < 0) {
 		perror("IAV_IOC_VIN_SET_FPS");
 		return -1;
@@ -456,7 +497,7 @@ static int show_global_setting_menu(void)
 	return 0;
 }
 
-static int global_setting(int imgproc_running)
+static int global_setting(int *imgproc_running)
 {
 	int i, exit_flag, error_opt;
 	char ch;
@@ -469,18 +510,18 @@ static int global_setting(int imgproc_running)
 		switch (ch) {
 		case 's':
 			printf("Imgproc library is %srunning.\n",
-				imgproc_running ? "" : "not ");
+				*imgproc_running ? "" : "not ");
 			printf("0 - Stop 3A library, 1 - Start 3A library\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			if (i == 0) {
-				if (imgproc_running == 1) {
+				if (*imgproc_running == 1) {
 					mw_stop_aaa();
-					imgproc_running = 0;
+					*imgproc_running = 0;
 				}
 			} else if (i == 1) {
-				if (imgproc_running == 0) {
+				if (*imgproc_running == 0) {
 					mw_start_aaa(fd_iav);
-					imgproc_running = 1;
+					*imgproc_running = 1;
 				}
 			} else {
 				printf("Invalid input for this option!\n");
@@ -488,7 +529,7 @@ static int global_setting(int imgproc_running)
 			break;
 		case 'f':
 			printf("Set sensor frame rate : 0 - 29.97, 1 - 30, 2 - 15, 3 - 7.5\n");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			set_sensor_fps(i);
 			update_sensor_fps();
 			break;
@@ -533,11 +574,16 @@ static int show_exposure_setting_menu(void)
 		printf("  g -- Sensor gain max\n");
 		printf("  m -- Set AE metering mode\n");
 		printf("  l -- Get AE current lines\n");
-		printf("  L -- Set AE customer lines\n");
+		//printf("  L -- Set AE customer lines\n");
 		printf("  p -- Set AE switch point\n");
 		printf("  C -- Setting ae area following pre-main input buffer enable and disable\n");
 		printf("  y -- Get Luma value\n");
 		printf("  P -- Piris lens aperture range\n");
+	} else {
+		printf("  x -- Set HDR blend exposure ratio\n");
+		printf("  b -- Set HDR blend boost factor\n");
+		printf("  X -- Get HDR blend exposure ratio and boost factor\n");
+		printf("  c -- Tone Curve enable and disable\n");
 	}
 	printf("  q -- Return to upper level\n");
 	printf("\n================================================\n\n");
@@ -551,6 +597,7 @@ static int exposure_setting(void)
 	char ch;
 	mw_dc_iris_pid_coef pid;
 	mw_ir_led_control_param ir_led_param;
+	mw_hdr_blend_info hdr_blend_cfg;
 
 	mw_ae_metering_table	custom_ae_metering_table[2] = {
 		{	//Left half window as ROI
@@ -593,7 +640,7 @@ static int exposure_setting(void)
 		switch (ch) {
 		case 'E':
 			printf("0 - AE disable  1 - AE enable\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			if (mw_enable_ae(i) < 0) {
 				printf("mw_enable_ae error\n");
 			}
@@ -606,18 +653,18 @@ static int exposure_setting(void)
 			}
 			if (G_mw_info.res.hdr_expo_num <= MIN_HDR_EXPOSURE_NUM) {
 				printf("Input new exposure level: (range 25 ~ 400)\n> ");
-				scanf("%d", value);
+				SCANF_INT(value);
 			} else {
 				printf("Select the exposure frame index[0~%d]:\n> ",
 					G_mw_info.res.hdr_expo_num -1);
-				scanf("%d", &i);
+				SCANF_INT(&i);
 				if (i >= G_mw_info.res.hdr_expo_num) {
 					printf("Error:The value must be [0~%d]!\n",
 						G_mw_info.res.hdr_expo_num -1);
 					break;
 				}
 				printf("Input new exposure level for exposure frame index %d (25~400)\n> ", i);
-				scanf("%d", &value[i]);
+				SCANF_INT(&value[i]);
 			}
 			if (mw_set_exposure_level(value) < 0) {
 				printf("mw_set_exposure_level error\n");
@@ -625,7 +672,7 @@ static int exposure_setting(void)
 			break;
 		case 'a':
 			printf("Anti-flicker mode? 0 - 50Hz  1 - 60Hz\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			mw_get_ae_param(&ae_param);
 			ae_param.anti_flicker_mode = i;
 			if (mw_set_ae_param(&ae_param) < 0) {
@@ -633,32 +680,34 @@ static int exposure_setting(void)
 			}
 			break;
 		case 's':
+			if (mw_get_shutter_time(fd_iav, value) < 0) {
+				printf("mw_get_shutter_time error\n");
+				return -1;
+			}
 			if (G_mw_info.res.hdr_expo_num <= MIN_HDR_EXPOSURE_NUM) {
-				mw_get_shutter_time(fd_iav, value);
 				printf("Current shutter time is 1/%d sec.\n",
 					DIV_ROUND(512000000, value[0]));
 				printf("Input new shutter time in 1/n sec format: (range 1 ~ 8000)\n> ");
-				scanf("%d", &value[0]);
+				SCANF_INT(&value[0]);
 				value[0] = DIV_ROUND(512000000, value[0]);
 				if (mw_set_shutter_time(fd_iav, value) < 0) {
 					printf("mw_set_shutter_time error\n");
 				}
 			} else {
 				printf("Current Row hdr shutter mode:\n");
-				mw_get_shutter_time(fd_iav, value);
 				for (i = 0; i < G_mw_info.res.hdr_expo_num; i++) {
 					printf("[%d]: %8d\t", i, DIV_ROUND(512000000, value[i]));
 				}
 				printf("\nInput the new Shutter Frame index[0~%d]:\n> ",
 					G_mw_info.res.hdr_expo_num -1);
-				scanf("%d", &i);
+				SCANF_INT(&i);
 				if (i >= G_mw_info.res.hdr_expo_num) {
 					printf("Error:The value must be [0~%d]!\n",
 						G_mw_info.res.hdr_expo_num -1);
 					break;
 				}
 				printf("Input new Shutter for Frame index %d\n> ", i);
-				scanf("%d", &value[i]);
+				SCANF_INT(&value[i]);
 				value[i] = DIV_ROUND(512000000, value[i]);
 				if  (mw_set_shutter_time(fd_iav, value) < 0) {
 					printf("mw_set_shutter_time error\n");
@@ -670,7 +719,7 @@ static int exposure_setting(void)
 			printf("Current shutter time max is 1/%d sec\n",
 				DIV_ROUND(512000000, ae_param.shutter_time_max));
 			printf("Input new shutter time max in 1/n sec fomat? (Ex, 6, 10, 15...)(slow shutter)\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			ae_param.shutter_time_max = DIV_ROUND(512000000, i);
 			if (mw_set_ae_param(&ae_param) < 0) {
 				printf("mw_set_ae_param error\n");
@@ -681,7 +730,7 @@ static int exposure_setting(void)
 			printf("Current shutter time min is 1/%d sec\n",
 				DIV_ROUND(512000000, ae_param.shutter_time_min));
 			printf("Input new shutter time min in 1/n sec fomat? (Ex, 120, 200, 400 ...)\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			ae_param.shutter_time_min = DIV_ROUND(512000000, i);
 			if (mw_set_ae_param(&ae_param) < 0) {
 				printf("mw_set_ae_param error\n");
@@ -692,7 +741,7 @@ static int exposure_setting(void)
 			printf("Current slow shutter mode is %s.\n",
 				ae_param.slow_shutter_enable ? "enabled" : "disabled");
 			printf("Input slow shutter mode? (0 - disable, 1 - enable)\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			ae_param.slow_shutter_enable = !!i;
 			if (mw_set_ae_param(&ae_param) < 0) {
 				printf("mw_set_ae_param error\n");
@@ -704,11 +753,11 @@ static int exposure_setting(void)
 				printf("Current IR led mode is %d. (0 - off, 1 - on, 2 -- auto)\n",
 					ae_param.ir_led_mode);
 				printf("Input IR led mode? (0 - off, 1 - on, 2 -- auto)\n> ");
-				scanf("%d", &i);
+				SCANF_INT(&i);
 				ae_param.ir_led_mode = i;
 				if (ae_param.ir_led_mode == 1) {
 					printf("Input IR led brightness? (1 ~ 99, 99 - max brightness)\n> ");
-					scanf("%d", &i);
+					SCANF_INT(&i);
 					if (mw_set_ir_led_brightness(i) < 0) {
 						printf("mw_set_ir_led_brightness error\n");
 						break;
@@ -733,19 +782,19 @@ static int exposure_setting(void)
 						ir_led_param.threshold_3X,
 						ir_led_param.open_delay, ir_led_param.close_delay);
 				printf("Input new open_threshold\n> ");
-				scanf("%d", &ir_led_param.open_threshold);
+				SCANF_INT(&ir_led_param.open_threshold);
 				printf("Input new close_threshold\n> ");
-				scanf("%d", &ir_led_param.close_threshold);
+				SCANF_INT(&ir_led_param.close_threshold);
 				printf("Input new threshold_1X\n> ");
-				scanf("%d", &ir_led_param.threshold_1X);
+				SCANF_INT(&ir_led_param.threshold_1X);
 				printf("Input new threshold_2X\n> ");
-				scanf("%d", &ir_led_param.threshold_2X);
+				SCANF_INT(&ir_led_param.threshold_2X);
 				printf("Input new threshold_3X\n> ");
-				scanf("%d", &ir_led_param.threshold_3X);
+				SCANF_INT(&ir_led_param.threshold_3X);
 				printf("Input new open_delay\n> ");
-				scanf("%d", &ir_led_param.open_delay);
+				SCANF_INT(&ir_led_param.open_delay);
 				printf("Input new close_delay\n> ");
-				scanf("%d", &ir_led_param.close_delay);
+				SCANF_INT(&ir_led_param.close_delay);
 				if (mw_set_ir_led_param(&ir_led_param) < 0) {
 					printf("mw_set_ir_led_param error\n");
 				}
@@ -758,7 +807,7 @@ static int exposure_setting(void)
 			printf("Current sensor gain max is %d dB\n",
 				ae_param.sensor_gain_max);
 			printf("Input new sensor gain max in dB? (Ex, 24, 36, 48 ...)\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			ae_param.sensor_gain_max = i;
 			if (mw_set_ae_param(&ae_param) < 0) {
 				printf("mw_set_ae_param error\n");
@@ -772,7 +821,7 @@ static int exposure_setting(void)
 			if (G_mw_info.res.hdr_expo_num <= MIN_HDR_EXPOSURE_NUM) {
 				printf("Current sensor gain is %d dB\n", value[0] >> 24);
 				printf("Input new sensor gain in dB: (range 0 ~ 36)\n> ");
-				scanf("%d", &value[0]);
+				SCANF_INT(&value[0]);
 				value[0] = value[0] << 24;
 				if  (mw_set_sensor_gain(fd_iav, &value[0]) < 0) {
 					printf("mw_set_sensor_gain error\n");
@@ -785,14 +834,14 @@ static int exposure_setting(void)
 				}
 				printf("\nInput the new AGC Frame index [0~%d]:\n> ",
 					G_mw_info.res.hdr_expo_num -1);
-				scanf("%d", &i);
+				SCANF_INT(&i);
 				if (i >= G_mw_info.res.hdr_expo_num) {
 					printf("Error:The value must be [0~%d]!\n",
 						G_mw_info.res.hdr_expo_num -1);
 					break;
 				}
 				printf("Input new AGC for Frame index %d\n> ", i);
-				scanf("%d", &value[i]);
+				SCANF_INT(&value[i]);
 				value[i] = (value[i] << 24) / G_mw_info.sensor.step;
 				if  (mw_set_sensor_gain(fd_iav, value) < 0) {
 					printf("mw_set_sensor_gain error\n");
@@ -804,13 +853,13 @@ static int exposure_setting(void)
 			mw_get_ae_metering_mode(&ae_param.ae_metering_mode);
 			printf("Current ae metering mode is %d\n", ae_param.ae_metering_mode);
 			printf("Input new ae metering mode:\n> ");
-			scanf("%d", (int *)&ae_param.ae_metering_mode);
+			SCANF_INT((int *)&ae_param.ae_metering_mode);
 			mw_set_ae_metering_mode(ae_param.ae_metering_mode);
 			if (ae_param.ae_metering_mode != MW_AE_CUSTOM_METERING)
 				break;
 			printf("Please choose the AE window:\n");
 			printf("0 - left half window, 1 - right half window\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			if (mw_set_ae_metering_table(&custom_ae_metering_table[i]) < 0) {
 				printf("mw_set_ae_metering_table error\n");
 			}
@@ -821,7 +870,7 @@ static int exposure_setting(void)
 			break;
 		case 'L':
 			printf("Set customer AE lines: (0: 60Hz, 1: 50Hz, 2: customize)\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			if ((i != 0) && (i != 1) && (i != 2)) {
 				printf("Invalid input : %d.\n", i);
 				break;
@@ -843,13 +892,13 @@ static int exposure_setting(void)
 		case 'p':
 			printf("Please set switch point in AE lines :\n");
 			printf("Input shutter time in 1/n sec format: (range 30 ~ 120)\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			switch_point.factor[MW_SHUTTER] = DIV_ROUND(512000000, i);
 			printf("Input switch point of AE line: (0 - start point; 1 - end point)\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			switch_point.pos = i;
 			printf("Input sensor gain in dB: (range 0 ~ 36)\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			switch_point.factor[MW_DGAIN] = i;
 			if (mw_set_ae_points(&switch_point, 1) < 0) {
 				printf("mw_set_ae_points error\n");
@@ -860,11 +909,11 @@ static int exposure_setting(void)
 			printf("Current PID coefficients are: p_coef=%d,i_coef=%d,d_coef=%d\n",
 					pid.p_coef, pid.i_coef, pid.d_coef);
 			printf("Input new p_coef\n> ");
-			scanf("%d", &pid.p_coef);
+			SCANF_INT(&pid.p_coef);
 			printf("Input new i_coef\n> ");
-			scanf("%d", &pid.i_coef);
+			SCANF_INT(&pid.i_coef);
 			printf("Input new d_coef\n> ");
-			scanf("%d", &pid.d_coef);
+			SCANF_INT(&pid.d_coef);
 			if (mw_set_dc_iris_pid_coef(&pid) < 0) {
 				printf("mw_set_dc_iris_pid_coef error\n");
 			}
@@ -872,7 +921,7 @@ static int exposure_setting(void)
 		case 'D':
 			if (mw_is_dc_iris_supported()) {
 				printf("DC iris control? 0 - disable  1 - enable\n> ");
-				scanf("%d", &i);
+				SCANF_INT(&i);
 				if (mw_enable_dc_iris_control(i) < 0) {
 					printf("mw_enable_dc_iris_control error\n");
 				}
@@ -885,14 +934,16 @@ static int exposure_setting(void)
 			printf("Current rgb luma value = %d, cfa_luma_value = %d\n", luma.rgb_luma, luma.cfa_luma);
 			break;
 		case 'r':
+			if (mw_get_shutter_time(fd_iav, value) < 0) {
+				printf("mw_get_shutter_time error\n");
+				return -1;
+			}
 			if (G_mw_info.res.hdr_expo_num <= MIN_HDR_EXPOSURE_NUM) {
-				mw_get_shutter_time(fd_iav, value);
 				printf("Current shutter time is 1/%d sec.\n",
 					DIV_ROUND(512000000, value[0]));
 				mw_get_sensor_gain(fd_iav, value);
 				printf("Current sensor gain is %d dB.\n", (value[0] >> 24));
 			} else {
-				mw_get_shutter_time(fd_iav, value);
 				printf("HDR shutter time:\n");
 				for (i = 0; i < G_mw_info.res.hdr_expo_num; i++) {
 					printf("[%d]: 1/%ds\t", i, DIV_ROUND(512000000, value[i]));
@@ -920,7 +971,10 @@ static int exposure_setting(void)
 				(float)(ae_param.lens_aperture.FNO_max) / LENS_FNO_UNIT);
 			printf("Input the new range:(E.x, 1.2, 2.0)\n> ");
 
-			scanf("%f,%f", &lens_aperture[0], &lens_aperture[1]);
+			if (scanf("%f,%f", &lens_aperture[0], &lens_aperture[1]) < 0) {
+				printf("input error.\n");
+				return -1;
+			}
 
 			ae_param.lens_aperture.aperture_min = (u32)(lens_aperture[0] * LENS_FNO_UNIT);
 			ae_param.lens_aperture.aperture_max = (u32)(lens_aperture[1] * LENS_FNO_UNIT);
@@ -928,6 +982,57 @@ static int exposure_setting(void)
 			if (mw_set_ae_param(&ae_param) < 0) {
 				printf("mw_set_piris_lens_param error\n");
 				return -1;
+			}
+			break;
+		case 'x':
+			if (mw_get_hdr_blend_config(&hdr_blend_cfg) < 0) {
+				printf("mw_get_hdr_blend_config failed!\n");
+				return -1;
+			}
+			printf("The current exposure ratio is %d\n", hdr_blend_cfg.expo_ratio);
+			printf("Please input new exposure ratio:\n>");
+			if (scanf("%hu", &hdr_blend_cfg.expo_ratio) < 0) {
+				printf("input error.\n");
+				return -1;
+			}
+			if (mw_set_hdr_blend_config(&hdr_blend_cfg) < 0) {
+				printf("mw_set_hdr_blend_config failed!\n");
+				return -1;
+			}
+			break;
+		case 'b':
+			if (mw_get_hdr_blend_config(&hdr_blend_cfg) < 0) {
+				printf("mw_get_hdr_blend_config failed!\n");
+				return -1;
+			}
+			printf("The current exposure boost is %d\n", hdr_blend_cfg.boost_factor);
+			printf("Please input new boost factor: 0 ~ 256, 0 means no boost\n>");
+			if (scanf("%hu", &hdr_blend_cfg.boost_factor) < 0) {
+				printf("input error.\n");
+				return -1;
+			}
+			if (mw_set_hdr_blend_config(&hdr_blend_cfg) < 0) {
+				printf("mw_set_hdr_blend_config failed!\n");
+				return -1;
+			}
+			break;
+		case 'X':
+			if (mw_get_hdr_blend_config(&hdr_blend_cfg) < 0) {
+				printf("mw_get_hdr_blend_config failed!\n");
+				return -1;
+			}
+			printf("The current exposure ratio is %d, boost factor is %d\n",
+					hdr_blend_cfg.expo_ratio, hdr_blend_cfg.boost_factor);
+			break;
+		case 'c':
+			mw_get_ae_param(&ae_param);
+			printf("Current tone curver duration is %d.\n",
+				ae_param.tone_curve_duration);
+			printf("Input tone curver duration? (1~30 - Update tone curver every n frames)\n> ");
+			SCANF_INT(&i);
+			ae_param.tone_curve_duration = i;
+			if (mw_set_ae_param(&ae_param) < 0) {
+				printf("mw_set_ae_param error\n");
 			}
 			break;
 		case 'q':
@@ -976,7 +1081,7 @@ static int white_balance_setting(void)
 		switch (ch) {
 		case 'W':
 			printf("0 - AWB disable  1 - AWB enable\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			mw_enable_awb(i);
 			break;
 		case 'm':
@@ -989,7 +1094,7 @@ static int white_balance_setting(void)
 				MW_WB_AUTO, MW_WB_MODE_NUMBER -1);
 			printf("0 - auto 1 - 2800K 2 - 4000K 3 - 5000K 4 - 6500K 5 - 7500K");
 			printf(" ... 10 - custom\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			if (mw_set_white_balance_mode(i) < 0) {
 				printf("mw_set_white_balance_mode error\n");
 			}
@@ -998,7 +1103,7 @@ static int white_balance_setting(void)
 			mw_get_awb_method(&wb_method);
 			printf("Current AWB method is [%d].\n", wb_method);
 			printf("Choose AWB method (0 - Normal, 1 - Custom, 2 - Grey world)\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			if (mw_set_awb_method(i) < 0) {
 				printf("mw_set_awb_method error\n");
 			}
@@ -1015,7 +1120,11 @@ static int white_balance_setting(void)
 				wb_gain[0].g_gain, wb_gain[0].b_gain);
 			printf("Input new RGB gain for normal method - custom mode \n");
 			printf("(Ex, 1500,1024,1400) \n > ");
-			scanf("%d,%d,%d", &wb_gain[0].r_gain, &wb_gain[0].g_gain, &wb_gain[0].b_gain);
+			if (scanf("%d,%d,%d", &wb_gain[0].r_gain, &wb_gain[0].g_gain,
+				&wb_gain[0].b_gain) < 0) {
+				printf("input error.\n");
+				return -1;
+			}
 
 			printf("Enter normal method:custom mode \n");
 			if (mw_set_awb_method(MW_WB_NORMAL_METHOD) < 0) {
@@ -1177,7 +1286,7 @@ static int adjustment_setting(void)
 			mw_get_saturation(&i);
 			printf("Current saturation is %d\n", i);
 			printf("Input new saturation: (range 0 ~ 255)\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			if (mw_set_saturation(i) < 0) {
 				printf("mw_set_saturation error\n");
 			}
@@ -1186,7 +1295,7 @@ static int adjustment_setting(void)
 			mw_get_brightness(&i);
 			printf("Current brightness is %d\n", i);
 			printf("Input new brightness: (range -255 ~ 255)\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			if (mw_set_brightness(i) < 0) {
 				printf("mw_set_brightness error\n");
 			}
@@ -1195,7 +1304,7 @@ static int adjustment_setting(void)
 			mw_get_contrast(&i);
 			printf("Current contrast is %d\n", i);
 			printf("Input new contrast: (range 0 ~ 128)\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			if (mw_set_contrast(i) < 0) {
 				printf("mw_set_contrast error\n");
 			}
@@ -1204,7 +1313,7 @@ static int adjustment_setting(void)
 			mw_get_sharpness(&i);
 			printf("Current sharpness is %d\n", i);
 			printf("Input new sharpness: (range 0 ~ 11)\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			if (mw_set_sharpness(i) < 0) {
 				printf("mw_set_sharpness error\n");
 			}
@@ -1212,7 +1321,7 @@ static int adjustment_setting(void)
 		case 'p':
 			printf("Input new sharpness property ratio Index (range 0 ~ %d)\n> ",
 				SHARPEN_PROPERTY_MAX_NUM - 1);
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			if (i  >= SHARPEN_PROPERTY_MAX_NUM || i < 0) {
 				printf("The value must be(0 ~ %d)\n> ",
 					SHARPEN_PROPERTY_MAX_NUM - 1);
@@ -1238,12 +1347,12 @@ static int adjustment_setting(void)
 			break;
 		case 'L':
 			printf("Input the filename of adj param bin:\n> ");
-			scanf("%s", str);
+			SCANF_STR(str);
 			reload_adj_bin_file(str);
 			break;
 		case 'x':
 			printf("Input the filename of adj param bin:\n> ");
-			scanf("%s", str);
+			SCANF_STR(str);
 			save_adj_bin_file(str);
 			break;
 		case 'q':
@@ -1277,6 +1386,7 @@ static int show_enhancement_menu(void)
 		printf("  n -- Set chroma noise filter strength\n");
 		printf("  w -- Set auto wdr strength\n");
 	}
+	printf("  u -- Set wdr luma\n");
 	printf("  j -- ADJ enable and disable\n");
 	printf("  q -- Return to upper level\n");
 	printf("\n================================================\n\n");
@@ -1291,6 +1401,7 @@ static int enhancement_setting(void)
 	u32 value;
 	char str[64];
 	mw_local_exposure_curve local_exposure_curve;
+	mw_wdr_luma_info wdr_luma_info;
 
 	show_enhancement_menu();
 	ch = getchar();
@@ -1302,21 +1413,21 @@ static int enhancement_setting(void)
 			mw_get_mctf_strength(&value);
 			printf("Current mctf strength is %d\n", value);
 			printf("Input new mctf strength: (range 0 ~ 11)\n> ");
-			scanf("%d", &value);
+			SCANF_INT(&value);
 			if (mw_set_mctf_strength(value) < 0) {
 				printf("mw_set_mctf_strength error\n");
 			}
 			break;
 		case 'L':
 			printf("Auto local exposure: 0 - Stop, 1 - Auto, 64~128 - weakest~strongest\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			if (mw_set_auto_local_exposure_mode(i) < 0) {
 				printf("mw_set_auto_local_exposure_mode error\n");
 			}
 			break;
 		case 'l':
 			printf("Input the filename of local exposure curve: (Ex, le_2x.txt)\n> ");
-			scanf("%s", str);
+			SCANF_STR(str);
 			if (load_local_exposure_curve(str, &local_exposure_curve) < 0) {
 				printf("The curve file %s is either found or corrupted!\n", str);
 				return -1;
@@ -1327,14 +1438,14 @@ static int enhancement_setting(void)
 			break;
 		case 'b':
 			printf("Backlight compensation: 0 - disable  1 - enable\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			if (mw_enable_backlight_compensation(i) < 0) {
 				printf("mw_enable_backlight_compensation error\n");
 			}
 			break;
 		case 'd':
 			printf("Day and night mode: 0 - disable  1 - enable\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			if (mw_enable_day_night_mode(i) < 0) {
 				printf("mw_enable_day_night_mode error\n");
 			}
@@ -1343,14 +1454,14 @@ static int enhancement_setting(void)
 			mw_get_auto_color_contrast(&value);
 			printf("Current auto contrast control mode is %s\n", value ? "enabled" : "disabled");
 			printf("Auto contrast control mode: 0 - disable  1 - enable\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			if (mw_set_auto_color_contrast(i) < 0) {
 				printf("mw_set_auto_color_contrast error\n");
 			}
 			break;
 		case 't':
 			printf("Set auto contrast control strength: 0~128, 0: no effect, 128: full effect\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			if (mw_set_auto_color_contrast_strength(i) < 0) {
 				printf("mw_set_auto_color_contrast_strength error\n");
 			}
@@ -1359,7 +1470,7 @@ static int enhancement_setting(void)
 			mw_get_adj_status(&i);
 			printf("Current ADJ is %s\n", i ? "enabled" : "disabled");
 			printf("Change ADJ mode: 0 - disable  1 - enable\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			if (mw_enable_adj(i) < 0) {
 				printf("mw_enable_adj error\n");
 			}
@@ -1371,7 +1482,7 @@ static int enhancement_setting(void)
 			}
 			printf("Current chroma_noise_filter strength is %d\n", i);
 			printf("Change chroma_noise_filter strength: 0~256)\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			if (mw_set_chroma_noise_strength(i) < 0) {
 				printf("mw_set_chroma_noise_strength error");
 			}
@@ -1383,9 +1494,72 @@ static int enhancement_setting(void)
 			}
 			printf("Current auto wdr strength is %d\n", i);
 			printf("Change auto wdr strength: 0~128)\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			if (mw_set_auto_wdr_strength(i) < 0) {
 				printf("mw_set_auto_wdr_strength error");
+			}
+			break;
+		case 'u':
+			if (mw_get_wdr_luma_config(&wdr_luma_info) < 0) {
+				printf("mw_get_wdr_luma_config error");
+				break;
+			}
+			printf("Current wdr luma config: radius = %d\n", wdr_luma_info.radius);
+			printf("Current wdr luma config: luma_weight_red = %d\n", wdr_luma_info.luma_weight_red);
+			printf("Current wdr luma config: luma_weight_green = %d\n", wdr_luma_info.luma_weight_green);
+			printf("Current wdr luma config: luma_weight_blue = %d\n", wdr_luma_info.luma_weight_blue);
+			printf("Current wdr luma config: luma_weight_shift = %d\n\n\n", wdr_luma_info.luma_weight_shift);
+
+			printf("Now input new wdr luma config:\n");
+			printf("Radius: (%d~%d)\n> ", WDR_LUMA_RADIUS_MIN, WDR_LUMA_RADIUS_MAX);
+			SCANF_INT(&i);
+			if ((i >= WDR_LUMA_RADIUS_MIN) && (i <= WDR_LUMA_RADIUS_MAX)) {
+				wdr_luma_info.radius = i;
+			} else {
+				printf("invalid radius: %d, keep unchanged\n", i);
+			}
+			printf("luma_weight_red: (%d~%d)\n> ", WDR_LUMA_WEIGHT_MIN, WDR_LUMA_WEIGHT_MAX);
+			SCANF_INT(&i);
+			if ((i >= WDR_LUMA_WEIGHT_MIN) && (i <= WDR_LUMA_WEIGHT_MAX)) {
+				wdr_luma_info.luma_weight_red = i;
+			} else {
+				printf("invalid luma_weight_red: %d, keep unchanged\n", i);
+			}
+			printf("luma_weight_green: (%d~%d)\n> ", WDR_LUMA_WEIGHT_MIN, WDR_LUMA_WEIGHT_MAX);
+			SCANF_INT(&i);
+			if ((i >= WDR_LUMA_WEIGHT_MIN) && (i <= WDR_LUMA_WEIGHT_MAX)) {
+				wdr_luma_info.luma_weight_green = i;
+			} else {
+				printf("invalid luma_weight_green: %d, keep unchanged\n", i);
+			}
+			printf("luma_weight_blue: (%d~%d)\n> ", WDR_LUMA_WEIGHT_MIN, WDR_LUMA_WEIGHT_MAX);
+			SCANF_INT(&i);
+			if ((i >= WDR_LUMA_WEIGHT_MIN) && (i <= WDR_LUMA_WEIGHT_MAX)) {
+				wdr_luma_info.luma_weight_blue = i;
+			} else {
+				printf("invalid luma_weight_blue: %d, keep unchanged\n", i);
+			}
+			printf("luma_weight_shift: (%d~%d)\n> ", WDR_LUMA_WEIGHT_MIN, WDR_LUMA_WEIGHT_MAX);
+			SCANF_INT(&i);
+			if ((i >= WDR_LUMA_WEIGHT_MIN) && (i <= WDR_LUMA_WEIGHT_MAX)) {
+				wdr_luma_info.luma_weight_shift = i;
+			} else {
+				printf("invalid luma_weight_shift: %d, keep unchanged\n", i);
+			}
+			if (mw_set_wdr_luma_config(&wdr_luma_info) < 0) {
+				printf("mw_set_wdr_luma_config error");
+			}
+			break;
+		case 'k':
+			if (mw_get_auto_knee_strength(&i) < 0) {
+				printf("mw_get_auto_knee_strength error");
+				break;
+			}
+			printf("Current auto knee strength is %d\n", i);
+			printf("Change auto knee strength: 0~255)\n> ");
+			SCANF_INT(&i);
+			if (mw_set_auto_knee_strength(i) < 0) {
+				printf("mw_set_ae_auto_knee_strenght error\n");
 			}
 			break;
 		case 'q':
@@ -1469,7 +1643,7 @@ static int misc_setting(void)
 		switch (ch) {
 		case 'v':
 			printf("Input log level: (0~2)\n> ");
-			scanf("%d", &i);
+			SCANF_INT(&i);
 			mw_set_log_level(i);
 			break;
 		case 'V':
@@ -1600,7 +1774,7 @@ static int display_hist_data(cfa_histogram_stat_t *cfa,
 
 	while (1) {
 		printf("  Please choose the bin number (range 0~63) : ");
-		scanf("%d", &bin_num);
+		SCANF_INT(&bin_num);
 		if ((bin_num >= 0) && (bin_num < total_bin_num))
 			break;
 		printf("  Invalid bin number [%d], choose again!\n", bin_num);
@@ -1930,8 +2104,9 @@ static void sigstop(int signo)
 #define NO_ARG	0
 #define HAS_ARG	1
 
-static const char* short_options = "d:e:i:lt:m:f:L:p:";
+static const char* short_options = "ad:e:i:lt:m:f:L:p:";
 static struct option long_options[] = {
+	{"auto-dump", NO_ARG, 0, 'a'},
 	{"mode", HAS_ARG, 0, 'i'},
 	{"load", NO_ARG, 0, 'l'},
 	{"aeb", HAS_ARG, 0, 'e'},
@@ -1951,6 +2126,7 @@ struct hint_s {
 };
 
 static const struct hint_s hint[] = {
+	{"", "\tauto dump idsp cfg file into /tmp directory when stop AAA under mode 4 in fastboot"},
 	{"0|1|2", "0: background mode, 1:interactive mode, 2: auto test start/stop 3A mode"},
 	{"", "\tload filter binary"},
 	{"", "\tload aeb binary file for 3A params"},
@@ -2031,6 +2207,9 @@ int init_param(int argc, char **argv)
 			G_file_name[FILE_TYPE_CONFIG][sizeof(G_file_name[FILE_TYPE_CONFIG]) - 1] = '\0';
 			load_file_flag[FILE_TYPE_CONFIG] = 1;
 			break;
+		case 'a':
+			auto_dump_cfg_flag = 1;
+			break;
 		default:
 			printf("unknown option %c\n", ch);
 			return -1;
@@ -2079,7 +2258,7 @@ int run_interactive_mode()
 		error_opt = 0;
 		switch (ch) {
 		case 'g':
-			global_setting(imgproc_running_flag);
+			global_setting(&imgproc_running_flag);
 			break;
 		case 'e':
 			exposure_setting();
@@ -2206,6 +2385,9 @@ int main(int argc, char ** argv)
 		}
 	}
 
+	if (auto_dump_cfg_flag) {
+		mw_enable_auto_dump_cfg(auto_dump_cfg_flag);
+	}
 	if (load_mctf_flag) {
 		if (mw_init_mctf(fd_iav) < 0) {
 			perror("mw_load_mctf");

@@ -198,6 +198,34 @@ typedef struct tcp_ack_info {
 void dhd_onoff_tcpack_sup(void *pub, bool on);
 #endif /* DHDTCPACK_SUPPRESS */
 
+#ifdef ADD_PROC_PM_STATE
+typedef enum {
+	CPU_SUSPEND = 0,
+	CPU_NORMAL = 1,
+	CPU_UNKNOWN = 2,
+} cpu_state;
+#endif
+
+typedef struct tcpka_conn_sess_ctl {
+	uint32 sess_id;	/* session id */
+	uint32 flag;		/* enable/disable flag */
+} tcpka_conn_sess_ctl_t;
+
+typedef struct tcpka_conn_info {
+	uint32 tcpka_sess_ipid;
+	uint32 tcpka_sess_seq;
+	uint32 tcpka_sess_ack;
+} tcpka_conn_sess_info_t;
+
+struct tcp_pseudo_hdr
+{
+	uint32 source_address;
+	uint32 dest_address;
+	uint8 reserved;
+	uint8 protocol;
+	uint16 lenght;
+};
+
 /* Common structure for module and instance linkage */
 typedef struct dhd_pub {
 	/* Linkage ponters */

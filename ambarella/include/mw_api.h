@@ -1,3 +1,35 @@
+/*
+ * mw_api.h
+ *
+ * History:
+ *	2013/03/12 - [Cao Rongrong] Created file
+ *	2013/12/12 - [Jian Tang] Modified file
+ *
+ * Copyright (C) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
 
 #ifndef __MW_API_H__
 #define __MW_API_H__
@@ -13,7 +45,7 @@ extern "C" {
 int mw_start_aaa(int fd_iav);
 int mw_stop_aaa(void);
 int mw_init_mctf(int fd_iav);
-
+int mw_get_iav_state(int fd, int *pState);
 /********************** Exposure Control Settings **********************/
 int mw_enable_ae(int enable);
 int mw_get_ae_param(mw_ae_param *ae_param);
@@ -119,7 +151,13 @@ int mw_save_config_file(char *filename);
 int mw_load_adj_param(mw_adj_file_param *contents);
 int mw_save_adj_param(mw_adj_file_param *contents);
 int mw_set_lens_id(int id);
-
+int mw_set_auto_knee_strength (int strength);
+int mw_get_auto_knee_strength (int *pStrength);
+int mw_enable_auto_dump_cfg(int enable);
+int mw_set_hdr_blend_config(mw_hdr_blend_info *pBlend_cfg);
+int mw_get_hdr_blend_config(mw_hdr_blend_info *pBlend_cfg);
+int mw_set_wdr_luma_config(mw_wdr_luma_info *pWdr_luma_cfg);
+int mw_get_wdr_luma_config(mw_wdr_luma_info *pWdr_luma_cfg);
 #ifdef __cplusplus
 }
 #endif

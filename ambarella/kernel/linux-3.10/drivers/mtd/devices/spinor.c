@@ -421,6 +421,7 @@ EXPORT_SYMBOL_GPL(ambspi_read_data);
 
 static u32 get_ssi3_freq_hz(void)
 {
+#define PLL_OUT_ENET   300000000
 	u32 val;
 
 	val = amba_rct_readl(CG_SSI3_REG);
@@ -430,63 +431,64 @@ static u32 get_ssi3_freq_hz(void)
 	if (val == 0)
 		val = 1;
 
-	return (clk_get_rate(clk_get(NULL, "gclk_core")) << 1) / val;
+	//return (clk_get_rate(clk_get(NULL, "gclk_core")) << 1) / val;
+	return (PLL_OUT_ENET) / val;
 }
 
 int ambspi_init(struct amb_norflash *flash)
 {
     u32 divider, tmp = 0;
-#if 0
+
 	divider = get_ssi3_freq_hz() / flash->clk;
-    tmp = amba_readl(flash->regbase + REG08);
-    REGPREP(tmp, REG08_CHIPSEL_MASK, REG08_CHIPSEL_SHIFT, ~(1 << SPINOR_DEV));
-    REGPREP(tmp, REG08_CLKDIV_MASK, REG08_CLKDIV_SHIFT, divider);
-    REGPREP(tmp, REG08_FLOWCON_MASK, REG08_FLOWCON_SHIFT, 1);
-    REGPREP(tmp, REG08_HOLDPIN_MASK, REG08_HOLDPIN_SHIFT, 3);
-    amba_writel(flash->regbase + REG08, tmp);
+	tmp = amba_readl(flash->regbase + REG08);
+	REGPREP(tmp, REG08_CHIPSEL_MASK, REG08_CHIPSEL_SHIFT, ~(1 << SPINOR_DEV));
+	REGPREP(tmp, REG08_CLKDIV_MASK, REG08_CLKDIV_SHIFT, divider);
+	REGPREP(tmp, REG08_FLOWCON_MASK, REG08_FLOWCON_SHIFT, 1);
+	REGPREP(tmp, REG08_HOLDPIN_MASK, REG08_HOLDPIN_SHIFT, 3);
+	amba_writel(flash->regbase + REG08, tmp);
 
-    tmp = amba_readl(flash->regbase + REG00);
-    REGPREP(tmp, REG00_DATALEN_MASK, REG00_DATALEN_SHIFT, 0);
-    REGPREP(tmp, REG00_DUMMYLEN_MASK, REG00_DUMMYLEN_SHIFT, 0);
-    REGPREP(tmp, REG00_ADDRLEN_MASK, REG00_ADDRLEN_SHIFT, 0);
-    REGPREP(tmp, REG00_CMDLEN_MASK, REG00_CMDLEN_SHIFT, 1);
-    amba_writel(flash->regbase + REG00, tmp);
+	tmp = amba_readl(flash->regbase + REG00);
+	REGPREP(tmp, REG00_DATALEN_MASK, REG00_DATALEN_SHIFT, 0);
+	REGPREP(tmp, REG00_DUMMYLEN_MASK, REG00_DUMMYLEN_SHIFT, 0);
+	REGPREP(tmp, REG00_ADDRLEN_MASK, REG00_ADDRLEN_SHIFT, 0);
+	REGPREP(tmp, REG00_CMDLEN_MASK, REG00_CMDLEN_SHIFT, 1);
+	amba_writel(flash->regbase + REG00, tmp);
 
-    tmp = amba_readl(flash->regbase + REG04);
-    REGPREP(tmp, REG04_WRITEEN_MASK, REG04_WRITEEN_SHIFT, 0);
-    REGPREP(tmp, REG04_READEN_MASK, REG04_READEN_SHIFT, 0);
-    REGPREP(tmp, REG04_DATALANE_MASK, REG04_DATALANE_SHIFT, 0);
-    REGPREP(tmp, REG04_ADDRLANE_MASK, REG04_ADDRLANE_SHIFT, 0);
-    REGPREP(tmp, REG04_CMDLANE_MASK, REG04_CMDLANE_SHIFT, 0);
-    REGPREP(tmp, REG04_LSBFRT_MASK, REG04_LSBFRT_SHIFT, 0);
-    REGPREP(tmp, REG04_CMDDTR_MASK, REG04_CMDDTR_SHIFT, 0);
-    amba_writel(flash->regbase + REG04, tmp);
-#endif
-    tmp = 0x20;
-    amba_writel(flash->regbase + REG30, tmp);
+	tmp = amba_readl(flash->regbase + REG04);
+	REGPREP(tmp, REG04_WRITEEN_MASK, REG04_WRITEEN_SHIFT, 0);
+	REGPREP(tmp, REG04_READEN_MASK, REG04_READEN_SHIFT, 0);
+	REGPREP(tmp, REG04_DATALANE_MASK, REG04_DATALANE_SHIFT, 0);
+	REGPREP(tmp, REG04_ADDRLANE_MASK, REG04_ADDRLANE_SHIFT, 0);
+	REGPREP(tmp, REG04_CMDLANE_MASK, REG04_CMDLANE_SHIFT, 0);
+	REGPREP(tmp, REG04_LSBFRT_MASK, REG04_LSBFRT_SHIFT, 0);
+	REGPREP(tmp, REG04_CMDDTR_MASK, REG04_CMDDTR_SHIFT, 0);
+	amba_writel(flash->regbase + REG04, tmp);
 
-    tmp = 0;
-    REGPREP(tmp, REG40_TXFIFORESET_MASK, REG40_TXFIFORESET_SHIFT, 1);
-    amba_writel(flash->regbase + REG40, tmp);
-    tmp = 0;
-    REGPREP(tmp, REG44_RXFIFORESET_MASK, REG44_RXFIFORESET_SHIFT, 1);
-    amba_writel(flash->regbase + REG44, tmp);
+	tmp = 0x20;
+	amba_writel(flash->regbase + REG30, tmp);
+
+	tmp = 0;
+	REGPREP(tmp, REG40_TXFIFORESET_MASK, REG40_TXFIFORESET_SHIFT, 1);
+	amba_writel(flash->regbase + REG40, tmp);
+	tmp = 0;
+	REGPREP(tmp, REG44_RXFIFORESET_MASK, REG44_RXFIFORESET_SHIFT, 1);
+	amba_writel(flash->regbase + REG44, tmp);
 
     /* after reset fifo, the 0x28 will become 0x10,
     *so , read REG200 times to clear the 0x28,  this is a bug in hardware
     */
 	while (amba_readl(flash->regbase + REG28) != 0) {
-        tmp = amba_readl(flash->regbase + REG200);
-    }
+		tmp = amba_readl(flash->regbase + REG200);
+	}
 
-    tmp = 0;
-    REGPREP(tmp, REG1C_TXFIFOLV_MASK, REG1C_TXFIFOLV_SHIFT, 0x7f);
-    amba_writel(flash->regbase + REG1C, tmp);
+	tmp = 0;
+	REGPREP(tmp, REG1C_TXFIFOLV_MASK, REG1C_TXFIFOLV_SHIFT, 0x7f);
+	amba_writel(flash->regbase + REG1C, tmp);
 
-    tmp = 0;
-    REGPREP(tmp, REG20_RXFIFOLV_MASK, REG20_RXFIFOLV_SHIFT, 0x7f);
-    amba_writel(flash->regbase + REG20, tmp);
+	tmp = 0;
+	REGPREP(tmp, REG20_RXFIFOLV_MASK, REG20_RXFIFOLV_SHIFT, 0x7f);
+	amba_writel(flash->regbase + REG20, tmp);
 
-    return 0;
+	return 0;
 }
 EXPORT_SYMBOL_GPL(ambspi_init);

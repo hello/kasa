@@ -4,12 +4,29 @@
  * History:
  *   2015-1-27 - [longli] created file
  *
- * Copyright (C) 2008-2015, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -24,8 +41,8 @@
 
 using namespace std;
 
-static AMAPIHelperPtr g_api_helper = NULL;
-static am_mw_fw_upgrade_args up_args;
+static AMAPIHelperPtr g_api_helper = nullptr;
+static am_mw_fw_upgrade_args up_args = {0};
 static bool first_set = true;
 
 static void sigstop (int32_t arg)
@@ -40,6 +57,7 @@ static void show_upgrade_menu()
   printf("Tips: firmware path must be set when select mode 0 or mode 2\n\n");
   printf(" m -- set upgrade mode(default mode: 2)\n");
   printf(" p -- set firmware path\n");
+  printf(" c -- set use sdcard to do upgrade\n");
   printf(" t -- set connect timeout value (optional)\n");
   printf(" a -- set download authentication (optional)\n");
   printf(" s -- start to do upgrade\n");
@@ -57,6 +75,7 @@ void show_upgrade_settings(am_mw_fw_upgrade_args &up_args)
     printf("Firmware path :  (If not set in mode 1, use the path set before or"
         " default path)\n");
   }
+  printf("use sdcard : %s\n", up_args.use_sdcard ? "YES":"NO");
   printf("connect timeout value : %d\n", up_args.timeout);
   if (!up_args.user_name[0]) {
     printf("connect download authentication :\n");
@@ -72,12 +91,12 @@ void show_upgrade_settings(am_mw_fw_upgrade_args &up_args)
 static void upgrade_settings()
 {
   string in_str;
-  int32_t in_num;
-  int32_t m_ret = 0;
+  int32_t in_num = -1;
   bool is_run = true;
 
   if (first_set) {
     up_args.upgrade_mode = AM_FW_DOWNLOAD_AND_UPGRADE;
+    up_args.use_sdcard = 0;
     first_set = false;
   }
 
@@ -110,6 +129,20 @@ static void upgrade_settings()
           printf("Set upgrade mode successfully.\n");
         }
       } break;
+
+      case 'C':
+      case 'c':
+        printf("Please set whether upgrade from sdcard (0:use adc partition "
+            "1:use sdcard):\n");
+        cin >> in_str;
+        if (!isdigit((in_str.c_str())[0])) {
+          PRINTF("Input is not digit.\n\n");
+          continue;
+        }
+        in_num = atoi(in_str.c_str());
+        up_args.use_sdcard = in_num;
+        printf("Set whether upgrade from sdcard successfully.\n");
+        break;
 
       case 'p':
       case 'P': {
@@ -167,16 +200,19 @@ static void upgrade_settings()
               " your selected mode is %d.\n", up_args.upgrade_mode);
         } else {
           printf("Begin to do upgrade...\n");
+          am_service_result_t m_ret = {0};
           g_api_helper->method_call(AM_IPC_MW_CMD_SYSTEM_FIRMWARE_UPGRADE_SET,
                                     &up_args,
                                     sizeof(up_args),
                                     &m_ret,
                                     sizeof(m_ret));
-          if (m_ret == 1) {
+          if (m_ret.ret < 0) {
+            PRINTF("Method_call error!");
+          } else if (m_ret.ret == 1) {
             PRINTF("Invalid upgrade parameters!");
-          } else if (m_ret == 2) {
+          } else if (m_ret.ret == 2) {
             PRINTF("Failed to get upgrade instance!");
-          } else if (m_ret == 3) {
+          } else if (m_ret.ret == 3) {
             PRINTF("Upgrade is still in process, please try again later.");
           } else {
             printf("Start upgrade thread and back to main menu...\n");
@@ -194,16 +230,19 @@ static void upgrade_settings()
 
 static void get_system_time()
 {
-  am_mw_system_settings_datetime now_time;
+  am_service_result_t result = {0};
+  am_mw_system_settings_datetime now_time = {0};
 
   INFO("get_system_time is called.");
+  memset(result.data, 0, sizeof(result.data));
   memset(&now_time, 0, sizeof(am_mw_system_settings_datetime));
   g_api_helper->method_call(AM_IPC_MW_CMD_SYSTEM_SETTINGS_DATETIME_GET,
-                            NULL,
+                            nullptr,
                             0,
-                            &now_time,
-                            sizeof(now_time));
+                            &result,
+                            sizeof(result));
   printf("\n");
+  memcpy(&now_time, result.data, sizeof(am_mw_system_settings_datetime));
   if (now_time.date.year > 0) {
     printf("Now time is : %d-%d-%d %d:%d:%d , Time zone is: %d\n",
            now_time.date.year,
@@ -221,18 +260,18 @@ static void get_system_time()
 static bool set_system_time()
 {
   bool ret = true;
-  int32_t ret_val = 0;
   string time_str;
-  am_mw_system_settings_datetime new_time;
+  am_service_result_t retv = {0};
+  am_mw_system_settings_datetime new_time = {0};
 
   INFO("set_system_time is called.");
   do {
     get_system_time();
-    printf("\nPlease note:\n");
+    printf("\nTips:\n");
     printf("1.Time format is: "
         "Year/Month/Day/Hour/Minute/Second/Timezone "
         "(e.g: 2013/5/16/13/15/8/8)\n");
-    printf("2.Time zone like +8 is for Beijing Time\n\n");
+    printf("2.Time zone: (e.g: +8 is for Beijing Time)\n\n");
     printf("Please input new time:\n");
     cin >> time_str;
     int32_t year, month, day, hour, minute, second, timezone;
@@ -257,13 +296,12 @@ static bool set_system_time()
     new_time.time.minute = minute;
     new_time.time.second = second;
     new_time.time.timezone = timezone;
-
     g_api_helper->method_call(AM_IPC_MW_CMD_SYSTEM_SETTINGS_DATETIME_SET,
                               &new_time,
                               sizeof(new_time),
-                              &ret_val,
-                              sizeof(ret_val));
-    switch (ret_val) {
+                              &retv,
+                              sizeof(retv));
+    switch (retv.ret) {
       case 0:
         printf("set system time successfully.\n");
         break;
@@ -287,15 +325,18 @@ static bool set_system_time()
 
 static void get_upgrade_status()
 {
-  am_mw_upgrade_status state;
+  am_service_result_t get_state = {0};
+  am_mw_upgrade_status state = {0};
 
   INFO("get_upgrade_status is called.");
+  memset(get_state.data, 0, sizeof(get_state.data));
   g_api_helper->method_call(AM_IPC_MW_CMD_SYSTEM_FIRMWARE_UPGRADE_STATUS_GET,
-                            NULL,
+                            nullptr,
                             0,
-                            &state,
-                            sizeof(state));
+                            &get_state,
+                            sizeof(get_state));
 
+  memcpy(&state, get_state.data, sizeof(state));
   if (state.in_progress) {
     printf("Upgrade firmware is in progress, current state is: ");
   } else {
@@ -363,9 +404,9 @@ static void get_upgrade_status()
 static void set_led_state()
 {
   string user_input;
-  int32_t ret = 0;
   int32_t gpio_id, led_on, blink, on_time, off_time;
-  am_mw_led_config mw_led_cfg;
+  am_service_result_t retv = {0};
+  am_mw_led_config mw_led_cfg = {0};
 
   printf("Please input settings(format: gpio_id,led_on,blink,"
       "on_time,off_time  e.g. 1,0,1,1,2):\n");
@@ -387,13 +428,13 @@ static void set_led_state()
       g_api_helper->method_call(AM_IPC_MW_CMD_SYSTEM_LED_INDICATOR_SET,
                                 &mw_led_cfg,
                                 sizeof(mw_led_cfg),
-                                &ret,
-                                sizeof(ret));
-      if (ret == 1) {
+                                &retv,
+                                sizeof(retv));
+      if (retv.ret == 1) {
         PRINTF("Invalid led cfg parameters");
-      } else if (ret == 2) {
+      } else if (retv.ret == 2) {
         PRINTF("Failed to get upgrade instance!");
-      } else if (ret == 3) {
+      } else if (retv.ret == 3) {
         PRINTF("Failed to set led state");
       } else {
         printf("Set gpio%d led state successfully\n", gpio_id);
@@ -410,17 +451,20 @@ static void get_led_state()
 {
   string user_input;
   int32_t gpio_id = -1;
-  am_mw_led_config mw_led_cfg;
+  am_service_result_t led_cfg = {0};
+  am_mw_led_config mw_led_cfg = {0};
 
   printf("Please input gpio id:\n");
   cin >> user_input;
   if (sscanf(user_input.c_str(), "%d", &gpio_id) == 1 && gpio_id > -1) {
+    memset(led_cfg.data, 0, sizeof(led_cfg.data));
     g_api_helper->method_call(AM_IPC_MW_CMD_SYSTEM_LED_INDICATOR_GET,
                               &gpio_id,
                               sizeof(gpio_id),
-                              &mw_led_cfg,
-                              sizeof(mw_led_cfg));
-    if (mw_led_cfg.gpio_id > -1) {
+                              &led_cfg,
+                              sizeof(led_cfg));
+    if (led_cfg.ret == 0) {
+      memcpy(&mw_led_cfg ,led_cfg.data, sizeof(led_cfg));
       printf("gpio id: %d\n", mw_led_cfg.gpio_id);
       printf("gpio led_on: %s\n", mw_led_cfg.led_on ? "on" : "off");
       printf("gpio blink: %s\n", mw_led_cfg.blink_flag ? "on":"off");
@@ -439,7 +483,7 @@ static void uninit_led()
 {
   string user_input;
   int32_t gpio_id = -1;
-  int32_t ret = 0;
+  am_service_result_t retv = {0};
 
   printf("Please input gpio id:\n");
   cin >> user_input;
@@ -447,9 +491,9 @@ static void uninit_led()
     g_api_helper->method_call(AM_IPC_MW_CMD_SYSTEM_LED_INDICATOR_UNINIT,
                               &gpio_id,
                               sizeof(gpio_id),
-                              &ret,
-                              sizeof(ret));
-    switch (ret) {
+                              &retv,
+                              sizeof(retv));
+    switch (retv.ret) {
       case 0:
         printf("Uninit gpio%d led done.\n", gpio_id);
         break;
@@ -466,7 +510,7 @@ static void uninit_led()
         PRINTF("Invalid gpio id.");
         break;
       case 5:
-        PRINTF("Uninit gpio led fail, maybe not initialized before.");
+        PRINTF("Fail to uninit gpio led , it might not be initialized before.");
         break;
       default:
         PRINTF("Unknown return value.");
@@ -479,14 +523,14 @@ static void uninit_led()
 
 static void uninit_all_led()
 {
-  int32_t ret = 0;
+  am_service_result_t retv = {0};
 
   g_api_helper->method_call(AM_IPC_MW_CMD_SYSTEM_LED_INDICATOR_UNINIT_ALL,
-                            NULL,
+                            nullptr,
                             0,
-                            &ret,
-                            sizeof(ret));
-  if (ret) {
+                            &retv,
+                            sizeof(retv));
+  if (retv.ret) {
     PRINTF("ledhandler get instance fail");
   } else {
     printf("Uninit all leds done.\n");
@@ -495,8 +539,7 @@ static void uninit_all_led()
 
 static void show_led_menu()
 {
-  printf("\n------------------ upgrade settings --------------------\n");
-  printf("Tips: firmware path must be set when select mode 0 or mode 2\n\n");
+  printf("\n------------------ led settings ------------------------\n");
   printf(" s -- set led state\n");
   printf(" g -- get led state\n");
   printf(" u -- uninit led\n");
@@ -546,11 +589,14 @@ static void get_ntp()
 {
   int32_t enable, day, hour, minute, second;
   char ntp_cfg[256] = {0};
+  am_service_result_t ntp_settings = {0};
+  memset(ntp_settings.data, 0, sizeof(ntp_settings.data));
   g_api_helper->method_call(AM_IPC_MW_CMD_SYSTEM_SETTINGS_NTP_GET,
-                            NULL,
+                            nullptr,
                             0,
-                            &ntp_cfg,
-                            sizeof(ntp_cfg));
+                            &ntp_settings,
+                            sizeof(ntp_settings));
+  memcpy(ntp_cfg, ntp_settings.data, sizeof(ntp_cfg) - 1);
   printf("current ntp setting is: %s.\n", ntp_cfg);
   if (5 != sscanf(ntp_cfg,
                   "%d,%d/%d/%d/%d,",
@@ -576,12 +622,12 @@ static void get_ntp()
 
 static void set_ntp()
 {
-  int32_t ret = 0;
   string usr_input;
+  am_service_result_t retv = {0};
 
   do {
     get_ntp();
-    printf("\nPlease note:\n");
+    printf("\nTips:\n");
     printf("  NTP config format is:\n"
         "  enable,update_interval(Day/Hour/Minute/Second),server1 server2\n"
         "  (e.g: 1,0/1/0/0,hk.pool.ntp.org time.nist.gov)\n");
@@ -594,9 +640,9 @@ static void set_ntp()
     g_api_helper->method_call(AM_IPC_MW_CMD_SYSTEM_SETTINGS_NTP_SET,
                               (void *)usr_input.c_str(),
                               usr_input.length(),
-                              &ret,
-                              sizeof(ret));
-    switch (ret) {
+                              &retv,
+                              sizeof(retv));
+    switch (retv.ret) {
       case 0:
         printf("set NTP successfully.\n");
         break;
@@ -622,14 +668,18 @@ static void set_ntp()
 static void get_firmware_version()
 {
   INFO("get_firmware_version is called.");
-  am_mw_firmware_version_all firmware_version;
+  am_service_result_t retv = {0};
+  am_mw_firmware_version_all firmware_version = {0};
+
+  memset(retv.data, 0, sizeof(retv.data));
   memset(&firmware_version, 0, sizeof(firmware_version));
 
   g_api_helper->method_call(AM_IPC_MW_CMD_SYSTEM_FIRMWARE_VERSION_GET,
-                            NULL,
+                            nullptr,
                             0,
-                            &firmware_version,
-                            sizeof(firmware_version));
+                            &retv,
+                            sizeof(retv));
+  memcpy(&firmware_version, retv.data, sizeof(firmware_version));
   printf("\nrelease date: %u/%u/%u\n",
          firmware_version.rel_date.year,
          firmware_version.rel_date.month,
@@ -666,14 +716,14 @@ static void show_main_menu ()
 int main (int argc, char **argv)
 {
   string input_str;
-  int32_t input_num;
+  int32_t input_num = 0;
   bool run = true;
 
   signal (SIGINT , sigstop);
   signal (SIGTERM, sigstop);
   signal (SIGQUIT, sigstop);
 
-  if ((g_api_helper = AMAPIHelper::get_instance ()) == NULL) {
+  if ((g_api_helper = AMAPIHelper::get_instance ()) == nullptr) {
     ERROR ("Failed to get an instance of AMAPIHelper!");
     return -1;
   }

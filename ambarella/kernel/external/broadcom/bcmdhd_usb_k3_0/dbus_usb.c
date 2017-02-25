@@ -26,6 +26,8 @@
 #include <bcmdevs.h>
 #include <bcmendian.h>
 
+uint dbus_msglevel = DBUS_ERROR_VAL;
+module_param(dbus_msglevel, int, 0);
 
 typedef struct {
 	dbus_pub_t *pub;
@@ -108,12 +110,14 @@ static dbus_intf_callbacks_t dbus_usb_intf_cbs = {
 /* IOVar table */
 enum {
 	IOV_SET_DOWNLOAD_STATE = 1,
+	IOV_DBUS_MSGLEVEL,
 	IOV_MEMBYTES,
 	IOV_VARS
 };
 
 const bcm_iovar_t dhdusb_iovars[] = {
 	{"vars",	IOV_VARS,	0,	IOVT_BUFFER,	0 },
+	{"dbus_msglevel",	IOV_DBUS_MSGLEVEL,	0,	IOVT_UINT32,	0 },
 	{"dwnldstate",	IOV_SET_DOWNLOAD_STATE,	0,	IOVT_BOOL,	0 },
 	{"membytes",	IOV_MEMBYTES,	0,	IOVT_BUFFER,	2 * sizeof(int) },
 	{NULL, 0, 0, 0, 0 }
@@ -542,6 +546,15 @@ dbus_usb_doiovar(usb_info_t *bus, const bcm_iovar_t *vi, uint32 actionid, const 
 
 	case IOV_SVAL(IOV_VARS):
 		bcmerror = dhdusb_downloadvars(BUS_INFO(bus, usb_info_t), arg, len);
+		break;
+
+	case IOV_GVAL(IOV_DBUS_MSGLEVEL):
+		int_val = (int32)dbus_msglevel;
+		bcopy(&int_val, arg, val_size);
+		break;
+
+	case IOV_SVAL(IOV_DBUS_MSGLEVEL):
+		dbus_msglevel = int_val;
 		break;
 
 	default:

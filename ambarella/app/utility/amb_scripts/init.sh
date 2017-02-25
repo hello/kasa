@@ -1,6 +1,34 @@
 #!/bin/sh
+#
+# History:
+#	2010/05/05 - [Jian Tang] created file
+#
+# Copyright (c) 2015 Ambarella, Inc.
+#
+# This file and its contents ("Software") are protected by intellectual
+# property rights including, without limitation, U.S. and/or foreign
+# copyrights. This Software is also the confidential and proprietary
+# information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+# disclose, distribute, modify, or otherwise prepare derivative works of this
+# Software or any portion thereof except pursuant to a signed license agreement
+# or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+# In the absence of such an agreement, you agree to promptly notify and return
+# this Software to Ambarella, Inc.
+#
+# THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+# INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+# MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+# IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+# INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+#
 
-echo $PATH | grep "/usr/local/bin"
+echo "$PATH" | grep "/usr/local/bin"
 if [ $? -eq 1 ]; then
       export PATH=$PATH:/usr/local/bin
 fi
@@ -107,7 +135,7 @@ case "$?" in
 	;;
 esac
 
-if [ -r /lib/modules/$kernel_ver/extra/ambdbus.ko ]; then
+if [ -r /lib/modules/"$kernel_ver"/extra/ambdbus.ko ]; then
 	modprobe ambdbus
 	case "$?" in
 	    0)
@@ -118,7 +146,18 @@ if [ -r /lib/modules/$kernel_ver/extra/ambdbus.ko ]; then
 	esac
 fi
 
-if [ -r /lib/modules/$kernel_ver/extra/ambhdmi.ko ]; then
+if [ -r /lib/modules/"$kernel_ver"/extra/lcd_td043.ko ]; then
+	modprobe lcd_td043
+	case "$?" in
+	    0)
+		;;
+	    *)
+	  	echo "Modprobe lcd_td043 failed!"
+		;;
+	esac
+fi
+
+if [ -r /lib/modules/"$kernel_ver"/extra/ambhdmi.ko ]; then
         modprobe ambhdmi
         case "$?" in
             0)
@@ -129,7 +168,7 @@ if [ -r /lib/modules/$kernel_ver/extra/ambhdmi.ko ]; then
         esac
 fi
 
-if [ -r /lib/modules/$kernel_ver/extra/vin.ko ]; then
+if [ -r /lib/modules/"$kernel_ver"/extra/vin.ko ]; then
         modprobe vin
         case "$?" in
             0)
@@ -148,175 +187,196 @@ if [ "$SYS_BOARD_BSP" = "s2ipcam" ]; then
 fi
 
 case $1 in
-    --mt9p006 ) insmod /lib/modules/$kernel_ver/extra/mt9p006.ko ;;
-    --m3135 ) insmod /lib/modules/$kernel_ver/extra/mt9t002.ko ;;
-    --mt9t002 ) insmod /lib/modules/$kernel_ver/extra/mt9t002.ko ;;
-    --mt9t002_mipi ) insmod /lib/modules/$kernel_ver/extra/mt9t002_mipi.ko adapter_id=1;;
+    --mt9p006 ) insmod /lib/modules/"$kernel_ver"/extra/mt9p006.ko ;;
+    --m3135 ) insmod /lib/modules/"$kernel_ver"/extra/mt9t002.ko ;;
+    --mt9t002 ) insmod /lib/modules/"$kernel_ver"/extra/mt9t002.ko ;;
+    --mt9t002_mipi ) insmod /lib/modules/"$kernel_ver"/extra/mt9t002_mipi.ko adapter_id=1;;
     --ar0330 )
-	echo -1 > $config_dir/board_vin0_vsync_irq_gpio
-	insmod /lib/modules/$kernel_ver/extra/mt9t002.ko ;;
+	printf "%d\n" -1 > $config_dir/board_vin0_vsync_irq_gpio
+	insmod /lib/modules/"$kernel_ver"/extra/mt9t002.ko ;;
     --mt9t002_s3d )
-	insmod /lib/modules/$kernel_ver/extra/sbrg.ko
-	insmod /lib/modules/$kernel_ver/extra/mt9t002_s3d.ko
+	insmod /lib/modules/"$kernel_ver"/extra/sbrg.ko
+	insmod /lib/modules/"$kernel_ver"/extra/mt9t002_s3d.ko
 	;;
-    --ar0330cs ) insmod /lib/modules/$kernel_ver/extra/mt9t002_parallel.ko ;;
-    --ar0330cs_mipi ) insmod /lib/modules/$kernel_ver/extra/mt9t002_mipi.ko ;;
-    --ar0331 ) insmod /lib/modules/$kernel_ver/extra/ar0331.ko hdr_mode=1;;
-    --ar0130 ) insmod /lib/modules/$kernel_ver/extra/ar0130.ko ;;
-    --ar0835hs ) insmod /lib/modules/$kernel_ver/extra/ar0835hs.ko ;;
-    --ar0141 ) insmod /lib/modules/$kernel_ver/extra/ar0141.ko ;;
-    --ar0230 ) insmod /lib/modules/$kernel_ver/extra/ar0230.ko ;;
-    --ar0237 ) insmod /lib/modules/$kernel_ver/extra/ar0237.ko ;;
-    --mt9m033 ) insmod /lib/modules/$kernel_ver/extra/mt9m033.ko ;;
-    --mt9m034 ) insmod /lib/modules/$kernel_ver/extra/mt9m033.ko ;;
-    --imx035 ) insmod /lib/modules/$kernel_ver/extra/imx035.ko ;;
-    --imx036 ) insmod /lib/modules/$kernel_ver/extra/imx036.ko ;;
-    --imx121 ) insmod /lib/modules/$kernel_ver/extra/imx121.ko ;;
-    --imx122 ) insmod /lib/modules/$kernel_ver/extra/imx122.ko ;;
-    --imx104 ) insmod /lib/modules/$kernel_ver/extra/imx104.ko ;;
-    --imx136 ) insmod /lib/modules/$kernel_ver/extra/imx136_lvds.ko ;;
-    --imx136_wdr ) insmod /lib/modules/$kernel_ver/extra/imx136_parallel.ko ;;
-    --imx136_120fps ) insmod /lib/modules/$kernel_ver/extra/imx136_plvds.ko ;;
-    --imx172 ) insmod /lib/modules/$kernel_ver/extra/imx172.ko ;;
-    --imx174 ) insmod /lib/modules/$kernel_ver/extra/imx174.ko ;;
-    --imx138 ) insmod /lib/modules/$kernel_ver/extra/imx104.ko ;;
-    --imx178 ) insmod /lib/modules/$kernel_ver/extra/imx178.ko ;;
-    --imx178_spi ) insmod /lib/modules/$kernel_ver/extra/imx178.ko spi=1 bus_addr=0 ;;
-    --imx185 ) insmod /lib/modules/$kernel_ver/extra/imx185.ko ;;
-    --imx185_120fps ) insmod /lib/modules/$kernel_ver/extra/imx185_plvds.ko ;;
-    --imx226 ) insmod /lib/modules/$kernel_ver/extra/imx226.ko ;;
-    --imx123 ) insmod /lib/modules/$kernel_ver/extra/imx123.ko ;;
-    --imx124 ) insmod /lib/modules/$kernel_ver/extra/imx124.ko ;;
-    --imx224 ) insmod /lib/modules/$kernel_ver/extra/imx224.ko ;;
-    --imx183 ) insmod /lib/modules/$kernel_ver/extra/imx183.ko ;;
-    --imx322 ) insmod /lib/modules/$kernel_ver/extra/imx322.ko ;;
-    --imx290 ) insmod /lib/modules/$kernel_ver/extra/imx290.ko ;;
-    --imx291 ) insmod /lib/modules/$kernel_ver/extra/imx291.ko ;;
-    --imx250 ) insmod /lib/modules/$kernel_ver/extra/imx250.ko ;;
-    --ov7740 ) insmod /lib/modules/$kernel_ver/extra/ov7740.ko ;;
-    --ov2710 ) insmod /lib/modules/$kernel_ver/extra/ov2710_parallel.ko ;;
-    --ov2710_mipi ) insmod /lib/modules/$kernel_ver/extra/ov2710_mipi.ko ;;
-    --ov2715 ) insmod /lib/modules/$kernel_ver/extra/ov2710_parallel.ko ;;
-    --ov2715_mipi ) insmod /lib/modules/$kernel_ver/extra/ov2710_mipi.ko ;;
-    --ov5653 ) insmod /lib/modules/$kernel_ver/extra/ov5653.ko ;;
-    --ov9710 ) insmod /lib/modules/$kernel_ver/extra/ov9710.ko ;;
-    --ov9718 ) insmod /lib/modules/$kernel_ver/extra/ov9718_mipi.ko ;;
-    --ov9718_mipi ) insmod /lib/modules/$kernel_ver/extra/ov9718_mipi.ko ;;
-    --ov9715 ) insmod /lib/modules/$kernel_ver/extra/ov9710.ko ;;
-    --ov9750_mipi ) insmod /lib/modules/$kernel_ver/extra/ov9750_mipi.ko ;;
-    --ov9732 ) insmod /lib/modules/$kernel_ver/extra/ov9732_mipi.ko ;;
-    --ov9732_parallel ) insmod /lib/modules/$kernel_ver/extra/ov9732_parallel.ko ;;
-    --altera_fpga ) insmod /lib/modules/$kernel_ver/extra/altera_fpga.ko ;;
+    --ar0330cs ) insmod /lib/modules/"$kernel_ver"/extra/mt9t002_parallel.ko ;;
+    --ar0330cs_mipi ) insmod /lib/modules/"$kernel_ver"/extra/mt9t002_mipi.ko ;;
+    --ar0331 ) insmod /lib/modules/"$kernel_ver"/extra/ar0331.ko hdr_mode=1;;
+    --ar0130 ) insmod /lib/modules/"$kernel_ver"/extra/ar0130.ko ;;
+    --ar0835hs ) insmod /lib/modules/"$kernel_ver"/extra/ar0835hs.ko ;;
+    --ar0141 ) insmod /lib/modules/"$kernel_ver"/extra/ar0141.ko ;;
+    --ar0230 ) insmod /lib/modules/"$kernel_ver"/extra/ar0230.ko ;;
+    --ar0237 ) insmod /lib/modules/"$kernel_ver"/extra/ar0237.ko ;;
+    --mt9m033 ) insmod /lib/modules/"$kernel_ver"/extra/mt9m033.ko ;;
+    --mt9m034 ) insmod /lib/modules/"$kernel_ver"/extra/mt9m033.ko ;;
+    --imx035 ) insmod /lib/modules/"$kernel_ver"/extra/imx035.ko ;;
+    --imx036 ) insmod /lib/modules/"$kernel_ver"/extra/imx036.ko ;;
+    --imx122 ) insmod /lib/modules/"$kernel_ver"/extra/imx122.ko ;;
+    --imx104 ) insmod /lib/modules/"$kernel_ver"/extra/imx104.ko ;;
+    --imx136 ) insmod /lib/modules/"$kernel_ver"/extra/imx136_lvds.ko ;;
+    --imx136_wdr ) insmod /lib/modules/"$kernel_ver"/extra/imx136_parallel.ko ;;
+    --imx136_120fps ) insmod /lib/modules/"$kernel_ver"/extra/imx136_plvds.ko ;;
+    --imx174 ) insmod /lib/modules/"$kernel_ver"/extra/imx174.ko ;;
+    --imx138 ) insmod /lib/modules/"$kernel_ver"/extra/imx104.ko ;;
+    --imx178 ) insmod /lib/modules/"$kernel_ver"/extra/imx178.ko ;;
+    --imx178_spi ) insmod /lib/modules/"$kernel_ver"/extra/imx178.ko spi=1 bus_addr=0 ;;
+    --imx185 ) insmod /lib/modules/"$kernel_ver"/extra/imx185.ko ;;
+    --imx185_120fps ) insmod /lib/modules/"$kernel_ver"/extra/imx185_plvds.ko ;;
+    --imx123 ) insmod /lib/modules/"$kernel_ver"/extra/imx123.ko ;;
+    --imx124 ) insmod /lib/modules/"$kernel_ver"/extra/imx124.ko ;;
+    --imx224 ) insmod /lib/modules/"$kernel_ver"/extra/imx224.ko ;;
+    --imx183 ) insmod /lib/modules/"$kernel_ver"/extra/imx183.ko ;;
+    --imx322 ) insmod /lib/modules/"$kernel_ver"/extra/imx322.ko ;;
+    --imx121 ) insmod /lib/modules/"$kernel_ver"/extra/imx121.ko ;;
+    --imx172 ) insmod /lib/modules/"$kernel_ver"/extra/imx172.ko ;;
+    --imx226 ) insmod /lib/modules/"$kernel_ver"/extra/imx226.ko ;;
+    --imx274 ) insmod /lib/modules/"$kernel_ver"/extra/imx274.ko ;;
+    --imx274_mipi ) insmod /lib/modules/"$kernel_ver"/extra/imx274_mipi.ko ;;
+    --imx317 ) insmod /lib/modules/"$kernel_ver"/extra/imx274.ko ;;
+    --imx317_mipi ) insmod /lib/modules/"$kernel_ver"/extra/imx274_mipi.ko ;;
+    --imx290 ) insmod /lib/modules/"$kernel_ver"/extra/imx290.ko ;;
+    --imx291 ) insmod /lib/modules/"$kernel_ver"/extra/imx291.ko ;;
+    --imx291_mipi ) insmod /lib/modules/"$kernel_ver"/extra/imx291_mipi.ko ;;
+    --imx250 ) insmod /lib/modules/"$kernel_ver"/extra/imx250.ko ;;
+    --imx326 ) insmod /lib/modules/"$kernel_ver"/extra/imx326.ko ;;
+    --imx326_mipi ) insmod /lib/modules/"$kernel_ver"/extra/imx326_mipi.ko ;;
+    --imx377 ) insmod /lib/modules/"$kernel_ver"/extra/imx377_mipi.ko ;;
+    --ov7740 ) insmod /lib/modules/"$kernel_ver"/extra/ov7740.ko ;;
+    --ov2710 ) insmod /lib/modules/"$kernel_ver"/extra/ov2710.ko ;;
+    --ov2710_mipi ) insmod /lib/modules/"$kernel_ver"/extra/ov2710_mipi.ko ;;
+    --ov2715 ) insmod /lib/modules/"$kernel_ver"/extra/ov2710_parallel.ko ;;
+    --ov2715_mipi ) insmod /lib/modules/"$kernel_ver"/extra/ov2710_mipi.ko ;;
+    --ov2718_mipi ) insmod /lib/modules/"$kernel_ver"/extra/ov2718_mipi.ko ;;
+    --ov5653 ) insmod /lib/modules/"$kernel_ver"/extra/ov5653.ko ;;
+    --ov9710 ) insmod /lib/modules/"$kernel_ver"/extra/ov9710.ko ;;
+    --ov9718 ) insmod /lib/modules/"$kernel_ver"/extra/ov9718_mipi.ko ;;
+    --ov9718_mipi ) insmod /lib/modules/"$kernel_ver"/extra/ov9718_mipi.ko ;;
+    --ov9715 ) insmod /lib/modules/"$kernel_ver"/extra/ov9710.ko ;;
+    --ov9750_mipi ) insmod /lib/modules/"$kernel_ver"/extra/ov9750_mipi.ko ;;
+    --ov9750_parallel ) insmod /lib/modules/"$kernel_ver"/extra/ov9750_parallel.ko ;;
+    --ov9756_mipi ) insmod /lib/modules/"$kernel_ver"/extra/ov9750_mipi.ko ir_mode=1 ;;
+    --ov9756_parallel ) insmod /lib/modules/"$kernel_ver"/extra/ov9750_parallel.ko ir_mode=1 ;;
+    --ov9732 ) insmod /lib/modules/"$kernel_ver"/extra/ov9732_mipi.ko ;;
+    --ov9732_parallel ) insmod /lib/modules/"$kernel_ver"/extra/ov9732_parallel.ko ;;
+    --altera_fpga ) insmod /lib/modules/"$kernel_ver"/extra/altera_fpga.ko ;;
     --gs2970 )
-	echo -1 > $config_dir/board_vin0_vsync_irq_gpio
-	insmod /lib/modules/$kernel_ver/extra/gs2970.ko ;;
-    --ov10630_yuv ) insmod /lib/modules/$kernel_ver/extra/ov10630_yuv.ko ;;
-    --ov10633_yuv ) insmod /lib/modules/$kernel_ver/extra/ov10633_yuv.ko ;;
-    --ov10630_rgb ) insmod /lib/modules/$kernel_ver/extra/ov10630_rgb.ko ;;
-    --ov4689 ) insmod /lib/modules/$kernel_ver/extra/ov4689_mipi.ko ;;
-    --ov4689_2lane ) insmod /lib/modules/$kernel_ver/extra/ov4689_mipi.ko lane=2 ;;
-    --ov5658 ) insmod /lib/modules/$kernel_ver/extra/ov5658_mipi.ko ;;
-    --mn34041pl ) insmod /lib/modules/$kernel_ver/extra/mn34041pl.ko ;;
-    --mn34031pl ) insmod /lib/modules/$kernel_ver/extra/mn34031pl.ko ;;
-    --mn34210pl ) insmod /lib/modules/$kernel_ver/extra/mn34210pl.ko ;;
-    --mn34220pl ) insmod /lib/modules/$kernel_ver/extra/mn34220pl.ko ;;
-    --mn34220   ) insmod /lib/modules/$kernel_ver/extra/mn34220pl.ko ;;
-    --mn34230pl ) insmod /lib/modules/$kernel_ver/extra/mn34230pl.ko ;;
-    --gt2005 ) insmod /lib/modules/$kernel_ver/extra/gt2005.ko ;;
+	printf "%d\n" -1 > $config_dir/board_vin0_vsync_irq_gpio
+	insmod /lib/modules/"$kernel_ver"/extra/gs2970.ko ;;
+    --ov10630_yuv ) insmod /lib/modules/"$kernel_ver"/extra/ov10630_yuv.ko ;;
+    --ov10633_yuv ) insmod /lib/modules/"$kernel_ver"/extra/ov10633_yuv.ko ;;
+    --ov10630_rgb ) insmod /lib/modules/"$kernel_ver"/extra/ov10630_rgb.ko ;;
+    --ov4689 ) insmod /lib/modules/"$kernel_ver"/extra/ov4689_mipi.ko ;;
+    --ov4689_2lane ) insmod /lib/modules/"$kernel_ver"/extra/ov4689_mipi.ko lane=2 ;;
+    --ov5658 ) insmod /lib/modules/"$kernel_ver"/extra/ov5658_mipi.ko ;;
+    --mn34041pl ) insmod /lib/modules/"$kernel_ver"/extra/mn34041pl.ko ;;
+    --mn34031pl ) insmod /lib/modules/"$kernel_ver"/extra/mn34031pl.ko ;;
+    --mn34210pl ) insmod /lib/modules/"$kernel_ver"/extra/mn34210pl.ko ;;
+    --mn34220pl ) insmod /lib/modules/"$kernel_ver"/extra/mn34220pl.ko ;;
+    --mn34220   ) insmod /lib/modules/"$kernel_ver"/extra/mn34220pl.ko ;;
+    --mn34420   ) insmod /lib/modules/"$kernel_ver"/extra/mn34420pl.ko ;;
+    --mn34230pl ) insmod /lib/modules/"$kernel_ver"/extra/mn34230pl.ko ;;
+    --gt2005 ) insmod /lib/modules/"$kernel_ver"/extra/gt2005.ko ;;
     --tw9910 )
-	echo -1 > $config_dir/board_vin0_vsync_irq_gpio
-	insmod /lib/modules/$kernel_ver/extra/tw9910.ko ;;
+	printf "%d\n" -1 > $config_dir/board_vin0_vsync_irq_gpio
+	insmod /lib/modules/"$kernel_ver"/extra/tw9910.ko ;;
     --adv7443 )
-	echo -1 > $config_dir/board_vin0_vsync_irq_gpio
-	insmod /lib/modules/$kernel_ver/extra/adv7443.ko ;;
+	printf "%d\n" -1 > $config_dir/board_vin0_vsync_irq_gpio
+	insmod /lib/modules/"$kernel_ver"/extra/adv7443.ko ;;
     --adv7441 )
-	echo -1 > $config_dir/board_vin0_vsync_irq_gpio
+	printf "%d\n" -1 > $config_dir/board_vin0_vsync_irq_gpio
 	if [  -e /lib/firmware/EDID.bin ]; then
-		insmod /lib/modules/$kernel_ver/extra/adv7443.ko edid_data=EDID.bin
+		insmod /lib/modules/"$kernel_ver"/extra/adv7443.ko edid_data=EDID.bin
 	else
-		insmod /lib/modules/$kernel_ver/extra/adv7443.ko
+		insmod /lib/modules/"$kernel_ver"/extra/adv7443.ko
 	fi
 	;;
     --adv7441a )
-	echo -1 > $config_dir/board_vin0_vsync_irq_gpio
+	printf "%d\n" -1 > $config_dir/board_vin0_vsync_irq_gpio
 	if [  -e /lib/firmware/EDID.bin ]; then
-		insmod /lib/modules/$kernel_ver/extra/adv7441a.ko edid_data=EDID.bin
+		insmod /lib/modules/"$kernel_ver"/extra/adv7441a.ko edid_data=EDID.bin
 	else
-		insmod /lib/modules/$kernel_ver/extra/adv7441a.ko
+		insmod /lib/modules/"$kernel_ver"/extra/adv7441a.ko
+	fi
+	;;
+    --adv7441a_cbcr_swap )
+	printf "%d\n" -1 > $config_dir/board_vin0_vsync_irq_gpio
+	if [  -e /lib/firmware/EDID.bin ]; then
+		insmod /lib/modules/"$kernel_ver"/extra/adv7441a.ko swap_cbcr=1 edid_data=EDID.bin
+	else
+		insmod /lib/modules/"$kernel_ver"/extra/adv7441a.ko swap_cbcr=1
 	fi
 	;;
     --adv7619 )
-	echo -1 > $config_dir/board_vin0_vsync_irq_gpio
+	printf "%d\n" -1 > $config_dir/board_vin0_vsync_irq_gpio
 	if [  -e /lib/firmware/EDID.bin ]; then
-		insmod /lib/modules/$kernel_ver/extra/adv7619.ko edid_data=EDID.bin
+		insmod /lib/modules/"$kernel_ver"/extra/adv7619.ko edid_data=EDID.bin
 	else
-		insmod /lib/modules/$kernel_ver/extra/adv7619.ko
+		insmod /lib/modules/"$kernel_ver"/extra/adv7619.ko
 	fi
 	;;
     --tvp5150 )
-	echo -1 > $config_dir/board_vin0_vsync_irq_gpio
-	insmod /lib/modules/$kernel_ver/extra/tvp5150.ko ;;
+	printf "%d\n" -1 > $config_dir/board_vin0_vsync_irq_gpio
+	insmod /lib/modules/"$kernel_ver"/extra/tvp5150.ko ;;
 
-    --yuv480i ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=2 video_format=1 video_bits=8 video_mode=65520 cap_cap_w=720 cap_cap_h=480 video_phase=3 video_fps=8541875 video_pixclk=27000000 video_yuv_mode=1;;
-    --yuv480p ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=2 video_format=2 video_bits=16 video_mode=65522 cap_cap_w=720 cap_cap_h=480 video_phase=3 video_fps=8541875 video_pixclk=27000000 video_yuv_mode=3;;
-    --yuv576i ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=2 video_format=1 video_bits=8 video_mode=65521 cap_cap_w=720 cap_cap_h=576 video_phase=3 video_fps=10240000 video_pixclk=27000000 video_yuv_mode=1;;
-    --yuv576p ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=2 video_format=2 video_bits=16 video_mode=65523 cap_cap_w=720 cap_cap_h=576 video_phase=3 video_fps=10240000 video_pixclk=27000000 video_yuv_mode=3;;
-    --yuv720p ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=2 video_format=2 video_bits=16 video_mode=65524 cap_cap_w=1280 cap_cap_h=720 video_phase=3 video_fps=8541875 video_yuv_mode=3;;
-    --yuv720p50 ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=2 video_format=2 video_bits=16 video_mode=65525 cap_cap_w=1280 cap_cap_h=720 video_phase=3 video_fps=10240000 video_yuv_mode=3;;
-    --yuv720p30 ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=2 video_format=2 video_bits=16 video_mode=40 cap_cap_w=1280 cap_cap_h=720 video_phase=3 video_fps=17066667 video_yuv_mode=3;;
-    --yuv720p25 ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=2 video_format=2 video_bits=16 video_mode=39 cap_cap_w=1280 cap_cap_h=720 video_phase=3 video_fps=20480000 video_yuv_mode=3;;
-    --yuv720p24 ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=2 video_format=2 video_bits=16 video_mode=38 cap_cap_w=1280 cap_cap_h=720 video_phase=3 video_fps=21333333 video_yuv_mode=3;;
-    --yuv1080i ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_format=1 video_type=6 video_mode=65526 cap_cap_w=1920 cap_cap_h=1080 video_phase=2 video_yuv_mode=3 video_fps=8541875 ;;
-    --yuv1080i50 ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=6 video_format=1 video_bits=16 video_mode=65527 cap_cap_w=1920 cap_cap_h=1080 video_phase=3 video_fps=10240000 video_yuv_mode=3;;
-    --yuv1080p30 ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=2 video_mode=65533 cap_cap_w=1920 cap_cap_h=1080 video_phase=3 video_yuv_mode=3 video_fps=17066667 ;;
-    --yuv1080p25 ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=6 video_format=2 video_bits=16 video_mode=65532 cap_cap_w=1920 cap_cap_h=1080 video_phase=3 video_fps=20480000 video_yuv_mode=3;;
-    --yuv1080p ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=6 video_mode=65528 cap_cap_w=1920 cap_cap_h=1080 video_phase=3 video_yuv_mode=3 video_fps=17083750 video_pixclk=148500000;;
-    --yuv1080p50 ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=6 video_mode=65529 cap_cap_w=1920 cap_cap_h=1080 video_phase=3 video_yuv_mode=3 video_fps=10240000 video_pixclk=148500000;;
-    --yuv1600p30 ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=6 video_mode=12 cap_cap_w=1600 cap_cap_h=1200 video_phase=3 video_yuv_mode=3 video_fps=17083750 video_pixclk=27000000;;
-    --mdin380 ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=6 video_mode=12 cap_cap_w=1600 cap_cap_h=1200 video_phase=3 video_yuv_mode=3 video_fps=17083750 ;;
-    --yuv1280_960p30 ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=2 video_format=2 video_bits=16 video_mode=16 cap_cap_w=1280 cap_cap_h=960 video_phase=3 video_fps=17066667 video_yuv_mode=3;;
-    --yuv1280_960p25 ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=2 video_format=2 video_bits=16 video_mode=16 cap_cap_w=1280 cap_cap_h=960 video_phase=3 video_fps=20480000 video_yuv_mode=3;;
+    --yuv480i ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=2 video_format=1 video_bits=8 video_mode=65520 cap_cap_w=720 cap_cap_h=480 video_phase=3 video_fps=8541875 video_pixclk=27000000 video_yuv_mode=1;;
+    --yuv480p ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=2 video_format=2 video_bits=16 video_mode=65522 cap_cap_w=720 cap_cap_h=480 video_phase=3 video_fps=8541875 video_pixclk=27000000 video_yuv_mode=3;;
+    --yuv576i ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=2 video_format=1 video_bits=8 video_mode=65521 cap_cap_w=720 cap_cap_h=576 video_phase=3 video_fps=10240000 video_pixclk=27000000 video_yuv_mode=1;;
+    --yuv576p ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=2 video_format=2 video_bits=16 video_mode=65523 cap_cap_w=720 cap_cap_h=576 video_phase=3 video_fps=10240000 video_pixclk=27000000 video_yuv_mode=3;;
+    --yuv720p ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=2 video_format=2 video_bits=16 video_mode=65524 cap_cap_w=1280 cap_cap_h=720 video_phase=3 video_fps=8541875 video_yuv_mode=3;;
+    --yuv720p50 ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=2 video_format=2 video_bits=16 video_mode=65525 cap_cap_w=1280 cap_cap_h=720 video_phase=3 video_fps=10240000 video_yuv_mode=3;;
+    --yuv720p30 ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=2 video_format=2 video_bits=16 video_mode=40 cap_cap_w=1280 cap_cap_h=720 video_phase=3 video_fps=17066667 video_yuv_mode=3;;
+    --yuv720p25 ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=2 video_format=2 video_bits=16 video_mode=39 cap_cap_w=1280 cap_cap_h=720 video_phase=3 video_fps=20480000 video_yuv_mode=3;;
+    --yuv720p24 ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=2 video_format=2 video_bits=16 video_mode=38 cap_cap_w=1280 cap_cap_h=720 video_phase=3 video_fps=21333333 video_yuv_mode=3;;
+    --yuv1080i ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_format=1 video_type=6 video_mode=65526 cap_cap_w=1920 cap_cap_h=1080 video_phase=2 video_yuv_mode=3 video_fps=8541875 ;;
+    --yuv1080i50 ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=6 video_format=1 video_bits=16 video_mode=65527 cap_cap_w=1920 cap_cap_h=1080 video_phase=3 video_fps=10240000 video_yuv_mode=3;;
+    --yuv1080p30 ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=2 video_mode=65533 cap_cap_w=1920 cap_cap_h=1080 video_phase=3 video_yuv_mode=3 video_fps=17066667 ;;
+    --yuv1080p25 ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=6 video_format=2 video_bits=16 video_mode=65532 cap_cap_w=1920 cap_cap_h=1080 video_phase=3 video_fps=20480000 video_yuv_mode=3;;
+    --yuv1080p ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=6 video_mode=65528 cap_cap_w=1920 cap_cap_h=1080 video_phase=3 video_yuv_mode=3 video_fps=17083750 video_pixclk=148500000;;
+    --yuv1080p50 ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=6 video_mode=65529 cap_cap_w=1920 cap_cap_h=1080 video_phase=3 video_yuv_mode=3 video_fps=10240000 video_pixclk=148500000;;
+    --yuv1600p30 ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=6 video_mode=12 cap_cap_w=1600 cap_cap_h=1200 video_phase=3 video_yuv_mode=3 video_fps=17083750 video_pixclk=27000000;;
+    --mdin380 ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=6 video_mode=12 cap_cap_w=1600 cap_cap_h=1200 video_phase=3 video_yuv_mode=3 video_fps=17083750 ;;
+    --yuv1280_960p30 ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=2 video_format=2 video_bits=16 video_mode=16 cap_cap_w=1280 cap_cap_h=960 video_phase=3 video_fps=17066667 video_yuv_mode=3;;
+    --yuv1280_960p25 ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=2 video_format=2 video_bits=16 video_mode=16 cap_cap_w=1280 cap_cap_h=960 video_phase=3 video_fps=20480000 video_yuv_mode=3;;
 
-    --yuv480i_601 ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=1 video_format=1 video_bits=8 video_mode=65520 cap_start_x=64 cap_start_y=18 cap_cap_w=720 cap_cap_h=480 video_phase=0 video_fps=8541875 video_pixclk=27000000 video_yuv_mode=0;;
-    --yuv480p_601 ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=1 video_format=2 video_bits=16 video_mode=65522 cap_start_x=60 cap_start_y=36 cap_cap_w=720 cap_cap_h=480 video_phase=0 video_fps=8541875 video_pixclk=27000000 video_yuv_mode=3;;
-    --yuv576i_601 ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=1 video_format=1 video_bits=8 video_mode=65521 cap_start_x=60 cap_start_y=22 cap_cap_w=720 cap_cap_h=576 video_phase=0 video_fps=10240000 video_pixclk=27000000 video_yuv_mode=0;;
-    --yuv576p_601 ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=1 video_format=2 video_bits=16 video_mode=65523 cap_start_x=66 cap_start_y=44 cap_cap_w=720 cap_cap_h=576 video_phase=0 video_fps=10240000 video_pixclk=27000000 video_yuv_mode=3;;
-    --yuv720p_601 ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=1 video_format=2 video_bits=16 video_mode=65524 cap_start_x=220 cap_start_y=25 cap_cap_w=1280 cap_cap_h=720 video_phase=3 video_fps=8541875 video_yuv_mode=3;;
-    --yuv720p50_601 ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=1 video_format=2 video_bits=16 video_mode=65525 cap_start_x=220 cap_start_y=25 cap_cap_w=1280 cap_cap_h=720 video_phase=3 video_fps=10240000 video_yuv_mode=3;;
-    --yuv720p30_601 ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=1 video_format=2 video_bits=16 video_mode=40 cap_start_x=220 cap_start_y=25 cap_cap_w=1280 cap_cap_h=720 video_phase=3 video_fps=17066667 video_yuv_mode=3;;
-    --yuv720p25_601 ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=1 video_format=2 video_bits=16 video_mode=39 cap_start_x=220 cap_start_y=25 cap_cap_w=1280 cap_cap_h=720 video_phase=3 video_fps=20480000 video_yuv_mode=3;;
-    --yuv720p24_601 ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=1 video_format=2 video_bits=16 video_mode=38 cap_start_x=220 cap_start_y=25 cap_cap_w=1280 cap_cap_h=720 video_phase=3 video_fps=21333333 video_yuv_mode=3;;
-    --yuv1080i_601 ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_format=1 video_type=1 video_mode=65526 cap_start_x=192 cap_start_y=20 cap_cap_w=1920 cap_cap_h=1080 video_phase=3 video_yuv_mode=3 video_fps=8541875 ;;
-    --yuv1080i50_601 ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=1 video_format=1 video_bits=16 video_mode=65527 cap_start_x=192 cap_start_y=20 cap_cap_w=1920 cap_cap_h=1080 video_phase=3 video_fps=10240000 video_yuv_mode=3;;
-    --yuv1080p30_601 ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=1 video_mode=65533 cap_start_x=192 cap_start_y=41 cap_cap_w=1920 cap_cap_h=1080 video_phase=3 video_yuv_mode=3 video_fps=17066667 ;;
-    --yuv1080p25_601 ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=1 video_format=2 video_bits=16 video_mode=65532 cap_start_x=192 cap_start_y=41 cap_cap_w=1920 cap_cap_h=1080 video_phase=3 video_fps=20480000 video_yuv_mode=3;;
-    --yuv1080p_601 ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=1 video_mode=65528 cap_start_x=192 cap_start_y=41 cap_cap_w=1920 cap_cap_h=1080 video_phase=3 video_yuv_mode=3 video_fps=17083750 video_pixclk=148500000;;
-    --yuv1080p50_601 ) insmod /lib/modules/$kernel_ver/extra/ambdd.ko video_type=1 video_mode=65529 cap_start_x=192 cap_start_y=41 cap_cap_w=1920 cap_cap_h=1080 video_phase=3 video_yuv_mode=3 video_fps=10240000 video_pixclk=148500000;;
+    --yuv480i_601 ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=1 video_format=1 video_bits=8 video_mode=65520 cap_start_x=64 cap_start_y=18 cap_cap_w=720 cap_cap_h=480 video_phase=0 video_fps=8541875 video_pixclk=27000000 video_yuv_mode=0;;
+    --yuv480p_601 ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=1 video_format=2 video_bits=16 video_mode=65522 cap_start_x=60 cap_start_y=36 cap_cap_w=720 cap_cap_h=480 video_phase=0 video_fps=8541875 video_pixclk=27000000 video_yuv_mode=3;;
+    --yuv576i_601 ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=1 video_format=1 video_bits=8 video_mode=65521 cap_start_x=60 cap_start_y=22 cap_cap_w=720 cap_cap_h=576 video_phase=0 video_fps=10240000 video_pixclk=27000000 video_yuv_mode=0;;
+    --yuv576p_601 ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=1 video_format=2 video_bits=16 video_mode=65523 cap_start_x=66 cap_start_y=44 cap_cap_w=720 cap_cap_h=576 video_phase=0 video_fps=10240000 video_pixclk=27000000 video_yuv_mode=3;;
+    --yuv720p_601 ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=1 video_format=2 video_bits=16 video_mode=65524 cap_start_x=220 cap_start_y=25 cap_cap_w=1280 cap_cap_h=720 video_phase=3 video_fps=8541875 video_yuv_mode=3;;
+    --yuv720p50_601 ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=1 video_format=2 video_bits=16 video_mode=65525 cap_start_x=220 cap_start_y=25 cap_cap_w=1280 cap_cap_h=720 video_phase=3 video_fps=10240000 video_yuv_mode=3;;
+    --yuv720p30_601 ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=1 video_format=2 video_bits=16 video_mode=40 cap_start_x=220 cap_start_y=25 cap_cap_w=1280 cap_cap_h=720 video_phase=3 video_fps=17066667 video_yuv_mode=3;;
+    --yuv720p25_601 ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=1 video_format=2 video_bits=16 video_mode=39 cap_start_x=220 cap_start_y=25 cap_cap_w=1280 cap_cap_h=720 video_phase=3 video_fps=20480000 video_yuv_mode=3;;
+    --yuv720p24_601 ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=1 video_format=2 video_bits=16 video_mode=38 cap_start_x=220 cap_start_y=25 cap_cap_w=1280 cap_cap_h=720 video_phase=3 video_fps=21333333 video_yuv_mode=3;;
+    --yuv1080i_601 ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_format=1 video_type=1 video_mode=65526 cap_start_x=192 cap_start_y=20 cap_cap_w=1920 cap_cap_h=1080 video_phase=3 video_yuv_mode=3 video_fps=8541875 ;;
+    --yuv1080i50_601 ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=1 video_format=1 video_bits=16 video_mode=65527 cap_start_x=192 cap_start_y=20 cap_cap_w=1920 cap_cap_h=1080 video_phase=3 video_fps=10240000 video_yuv_mode=3;;
+    --yuv1080p30_601 ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=1 video_mode=65533 cap_start_x=192 cap_start_y=41 cap_cap_w=1920 cap_cap_h=1080 video_phase=3 video_yuv_mode=3 video_fps=17066667 ;;
+    --yuv1080p25_601 ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=1 video_format=2 video_bits=16 video_mode=65532 cap_start_x=192 cap_start_y=41 cap_cap_w=1920 cap_cap_h=1080 video_phase=3 video_fps=20480000 video_yuv_mode=3;;
+    --yuv1080p_601 ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=1 video_mode=65528 cap_start_x=192 cap_start_y=41 cap_cap_w=1920 cap_cap_h=1080 video_phase=3 video_yuv_mode=3 video_fps=17083750 video_pixclk=148500000;;
+    --yuv1080p50_601 ) insmod /lib/modules/"$kernel_ver"/extra/ambdd.ko video_type=1 video_mode=65529 cap_start_x=192 cap_start_y=41 cap_cap_w=1920 cap_cap_h=1080 video_phase=3 video_yuv_mode=3 video_fps=10240000 video_pixclk=148500000;;
 
     --na )
-	echo -1 > $config_dir/board_vin0_vsync_irq_gpio
+	printf "%d\n" -1 > $config_dir/board_vin0_vsync_irq_gpio
 	echo "Init without VIN drivers..." ;;
     --gps )
     echo " Load default Touch Screen Driver "
-    insmod /lib/modules/$kernel_ver/kernel/drivers/input/touchscreen/ak4183.ko
-	insmod /lib/modules/$kernel_ver/extra/$default_vin.ko
+    insmod /lib/modules/"$kernel_ver"/kernel/drivers/input/touchscreen/ak4183.ko
+	insmod /lib/modules/"$kernel_ver"/extra/$default_vin.ko
     ;;
     --ak4183 )
     echo " Load ak4183 Touch Screen Driver "
-    insmod /lib/modules/$kernel_ver/kernel/drivers/input/touchscreen/ak4183.ko
-	insmod /lib/modules/$kernel_ver/extra/$default_vin.ko
+    insmod /lib/modules/"$kernel_ver"/kernel/drivers/input/touchscreen/ak4183.ko
+	insmod /lib/modules/"$kernel_ver"/extra/$default_vin.ko
     ;;
     --chacha_mt4d )
     echo " Load chacha_mt4d Touch Screen driver "
-    insmod /lib/modules/$kernel_ver/kernel/drivers/input/touchscreen/chacha_mt4d.ko
-	insmod /lib/modules/$kernel_ver/extra/$default_vin.ko
+    insmod /lib/modules/"$kernel_ver"/kernel/drivers/input/touchscreen/chacha_mt4d.ko
+	insmod /lib/modules/"$kernel_ver"/extra/$default_vin.ko
     ;;
     --nvr_demo )
     echo " Load NVR demo Touch Screen driver "
-    insmod /lib/modules/$kernel_ver/kernel/drivers/input/touchscreen/tm1726.ko
+    insmod /lib/modules/"$kernel_ver"/kernel/drivers/input/touchscreen/tm1726.ko
     ;;
     *)
-	echo -1 > $config_dir/board_vin0_vsync_irq_gpio
+	printf "%d\n" -1 > "$config_dir"/board_vin0_vsync_irq_gpio
 	echo "Default method to init without VIN drivers..."
 	#echo "Use $default_vin as default."
 	echo "Cat this file to find out what VIN can be supported."
@@ -324,22 +384,22 @@ case $1 in
 	;;
 esac
 case "$?" in
-    0)
+	0)
 	;;
-    *)
+	*)
   	echo "Insmod $1 failed!"
 	exit 1
 	;;
 esac
 
-if [ -r /lib/modules/$kernel_ver/extra/amba_lens.ko ]; then
+if [ -r /lib/modules/"$kernel_ver"/extra/amba_lens.ko ]; then
 	modprobe amba_lens
 fi
 
 case "$2" in
-    --m13vp288ir ) insmod /lib/modules/$kernel_ver/extra/m13vp288ir.ko ;;
-	--mz128bp2810icr ) insmod /lib/modules/$kernel_ver/extra/mz128bp2810icr.ko ;;
-    *)
+	--m13vp288ir ) insmod /lib/modules/"$kernel_ver"/extra/m13vp288ir.ko ;;
+	--mz128bp2810icr ) insmod /lib/modules/"$kernel_ver"/extra/mz128bp2810icr.ko ;;
+	*)
         echo "Default init without lens driver"
         ;;
 esac
@@ -352,19 +412,21 @@ case "$?" in
         ;;
 esac
 
-if [ -r /lib/modules/$kernel_ver/extra/ambad.ko ]; then
+if [ -r /lib/modules/"$kernel_ver"/extra/ambad.ko ]; then
 	modprobe ambad
+	# Used for linixrc init
+	sleep 0.1
 fi
 
-if [ -r /lib/modules/$kernel_ver/extra/fdet.ko ]; then
+if [ -r /lib/modules/"$kernel_ver"/extra/fdet.ko ]; then
 	modprobe fdet
 fi
 
-if [ -r /lib/modules/$kernel_ver/extra/mpu6000.ko ]; then
+if [ -r /lib/modules/"$kernel_ver"/extra/mpu6000.ko ]; then
 	modprobe mpu6000
 fi
 
-if [ -r /lib/modules/$kernel_ver/extra/eis.ko ]; then
+if [ -r /lib/modules/"$kernel_ver"/extra/eis.ko ]; then
 	modprobe eis
 fi
 
@@ -380,8 +442,8 @@ case $2 in
 	;;
 esac
 
-LOAD_UCODE=`which load_ucode`
-if [  -e $LOAD_UCODE ]; then
+LOAD_UCODE=$(which load_ucode)
+if [  -e "$LOAD_UCODE" ]; then
 $LOAD_UCODE /lib/firmware
 case "$?" in
 	0)
@@ -419,7 +481,7 @@ case "$?" in
 esac
 
 #add dsp log driver
-if [ -r /lib/modules/$kernel_ver/extra/dsplog.ko ]; then
+if [ -r /lib/modules/"$kernel_ver"/extra/dsplog.ko ]; then
 	echo "load dsplog driver "
 	modprobe dsplog
 fi

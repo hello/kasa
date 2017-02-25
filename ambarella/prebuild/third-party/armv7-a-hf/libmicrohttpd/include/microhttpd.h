@@ -1,6 +1,6 @@
 /*
      This file is part of libmicrohttpd
-     (C) 2006-2014 Christian Grothoff (and other contributing authors)
+     Copyright (C) 2006-2015 Christian Grothoff (and other contributing authors)
 
      This library is free software; you can redistribute it and/or
      modify it under the terms of the GNU Lesser General Public
@@ -107,12 +107,16 @@ extern "C"
 #ifndef MHD_PLATFORM_H
 #include <stdarg.h>
 #include <stdint.h>
+#include <sys/types.h>
 #if defined(_WIN32) && !defined(__CYGWIN__)
 #include <ws2tcpip.h>
+#if defined(_MSC_FULL_VER) && !defined (_SSIZE_T_DEFINED)
+#define _SSIZE_T_DEFINED
+typedef intptr_t ssize_t;
+#endif /* !_SSIZE_T_DEFINED */
 #else
 #include <unistd.h>
 #include <sys/time.h>
-#include <sys/types.h>
 #include <sys/socket.h>
 #endif
 #endif
@@ -126,7 +130,7 @@ extern "C"
  * Current version of the library.
  * 0x01093001 = 1.9.30-1.
  */
-#define MHD_VERSION 0x00093400
+#define MHD_VERSION 0x00094900
 
 /**
  * MHD-internal return code for "YES".
@@ -162,7 +166,14 @@ extern "C"
 #endif
 
 #ifndef _MHD_EXTERN
+#if defined(_WIN32) && defined(MHD_W32LIB)
 #define _MHD_EXTERN extern
+#elif defined (_WIN32) && defined(MHD_W32DLL)
+/* Define MHD_W32DLL when using MHD as W32 .DLL to speed up linker a little */
+#define _MHD_EXTERN __declspec(dllimport)
+#else
+#define _MHD_EXTERN extern
+#endif
 #endif
 
 #ifndef MHD_SOCKET_DEFINED
@@ -183,6 +194,81 @@ typedef SOCKET MHD_socket;
 #endif /* MHD_SOCKET_DEFINED */
 
 /**
+ * Define MHD_NO_DEPRECATION before including "microhttpd.h" to disable deprecation messages
+ */
+#ifdef MHD_NO_DEPRECATION
+#define _MHD_DEPR_MACRO(msg)
+#define _MHD_NO_DEPR_IN_MACRO 1
+#define _MHD_DEPR_IN_MACRO(msg)
+#define _MHD_NO_DEPR_FUNC 1
+#define _MHD_DEPR_FUNC(msg)
+#endif /* MHD_NO_DEPRECATION */
+
+#ifndef _MHD_DEPR_MACRO
+#if defined(_MSC_FULL_VER) && _MSC_VER+0 >= 1500
+/* VS 2008 or later */
+/* Stringify macros */
+#define _MHD_INSTRMACRO(a) #a
+#define _MHD_STRMACRO(a) _MHD_INSTRMACRO(a)
+/* deprecation message */
+#define _MHD_DEPR_MACRO(msg) __pragma(message(__FILE__ "(" _MHD_STRMACRO(__LINE__)"): warning: " msg))
+#define _MHD_DEPR_IN_MACRO(msg) _MHD_DEPR_MACRO(msg)
+#elif defined(__clang__) || defined (__GNUC_PATCHLEVEL__)
+/* clang or GCC since 3.0 */
+#define _MHD_GCC_PRAG(x) _Pragma (#x)
+#if __clang_major__+0 >= 5 || \
+  (!defined(__apple_build_version__) && (__clang_major__+0  > 3 || (__clang_major__+0 == 3 && __clang_minor__ >= 3))) || \
+  __GNUC__+0 > 4 || (__GNUC__+0 == 4 && __GNUC_MINOR__+0 >= 8)
+/* clang >= 3.3 (or XCode's clang >= 5.0) or
+   GCC >= 4.8 */
+#define _MHD_DEPR_MACRO(msg) _MHD_GCC_PRAG(GCC warning msg)
+#define _MHD_DEPR_IN_MACRO(msg) _MHD_DEPR_MACRO(msg)
+#else /* older clang or GCC */
+/* clang < 3.3, XCode's clang < 5.0, 3.0 <= GCC < 4.8 */
+#define _MHD_DEPR_MACRO(msg) _MHD_GCC_PRAG(message msg)
+#if (__clang_major__+0  > 2 || (__clang_major__+0 == 2 && __clang_minor__ >= 9)) /* FIXME: clang >= 2.9, earlier versions not tested */
+/* clang handles inline pragmas better than GCC */
+#define _MHD_DEPR_IN_MACRO(msg) _MHD_DEPR_MACRO(msg)
+#endif /* clang >= 2.9 */
+#endif  /* older clang or GCC */
+/* #elif defined(SOMEMACRO) */ /* add compiler-specific macros here if required */
+#endif /* clang || GCC >= 3.0 */
+#endif /* !_MHD_DEPR_MACRO */
+
+#ifndef _MHD_DEPR_MACRO
+#define _MHD_DEPR_MACRO(msg)
+#endif /* !_MHD_DEPR_MACRO */
+
+#ifndef _MHD_DEPR_IN_MACRO
+#define _MHD_NO_DEPR_IN_MACRO 1
+#define _MHD_DEPR_IN_MACRO(msg)
+#endif /* !_MHD_DEPR_IN_MACRO */
+
+#ifndef _MHD_DEPR_FUNC
+#if defined(_MSC_FULL_VER) && _MSC_VER+0 >= 1400
+/* VS 2005 or later */
+#define _MHD_DEPR_FUNC(msg) __declspec(deprecated(msg))
+#elif defined(_MSC_FULL_VER) && _MSC_VER+0 >= 1310
+/* VS .NET 2003 deprecation do not support custom messages */
+#define _MHD_DEPR_FUNC(msg) __declspec(deprecated)
+#elif (__GNUC__+0 >= 5) || (defined (__clang__) && \
+  (__clang_major__+0 > 2 || (__clang_major__+0 == 2 && __clang_minor__ >= 9)))  /* FIXME: earlier versions not tested */
+/* GCC >= 5.0 or clang >= 2.9 */
+#define _MHD_DEPR_FUNC(msg) __attribute__((deprecated(msg)))
+#elif defined (__clang__) || __GNUC__+0 > 3 || (__GNUC__+0 == 3 && __GNUC_MINOR__+0 >= 1)
+/* 3.1 <= GCC < 5.0 or clang < 2.9 */
+/* old GCC-style deprecation do not support custom messages */
+#define _MHD_DEPR_FUNC(msg) __attribute__((__deprecated__))
+/* #elif defined(SOMEMACRO) */ /* add compiler-specific macros here if required */
+#endif /* clang < 2.9 || GCC >= 3.1 */
+#endif /* !_MHD_DEPR_FUNC */
+
+#ifndef _MHD_DEPR_FUNC
+#define _MHD_NO_DEPR_FUNC 1
+#define _MHD_DEPR_FUNC(msg)
+#endif /* !_MHD_DEPR_FUNC */
+
+/**
  * Not all architectures and `printf()`'s support the `long long` type.
  * This gives the ability to replace `long long` with just a `long`,
  * standard `int` or a `short`.
@@ -193,6 +279,8 @@ typedef SOCKET MHD_socket;
  */
 #define MHD_LONG_LONG long long
 #define MHD_UNSIGNED_LONG_LONG unsigned long long
+#else /* MHD_LONG_LONG */
+_MHD_DEPR_MACRO("Macro MHD_LONG_LONG is deprecated, use MHD_UNSIGNED_LONG_LONG")
 #endif
 /**
  * Format string for printing a variable of type #MHD_LONG_LONG.
@@ -204,6 +292,8 @@ typedef SOCKET MHD_socket;
  */
 #define MHD_LONG_LONG_PRINTF "ll"
 #define MHD_UNSIGNED_LONG_LONG_PRINTF "%llu"
+#else /* MHD_LONG_LONG_PRINTF */
+_MHD_DEPR_MACRO("Macro MHD_LONG_LONG_PRINTF is deprecated, use MHD_UNSIGNED_LONG_LONG_PRINTF")
 #endif
 
 
@@ -240,7 +330,10 @@ typedef SOCKET MHD_socket;
 #define MHD_HTTP_FORBIDDEN 403
 #define MHD_HTTP_NOT_FOUND 404
 #define MHD_HTTP_METHOD_NOT_ALLOWED 405
-#define MHD_HTTP_METHOD_NOT_ACCEPTABLE 406
+#define MHD_HTTP_NOT_ACCEPTABLE 406
+/** @deprecated */
+#define MHD_HTTP_METHOD_NOT_ACCEPTABLE \
+  _MHD_DEPR_IN_MACRO("Value MHD_HTTP_METHOD_NOT_ACCEPTABLE is deprecated, use MHD_HTTP_NOT_ACCEPTABLE") 406
 #define MHD_HTTP_PROXY_AUTHENTICATION_REQUIRED 407
 #define MHD_HTTP_REQUEST_TIMEOUT 408
 #define MHD_HTTP_CONFLICT 409
@@ -276,12 +369,22 @@ typedef SOCKET MHD_socket;
 /** @} */ /* end of group httpcode */
 
 /**
+ * Returns the string reason phrase for a response code.
+ *
+ * If we don't have a string for a status code, we give the first
+ * message in that status code class.
+ */
+_MHD_EXTERN const char *
+MHD_get_reason_phrase_for (unsigned int code);
+
+
+/**
  * Flag to be or-ed with MHD_HTTP status code for
  * SHOUTcast.  This will cause the response to begin
  * with the SHOUTcast "ICY" line instad of "HTTP".
  * @ingroup specialized
  */
-#define MHD_ICY_FLAG ((uint32_t)(1 << 31))
+#define MHD_ICY_FLAG ((uint32_t)(((uint32_t)1) << 31))
 
 /**
  * @defgroup headers HTTP headers
@@ -341,6 +444,7 @@ typedef SOCKET MHD_socket;
 #define MHD_HTTP_HEADER_WARNING "Warning"
 #define MHD_HTTP_HEADER_WWW_AUTHENTICATE "WWW-Authenticate"
 #define MHD_HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN "Access-Control-Allow-Origin"
+#define MHD_HTTP_HEADER_CONTENT_DISPOSITION "Content-Disposition"
 
 /** @} */ /* end of group headers */
 
@@ -367,6 +471,7 @@ typedef SOCKET MHD_socket;
 #define MHD_HTTP_METHOD_OPTIONS "OPTIONS"
 #define MHD_HTTP_METHOD_POST "POST"
 #define MHD_HTTP_METHOD_PUT "PUT"
+#define MHD_HTTP_METHOD_PATCH "PATCH"
 #define MHD_HTTP_METHOD_TRACE "TRACE"
 
 /** @} */ /* end of group methods */
@@ -504,7 +609,8 @@ enum MHD_FLAG
   /**
    * Use `epoll()` instead of `select()` or `poll()` for the event loop.
    * This option is only available on Linux; using the option on
-   * non-Linux systems will cause #MHD_start_daemon to fail.
+   * non-Linux systems will cause #MHD_start_daemon to fail.  Using
+   * this option is not supported with #MHD_USE_THREAD_PER_CONNECTION.
    */
   MHD_USE_EPOLL_LINUX_ONLY = 512,
 
@@ -704,7 +810,7 @@ enum MHD_OPTION
   /**
    * Pass a listen socket for MHD to use (systemd-style).  If this
    * option is used, MHD will not open its own listen socket(s). The
-   * argument passed must be of type `int` and refer to an
+   * argument passed must be of type `MHD_socket` and refer to an
    * existing socket that has been bound to a port and is listening.
    */
   MHD_OPTION_LISTEN_SOCKET = 12,
@@ -833,8 +939,51 @@ enum MHD_OPTION
    * resources for the SYN packet along with its DATA.  This option should be
    * followed by an `unsigned int` argument.
    */
-  MHD_OPTION_TCP_FASTOPEN_QUEUE_SIZE = 23
+  MHD_OPTION_TCP_FASTOPEN_QUEUE_SIZE = 23,
 
+  /**
+   * Memory pointer for the Diffie-Hellman parameters (dh.pem) to be used by the
+   * HTTPS daemon for key exchange.
+   * This option must be followed by a `const char *` argument.
+   */
+  MHD_OPTION_HTTPS_MEM_DHPARAMS = 24,
+
+  /**
+   * If present and set to true, allow reusing address:port socket
+   * (by using SO_REUSEPORT on most platform, or platform-specific ways).
+   * If present and set to false, disallow reusing address:port socket
+   * (does nothing on most plaform, but uses SO_EXCLUSIVEADDRUSE on Windows).
+   * This option must be followed by a `unsigned int` argument.
+   */
+  MHD_OPTION_LISTENING_ADDRESS_REUSE = 25,
+
+  /**
+   * Memory pointer for a password that decrypts the private key (key.pem)
+   * to be used by the HTTPS daemon. This option should be followed by a
+   * `const char *` argument.
+   * This should be used in conjunction with #MHD_OPTION_HTTPS_MEM_KEY.
+   * @sa ::MHD_FEATURE_HTTPS_KEY_PASSWORD
+   */
+  MHD_OPTION_HTTPS_KEY_PASSWORD = 26,
+
+  /**
+   * Register a function that should be called whenever a connection is
+   * started or closed.
+   *
+   * This option should be followed by TWO pointers.  First a pointer
+   * to a function of type #MHD_NotifyConnectionCallback and second a
+   * pointer to a closure to pass to the request completed callback.
+   * The second pointer maybe NULL.
+   */
+  MHD_OPTION_NOTIFY_CONNECTION = 27,
+
+  /**
+   * Allow to change maximum length of the queue of pending connections on
+   * listen socket. If not present than default platform-specific SOMAXCONN
+   * value is used. This option should be followed by an `unsigned int`
+   * argument.
+   */
+  MHD_OPTION_LISTEN_BACKLOG_SIZE = 28
 };
 
 
@@ -969,6 +1118,29 @@ enum MHD_RequestTerminationCode
 
 
 /**
+ * The `enum MHD_ConnectionNotificationCode` specifies types
+ * of connection notifications.
+ * @ingroup request
+ */
+enum MHD_ConnectionNotificationCode
+{
+
+  /**
+   * A new connection has been started.
+   * @ingroup request
+   */
+  MHD_CONNECTION_NOTIFY_STARTED = 0,
+
+  /**
+   * A connection is closed.
+   * @ingroup request
+   */
+  MHD_CONNECTION_NOTIFY_CLOSED = 1
+
+};
+
+
+/**
  * Information about a connection.
  */
 union MHD_ConnectionInfo
@@ -1009,6 +1181,12 @@ union MHD_ConnectionInfo
    * daemons running).
    */
   struct MHD_Daemon *daemon;
+
+  /**
+   * Socket-specific client context.  Points to the same address as
+   * the "socket_context" of the #MHD_NotifyConnectionCallback.
+   */
+  void **socket_context;
 };
 
 
@@ -1067,7 +1245,17 @@ enum MHD_ConnectionInfoType
    * No extra arguments should be passed.
    * @ingroup request
    */
-  MHD_CONNECTION_INFO_CONNECTION_FD
+  MHD_CONNECTION_INFO_CONNECTION_FD,
+
+  /**
+   * Returns the client-specific pointer to a `void *` that was (possibly)
+   * set during a #MHD_NotifyConnectionCallback when the socket was
+   * first accepted.  Note that this is NOT the same as the "con_cls"
+   * argument of the #MHD_AccessHandlerCallback.  The "con_cls" is
+   * fresh for each HTTP request, while the "socket_context" is fresh
+   * for each socket.
+   */
+  MHD_CONNECTION_INFO_SOCKET_CONTEXT
 
 };
 
@@ -1098,7 +1286,13 @@ enum MHD_DaemonInfoType
    * Request the file descriptor for the external epoll.
    * No extra arguments should be passed.
    */
-  MHD_DAEMON_INFO_EPOLL_FD_LINUX_ONLY
+  MHD_DAEMON_INFO_EPOLL_FD_LINUX_ONLY,
+
+  /**
+   * Request the number of current connections handled by the daemon.
+   * No extra arguments should be passed.
+   */
+  MHD_DAEMON_INFO_CURRENT_CONNECTIONS
 };
 
 
@@ -1112,23 +1306,24 @@ enum MHD_DaemonInfoType
  * @param reason error detail, may be NULL
  * @ingroup logging
  */
-typedef
-  void (*MHD_PanicCallback) (void *cls,
-			     const char *file,
-			     unsigned int line,
-			     const char *reason);
+typedef void
+(*MHD_PanicCallback) (void *cls,
+                      const char *file,
+                      unsigned int line,
+                      const char *reason);
 
 /**
  * Allow or deny a client to connect.
  *
+ * @param cls closure
  * @param addr address information from the client
  * @param addrlen length of @a addr
  * @return #MHD_YES if connection is allowed, #MHD_NO if not
  */
 typedef int
-  (*MHD_AcceptPolicyCallback) (void *cls,
-                               const struct sockaddr *addr,
-                               socklen_t addrlen);
+(*MHD_AcceptPolicyCallback) (void *cls,
+                             const struct sockaddr *addr,
+                             socklen_t addrlen);
 
 
 /**
@@ -1171,14 +1366,14 @@ typedef int
  *         error while handling the request
  */
 typedef int
-  (*MHD_AccessHandlerCallback) (void *cls,
-                                struct MHD_Connection *connection,
-                                const char *url,
-                                const char *method,
-                                const char *version,
-                                const char *upload_data,
-                                size_t *upload_data_size,
-                                void **con_cls);
+(*MHD_AccessHandlerCallback) (void *cls,
+                              struct MHD_Connection *connection,
+                              const char *url,
+                              const char *method,
+                              const char *version,
+                              const char *upload_data,
+                              size_t *upload_data_size,
+                              void **con_cls);
 
 
 /**
@@ -1194,10 +1389,35 @@ typedef int
  * @ingroup request
  */
 typedef void
-  (*MHD_RequestCompletedCallback) (void *cls,
-                                   struct MHD_Connection *connection,
-                                   void **con_cls,
-                                   enum MHD_RequestTerminationCode toe);
+(*MHD_RequestCompletedCallback) (void *cls,
+                                 struct MHD_Connection *connection,
+                                 void **con_cls,
+                                 enum MHD_RequestTerminationCode toe);
+
+/**
+ * Signature of the callback used by MHD to notify the
+ * application about started/stopped connections
+ *
+ * @param cls client-defined closure
+ * @param connection connection handle
+ * @param socket_context socket-specific pointer where the
+ *                       client can associate some state specific
+ *                       to the TCP connection; note that this is
+ *                       different from the "con_cls" which is per
+ *                       HTTP request.  The client can initialize
+ *                       during #MHD_CONNECTION_NOTIFY_STARTED and
+ *                       cleanup during #MHD_CONNECTION_NOTIFY_CLOSED
+ *                       and access in the meantime using
+ *                       #MHD_CONNECTION_INFO_SOCKET_CONTEXT.
+ * @param toe reason for connection notification
+ * @see #MHD_OPTION_NOTIFY_CONNECTION
+ * @ingroup request
+ */
+typedef void
+(*MHD_NotifyConnectionCallback) (void *cls,
+                                 struct MHD_Connection *connection,
+                                 void **socket_context,
+                                 enum MHD_ConnectionNotificationCode toe);
 
 
 /**
@@ -1207,14 +1427,19 @@ typedef void
  * also to iterate over the headers that have been
  * added to a response.
  *
+ * @param cls closure
+ * @param kind kind of the header we are looking at
+ * @param key key for the value, can be an empty string
+ * @param value corresponding value, can be NULL
  * @return #MHD_YES to continue iterating,
  *         #MHD_NO to abort the iteration
  * @ingroup request
  */
 typedef int
-  (*MHD_KeyValueIterator) (void *cls,
-                           enum MHD_ValueKind kind,
-                           const char *key, const char *value);
+(*MHD_KeyValueIterator) (void *cls,
+                         enum MHD_ValueKind kind,
+                         const char *key,
+                         const char *value);
 
 
 /**
@@ -1262,10 +1487,10 @@ typedef int
  *    This is not a limitation of MHD but rather of the HTTP protocol.
  */
 typedef ssize_t
-  (*MHD_ContentReaderCallback) (void *cls,
-				uint64_t pos,
-				char *buf,
-				size_t max);
+(*MHD_ContentReaderCallback) (void *cls,
+                              uint64_t pos,
+                              char *buf,
+                              size_t max);
 
 
 /**
@@ -1278,7 +1503,7 @@ typedef ssize_t
  * @ingroup response
  */
 typedef void
-  (*MHD_ContentReaderFreeCallback) (void *cls);
+(*MHD_ContentReaderFreeCallback) (void *cls);
 
 
 /**
@@ -1301,15 +1526,15 @@ typedef void
  *         #MHD_NO to abort the iteration
  */
 typedef int
-  (*MHD_PostDataIterator) (void *cls,
-                           enum MHD_ValueKind kind,
-                           const char *key,
-                           const char *filename,
-                           const char *content_type,
-                           const char *transfer_encoding,
-                           const char *data,
-			   uint64_t off,
-			   size_t size);
+(*MHD_PostDataIterator) (void *cls,
+                         enum MHD_ValueKind kind,
+                         const char *key,
+                         const char *filename,
+                         const char *content_type,
+                         const char *transfer_encoding,
+                         const char *data,
+                         uint64_t off,
+                         size_t size);
 
 /* **************** Daemon handling functions ***************** */
 
@@ -1435,7 +1660,8 @@ MHD_add_connection (struct MHD_Daemon *daemon,
  * Obtain the `select()` sets for this daemon.
  * Daemon's FDs will be added to fd_sets. To get only
  * daemon FDs in fd_sets, call FD_ZERO for each fd_set
- * before calling this function.
+ * before calling this function. FD_SETSIZE is assumed
+ * to be platform's default.
  *
  * @param daemon daemon to get sets from
  * @param read_fd_set read set
@@ -1445,7 +1671,8 @@ MHD_add_connection (struct MHD_Daemon *daemon,
  *               than existing value); can be NULL
  * @return #MHD_YES on success, #MHD_NO if this
  *         daemon was not started with the right
- *         options for this call.
+ *         options for this call or any FD didn't
+ *         fit fd_set.
  * @ingroup event
  */
 _MHD_EXTERN int
@@ -1457,11 +1684,64 @@ MHD_get_fdset (struct MHD_Daemon *daemon,
 
 
 /**
+ * Obtain the `select()` sets for this daemon.
+ * Daemon's FDs will be added to fd_sets. To get only
+ * daemon FDs in fd_sets, call FD_ZERO for each fd_set
+ * before calling this function. Passing custom FD_SETSIZE
+ * as @a fd_setsize allow usage of larger/smaller than
+ * platform's default fd_sets.
+ *
+ * @param daemon daemon to get sets from
+ * @param read_fd_set read set
+ * @param write_fd_set write set
+ * @param except_fd_set except set
+ * @param max_fd increased to largest FD added (if larger
+ *               than existing value); can be NULL
+ * @param fd_setsize value of FD_SETSIZE
+ * @return #MHD_YES on success, #MHD_NO if this
+ *         daemon was not started with the right
+ *         options for this call or any FD didn't
+ *         fit fd_set.
+ * @ingroup event
+ */
+_MHD_EXTERN int
+MHD_get_fdset2 (struct MHD_Daemon *daemon,
+               fd_set *read_fd_set,
+               fd_set *write_fd_set,
+               fd_set *except_fd_set,
+               MHD_socket *max_fd,
+               unsigned int fd_setsize);
+
+
+/**
+ * Obtain the `select()` sets for this daemon.
+ * Daemon's FDs will be added to fd_sets. To get only
+ * daemon FDs in fd_sets, call FD_ZERO for each fd_set
+ * before calling this function. Size of fd_set is
+ * determined by current value of FD_SETSIZE.
+ *
+ * @param daemon daemon to get sets from
+ * @param read_fd_set read set
+ * @param write_fd_set write set
+ * @param except_fd_set except set
+ * @param max_fd increased to largest FD added (if larger
+ *               than existing value); can be NULL
+ * @return #MHD_YES on success, #MHD_NO if this
+ *         daemon was not started with the right
+ *         options for this call or any FD didn't
+ *         fit fd_set.
+ * @ingroup event
+ */
+#define MHD_get_fdset(daemon,read_fd_set,write_fd_set,except_fd_set,max_fd) \
+  MHD_get_fdset2((daemon),(read_fd_set),(write_fd_set),(except_fd_set),(max_fd),FD_SETSIZE)
+
+
+/**
  * Obtain timeout value for `select()` for this daemon (only needed if
- * connection timeout is used).  The returned value is how long
- * `select()` or `poll()` should at most block, not the timeout value set
- * for connections.  This function MUST NOT be called if MHD is
- * running with #MHD_USE_THREAD_PER_CONNECTION.
+ * connection timeout is used).  The returned value is how many milliseconds
+ * `select()` or `poll()` should at most block, not the timeout value set for
+ * connections.  This function MUST NOT be called if MHD is running with
+ * #MHD_USE_THREAD_PER_CONNECTION.
  *
  * @param daemon daemon to query for timeout
  * @param timeout set to the timeout (in milliseconds)
@@ -1532,7 +1812,7 @@ MHD_run_from_select (struct MHD_Daemon *daemon,
  * Get all of the headers from the request.
  *
  * @param connection connection to get values from
- * @param kind types of values to iterate over
+ * @param kind types of values to iterate over, can be a bitmask
  * @param iterator callback to call on each header;
  *        maybe NULL (then just count headers)
  * @param iterator_cls extra argument to @a iterator
@@ -1542,7 +1822,8 @@ MHD_run_from_select (struct MHD_Daemon *daemon,
 _MHD_EXTERN int
 MHD_get_connection_values (struct MHD_Connection *connection,
                            enum MHD_ValueKind kind,
-                           MHD_KeyValueIterator iterator, void *iterator_cls);
+                           MHD_KeyValueIterator iterator,
+                           void *iterator_cls);
 
 
 /**
@@ -1595,6 +1876,19 @@ MHD_set_connection_value (struct MHD_Connection *connection,
  */
 _MHD_EXTERN void
 MHD_set_panic_func (MHD_PanicCallback cb, void *cls);
+
+
+/**
+ * Process escape sequences ('%HH') Updates val in place; the
+ * result should be UTF-8 encoded and cannot be larger than the input.
+ * The result must also still be 0-terminated.
+ *
+ * @param val value to unescape (modified in the process)
+ * @return length of the resulting val (`strlen(val)` may be
+ *  shorter afterwards due to elimination of escape sequences)
+ */
+_MHD_EXTERN size_t
+MHD_http_unescape (char *val);
 
 
 /**
@@ -1675,6 +1969,53 @@ MHD_resume_connection (struct MHD_Connection *connection);
 
 /* **************** Response manipulation functions ***************** */
 
+
+/**
+ * Flags for special handling of responses.
+ */
+enum MHD_ResponseFlags
+{
+  /**
+   * Default: no special flags.
+   */
+  MHD_RF_NONE = 0,
+
+  /**
+   * Only respond in conservative HTTP 1.0-mode.   In particular,
+   * do not (automatically) sent "Connection" headers and always
+   * close the connection after generating the response.
+   */
+  MHD_RF_HTTP_VERSION_1_0_ONLY = 1
+
+};
+
+
+/**
+ * MHD options (for future extensions).
+ */
+enum MHD_ResponseOptions
+{
+  /**
+   * End of the list of options.
+   */
+  MHD_RO_END = 0
+};
+
+
+/**
+ * Set special flags and options for a response.
+ *
+ * @param response the response to modify
+ * @param flags to set for the response
+ * @param ... #MHD_RO_END terminated list of options
+ * @return #MHD_YES on success, #MHD_NO on error
+ */
+_MHD_EXTERN int
+MHD_set_response_options (struct MHD_Response *response,
+                          enum MHD_ResponseFlags flags,
+                          ...);
+
+
 /**
  * Create a response object.  The response object can be extended with
  * header information and then be used any number of times.
@@ -1712,6 +2053,7 @@ MHD_create_response_from_callback (uint64_t size,
  * @deprecated use #MHD_create_response_from_buffer instead
  * @ingroup response
  */
+_MHD_DEPR_FUNC("MHD_create_response_from_data() is deprecated, use MHD_create_response_from_buffer()") \
 _MHD_EXTERN struct MHD_Response *
 MHD_create_response_from_data (size_t size,
 			       void *data,
@@ -1784,7 +2126,25 @@ MHD_create_response_from_buffer (size_t size,
  */
 _MHD_EXTERN struct MHD_Response *
 MHD_create_response_from_fd (size_t size,
-			     int fd);
+                               int fd);
+
+
+/**
+ * Create a response object.  The response object can be extended with
+ * header information and then be used any number of times.
+ *
+ * @param size size of the data portion of the response;
+ *        sizes larger than 2 GiB may be not supported by OS or
+ *        MHD build; see ::MHD_FEATURE_LARGE_FILE
+ * @param fd file descriptor referring to a file on disk with the
+ *        data; will be closed when response is destroyed;
+ *        fd should be in 'blocking' mode
+ * @return NULL on error (i.e. invalid arguments, out of memory)
+ * @ingroup response
+ */
+_MHD_EXTERN struct MHD_Response *
+MHD_create_response_from_fd64 (uint64_t size,
+                               int fd);
 
 
 /**
@@ -1803,59 +2163,92 @@ MHD_create_response_from_fd (size_t size,
  * @return NULL on error (i.e. invalid arguments, out of memory)
  * @ingroup response
  */
+_MHD_DEPR_FUNC("Function MHD_create_response_from_fd_at_offset() is deprecated, use MHD_create_response_from_fd_at_offset64()") \
 _MHD_EXTERN struct MHD_Response *
 MHD_create_response_from_fd_at_offset (size_t size,
-				       int fd,
-				       off_t offset);
+                                       int fd,
+                                       off_t offset);
+
+#if !defined(_MHD_NO_DEPR_IN_MACRO) || defined(_MHD_NO_DEPR_FUNC)
+/* Substitute MHD_create_response_from_fd_at_offset64() instead of MHD_create_response_from_fd_at_offset()
+   to minimize potential problems with different off_t sizes */
+#define MHD_create_response_from_fd_at_offset(size,fd,offset) \
+  _MHD_DEPR_IN_MACRO("Usage of MHD_create_response_from_fd_at_offset() is deprecated, use MHD_create_response_from_fd_at_offset64()") \
+  MHD_create_response_from_fd_at_offset64((size),(fd),(offset))
+#endif /* !_MHD_NO_DEPR_IN_MACRO || _MHD_NO_DEPR_FUNC */
+
+
+/**
+ * Create a response object.  The response object can be extended with
+ * header information and then be used any number of times.
+ *
+ * @param size size of the data portion of the response;
+ *        sizes larger than 2 GiB may be not supported by OS or
+ *        MHD build; see ::MHD_FEATURE_LARGE_FILE
+ * @param fd file descriptor referring to a file on disk with the
+ *        data; will be closed when response is destroyed;
+ *        fd should be in 'blocking' mode
+ * @param offset offset to start reading from in the file;
+ *        reading file beyond 2 GiB may be not supported by OS or
+ *        MHD build; see ::MHD_FEATURE_LARGE_FILE
+ * @return NULL on error (i.e. invalid arguments, out of memory)
+ * @ingroup response
+ */
+_MHD_EXTERN struct MHD_Response *
+MHD_create_response_from_fd_at_offset64 (uint64_t size,
+                                         int fd,
+                                         uint64_t offset);
 
 
 #if 0
 /**
- * Bits in an event mask that specifies which actions
- * MHD should perform and under which conditions it
- * should call the 'upgrade' callback again.
+ * Enumeration for actions MHD should perform on the underlying socket
+ * of the upgrade.  This API is not finalized, and in particular
+ * the final set of actions is yet to be decided. This is just an
+ * idea for what we might want.
  */
-enum MHD_UpgradeEventMask
+enum MHD_UpgradeAction
 {
 
   /**
-   * Never call the handler again; finish sending bytes
-   * in the 'write' buffer and then close the socket.
+   * Close the socket, the application is done with it.
+   *
+   * Takes no extra arguments.
+   *
+   * NOTE: it is unclear if we want to have this in the
+   * "final" API, this is all just ideas.
    */
-  MHD_UPGRADE_EVENT_TERMINATE = 0,
-
-  /**
-   * Call the handler again once there is data ready
-   * for reading.
-   */
-  MHD_UPGRADE_EVENT_READ = 1,
-
-  /**
-   * Call the handler again once there is buffer space
-   * available for writing.
-   */
-  MHD_UPGRADE_EVENT_WRITE = 2,
-
-  /**
-   * Do not wait on any socket actions, we're waiting on
-   * an 'external' event.  Run the function again once
-   * the 'select' call returns _without_ this socket even
-   * being involved in the select sets (useful in
-   * conjunction with the external select loop).
-   */
-  MHD_UPGRADE_EVENT_EXTERNAL = 4,
+  MHD_UPGRADE_ACTION_CLOSE = 0,
 
   /**
    * Uncork the TCP write buffer (that is, tell the OS to transmit all
-   * bytes in the buffer now, and to not use TCP-CORKing).  This is
-   * not really an event flag, but an additional request (which MHD
-   * may ignore if the platform does not support it).  Note that
-   * only returning 'CORK' will *also* cause the socket to be closed!
+   * bytes in the buffer now, and to not use TCP-CORKing).
+   *
+   * Takes no extra arguments.
+   *
+   * NOTE: it is unclear if we want to have this in the
+   * "final" API, this is all just ideas.
    */
-  MHD_UPGRADE_EVENT_CORK = 8
+  MHD_UPGRADE_ACTION_CORK
 
 };
 
+
+/**
+ * This connection-specific callback is provided by MHD to
+ * applications (unusual) during the #MHD_UpgradeHandler.
+ * It allows applications to perform 'special' actions on
+ * the underlying socket from the upgrade.
+ *
+ * @param cls the closure (from `upgrade_action_cls`)
+ * @param action which action should be performed
+ * @param ... arguments to the action (depends on the action)
+ * @return #MHD_NO on error, #MHD_YES on success
+ */
+typedef int
+(*MHD_UpgradeActionCallback)(void *cls,
+                             enum MHD_UpgradeAction action,
+                             ...);
 
 /**
  * Function called after a protocol "upgrade" response was sent
@@ -1890,33 +2283,34 @@ enum MHD_UpgradeEventMask
  * @param connection original HTTP connection handle,
  *                   giving the function a last chance
  *                   to inspect the original HTTP request
- * @param con_cls value as set by the last call to the
- *                MHD_AccessHandlerCallback; will afterwards
- *                be also given to the #MHD_RequestCompletedCallback
- * @param data_in_size available data for reading, set to data read
- * @param data_in data read from the socket
- * @param data_out_size available buffer for writing, set to bytes
- *                written to 'data_out'
- * @param data_out buffer for sending data via the connection
- * @return desired actions for event handling loop
+ * @param sock socket to use for bi-directional communication
+ *        with the client.  For HTTPS, this may not be a socket
+ *        that is directly connected to the client and thus certain
+ *        operations (TCP-specific setsockopt(), getsockopt(), etc.)
+ *        may not work as expected (as the socket could be from a
+ *        socketpair() or a TCP-loopback)
+ * @param upgrade_action function that can be used to perform actions
+ *        on the @a sock (like those that cannot be done explicitly).
+ *        Applications must use this callback to perform the
+ *        close() action on the @a sock.
+ * @param upgrade_action_cls closure that must be passed to @a upgrade_action
  */
-typedef enum MHD_UpgradeEventMask (*MHD_UpgradeHandler)(void *cls,
-							struct MHD_Connection *connection,
-							void **con_cls,
-							size_t *data_in_size,
-							const char *data_in,
-							size_t *data_out_size,
-							char *data_out);
+typedef void
+(*MHD_UpgradeHandler)(void *cls,
+                      struct MHD_Connection *connection,
+                      MHD_SOCKET sock,
+                      MHD_UpgradeActionCallback upgrade_action,
+                      void *upgrade_action_cls);
 
 
 /**
  * Create a response object that can be used for 101 UPGRADE
- * responses, for example to implement websockets.  After sending the
+ * responses, for example to implement WebSockets.  After sending the
  * response, control over the data stream is given to the callback (which
  * can then, for example, start some bi-directional communication).
  * If the response is queued for multiple connections, the callback
  * will be called for each connection.  The callback
- * will ONLY be called if the response header was successfully passed
+ * will ONLY be called after the response header was successfully passed
  * to the OS; if there are communication errors before, the usual MHD
  * connection error handling code will be performed.
  *
@@ -1924,7 +2318,7 @@ typedef enum MHD_UpgradeEventMask (*MHD_UpgradeHandler)(void *cls,
  * and setting correct HTTP headers for the upgrade must be done
  * manually (this way, it is possible to implement most existing
  * WebSocket versions using this API; in fact, this API might be useful
- * for any protocol switch, not just websockets).  Note that
+ * for any protocol switch, not just WebSockets).  Note that
  * draft-ietf-hybi-thewebsocketprotocol-00 cannot be implemented this
  * way as the header "HTTP/1.1 101 WebSocket Protocol Handshake"
  * cannot be generated; instead, MHD will always produce "HTTP/1.1 101
@@ -1935,7 +2329,7 @@ typedef enum MHD_UpgradeEventMask (*MHD_UpgradeHandler)(void *cls,
  * header information is not connection-specific).
  *
  * @param upgrade_handler function to call with the 'upgraded' socket
- * @param upgrade_handler_cls closure for 'upgrade_handler'
+ * @param upgrade_handler_cls closure for @a upgrade_handler
  * @return NULL on error (i.e. invalid arguments, out of memory)
  */
 struct MHD_Response *
@@ -2249,21 +2643,27 @@ MHD_set_connection_option (struct MHD_Connection *connection,
 union MHD_DaemonInfo
 {
   /**
-   * Size of the key.
+   * Size of the key, no longer supported.
    * @deprecated
    */
   size_t key_size;
 
   /**
-   * Size of the mac key.
+   * Size of the mac key, no longer supported.
    * @deprecated
    */
   size_t mac_key_size;
 
   /**
-   * Listen socket file descriptor
+   * Listen socket file descriptor, for #MHD_DAEMON_INFO_EPOLL_FD_LINUX_ONLY
+   * and #MHD_DAEMON_INFO_LISTEN_FD.
    */
   MHD_socket listen_fd;
+
+  /**
+   * Number of active connections, for #MHD_DAEMON_INFO_CURRENT_CONNECTIONS.
+   */
+  unsigned int num_connections;
 };
 
 
@@ -2292,6 +2692,137 @@ MHD_get_daemon_info (struct MHD_Daemon *daemon,
  */
 _MHD_EXTERN const char*
 MHD_get_version (void);
+
+
+/**
+ * Types of information about MHD features,
+ * used by #MHD_is_feature_supported().
+ */
+enum MHD_FEATURE
+{
+  /**
+   * Get whether messages are supported. If supported then in debug
+   * mode messages can be printed to stderr or to external logger.
+   */
+  MHD_FEATURE_MESSGES = 1,
+
+  /**
+   * Get whether HTTPS is supported.  If supported then flag
+   * #MHD_USE_SSL and options #MHD_OPTION_HTTPS_MEM_KEY,
+   * #MHD_OPTION_HTTPS_MEM_CERT, #MHD_OPTION_HTTPS_MEM_TRUST,
+   * #MHD_OPTION_HTTPS_MEM_DHPARAMS, #MHD_OPTION_HTTPS_CRED_TYPE,
+   * #MHD_OPTION_HTTPS_PRIORITIES can be used.
+   */
+  MHD_FEATURE_SSL = 2,
+
+  /**
+   * Get whether option #MHD_OPTION_HTTPS_CERT_CALLBACK is
+   * supported.
+   */
+  MHD_FEATURE_HTTPS_CERT_CALLBACK = 3,
+
+  /**
+   * Get whether IPv6 is supported. If supported then flag
+   * #MHD_USE_IPv6 can be used.
+   */
+  MHD_FEATURE_IPv6 = 4,
+
+  /**
+   * Get whether IPv6 without IPv4 is supported. If not supported
+   * then IPv4 is always enabled in IPv6 sockets and
+   * flag #MHD_USE_DUAL_STACK if always used when #MHD_USE_IPv6 is
+   * specified.
+   */
+  MHD_FEATURE_IPv6_ONLY = 5,
+
+  /**
+   * Get whether `poll()` is supported. If supported then flag
+   * #MHD_USE_POLL can be used.
+   */
+  MHD_FEATURE_POLL = 6,
+
+  /**
+   * Get whether `epoll()` is supported. If supported then Flags
+   * #MHD_USE_EPOLL_LINUX_ONLY and
+   * #MHD_USE_EPOLL_INTERNALLY_LINUX_ONLY can be used.
+   */
+  MHD_FEATURE_EPOLL = 7,
+
+  /**
+   * Get whether shutdown on listen socket to signal other
+   * threads is supported. If not supported flag
+   * #MHD_USE_PIPE_FOR_SHUTDOWN is automatically forced.
+   */
+  MHD_FEATURE_SHUTDOWN_LISTEN_SOCKET = 8,
+
+  /**
+   * Get whether socketpair is used internally instead of pipe to
+   * signal other threads.
+   */
+  MHD_FEATURE_SOCKETPAIR = 9,
+
+  /**
+   * Get whether TCP Fast Open is supported. If supported then
+   * flag #MHD_USE_TCP_FASTOPEN and option
+   * #MHD_OPTION_TCP_FASTOPEN_QUEUE_SIZE can be used.
+   */
+  MHD_FEATURE_TCP_FASTOPEN = 10,
+
+  /**
+   * Get whether HTTP Basic authorization is supported. If supported
+   * then functions #MHD_basic_auth_get_username_password and
+   * #MHD_queue_basic_auth_fail_response can be used.
+   */
+  MHD_FEATURE_BASIC_AUTH = 11,
+
+  /**
+   * Get whether HTTP Digest authorization is supported. If
+   * supported then options #MHD_OPTION_DIGEST_AUTH_RANDOM,
+   * #MHD_OPTION_NONCE_NC_SIZE and
+   * #MHD_digest_auth_check() can be used.
+   */
+  MHD_FEATURE_DIGEST_AUTH = 12,
+
+  /**
+   * Get whether postprocessor is supported. If supported then
+   * functions #MHD_create_post_processor(), #MHD_post_process() and
+   * #MHD_destroy_post_processor() can
+   * be used.
+   */
+  MHD_FEATURE_POSTPROCESSOR = 13,
+
+  /**
+  * Get whether password encrypted private key for HTTPS daemon is
+  * supported. If supported then option
+  * ::MHD_OPTION_HTTPS_KEY_PASSWORD can be used.
+  */
+  MHD_FEATURE_HTTPS_KEY_PASSWORD = 14,
+
+  /**
+   * Get whether reading files beyond 2 GiB boundary is supported.
+   * If supported then #MHD_create_response_from_fd(),
+   * #MHD_create_response_from_fd64 #MHD_create_response_from_fd_at_offset()
+   * and #MHD_create_response_from_fd_at_offset64() can be used with sizes and
+   * offsets larger than 2 GiB. If not supported value of size+offset is
+   * limited to 2 GiB.
+   */
+  MHD_FEATURE_LARGE_FILE = 15
+};
+
+
+/**
+ * Get information about supported MHD features.
+ * Indicate that MHD was compiled with or without support for
+ * particular feature. Some features require additional support
+ * by kernel. Kernel support is not checked by this function.
+ *
+ * @param feature type of requested information
+ * @return #MHD_YES if feature is supported by MHD, #MHD_NO if
+ * feature is not supported or feature is unknown.
+ * @ingroup specialized
+ */
+_MHD_EXTERN int
+MHD_is_feature_supported(enum MHD_FEATURE feature);
 
 
 #if 0                           /* keep Emacsens' auto-indent happy */

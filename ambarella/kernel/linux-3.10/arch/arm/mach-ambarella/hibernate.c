@@ -121,10 +121,11 @@ struct mtd_info *mtd_probe_dev(void)
 		printk("SWP: mtd dev no found!\n");
 		return NULL;
 	}else{
-
-		/* Makesure the swp partition has 64M at least */
-		if(info->size < 0x4000000)
+		/* Makesure the swp partition has 32M at least */
+		if(info->size < 0x2000000){
+			printk("ERR: swp partition size is less than 32M\n");
 			return NULL;
+		}
 
 		printk("MTD name: %s\n", 		info->name);
 		printk("MTD size: 0x%llx\n", 	info->size);
@@ -232,8 +233,14 @@ int hibernate_mtd_write(struct mtd_info *mtd)
 		goto out_finish;
 	}
 	header = (struct swsusp_info *)data_of(snapshot);
-	error = hibernate_write_page(mtd, header);
 
+	/* TODO: SWP partition space size check */
+	if (header->pages * 0x1000 > mtd->size){
+		printk("ERR: swp partition[0x%llx] has not enough space for the kernel snapshot[0x%lx]\n", mtd->size, header->pages * 0x1000);
+			return -ENOMEM;
+	}
+
+	error = hibernate_write_page(mtd, header);
 	if (!error) {
 		error = hibernate_save_image(mtd, &snapshot);
 	}

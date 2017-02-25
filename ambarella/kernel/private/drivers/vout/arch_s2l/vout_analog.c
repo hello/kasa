@@ -4,14 +4,33 @@
  * History:
  *    2009/07/23 - [Zhenwu Xue] Create
  *
- * Copyright (C) 2004-2008, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 #include <linux/i2c.h>
 #include <linux/clk.h>
 #include <plat/clk.h>
@@ -87,8 +106,8 @@ static int ambtve_dve_ntsc_config(struct __amba_vout_video_source *psrc,
 		dve.dve_46.s.t_sel_ylpf = 0;
 		dve.dve_46.s.t_ygain_val = 0;
 	} else {
-		dve.dve_46.s.t_sel_ylpf = 0;
-		dve.dve_46.s.t_ygain_val = 0;
+		dve.dve_46.s.t_sel_ylpf = 1;
+		dve.dve_46.s.t_ygain_val = 1;
 	}
 
 	if (sink_mode->sink_type == AMBA_VOUT_SINK_TYPE_YPBPR)
@@ -130,7 +149,7 @@ static int ambtve_dve_ntsc_config(struct __amba_vout_video_source *psrc,
 	dve.dve_57.s.t_psync_enb = 0;
 	dve.dve_57.s.t_psync_phs = 0;
 	dve.dve_57.s.unused = 0;
-        dve.dve_57.s.vso = 0;
+	dve.dve_57.s.vso = 0;
 
 	/* DVE58 */
 	dve.vso_7_0 = 0x00;
@@ -214,7 +233,7 @@ static int ambtve_dve_ntsc_config(struct __amba_vout_video_source *psrc,
 		dve.dve_97.s.ygain_off = 1;
 	} else {
 		/* turn on the luma lpf */
-		dve.dve_97.s.sel_y_lpf = 0;
+		dve.dve_97.s.sel_y_lpf = 1;
 		dve.dve_97.s.ygain_off = 0;
 	}
 
@@ -282,16 +301,16 @@ static int ambtve_dve_pal_config(struct __amba_vout_video_source *psrc,
 		dve.blank_lvl = 0x0000007e;
 	} else {
 		/* black level 126 in DVE42 */
-		dve.black_lvl = 0x00000069;
+		dve.black_lvl = 0x0000007e;
 		/* blank level:126 in DVE43 */
 		dve.blank_lvl = 0x0000007e;
 	}
 
 	/* clamp level of 16 in DVE44 */
-	dve.clamp_lvl = 0x00000000;
+	dve.clamp_lvl = 0x00000013;
 
 	/* sync level of 8 in DVE45 */
-	dve.sync_lvl = 0x00000004;
+	dve.sync_lvl = 0x00000010;
 
 	//do not use interpolation in DVE46
 	dve.dve_46.s.y_interp = 0;
@@ -301,12 +320,12 @@ static int ambtve_dve_pal_config(struct __amba_vout_video_source *psrc,
 	else
 		dve.dve_46.s.y_colorbar_en = 0;
 	/* zero delay in Y*/
-	dve.dve_46.s.t_ydel_adj = 4;
+	dve.dve_46.s.t_ydel_adj = 0;
 	if (sink_mode->sink_type == AMBA_VOUT_SINK_TYPE_YPBPR) {
 		dve.dve_46.s.t_sel_ylpf = 0;
 		dve.dve_46.s.t_ygain_val = 0;
 	} else {
-		dve.dve_46.s.t_sel_ylpf = 0;
+		dve.dve_46.s.t_sel_ylpf = 1;
 		dve.dve_46.s.t_ygain_val = 1;
 	}
 
@@ -331,7 +350,7 @@ static int ambtve_dve_pal_config(struct __amba_vout_video_source *psrc,
 	}
 
 	/* DVE52 */
-	dve.dve_52.s.pal_c_lpf = 0;
+	dve.dve_52.s.pal_c_lpf = 1;
 	if (sink_mode->sink_type == AMBA_VOUT_SINK_TYPE_YPBPR)
 		dve.dve_52.s.sel_c_gain = 0;
 	else
@@ -349,7 +368,7 @@ static int ambtve_dve_pal_config(struct __amba_vout_video_source *psrc,
 	dve.dve_57.s.t_psync_enb = 0;
 	dve.dve_57.s.t_psync_phs = 0;
 	dve.dve_57.s.unused = 0;
-        dve.dve_57.s.vso = 0;
+	dve.dve_57.s.vso = 0;
 
 	/* DVE58 */
 	dve.vso_7_0 = 0x00;
@@ -433,7 +452,7 @@ static int ambtve_dve_pal_config(struct __amba_vout_video_source *psrc,
 		dve.dve_97.s.ygain_off = 1;
 	} else {
 		/* turn on the luma lpf */
-		dve.dve_97.s.sel_y_lpf = 0;
+		dve.dve_97.s.sel_y_lpf = 1;
 		dve.dve_97.s.ygain_off = 0;
 	}
 
@@ -472,77 +491,80 @@ static int ambtve_init_480i_s2l(struct __amba_vout_video_source *psrc,
 	struct amba_vout_hv_size_info		sink_hv;
 	struct amba_vout_hv_sync_info		sink_sync;
 	struct amba_vout_window_info		sink_window;
-        vd_config_t				sink_cfg;
+	vd_config_t	sink_cfg;
 	struct amba_video_source_csc_info	sink_csc;
 
-        //set hv
-        sink_hv.hsize = YUV525I_Y_PELS_PER_LINE * 2;
-        sink_hv.vtsize = 262;
-        sink_hv.vbsize = 263;
-        rval = amba_s2l_vout_set_hv(psrc, &sink_hv);
-        if(rval)
-                return rval;
+	//set hv
+	sink_hv.hsize = YUV525I_Y_PELS_PER_LINE * 2;
+	sink_hv.vtsize = 262;
+	sink_hv.vbsize = 263;
+	rval = amba_s2l_vout_set_hv(psrc, &sink_hv);
+	if(rval)
+		return rval;
 
-        //set hvsync
-        sink_sync.hsync_start = 0;
-        sink_sync.hsync_end = 1;
-        sink_sync.vtsync_start = 0;
-        sink_sync.vtsync_end = 1;
-        sink_sync.vbsync_start = 0;
-        sink_sync.vbsync_end = 1;
-        sink_sync.vtsync_start_row = 0;
-        sink_sync.vtsync_start_col = 0;
-        sink_sync.vtsync_end_row = 3;
-        sink_sync.vtsync_end_col = 0;
-        sink_sync.vbsync_start_row = 0x3ffd;
-        sink_sync.vbsync_start_col = 858;
-        sink_sync.vbsync_end_row = 0x3fff;
-        sink_sync.vbsync_end_col = 858;
-        sink_sync.sink_type = sink_mode->sink_type;
-        rval = amba_s2l_vout_set_hvsync(psrc, &sink_sync);
-        if(rval)
-                return rval;
+	//set hvsync
+	sink_sync.hsync_start = 0;
+	sink_sync.hsync_end = 1;
+	sink_sync.vtsync_start = 0;
+	sink_sync.vtsync_end = 1;
+	sink_sync.vbsync_start = 0;
+	sink_sync.vbsync_end = 1;
+	sink_sync.vtsync_start_row = 0;
+	sink_sync.vtsync_start_col = 0;
+	sink_sync.vtsync_end_row = 3;
+	sink_sync.vtsync_end_col = 0;
+	sink_sync.vbsync_start_row = 0x3ffd;
+	sink_sync.vbsync_start_col = 858;
+	sink_sync.vbsync_end_row = 0x3fff;
+	sink_sync.vbsync_end_col = 858;
+	sink_sync.sink_type = sink_mode->sink_type;
+	rval = amba_s2l_vout_set_hvsync(psrc, &sink_sync);
+	if(rval)
+		return rval;
 
-        //set active window
-        sink_window.start_x = 274;
-        sink_window.end_x = 1713;
-        sink_window.start_y = 22;
-        sink_window.end_y = 261;
-        sink_window.width = (sink_window.end_x - sink_window.start_x + 1) >> 1;
-        sink_window.field_reverse = 0;
-        rval = amba_s2l_vout_set_active_win(psrc, &sink_window);
-        if(rval)
-                return rval;
+	//set active window
+	sink_window.start_x = 274;
+	sink_window.end_x = 1713;
+	sink_window.start_y = 22;
+	sink_window.end_y = 261;
+	sink_window.width = (sink_window.end_x - sink_window.start_x + 1) >> 1;
+	sink_window.field_reverse = 0;
+	rval = amba_s2l_vout_set_active_win(psrc, &sink_window);
+	if(rval)
+		return rval;
 
-        // set video size
-        sink_window.start_x = sink_mode->video_offset.offset_x;
-        sink_window.end_x =
-                sink_window.start_x + sink_mode->video_size.video_width - 1;
-        sink_window.start_y = sink_mode->video_offset.offset_y;
-        sink_window.end_y =
-                sink_window.start_y + sink_mode->video_size.video_height - 1;
+	// set video size
+	sink_window.start_x = sink_mode->video_offset.offset_x;
+	sink_window.end_x =
+		sink_window.start_x + sink_mode->video_size.video_width - 1;
+	sink_window.start_y = sink_mode->video_offset.offset_y;
+	sink_window.end_y =
+		sink_window.start_y + sink_mode->video_size.video_height - 1;
 	if (sink_mode->format == AMBA_VIDEO_FORMAT_INTERLACE) {
 		sink_window.start_y >>= 1;
 		sink_window.end_y >>= 1;
 	}
-        rval = amba_s2l_vout_set_video_size(psrc, &sink_window);
-        if(rval)
-                return rval;
+	rval = amba_s2l_vout_set_video_size(psrc, &sink_window);
+	if(rval)
+		return rval;
 
-        // set config
+	// set config
 	rval = amba_s2l_vout_get_config(psrc, &sink_cfg);
 	if (rval)
-                return rval;
+		return rval;
+
+	sink_cfg.d_control.s.hdmi_out = 0;
+	sink_cfg.d_control.s.digital_out = 0;
 	sink_cfg.d_control.s.analog_out = 1;
 	sink_cfg.d_control.s.interlace = VD_INTERLACE;
 	sink_cfg.d_control.s.vid_format = VD_480I60;
 	sink_cfg.d_analog_output_mode.s.hspol = ANALOG_ACT_HIGH;
 	sink_cfg.d_analog_output_mode.s.vspol = ANALOG_ACT_HIGH;
-        rval = amba_s2l_vout_set_config(psrc, &sink_cfg);
-        if(rval)
-                return rval;
+	rval = amba_s2l_vout_set_config(psrc, &sink_cfg);
+	if(rval)
+		return rval;
 
-        //set csc
+	//set csc
 	sink_csc.path = AMBA_VIDEO_SOURCE_CSC_ANALOG;
 	if (sink_mode->csc_en)
 		sink_csc.mode = AMBA_VIDEO_SOURCE_CSC_ANALOG_SD;
@@ -551,11 +573,11 @@ static int ambtve_init_480i_s2l(struct __amba_vout_video_source *psrc,
 	sink_csc.clamp = AMBA_VIDEO_SOURCE_CSC_ANALOG_CLAMP_SD_NTSC;
 	rval = amba_s2l_vout_set_csc(psrc, &sink_csc);
 	if (rval)
-                return rval;
+		return rval;
 
 	rval = ambtve_dve_ntsc_config(psrc, sink_mode);
 	if (rval)
-                return rval;
+		return rval;
 
 	return rval;
 }
@@ -567,91 +589,94 @@ static int ambtve_init_576i_s2l(struct __amba_vout_video_source *psrc,
 	struct amba_vout_hv_size_info		sink_hv;
 	struct amba_vout_hv_sync_info		sink_sync;
 	struct amba_vout_window_info		sink_window;
-        vd_config_t				sink_cfg;
+	vd_config_t	sink_cfg;
 	struct amba_video_source_csc_info	sink_csc;
 
-        //set hv
-        sink_hv.hsize = YUV625I_Y_PELS_PER_LINE * 2;
-        sink_hv.vtsize = 312;
-        sink_hv.vbsize = 313;
-        rval = amba_s2l_vout_set_hv(psrc, &sink_hv);
-        if(rval)
-                return rval;
+	//set hv
+	sink_hv.hsize = YUV625I_Y_PELS_PER_LINE * 2;
+	sink_hv.vtsize = 312;
+	sink_hv.vbsize = 313;
+	rval = amba_s2l_vout_set_hv(psrc, &sink_hv);
+	if(rval)
+		return rval;
 
-        //set hvsync
-        sink_sync.hsync_start = 0;
-        sink_sync.hsync_end = 1;
-        sink_sync.vtsync_start = 0;
-        sink_sync.vtsync_end = 1;
-        sink_sync.vbsync_start = 0;
-        sink_sync.vbsync_end = 1;
-        sink_sync.vtsync_start_row = 0;
-        sink_sync.vtsync_start_col = 0;
-        sink_sync.vtsync_end_row = 3;
-        sink_sync.vtsync_end_col = 0;
-        sink_sync.vbsync_start_row = 0x3ffd;
-        sink_sync.vbsync_start_col = 864;
-        sink_sync.vbsync_end_row = 0x3fff;
-        sink_sync.vbsync_end_col = 864;
-        sink_sync.sink_type = sink_mode->sink_type;
-        rval = amba_s2l_vout_set_hvsync(psrc, &sink_sync);
-        if(rval)
-                return rval;
+	//set hvsync
+	sink_sync.hsync_start = 0;
+	sink_sync.hsync_end = 1;
+	sink_sync.vtsync_start = 0;
+	sink_sync.vtsync_end = 1;
+	sink_sync.vbsync_start = 0;
+	sink_sync.vbsync_end = 1;
+	sink_sync.vtsync_start_row = 0;
+	sink_sync.vtsync_start_col = 0;
+	sink_sync.vtsync_end_row = 3;
+	sink_sync.vtsync_end_col = 0;
+	sink_sync.vbsync_start_row = 0x3ffd;
+	sink_sync.vbsync_start_col = 864;
+	sink_sync.vbsync_end_row = 0x3fff;
+	sink_sync.vbsync_end_col = 864;
+	sink_sync.sink_type = sink_mode->sink_type;
+	rval = amba_s2l_vout_set_hvsync(psrc, &sink_sync);
+	if(rval)
+		return rval;
 
-        //set active window
-        sink_window.start_x = 286;
-        sink_window.end_x = 1725;
-        sink_window.start_y = 24;
-        sink_window.end_y = 311;
-        sink_window.width = (sink_window.end_x - sink_window.start_x + 1) >> 1;
-        sink_window.field_reverse = 0;
-        rval = amba_s2l_vout_set_active_win(psrc, &sink_window);
-        if(rval)
-                return rval;
+	//set active window
+	sink_window.start_x = 286;
+	sink_window.end_x = 1725;
+	sink_window.start_y = 24;
+	sink_window.end_y = 311;
+	sink_window.width = (sink_window.end_x - sink_window.start_x + 1) >> 1;
+	sink_window.field_reverse = 0;
+	rval = amba_s2l_vout_set_active_win(psrc, &sink_window);
+	if(rval)
+		return rval;
 
-        //set video size
-        sink_window.start_x = sink_mode->video_offset.offset_x;
-        sink_window.end_x =
-                sink_window.start_x + sink_mode->video_size.video_width - 1;
-        sink_window.start_y = sink_mode->video_offset.offset_y;
-        sink_window.end_y =
-                sink_window.start_y + sink_mode->video_size.video_height - 1;
+	//set video size
+	sink_window.start_x = sink_mode->video_offset.offset_x;
+	sink_window.end_x =
+		sink_window.start_x + sink_mode->video_size.video_width - 1;
+	sink_window.start_y = sink_mode->video_offset.offset_y;
+	sink_window.end_y =
+		sink_window.start_y + sink_mode->video_size.video_height - 1;
 	if (sink_mode->format == AMBA_VIDEO_FORMAT_INTERLACE) {
 		sink_window.start_y >>= 1;
 		sink_window.end_y >>= 1;
 	}
-        rval = amba_s2l_vout_set_video_size(psrc, &sink_window);
-        if(rval)
-                return rval;
+	rval = amba_s2l_vout_set_video_size(psrc, &sink_window);
+	if(rval)
+		return rval;
 
-        // set config
+	// set config
 	rval = amba_s2l_vout_get_config(psrc, &sink_cfg);
 	if (rval)
-                return rval;
+		return rval;
+
+	sink_cfg.d_control.s.hdmi_out = 0;
+	sink_cfg.d_control.s.digital_out = 0;
 	sink_cfg.d_control.s.analog_out = 1;
 	sink_cfg.d_control.s.interlace = VD_INTERLACE;
 	sink_cfg.d_control.s.vid_format = VD_576I50;
 	sink_cfg.d_analog_output_mode.s.hspol = ANALOG_ACT_HIGH;
 	sink_cfg.d_analog_output_mode.s.vspol = ANALOG_ACT_HIGH;
-        rval = amba_s2l_vout_set_config(psrc, &sink_cfg);
-        if(rval)
-                return rval;
+	rval = amba_s2l_vout_set_config(psrc, &sink_cfg);
+	if(rval)
+		return rval;
 
-        //set csc
+	//set csc
 	sink_csc.path = AMBA_VIDEO_SOURCE_CSC_ANALOG;
 	if (sink_mode->csc_en)
 		sink_csc.mode = AMBA_VIDEO_SOURCE_CSC_ANALOG_SD;
 	else
 		sink_csc.mode = AMBA_VIDEO_SOURCE_CSC_RGB2RGB;
-	sink_csc.clamp = AMBA_VIDEO_SOURCE_CSC_ANALOG_CLAMP_SD_PAL;
+	sink_csc.clamp = AMBA_VIDEO_SOURCE_CSC_ANALOG_CLAMP_SD;
 	rval = amba_s2l_vout_set_csc(psrc, &sink_csc);
 	if (rval)
-                return rval;
+		return rval;
 
-        // pal config
-	rval = ambtve_dve_pal_config(psrc, sink_mode);	\
+	// pal config
+	rval = ambtve_dve_pal_config(psrc, sink_mode);
 	if (rval)
-                return rval;
+		return rval;
 
 	return rval;
 }
@@ -659,31 +684,31 @@ static int ambtve_init_576i_s2l(struct __amba_vout_video_source *psrc,
 static int ambtve_init_480i(struct __amba_vout_video_source *psrc,
 	struct amba_video_sink_mode *sink_mode)
 {
-	int					errorCode = 0;
-        struct amba_video_info			sink_video_info;
+	int	errorCode = 0;
+	struct amba_video_info	sink_video_info;
 	struct amba_video_source_clock_setup	clk_setup;
-        vout_video_setup_t		        video_setup;
+	vout_video_setup_t	video_setup;
 
-        //set clock
+	//set clock
 	clk_setup.src = VO_CLK_ONCHIP_PLL_27MHZ;
 	clk_setup.freq_hz = PLL_CLK_27MHZ;
-        psrc->freq_hz = clk_setup.freq_hz;
+	psrc->freq_hz = clk_setup.freq_hz;
 	amba_s2l_vout_set_clock_setup(psrc, &clk_setup);
 
-        errorCode = ambtve_init_480i_s2l(psrc, sink_mode);
+	errorCode = ambtve_init_480i_s2l(psrc, sink_mode);
 	if (errorCode) {
 		vout_errorcode();
 		return errorCode;
 	}
 
-        //set vbi
-        errorCode = amba_s2l_vout_set_vbi(psrc, sink_mode);
+	//set vbi
+	errorCode = amba_s2l_vout_set_vbi(psrc, sink_mode);
 	if (errorCode) {
 		vout_errorcode();
 		return errorCode;
 	}
 
-        //set video info
+	//set video info
 	sink_video_info.width = sink_mode->video_size.video_width;
 	sink_video_info.height = sink_mode->video_size.video_height;
 	sink_video_info.system = AMBA_VIDEO_SYSTEM_NTSC;
@@ -700,48 +725,44 @@ static int ambtve_init_480i(struct __amba_vout_video_source *psrc,
 		return errorCode;
 	}
 
-        //set vout video setup
-        errorCode = amba_s2l_vout_get_setup(psrc, &video_setup);
-        if(errorCode)
-                return errorCode;
-        video_setup.en = sink_mode->video_en;
-        switch (sink_mode->video_flip) {
-        case AMBA_VOUT_FLIP_NORMAL:
-                video_setup.flip = 0;
-                break;
-        case AMBA_VOUT_FLIP_HV:
-                video_setup.flip = 1;
-                break;
-        case AMBA_VOUT_FLIP_HORIZONTAL:
-                video_setup.flip = 2;
-                break;
-        case AMBA_VOUT_FLIP_VERTICAL:
-                video_setup.flip = 3;
-                break;
-        default:
-                vout_err("%s can't support flip[%d]!\n",
-                         __func__, sink_mode->video_flip);
-                return -EINVAL;
-        }
-        switch (sink_mode->video_rotate) {
-        case AMBA_VOUT_ROTATE_NORMAL:
-                video_setup.rotate = 0;
-                break;
+	//set vout video setup
+	errorCode = amba_s2l_vout_get_setup(psrc, &video_setup);
+	if(errorCode)
+		return errorCode;
+	video_setup.en = sink_mode->video_en;
+	switch (sink_mode->video_flip) {
+	case AMBA_VOUT_FLIP_NORMAL:
+		video_setup.flip = 0;
+		break;
+	case AMBA_VOUT_FLIP_HV:
+		video_setup.flip = 1;
+		break;
+	case AMBA_VOUT_FLIP_HORIZONTAL:
+		video_setup.flip = 2;
+		break;
+	case AMBA_VOUT_FLIP_VERTICAL:
+		video_setup.flip = 3;
+		break;
+	default:
+		vout_err("%s can't support flip[%d]!\n", __func__, sink_mode->video_flip);
+		return -EINVAL;
+	}
 
-        case AMBA_VOUT_ROTATE_90:
-                video_setup.rotate = 1;
-                break;
+	switch (sink_mode->video_rotate) {
+	case AMBA_VOUT_ROTATE_NORMAL:
+		video_setup.rotate = 0;
+		break;
+	case AMBA_VOUT_ROTATE_90:
+		video_setup.rotate = 1;
+		break;
+	default:
+		vout_info("%s can't support rotate[%d]!\n", __func__, sink_mode->video_rotate);
+		return -EINVAL;
+	}
 
-        default:
-                vout_info("%s can't support rotate[%d]!\n",
-                          __func__, sink_mode->video_rotate);
-                return -EINVAL;
-        }
-
-        errorCode = amba_s2l_vout_set_setup(psrc, &video_setup);
-        if(errorCode)
-                return errorCode;
-
+	errorCode = amba_s2l_vout_set_setup(psrc, &video_setup);
+	if(errorCode)
+		return errorCode;
 
 	return errorCode;
 }
@@ -750,30 +771,30 @@ static int ambtve_init_576i(struct __amba_vout_video_source *psrc,
 	struct amba_video_sink_mode *sink_mode)
 {
 	int					errorCode = 0;
-        struct amba_video_info			sink_video_info;
+	struct amba_video_info			sink_video_info;
 	struct amba_video_source_clock_setup	clk_setup;
-        vout_video_setup_t		        video_setup;
+	vout_video_setup_t		        video_setup;
 
-        //set clock
+	//set clock
 	clk_setup.src = VO_CLK_ONCHIP_PLL_27MHZ;
 	clk_setup.freq_hz = PLL_CLK_27MHZ;
-        psrc->freq_hz = clk_setup.freq_hz;
+	psrc->freq_hz = clk_setup.freq_hz;
 	amba_s2l_vout_set_clock_setup(psrc, &clk_setup);
 
-        ambtve_init_576i_s2l(psrc, sink_mode);
+	ambtve_init_576i_s2l(psrc, sink_mode);
 	if (errorCode) {
 		vout_errorcode();
 		return errorCode;
 	}
 
-        //set vbi
-        errorCode = amba_s2l_vout_set_vbi(psrc, sink_mode);
+	//set vbi
+	errorCode = amba_s2l_vout_set_vbi(psrc, sink_mode);
 	if (errorCode) {
 		vout_errorcode();
 		return errorCode;
 	}
 
-        //set video info
+	//set video info
 	sink_video_info.width = sink_mode->video_size.video_width;
 	sink_video_info.height = sink_mode->video_size.video_height;
 	sink_video_info.system = AMBA_VIDEO_SYSTEM_PAL;
@@ -790,64 +811,59 @@ static int ambtve_init_576i(struct __amba_vout_video_source *psrc,
 		return errorCode;
 	}
 
-        //set vout video setup
-        errorCode = amba_s2l_vout_get_setup(psrc, &video_setup);
-        if(errorCode)
-                return errorCode;
-        video_setup.en = sink_mode->video_en;
-        switch (sink_mode->video_flip) {
-        case AMBA_VOUT_FLIP_NORMAL:
-                video_setup.flip = 0;
-                break;
-        case AMBA_VOUT_FLIP_HV:
-                video_setup.flip = 1;
-                break;
-        case AMBA_VOUT_FLIP_HORIZONTAL:
-                video_setup.flip = 2;
-                break;
-        case AMBA_VOUT_FLIP_VERTICAL:
-                video_setup.flip = 3;
-                break;
-        default:
-                vout_err("%s can't support flip[%d]!\n",
-                         __func__, sink_mode->video_flip);
-                return -EINVAL;
-        }
-        switch (sink_mode->video_rotate) {
-        case AMBA_VOUT_ROTATE_NORMAL:
-                video_setup.rotate = 0;
-                break;
+	//set vout video setup
+	errorCode = amba_s2l_vout_get_setup(psrc, &video_setup);
+	if(errorCode)
+		return errorCode;
+	video_setup.en = sink_mode->video_en;
+	switch (sink_mode->video_flip) {
+	case AMBA_VOUT_FLIP_NORMAL:
+		video_setup.flip = 0;
+		break;
+	case AMBA_VOUT_FLIP_HV:
+		video_setup.flip = 1;
+		break;
+	case AMBA_VOUT_FLIP_HORIZONTAL:
+		video_setup.flip = 2;
+		break;
+	case AMBA_VOUT_FLIP_VERTICAL:
+		video_setup.flip = 3;
+		break;
+	default:
+		vout_err("%s can't support flip[%d]!\n", __func__, sink_mode->video_flip);
+		return -EINVAL;
+	}
+	switch (sink_mode->video_rotate) {
+	case AMBA_VOUT_ROTATE_NORMAL:
+		video_setup.rotate = 0;
+		break;
+	case AMBA_VOUT_ROTATE_90:
+		video_setup.rotate = 1;
+		break;
+	default:
+		vout_info("%s can't support rotate[%d]!\n", __func__, sink_mode->video_rotate);
+		return -EINVAL;
+	}
 
-        case AMBA_VOUT_ROTATE_90:
-                video_setup.rotate = 1;
-                break;
-
-        default:
-                vout_info("%s can't support rotate[%d]!\n",
-                          __func__, sink_mode->video_rotate);
-                return -EINVAL;
-        }
-
-        errorCode = amba_s2l_vout_set_setup(psrc, &video_setup);
-        if(errorCode)
-                return errorCode;
-
+	errorCode = amba_s2l_vout_set_setup(psrc, &video_setup);
+	if(errorCode)
+		return errorCode;
 
 	return errorCode;
 }
 
 int amba_s2l_vout_analog_init(struct __amba_vout_video_source *psrc,
-                            struct amba_video_sink_mode *sink_mode)
+	struct amba_video_sink_mode *sink_mode)
 {
-        int     i, errorCode = 0;
+	int     i, errorCode = 0;
 
-        psrc->active_sink_type = AMBA_VOUT_SINK_TYPE_CVBS;
+	psrc->active_sink_type = AMBA_VOUT_SINK_TYPE_CVBS;
 
 	for (i = 0; i < AMBA_VIDEO_MODE_MAX; i++)	{
 		if (vout_cvbs_mode_list[i] == AMBA_VIDEO_MODE_MAX) {
 			errorCode = -ENOIOCTLCMD;
 			vout_err("vout analog can not support mode %d!\n",
-                                sink_mode->mode);
+				sink_mode->mode);
 			return errorCode;
 		}
 		if (vout_cvbs_mode_list[i] == sink_mode->mode)
@@ -889,11 +905,11 @@ int amba_s2l_vout_analog_init(struct __amba_vout_video_source *psrc,
 
 	default:
 		vout_err("vout analog do not support mode %d!\n",
-                        sink_mode->mode);
+			sink_mode->mode);
 		errorCode = -ENOIOCTLCMD;
 		break;
 	}
 
-        return errorCode;
+	return errorCode;
 }
 

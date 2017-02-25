@@ -43,6 +43,7 @@ struct ak4642_priv {
 	unsigned int rst_pin;
 	unsigned int rst_active;
 	unsigned int sysclk;
+	unsigned int clk_id;
 };
 
 /*
@@ -402,6 +403,7 @@ static int ak4642_set_dai_sysclk(struct snd_soc_dai *codec_dai,
 	struct ak4642_priv *ak4642 = snd_soc_codec_get_drvdata(codec);
 
 	ak4642->sysclk = freq;
+	ak4642->clk_id = clk_id;
 	return 0;
 }
 
@@ -412,27 +414,147 @@ static int ak4642_hw_params(struct snd_pcm_substream *substream,
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_soc_codec *codec = rtd->codec;
 	struct ak4642_priv *ak4642 = snd_soc_codec_get_drvdata(codec);
-	int rate = params_rate(params), fs = 256;
-	u8 mode = snd_soc_read(codec, AK4642_MODE2) & 0xc0;
+	int rate = params_rate(params);
+	u8 mode0, mode1;
 
-	if (rate)
-		fs = ak4642->sysclk / rate;
+	mode0 = snd_soc_read(codec, AK4642_MODE1) & 0x0F;
+	mode1 = snd_soc_read(codec, AK4642_MODE2) & 0xD8;
 
-	/* set fs */
-	switch (fs) {
-	case 1024:
-		mode |= 0x1;
-		break;
-	case 512:
-		mode |= 0x3;
-		break;
-	case 256:
-		mode |= 0x0;
-		break;
+	if(ak4642->clk_id == AK4642_MCLK_IN) {
+		switch(ak4642->sysclk) {
+		case 11289600:
+			mode0 |= (4 << 4);
+			break;
+		case 12288000:
+			mode0 |= (5 << 4);
+			break;
+		case 12000000:
+			mode0 |= (6 << 4);
+			break;
+		case 24000000:
+			mode0 |= (7 << 4);
+			break;
+		case 13500000:
+			mode0 |= (0xC << 4);
+			break;
+		case 27000000:
+			mode0 |= (0xD << 4);
+			break;
+		default:
+			mode0 |= (5 << 4);
+			break;
+		}
+
+		snd_soc_write(codec, AK4642_MODE1, mode0);
+		snd_soc_update_bits(codec,AK4642_PM2,0x09,0x01);
+	} else if(ak4642->clk_id == AK4642_BCLK_IN) {
+		u32 oversampe = ak4642->sysclk / rate;
+
+		switch(oversampe) {
+		case 32:
+			mode0 |= (2 << 4);
+			break;
+		case 64:
+			mode0 |= (3 << 4);
+			break;
+		default:
+			mode0 |= (2 << 4);
+			break;
+		}
+
+		snd_soc_write(codec, AK4642_MODE1, mode0);
+		snd_soc_update_bits(codec,AK4642_PM2,0x09,0x01);
+
+	} else if(ak4642->clk_id == AK4642_MCLK_IN_BCLK_OUT) {
+		switch(ak4642->sysclk) {
+		case 11289600:
+			mode0 |= (4 << 4);
+			break;
+		case 12288000:
+			mode0 |= (5 << 4);
+			break;
+		case 12000000:
+			mode0 |= (6 << 4);
+			break;
+		case 24000000:
+			mode0 |= (7 << 4);
+			break;
+		case 13500000:
+			mode0 |= (0xC << 4);
+			break;
+		case 27000000:
+			mode0 |= (0xD << 4);
+			break;
+		default:
+			mode0 |= (5 << 4);
+			break;
+		}
+
+		snd_soc_write(codec, AK4642_MODE1, mode0);
+		snd_soc_update_bits(codec,AK4642_PM2,0x09,0x09);
 	}
 
-	/* set rate */
-	snd_soc_write(codec, AK4642_MODE2, mode);
+	if(ak4642->clk_id == AK4642_BCLK_IN) {
+		if(rate >= 7350 && rate <= 8000)
+			mode1 |= 0;
+		else if(rate > 8000 && rate <= 12000)
+			mode1 |= 1;
+		else if(rate > 12000 && rate <= 16000)
+			mode1 |= 2;
+		else if(rate > 16000 && rate <= 24000)
+			mode1 |= 3;
+		else if(rate > 24000 && rate <= 32000)
+			mode1 |= 0x22;
+		else if(rate > 32 && rate <= 48000)
+			mode1 |= 0x23;
+
+		snd_soc_write(codec, AK4642_MODE2, mode1);
+	} else {
+		switch(rate) {
+		case 7350:
+			mode1 |= 4;
+			break;
+		case 8000:
+			mode1 |= 0;
+			break;
+		case 11025:
+			mode1 |= 5;
+			break;
+		case 12000:
+			mode1 |= 1;
+			break;
+		case 14700:
+			mode1 |= 6;
+			break;
+		case 16000:
+			mode1 |= 2;
+			break;
+		case 22050:
+			mode1 |= 7;
+			break;
+		case 24000:
+			mode1 |= 3;
+			break;
+		case 29400:
+			mode1 |= 0x26;
+			break;
+		case 32000:
+			mode1 |= 0x22;
+			break;
+		case 44100:
+			mode1 |= 0x27;
+			break;
+		case 48000:
+			mode1 |= 0x23;
+			break;
+		default:
+			mode1 |= 0x23;
+			break;
+		}
+
+		snd_soc_write(codec, AK4642_MODE2, mode1);
+	}
+
 	return 0;
 }
 
@@ -446,6 +568,9 @@ static int ak4642_set_dai_fmt(struct snd_soc_dai *codec_dai,
 	switch (fmt & SND_SOC_DAIFMT_MASTER_MASK) {
 	case SND_SOC_DAIFMT_CBS_CFS:
 		snd_soc_update_bits(codec, AK4642_PM2, 0x08, 0);
+		break;
+	case SND_SOC_DAIFMT_CBM_CFM:
+		snd_soc_update_bits(codec, AK4642_PM2, 0x08, 0x08);
 		break;
 	default:
 		return -EINVAL;

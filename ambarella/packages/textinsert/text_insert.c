@@ -1,16 +1,34 @@
-/*
+/*******************************************************************************
  * text_insert.c
  *
  * History:
  *  2011/02/25 - [Qian Shen] created file
- * Copyrigt (C) 2007-2011, Ambarella, Inc
  *
- *  All rights reserved. No Part of this file may be reproduced, stored in a
- *  retrieval system, or transmitterd, in any form, or any means,
- *  electronic, mechanical, photocopying, recording, or otherwise, without the
- *  prior consent of Ambarella, Inc.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- */
+ * This file and its contents ( "Software" ) are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ ******************************************************************************/
 
 #include <stdio.h>
 #include <unistd.h>
@@ -699,13 +717,12 @@ int text2bitmap_convert_character(u32 ui_char_code,
 	if ((bmp_pitch > 0) && (bmp_addr != NULL)) {
 		int row = 0, col = 0, dst_index = 0, src_index = 0;
 		u8 * ptr = NULL;
-		u32 fond_gap = cfg_font.size - top;
-		u32 pop_adjust = cfg_font.size - height;
+		u32 font_gap = cfg_font.size - top;
 	//	printf("\n\n");
-		if (((fond_gap + height) > buf_height) && (fond_gap > pop_adjust))
-			fond_gap = buf_height - height;
+		if ((font_gap + height) > buf_height)
+			font_gap = buf_height - height;
 		for (row = 0; row < height; row++) {
-			dst_index = buf_pitch * (row + fond_gap) + offset_x;
+			dst_index = buf_pitch * (row + font_gap) + offset_x;
 			src_index = row * bmp_pitch;
 			for (col = 0; col < width; col++, dst_index++, src_index++) {
 				if (dst_index < 0)
@@ -741,14 +758,12 @@ ERROR_QUIT:
  */
 int text2bitmap_lib_deinit()
 {
-	if (flag_init == 0) {
-		printf("text2bitmap library hasn't been initilized.");
-		return 0;
+	if (flag_init == 1) {
+		FT_Done_Face(face);
+		FT_Done_FreeType(library);
+		flag_init = 0;
+		flag_face = 0;
 	}
-	FT_Done_Face(face);
-	FT_Done_FreeType(library);
-	flag_init = 0;
-	flag_face = 0;
 	return 0;
 }
 

@@ -31,6 +31,7 @@
 #include <sound/soc.h>
 #include <plat/audio.h>
 #include <linux/slab.h>
+#include <sound/pcm_params.h>
 
 static unsigned int dai_fmt;
 module_param(dai_fmt, uint, 0644);
@@ -68,66 +69,34 @@ module_param(clk_fmt, uint, 0664);
 
 struct amb_clk {
 	int mclk;
-	int oversample;
+	int i2s_div;
 	int bclk;
 };
 
 static int amba_clk_config(struct snd_pcm_hw_params *params, struct amb_clk *clk)
 {
-	int ret= 0;
+	u32 channels, sample_bits, rate;
 
-	switch (params_rate(params)) {
-	case 8000:
-		clk->mclk = 12288000;
-		clk->oversample = AudioCodec_1536xfs;
-		clk->bclk = 8000;
+	switch (params_format(params)) {
+	case SNDRV_PCM_FORMAT_S24_LE:
+	case SNDRV_PCM_FORMAT_S32_LE:
+		sample_bits = 32;
 		break;
-	case 11025:
-		clk->mclk = 12288000;
-		clk->oversample = AudioCodec_1152xfs;
-		clk->bclk = 11025;
-		break;
-	case 12000:
-		clk->mclk = 12288000;
-		clk->oversample = AudioCodec_1024xfs;
-		clk->bclk = 12000;
-		break;
-	case 16000:
-		clk->mclk = 12288000;
-		clk->oversample = AudioCodec_768xfs;
-		clk->bclk = 16000;
-		break;
-	case 22050:
-		clk->mclk = 12288000;
-		clk->oversample = AudioCodec_512xfs;
-		clk->bclk = 22050;
-		break;
-	case 24000:
-		clk->mclk = 12288000;
-		clk->oversample = AudioCodec_512xfs;
-		clk->bclk = 24000;
-		break;
-	case 32000:
-		clk->mclk = 12288000;
-		clk->oversample = AudioCodec_384xfs;
-		clk->bclk = 32000;
-		break;
-	case 44100:
-		clk->mclk = 12288000;
-		clk->oversample = AudioCodec_256xfs;
-		clk->bclk = 44100;
-		break;
-	case 48000:
-		clk->mclk = 12288000;
-		clk->oversample = AudioCodec_256xfs;
-		clk->bclk = 48000;
-		break;
+	case SNDRV_PCM_FORMAT_S16_LE:
 	default:
-		ret = -EINVAL;
+		sample_bits = 16;
 		break;
 	}
 
-	return ret;
+	channels = params_channels(params);
+	rate = params_rate(params);
+
+	clk->mclk = 12288000;
+	clk->bclk = channels * rate * sample_bits;
+
+	clk->i2s_div = (clk->mclk / ( 2 * clk->bclk)) - 1;
+
+	return 0;
 }
 
 static int amba_general_board_hw_params(struct snd_pcm_substream *substream,
@@ -211,7 +180,7 @@ static int amba_general_board_hw_params(struct snd_pcm_substream *substream,
 		goto hw_params_exit;
 	}
 
-	rval = snd_soc_dai_set_clkdiv(cpu_dai, AMBARELLA_CLKDIV_LRCLK, clk.oversample);
+	rval = snd_soc_dai_set_clkdiv(cpu_dai, AMBARELLA_CLKDIV_LRCLK, clk.i2s_div);
 	if (rval < 0) {
 		pr_err("can't set cpu MCLK/SF ratio\n");
 		goto hw_params_exit;
@@ -241,8 +210,14 @@ static int amba_dummy_board_hw_params(struct snd_pcm_substream *substream,
 		i2s_mode = SND_SOC_DAIFMT_DSP_A;
 
 	/* set the I2S system data format*/
-	rval = snd_soc_dai_set_fmt(cpu_dai,
-		i2s_mode | SND_SOC_DAIFMT_NB_NF | SND_SOC_DAIFMT_CBS_CFS);
+	if(clk_fmt == 2) {
+		rval = snd_soc_dai_set_fmt(cpu_dai,
+			i2s_mode | SND_SOC_DAIFMT_NB_NF | SND_SOC_DAIFMT_CBM_CFM);
+	} else {
+		rval = snd_soc_dai_set_fmt(cpu_dai,
+			i2s_mode | SND_SOC_DAIFMT_NB_NF | SND_SOC_DAIFMT_CBS_CFS);
+	}
+
 	if (rval < 0) {
 		printk(KERN_ERR "can't set cpu DAI configuration\n");
 		goto hw_params_exit;
@@ -255,7 +230,7 @@ static int amba_dummy_board_hw_params(struct snd_pcm_substream *substream,
 		goto hw_params_exit;
 	}
 
-	rval = snd_soc_dai_set_clkdiv(cpu_dai, AMBARELLA_CLKDIV_LRCLK, clk.oversample);
+	rval = snd_soc_dai_set_clkdiv(cpu_dai, AMBARELLA_CLKDIV_LRCLK, clk.i2s_div);
 	if (rval < 0) {
 		printk(KERN_ERR "can't set cpu MCLK/SF ratio\n");
 		goto hw_params_exit;
@@ -310,13 +285,6 @@ static int amba_soc_snd_probe(struct platform_device *pdev)
 		return -ENODEV;
 	}
 
-	rval = snd_soc_of_parse_audio_routing(card,
-			"amb,audio-routing");
-	if(rval) {
-		dev_err(&pdev->dev, "amb,audio-routing is invalid\n");
-		return -EINVAL;
-	}
-
 	cpup_np = of_parse_phandle(np, "amb,i2s-controllers", 0);
 	codec_np = of_parse_phandle(np, "amb,audio-codec", 0);
 	dummy_codec_np = of_parse_phandle(np, "amb,dummy-codec", 0);
@@ -326,6 +294,12 @@ static int amba_soc_snd_probe(struct platform_device *pdev)
 	}
 
 	if(codec_np) {
+		rval = snd_soc_of_parse_audio_routing(card,
+		"amb,audio-routing");
+		if(rval) {
+			dev_err(&pdev->dev, "amb,audio-routing is not specified, please doube check\n");
+		}
+
 		/*alloc two amba_dai_link for audio codec and dummy codec*/
 		amba_dai_link = devm_kzalloc(&pdev->dev, 2 * sizeof(*amba_dai_link), GFP_KERNEL);
 		if (amba_dai_link == NULL) {

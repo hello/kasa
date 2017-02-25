@@ -4,12 +4,29 @@
  * History:
  *   2014-7-22 - [ypchang] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co,Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -45,7 +62,7 @@ void AMQueue::destroy()
 AM_STATE AMQueue::post_msg(const void *msg, uint32_t msgSize)
 {
   AM_ASSERT(is_main());
-  AUTO_LOCK(m_mutex);
+  AUTO_MTX_LOCK(m_mutex);
 
   AM_STATE state = AM_STATE_NO_MEMORY;
   List *node = alloc_node();
@@ -64,7 +81,7 @@ AM_STATE AMQueue::post_msg(const void *msg, uint32_t msgSize)
 AM_STATE AMQueue::send_msg(const void *msg, uint32_t msgSize)
 {
   AM_ASSERT(is_main());
-  AUTO_LOCK(m_mutex);
+  AUTO_MTX_LOCK(m_mutex);
 
   AM_STATE result = AM_STATE_ERROR;
 
@@ -98,7 +115,7 @@ AM_STATE AMQueue::send_msg(const void *msg, uint32_t msgSize)
 void AMQueue::get_msg(void *msg, uint32_t msgSize)
 {
   AM_ASSERT(is_main());
-  AUTO_LOCK(m_mutex);
+  AUTO_MTX_LOCK(m_mutex);
 
   while (true) {
     if (AM_LIKELY(m_num_data > 0)) {
@@ -113,7 +130,7 @@ void AMQueue::get_msg(void *msg, uint32_t msgSize)
 bool AMQueue::get_msg_non_block(void *msg, uint32_t msgSize)
 {
   AM_ASSERT(is_main());
-  AUTO_LOCK(m_mutex);
+  AUTO_MTX_LOCK(m_mutex);
   bool ret = true;
 
   while (true) {
@@ -134,7 +151,7 @@ bool AMQueue::get_msg_non_block(void *msg, uint32_t msgSize)
 bool AMQueue::peek_msg(void *msg, uint32_t msgSize)
 {
   AM_ASSERT(is_main());
-  AUTO_LOCK(m_mutex);
+  AUTO_MTX_LOCK(m_mutex);
   bool ret = false;
 
   if (AM_LIKELY(m_num_data > 0)) {
@@ -150,7 +167,7 @@ void AMQueue::reply(AM_STATE result)
 {
   AM_ASSERT(is_main());
   AM_ASSERT(m_msg_result);
-  AUTO_LOCK(m_mutex);
+  AUTO_MTX_LOCK(m_mutex);
 
   *m_msg_result = result;
   m_cond_reply->signal();
@@ -158,7 +175,7 @@ void AMQueue::reply(AM_STATE result)
 
 void AMQueue::enable(bool enabled)
 {
-  AUTO_LOCK(m_mutex);
+  AUTO_MTX_LOCK(m_mutex);
   m_is_disabled = !enabled;
 
   if (AM_LIKELY(m_num_get > 0)) {
@@ -169,19 +186,20 @@ void AMQueue::enable(bool enabled)
 
 bool AMQueue::is_enable()
 {
-  AUTO_LOCK(m_mutex);
+  AUTO_MTX_LOCK(m_mutex);
   return !m_is_disabled;
 }
 
 AM_STATE AMQueue::put_data(const void *buffer, uint32_t size)
 {
   AM_ASSERT(is_sub());
-  AUTO_LOCK(m_mutex);
+  AUTO_MTX_LOCK(m_mutex);
 
   AM_STATE state = AM_STATE_NO_MEMORY;
   List *node = alloc_node();
   if (AM_LIKELY(node)) {
     write_data(node, buffer, size);
+    m_main_q->m_msg_list->push(this);
     if (AM_LIKELY(m_main_q->m_num_get > 0)) {
       -- m_main_q->m_num_get;
       m_main_q->m_cond_get->signal();
@@ -197,26 +215,39 @@ AMQueue::QTYPE AMQueue::wait_data_msg(void       *msg,
                                       WaitResult *result)
 {
   AM_ASSERT(is_main());
-  AUTO_LOCK(m_mutex);
+  AUTO_MTX_LOCK(m_mutex);
   AMQueue::QTYPE type = AM_Q_MSG;
   while (true) {
-    bool getResult = false;
+    bool got_result = false;
     if (AM_LIKELY(m_num_data > 0)) {
       read_data(msg, msgSize);
       break;
     }
 
+    if (AM_LIKELY(!m_msg_list->empty())) {
+      AMQueue *q = m_msg_list->front_pop();
+      if (AM_LIKELY((q->m_num_data > 0) && !q->m_is_disabled)) {
+        result->dataQ = q;
+        result->owner = q->m_owner;
+        result->block_size = q->m_block_size;
+        type = AM_Q_DATA;
+        got_result = true;
+        break;
+      }
+    }
+#if 0
     for (AMQueue *q = m_next_q; q != this; q = q->m_next_q) {
       if (AM_LIKELY((q->m_num_data > 0) && !q->m_is_disabled)) {
         result->dataQ = q;
         result->owner = q->m_owner;
         result->block_size = q->m_block_size;
         type = AM_Q_DATA;
-        getResult = true;
+        got_result = true;
         break;
       }
     }
-    if (AM_LIKELY(getResult)) {
+#endif
+    if (AM_LIKELY(got_result)) {
       break;
     }
     ++ m_num_get;
@@ -226,10 +257,21 @@ AMQueue::QTYPE AMQueue::wait_data_msg(void       *msg,
   return type;
 }
 
+void AMQueue::put_msg(void *msg, uint32_t msgSize)
+{
+  AM_ASSERT(is_main());
+  AUTO_MTX_LOCK(m_mutex);
+  write_data(m_send_buffer, msg, msgSize);
+  if (AM_LIKELY(m_num_get > 0)) {
+    -- m_num_get;
+    m_cond_get->signal();
+  }
+}
+
 bool AMQueue::peek_data(void *buffer, uint32_t size)
 {
   AM_ASSERT(is_sub());
-  AUTO_LOCK(m_mutex);
+  AUTO_MTX_LOCK(m_mutex);
   bool ret = false;
 
   if (AM_LIKELY(m_num_data > 0)) {
@@ -256,27 +298,9 @@ bool AMQueue::is_sub()
 }
 
 AMQueue::AMQueue(AMQueue *mainQ, void *owner) :
-    m_is_disabled(false),
-    m_num_get(0),
-    m_num_send_msg(0),
-    m_num_data(0),
-    m_block_size(0),
-    m_reserved_mem(NULL),
-    m_msg_result(NULL),
-    m_owner(owner),
-    m_head(NULL),
-    m_tail((List*)&m_head),
-    m_free_list(NULL),
-    m_send_buffer(NULL),
-    m_main_q(mainQ),
-    m_prev_q(this),
-    m_next_q(this),
-    m_mutex(NULL),
-    m_cond_reply(NULL),
-    m_cond_get(NULL),
-    m_cond_send_msg(NULL)
+  m_owner(owner),
+  m_main_q(mainQ)
 {
-
 }
 
 AMQueue::~AMQueue()
@@ -296,8 +320,12 @@ AMQueue::~AMQueue()
     AM_ASSERT(m_msg_result == NULL);
   }
 
-  m_head->destroy();
-  m_free_list->destroy();
+  if (m_head) {
+    m_head->destroy();
+  }
+  if (m_free_list) {
+    m_free_list->destroy();
+  }
   delete[] m_reserved_mem;
 
   if (AM_LIKELY(m_mutex)) {
@@ -309,6 +337,12 @@ AMQueue::~AMQueue()
     AM_DESTROY(m_cond_reply);
     AM_DESTROY(m_cond_get);
     AM_DESTROY(m_mutex);
+    if (AM_LIKELY(m_msg_list)) {
+      while(!m_msg_list->empty()) {
+        m_msg_list->pop();
+      }
+      delete m_msg_list;
+    }
   }
 }
 
@@ -353,13 +387,18 @@ AM_STATE AMQueue::init(uint32_t blockSize, uint32_t reservedSlots)
         state = AM_STATE_OS_ERROR;
         break;
       }
+      m_msg_list = new AMQueueList();
+      if (AM_UNLIKELY(!m_msg_list)) {
+        state = AM_STATE_NO_MEMORY;
+        break;
+      }
     } else {
       m_mutex         = m_main_q->m_mutex;
       m_cond_get      = m_main_q->m_cond_get;
       m_cond_reply    = m_main_q->m_cond_reply;
       m_cond_send_msg = m_main_q->m_cond_send_msg;
 
-      AUTO_LOCK(m_main_q->m_mutex);
+      AUTO_MTX_LOCK(m_main_q->m_mutex);
       m_prev_q = m_main_q->m_prev_q;
       m_next_q = m_main_q;
       m_prev_q->m_next_q = this;

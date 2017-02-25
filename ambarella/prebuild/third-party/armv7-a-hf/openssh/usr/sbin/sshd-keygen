@@ -69,7 +69,7 @@ do_rsa_keygen() {
 }
 
 do_dsa_keygen() {
-	if [ ! -s $DSA_KEY ]; then
+	if [ ! -s $DSA_KEY -a `fips_enabled` -eq 0 ]; then
 		echo -n $"Generating SSH2 DSA host key: "
 		rm -f $DSA_KEY
 		if test ! -f $DSA_KEY && $KEYGEN -q -t dsa -f $DSA_KEY -C '' -N '' >&/dev/null; then
@@ -111,7 +111,7 @@ do_ecdsa_keygen() {
 }
 
 do_ed25519_keygen() {
-	if [ ! -s $ED25519_KEY ]; then
+	if [ ! -s $ED25519_KEY -a `fips_enabled` -eq 0 ]; then
 		echo -n $"Generating SSH2 ED25519 host key: "
 		rm -f $ED25519_KEY
 		if test ! -f $ED25519_KEY && $KEYGEN -q -t ed25519 -f $ED25519_KEY -C '' -N '' >&/dev/null; then

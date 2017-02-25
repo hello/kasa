@@ -44,7 +44,7 @@ include $(CLEAR_VARS)
 LOCAL_TARGET	:= ldc.cgi
 LOCAL_SRCS	:= $(LOCAL_PATH)/web/cgi-bin/ldc.c
 LOCAL_CFLAGS	:= -I$(PREBUILD_3RD_PARTY_DIR)/clearsilver/include/ClearSilver
-LOCAL_LDFLAGS	:= -L$(PREBUILD_3RD_PARTY_DIR)/clearsilver/usr/lib -lneo_cgi -lneo_cs -lneo_utl
+LOCAL_LDFLAGS	:= -L$(PREBUILD_3RD_PARTY_DIR)/clearsilver/usr/lib -lneo_cgi -lneo_cs -lneo_utl -Wl,-rpath-link=$(PREBUILD_3RD_PARTY_DIR)/zlib/usr/lib
 
 include $(BUILD_APP)
 
@@ -65,7 +65,7 @@ include $(CLEAR_VARS)
 LOCAL_TARGET	:= get_vin.cgi
 LOCAL_SRCS	:= $(LOCAL_PATH)/web/cgi-bin/get_vin.c
 LOCAL_CFLAGS	:= -I$(PREBUILD_3RD_PARTY_DIR)/clearsilver/include/ClearSilver
-LOCAL_LDFLAGS	:= -L$(PREBUILD_3RD_PARTY_DIR)/clearsilver/usr/lib -lneo_cgi -lneo_cs -lneo_utl
+LOCAL_LDFLAGS	:= -L$(PREBUILD_3RD_PARTY_DIR)/clearsilver/usr/lib -lneo_cgi -lneo_cs -lneo_utl -Wl,-rpath-link=$(PREBUILD_3RD_PARTY_DIR)/zlib/usr/lib
 
 include $(BUILD_APP)
 

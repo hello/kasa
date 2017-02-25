@@ -3,9 +3,9 @@
 
 if [ $# -ne 1 ]
 then
-    echo "Usage: $0 [high|low|none]"
+    echo "Usage: $0 [highest|high|low|none]"
 else
-    if [ $1 = "high" -o $1 = "low" -o $1 = "none" ]
+    if [ $1 = "highest" -o $1 = "high" -o $1 = "low" -o $1 = "none" ]
     then
         FIND=$(which find)
         SED=$(which sed)

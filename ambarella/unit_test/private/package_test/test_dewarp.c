@@ -1,17 +1,34 @@
-/********************************************************************
+/*
  * test_dewarp.c
  *
  * History:
  *	2014/03/11 - [Qian Shen] created file
  *
- * Copyright (C) 2012-2016, Ambarella, Inc.
+ * Copyright (C) 2015 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
  *
- ********************************************************************/
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -43,6 +60,7 @@
 #define MODE_STRING_LENGTH		(64)
 #define FILENAME_LENGTH			(256)
 #define MAX_PIT_YAW_ANGLE			(90)
+#define MAX_ROTATE_ANGLE			(90)
 #define BOLD_PRINT(msg, arg...)		printf("\033[1m"msg"\033[22m", arg)
 #define BOLD_PRINT0(msg, arg...)		printf("\033[1m"msg"\033[22m")
 
@@ -92,7 +110,7 @@ static int fd_iav = -1;
 static int current_buffer = -1;
 static int clear_flag = 0;
 static int verbose = 0;
-static int log_level = LOG_INFO;
+static int log_level = AMBA_LOG_INFO;
 static int current_region = -1;
 static int file_flag = 0;
 static int keep_dptz_flag = 0;
@@ -173,6 +191,7 @@ enum numeric_short_options {
 	SPECIFY_MAX_WARP_INPUT_HEIGHT,
 	SPECIFY_MAX_WARP_OUTPUT_WIDTH,
 	SPECIFY_LAZY_MODE,
+	SPECIFY_ROTATE_ANGLE,
 };
 
 static const char *short_opts = "M:R:F:L:C:a:m:s:o:z:h:p:t:r:G:NSWEcf:b:k:vl:Zi:P:Y:";
@@ -187,6 +206,7 @@ static struct option long_opts[] = {
 	{ "mode", HAS_ARG, 0, 'm' },
 	{ "pitch", HAS_ARG, 0, 'P' },
 	{ "yaw", HAS_ARG, 0, 'Y' },
+	{ "rotate", HAS_ARG, 0, SPECIFY_ROTATE_ANGLE },
 	{ "output-size", HAS_ARG, 0, 's' },
 	{ "output-offset", HAS_ARG, 0, 'o' },
 	{ "inter-offset", HAS_ARG, 0, 'i' },
@@ -242,6 +262,7 @@ static const struct hint_s hint[] =
 	{ "0~3", "\t\t0: No transform, 1: Normal, 2: Panorama, 3: Subregion" },
 	{ "-90~90", "\tLens Pitch in degree" },
 	{ "-90~90", "\tLens Yaw in degree" },
+	{ "-10~10", "\tLens Rotate in degree" },
 	{ "axb", "\tOutput size in main source buffer" },
 	{ "axb", "Output offset to the main buffer, default is 0x0" },
 	{ "axb", "Intermediate offset to the intermediate buffer, default is 0x0" },
@@ -535,6 +556,15 @@ static int init_param(int argc, char **argv)
 					return -1;
 				}
 				fisheye_region[current_region].yaw = value;
+				break;
+			case SPECIFY_ROTATE_ANGLE:
+				value = atoi(optarg);
+				if (value > MAX_ROTATE_ANGLE || value < -MAX_ROTATE_ANGLE) {
+					ERROR("Rotate should be within [%d~%d]\n", -MAX_ROTATE_ANGLE,
+						MAX_ROTATE_ANGLE);
+					return -1;
+				}
+				fisheye_region[current_region].rotate = value;
 				break;
 			case 's':
 				VERIFY_AREAID(current_region);

@@ -1,17 +1,34 @@
-/**********************************************************************
+/*
  *
  * ir_led.c
  *
  * History:
  * 2014/09/17 - [Bin Wang] Created this file
- * Copyright (C) 2014 - 2018, Ambarella, Inc.
+ * Copyright (C) 2015 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
  *
- *********************************************************************/
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -231,8 +248,8 @@ s32 set_pwm_duty(s32 *fd, s32 pwm_ch_id, s32 duty)
 	sprintf(buf, "/sys/class/backlight/%d.pwm_bl/brightness", pwm_ch_id);
 	if (*fd < 0) {
 		if ((*fd = open(buf, O_RDWR)) < 0) {
-			 perror("set_pwm_duty open");
-			 return -1;
+			perror("set_pwm_duty open");
+			return -1;
 		}
 	}
 	sprintf(vbuf, "%d", duty);
@@ -321,31 +338,54 @@ s32 ir_led_get_adc_value(u32 *value)
 
 s32 ir_led_init(u32 init) /* init=1:initiate IR LED, init=0:de-initiate IR LED*/
 {
+	s32 ret = 0;
+	do {
+		if (!init) {
+			if (ir_led_pwm_fd != -1) {
+				if ((ret = close(ir_led_pwm_fd)) < 0) {
+					perror("close");
+					break;
+				}
+				ir_led_pwm_fd = -1;
+			}
+			if (ir_led_adc_fd != -1) {
+				if ((ret = close(ir_led_adc_fd)) < 0) {
+					perror("close");
+					break;
+				}
+				ir_led_adc_fd = -1;
+			}
+		}
 #ifndef IR_LED_NO_GPIO_CONTROL
-	s32 ret = -1;
-	char gpio_addr[128] = {0};
-	sprintf(gpio_addr, "/sys/class/gpio/gpio%d",
-			GPIO_ID_LED_IR_ENABLE);
-	if (init) {
-		//set IR CUT control GPIO to default value 0, make sure it is covered
-		if (0 != access(gpio_addr, F_OK)) {
-			do_gpio_export(GPIO_ID_LED_IR_ENABLE, GPIO_EXPORT);
-			set_gpio_direction(GPIO_ID_LED_IR_ENABLE, GPIO_OUT);
+		char gpio_addr[128] = { 0 };
+		sprintf(gpio_addr, "/sys/class/gpio/gpio%d",
+		GPIO_ID_LED_IR_ENABLE);
+		if (init) {
+			//set IR CUT control GPIO to default value 0, make sure it is covered
+			if (0 != access(gpio_addr, F_OK)) {
+				if ((ret = do_gpio_export(GPIO_ID_LED_IR_ENABLE, GPIO_EXPORT)) < 0) {
+					fprintf(stderr, "export gpio%d failed!\n", GPIO_ID_LED_IR_ENABLE);
+					break;
+				}
+				if ((ret = set_gpio_direction(GPIO_ID_LED_IR_ENABLE, GPIO_OUT)) < 0) {
+					fprintf(stderr,
+									"set gpio%d direction failed!\n",
+									GPIO_ID_LED_IR_ENABLE);
+					break;
+				}
+			}
+		} else {
+			if (ir_led_gpio_fd != -1) {
+				if ((ret = close(ir_led_gpio_fd)) < 0) {
+					perror("close");
+					break;
+				}
+				ir_led_gpio_fd = -1;
+			}
 		}
-		ret = ir_led_set_state(GPIO_LOW);
-	} else {
-		if (0 == access(gpio_addr, F_OK)) {
-			ret = do_gpio_export(GPIO_ID_LED_IR_ENABLE, GPIO_UNEXPORT);
-		}
-		close(ir_led_gpio_fd);
-		ir_led_gpio_fd = -1;
 #endif
-		close(ir_led_pwm_fd);
-		ir_led_pwm_fd = -1;
-		close(ir_led_adc_fd);
-		ir_led_adc_fd = -1;
-#ifndef IR_LED_NO_GPIO_CONTROL
-	}
+	} while (0);
+
 	if (ret < 0) {
 		if (init) {
 			fprintf(stderr, "ir led init failed!\n");
@@ -355,9 +395,6 @@ s32 ir_led_init(u32 init) /* init=1:initiate IR LED, init=0:de-initiate IR LED*/
 	}
 
 	return ret;
-#else
-	return 0;
-#endif
 }
 
 /* functions for IR cut switch */
@@ -392,24 +429,36 @@ s32 ir_cut_get_state(void)
 
 s32 ir_cut_init(u32 init)/* init=1:initiate IR cut, init=0:de-initiate IR cut*/
 {
-	s32 ret = -1;
-	char gpio_addr[128] = {0};
+	s32 ret = 0;
+	char gpio_addr[128] = { 0 };
 
 	sprintf(gpio_addr, "/sys/class/gpio/gpio%d", GPIO_ID_IR_CUT_CTRL);
-	if (init) {
-		//set IR CUT control GPIO to default value 0, make sure it is covered
-		if (0 != access(gpio_addr, F_OK)) {
-			do_gpio_export(GPIO_ID_IR_CUT_CTRL, GPIO_EXPORT);
-			set_gpio_direction(GPIO_ID_IR_CUT_CTRL, GPIO_OUT);
+	do {
+		if (init) {
+			//set IR CUT control GPIO to default value 0, make sure it is covered
+			if (0 != access(gpio_addr, F_OK)) {
+				if ((ret = do_gpio_export(GPIO_ID_IR_CUT_CTRL, GPIO_EXPORT)) < 0) {
+					fprintf(stderr, "export gpio%d failed!\n", GPIO_ID_IR_CUT_CTRL);
+					break;
+				}
+				if ((ret = set_gpio_direction(GPIO_ID_IR_CUT_CTRL, GPIO_OUT)) < 0) {
+					fprintf(stderr,
+									"set gpio%d direction failed!\n",
+									GPIO_ID_IR_CUT_CTRL);
+					break;
+				}
+			}
+		} else {
+			if (ir_cut_gpio_fd != -1) {
+				if ((ret = close(ir_cut_gpio_fd)) < 0) {
+					perror("close");
+					break;
+				}
+				ir_cut_gpio_fd = -1;
+			}
 		}
-		ret = ir_cut_set_state(GPIO_LOW);
-	} else {
-		if (0 == access(gpio_addr, F_OK)) {
-			ret = do_gpio_export(GPIO_ID_IR_CUT_CTRL, GPIO_UNEXPORT);
-		}
-		close(ir_cut_gpio_fd);
-		ir_cut_gpio_fd = -1;
-	}
+	} while (0);
+
 	if (ret < 0) {
 		if (init) {
 			fprintf(stderr, "ir cut init failed!\n");

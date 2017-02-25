@@ -4,12 +4,29 @@
  * History:
  *   2015-1-26 - [Shiming Dong] created file
  *
- * Copyright (C) 2008-2015, Ambarella Co,Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 #include "am_base_include.h"
@@ -30,6 +47,7 @@
 #include "am_mutex.h"
 #include "am_audio_define.h"
 #include "am_video_types.h"
+#include "am_io.h"
 
 #include "am_rtp_msg.h"
 #include "am_sip_ua_server_config.h"
@@ -51,7 +69,7 @@
 
 AMSipUAServer *AMSipUAServer::m_instance = nullptr;
 std::mutex AMSipUAServer::m_lock;
-bool AMSipUAServer::m_busy = false;
+std::atomic<bool> AMSipUAServer::m_busy(false);
 
 struct ServerCtrlMsg
 {
@@ -59,20 +77,447 @@ struct ServerCtrlMsg
   uint32_t data;
 };
 
-AMSipUAServer::MediaInfo::MediaInfo() :
-    is_alive(false),
-    is_supported(false),
-    ssrc(0),
-    rtp_port(0),
-    session_id(0)
-{
-  media.clear();
-  sdp.clear();
-}
-
 static bool is_fd_valid(int fd)
 {
   return (fd >= 0) && ((fcntl(fd, F_GETFD) != -1) || (errno != EBADF));
+}
+
+static int create_unix_socket_fd(const char *socket_name)
+{
+  socklen_t len = 0;
+  sockaddr_un un;
+  int fd = -1;
+  do{
+    if (AM_UNLIKELY((fd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)) {
+      PERROR("unix domain socket");
+      break;
+    }
+
+    memset(&un, 0, sizeof(un));
+    un.sun_family = AF_UNIX;
+    strcpy(un.sun_path, socket_name);
+    len = offsetof(struct sockaddr_un, sun_path) + strlen(un.sun_path);
+    if (AM_UNLIKELY(AMFile::exists(socket_name))) {
+      NOTICE("%s already exists! Remove it first!", socket_name);
+      if (AM_UNLIKELY(unlink(socket_name) < 0)) {
+        PERROR("unlink");
+        close(fd);
+        fd = -1;
+        break;
+      }
+    }
+    if (AM_UNLIKELY(!AMFile::create_path(AMFile::dirname(socket_name).
+                                         c_str()))) {
+      ERROR("Failed to create path %s",
+            AMFile::dirname(socket_name).c_str());
+      close(fd);
+      fd = -1;
+      break;
+    }
+
+    if (AM_UNLIKELY(bind(fd, (struct sockaddr*)&un, len) < 0)) {
+      PERROR("unix domain bind");
+      close(fd);
+      fd = -1;
+      break;
+    }
+  }while(0);
+  return fd;
+}
+
+static int unix_socket_conn(int fd, const char *server_name)
+{
+  bool isok = true;
+  do {
+    socklen_t len = 0;
+    sockaddr_un un;
+    memset(&un, 0, sizeof(un));
+    un.sun_family = AF_UNIX;
+    if (AM_UNLIKELY(!server_name)) {
+      ERROR("Server name is invalid");
+      isok = false;
+      break;
+    }
+    strcpy(un.sun_path, server_name);
+    len = offsetof(struct sockaddr_un, sun_path) + strlen(un.sun_path);
+    if (AM_UNLIKELY(connect(fd, (struct sockaddr*)&un, len) < 0)) {
+      if (AM_LIKELY(errno == ENOENT)) {
+        NOTICE("RTP Muxer is not working, wait and try again...");
+      } else {
+        PERROR("connect");
+      }
+      isok = false;
+      break;
+    } else {
+      INFO("SIP.unix connect to %s successfully!", server_name);
+    }
+  } while(0);
+
+  if (AM_UNLIKELY(!isok)) {
+    if (AM_LIKELY(fd >= 0)) {
+      close(fd);
+      fd = -1;
+    }
+  }
+
+  return fd;
+}
+
+bool AMSipClientInfo::init(bool jitter_buffer, uint16_t frames_remain)
+{
+  bool ret = true;
+  do {
+    if (AM_UNLIKELY(pipe(m_ctrl_fd) < 0)) {
+      PERROR("pipe");
+      ret = false;
+      break;
+    }
+    if (jitter_buffer) {
+      m_jitterbuf = new AMJitterBuffer(frames_remain);
+
+      if (m_jitterbuf && (AM_JB_OK != m_jitterbuf->jb_create())) {
+        ERROR("Failed to create jitter buffer!");
+        ret = false;
+        break;
+      }
+      AM_JB_CONFIG config = {
+          .max_jitterbuf = DEFAULT_MAX_JITTERBUFFER,
+          .resync_threshold = DEFAULT_RESYNCH_THRESHOLD,
+          .max_contig_interp = DEFAULT_MAX_CONTIG_INTERP,
+          .target_extra = 0,
+      };
+      m_jitterbuf->jb_setconf(&config);
+      INFO("Jitter Buffer was enabled!");
+    }
+  } while(0);
+
+  return ret;
+}
+
+bool AMSipClientInfo::setup_rtp_client_socket()
+{
+  bool ret = true;
+  do {
+    struct sockaddr_in addr4 = {0};
+    struct sockaddr *addr = nullptr;
+    socklen_t socket_len = sizeof(struct sockaddr);
+
+    if (AM_UNLIKELY(m_recv_rtp_fd >= 0)) {
+      close(m_recv_rtp_fd);
+      m_recv_rtp_fd = -1;
+    }
+    m_recv_rtp_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (AM_LIKELY(m_recv_rtp_fd >= 0)) {
+      addr4.sin_family = AF_INET;
+      addr4.sin_addr.s_addr = htonl(INADDR_ANY);
+      addr4.sin_port = htons(m_media_info[AM_RTP_MEDIA_AUDIO].rtp_port);
+      addr = (struct sockaddr*)&addr4;
+      socket_len = sizeof(addr4);
+    } else {
+      PERROR("socket");
+      ret = false;
+      break;
+    }
+    if(AM_LIKELY(m_recv_rtp_fd >= 0)) {
+      int recv_buf = 4 * SOCKET_BUFFER_SIZE;
+      if (AM_UNLIKELY(setsockopt(m_recv_rtp_fd, SOL_SOCKET, SO_RCVBUF,
+                                 &recv_buf, sizeof(int)) < 0)) {
+        ERROR("Failed to set socket receive buf!");
+        ret = false;
+        break;
+      }
+      int reuse = 1;
+      if (AM_UNLIKELY(setsockopt(m_recv_rtp_fd, SOL_SOCKET, SO_REUSEADDR,
+                                 &reuse, sizeof(reuse)) < 0)) {
+        ERROR("Failed to set addr reuse!");
+        ret = false;
+        break;
+      }
+      int flag = fcntl(m_recv_rtp_fd, F_GETFL, 0);
+      flag |= O_NONBLOCK;
+      if (AM_UNLIKELY(fcntl(m_recv_rtp_fd, F_SETFL, flag) != 0)) {
+        PERROR("fcntl");
+        ret = false;
+        break;
+      }
+      if (AM_UNLIKELY(bind(m_recv_rtp_fd, addr, socket_len) != 0)) {
+        close(m_recv_rtp_fd);
+        m_recv_rtp_fd = -1;
+        ERROR("Failed to bind socket");
+        ret = false;
+        break;
+      }
+    } else {
+      ERROR("set up udp socket error.");
+      ret = false;
+      break;
+    }
+  } while(0);
+  return ret;
+}
+
+void AMSipClientInfo::start_process_rtp_thread(void *data)
+{
+  ((AMSipClientInfo*)data)->process_rtp_thread();
+}
+
+void AMSipClientInfo::process_rtp_thread()
+{
+  uint32_t count = 0;
+  bool connected = false;
+  while((m_send_rtp_uds_fd < 0) && (count < 10)) {
+    m_send_rtp_uds_fd =  create_unix_socket_fd(m_uds_client_name.c_str());
+    if (AM_LIKELY(m_send_rtp_uds_fd > 0)) {
+      count ++;
+      m_send_rtp_uds_fd = unix_socket_conn(m_send_rtp_uds_fd,
+                                           m_uds_server_name.c_str());
+      if (AM_LIKELY(m_send_rtp_uds_fd > 0)) {
+        INFO("Connect to uds server successfully!");
+        connected = true;
+        break;
+      } else {
+        NOTICE("Connect to uds server error! try %d times", count);
+        usleep(50000);
+      }
+    } else {
+      ERROR("Create uds client fd error!");
+    }
+  }
+
+  fd_set rfds;
+  fd_set zfds;
+  int max_fd =-1;
+  uint32_t pre_ts = 0;
+  uint16_t pre_sn = 0;
+  bool get_frame_len = false;
+
+  if (AM_LIKELY(connected && (m_recv_rtp_fd > 0))) {
+    m_running = true;
+    FD_ZERO(&zfds);
+    FD_SET(m_recv_rtp_fd, &zfds);
+    FD_SET(SOCK_CTRL_R, &zfds);
+    max_fd = AM_MAX(m_recv_rtp_fd, SOCK_CTRL_R);
+  } else if (connected){
+    ERROR("Setup recv rpt socket error!");
+  } else {
+    ERROR("Conected to uds server error!");
+  }
+
+  while (m_running) {
+    rfds = zfds;
+    int ret = select(max_fd +1, &rfds, nullptr, nullptr, nullptr);
+    if (AM_UNLIKELY(ret <= 0)) {
+      PERROR("select");
+      continue;
+    }
+    if (FD_ISSET(SOCK_CTRL_R, &rfds)) {
+      ServerCtrlMsg msg = {0};
+      ssize_t ret = am_read(SOCK_CTRL_R, &msg, sizeof(msg),
+                            DEFAULT_IO_RETRY_COUNT);
+      if (ret != sizeof(msg)) {
+        PERROR("Failed to read msg from SOCK_CTRL_R!");
+      } else {
+        switch(msg.code) {
+          case CMD_ABRT_ALL:
+            ERROR("Fatal error occurred, rtp_thread abort!");
+            break;
+          case CMD_STOP_ALL:
+            m_running = false;
+            NOTICE("process rtp thread received stop signal!");
+            break;
+          default:
+            WARN("Unknown msg received!");
+            break;
+        }
+      }
+    } else if (AM_LIKELY(FD_ISSET(m_recv_rtp_fd, &rfds))) {
+      uint8_t *recv_buf = new uint8_t[DEFAULT_RECV_RTP_PACKET_SIZE];
+      int recv_len = recv(m_recv_rtp_fd, recv_buf + 8,
+                          DEFAULT_RECV_RTP_PACKET_SIZE - 8, 0);
+      if(AM_UNLIKELY(recv_len < 0)) {
+        if((errno == EAGAIN) || (errno == EWOULDBLOCK)) {
+          delete []recv_buf;
+          continue;
+        } else {
+          PERROR("recvfrom");
+          m_running = false;
+          delete []recv_buf;
+          break;
+        }
+      }
+      uint32_t send_size = (uint32_t)recv_len;
+
+      recv_buf[0] = 'R';
+      recv_buf[1] = 'T';
+      recv_buf[2] = 'P';
+      recv_buf[3] = ' ';
+      recv_buf[4] = (send_size & 0xff000000) >> 24;
+      recv_buf[5] = (send_size & 0x00ff0000) >> 16;
+      recv_buf[6] = (send_size & 0x0000ff00) >> 8;
+      recv_buf[7] = (send_size & 0x000000ff);
+
+      if (nullptr != m_jitterbuf) { /* enable jitter buffer */
+        AMRtpHeader *rtp_header = (AMRtpHeader*)(recv_buf + 8);
+
+        if (!get_frame_len) {
+          if ((0 == pre_ts) && (0 == pre_sn)) {
+            pre_ts = ntohl(rtp_header->timestamp);
+            pre_sn = ntohs(rtp_header->sequencenumber);
+          } else {
+            if ((pre_sn + 1) == ntohs(rtp_header->sequencenumber)) {
+              m_audio_frame_len = ntohl(rtp_header->timestamp) - pre_ts;
+              get_frame_len = true;
+              NOTICE("Get audio frame length %d", m_audio_frame_len);
+            } else {
+              pre_ts = 0;
+              pre_sn = 0;
+            }
+          }
+        }
+        uint32_t timestamp = ntohl(rtp_header->timestamp);
+        uint32_t now = timestamp + 100;
+
+        AM_JB_STATE ret_jb;
+        ret_jb = m_jitterbuf->jb_put(recv_buf, AM_JB_TYPE_VOICE,
+                                     m_audio_frame_len, timestamp, now);
+        switch(ret_jb) {
+          case AM_JB_OK: {
+            /* Frame added */
+          }break;
+          case AM_JB_DROP: {
+            ERROR("Drop this frame immediately!");
+            delete []recv_buf;
+          }break;
+          case AM_JB_SCHED: {
+            NOTICE("Frame added into head of queue.");
+          }break;
+          default : {
+            WARN("This should not happened in jb_put!");
+            delete []recv_buf;
+          }break;
+        }
+
+        while (m_jitterbuf->jb_ready_to_get()) {
+          AM_JB_FRAME frame_out;
+          frame_out.data = nullptr;
+          uint32_t interpl = m_jitterbuf->jb_next();
+          ret_jb = m_jitterbuf->jb_get(&frame_out, interpl, m_audio_frame_len);
+          switch(ret_jb) {
+            case AM_JB_OK: {
+              /* deliver the frame */
+              if (AM_LIKELY(nullptr != frame_out.data)) {
+                uint32_t pkt_size =
+                  ((((uint8_t*)frame_out.data)[4] & 0x000000ff) << 24) |
+                  ((((uint8_t*)frame_out.data)[5] & 0x000000ff) << 16) |
+                  ((((uint8_t*)frame_out.data)[6] & 0x000000ff) << 8)  |
+                  ((((uint8_t*)frame_out.data)[7] & 0x000000ff));
+                ssize_t ret = am_write(m_send_rtp_uds_fd, frame_out.data,
+                                       pkt_size + 8, DEFAULT_IO_RETRY_COUNT);
+                if (AM_UNLIKELY(ret != ssize_t(pkt_size + 8))) {
+                  PERROR("Send RTP data to uds error!");
+                }
+                delete [](uint8_t*)frame_out.data;
+              }
+            }break;
+            case AM_JB_DROP: {
+              NOTICE("Here's an audio frame you should just drop");
+              delete [](uint8_t*)frame_out.data;
+            }break;
+            case AM_JB_NOFRAME: {
+              NOTICE("There's no frame scheduled for this time");
+            }break;
+            case AM_JB_INTERP: {
+              NOTICE("There was a lost frame, interpolate next one");
+              if(AM_LIKELY(frame_out.data == nullptr)) {
+                frame_out.data = m_jitterbuf->jb_get_frame()->data;
+                uint32_t pkt_size =
+                  ((((uint8_t*)frame_out.data)[4] & 0x000000ff) << 24) |
+                  ((((uint8_t*)frame_out.data)[5] & 0x000000ff) << 16) |
+                  ((((uint8_t*)frame_out.data)[6] & 0x000000ff) << 8)  |
+                  ((((uint8_t*)frame_out.data)[7] & 0x000000ff));
+                ssize_t ret = am_write(m_send_rtp_uds_fd, frame_out.data,
+                                       pkt_size + 8, DEFAULT_IO_RETRY_COUNT);
+                 if (AM_UNLIKELY(ret != ssize_t(pkt_size + 8))) {
+                   PERROR("Send RTP data to uds error!");
+                 }
+              }
+            }break;
+            case AM_JB_EMPTY: {
+              NOTICE("The jitter buffer is empty");
+            }break;
+            default : {
+              ERROR("Invalid return value of jb_get");
+            }break;
+          }
+        }
+      } else { /* Not enable jitter buffer */
+        ssize_t ret = am_write(m_send_rtp_uds_fd, recv_buf,
+                               send_size + 8, DEFAULT_IO_RETRY_COUNT);
+         if (AM_UNLIKELY(ret != ssize_t(send_size + 8))) {
+           PERROR("Send RTP data to uds error!");
+         }
+         delete []recv_buf;
+      }
+    }
+  } /* while */
+
+  if (m_recv_rtp_fd > 0) {
+    close(m_recv_rtp_fd);
+    m_recv_rtp_fd = -1;
+  }
+  if (m_send_rtp_uds_fd > 0) {
+    close(m_send_rtp_uds_fd);
+    m_send_rtp_uds_fd = -1;
+  }
+
+}
+
+AMSipClientInfo::~AMSipClientInfo()
+{
+  while (m_running) {
+    INFO("Sending stop to thread %s", m_rtp_thread->name());
+    if (AM_LIKELY(SOCK_CTRL_W >= 0)) {
+      ServerCtrlMsg msg = {
+        .code = CMD_STOP_ALL,
+        .data = 0
+      };
+      ssize_t ret = am_write(SOCK_CTRL_W, &msg, sizeof(msg),
+                             DEFAULT_IO_RETRY_COUNT);
+      if (AM_UNLIKELY(ret != (ssize_t)sizeof(msg))) {
+        ERROR("Failed to send stop command! %s", strerror(errno));
+      }
+      usleep(30000);
+    }
+  }
+  if (SOCK_CTRL_W >= 0) {
+    close(SOCK_CTRL_W);
+  }
+  if (SOCK_CTRL_R >= 0) {
+    close(SOCK_CTRL_R);
+  }
+  AM_DESTROY(m_rtp_thread);
+  if (m_recv_rtp_fd > 0) {
+    close(m_recv_rtp_fd);
+    m_recv_rtp_fd = -1;
+  }
+  if (m_send_rtp_uds_fd > 0) {
+    close(m_send_rtp_uds_fd);
+    m_send_rtp_uds_fd = -1;
+  }
+  if (AMFile::exists(m_uds_client_name.c_str())) {
+    if (AM_UNLIKELY(unlink(m_uds_client_name.c_str()) < 0)) {
+      PERROR("unlink");
+    }
+  }
+  if (nullptr != m_jitterbuf) {
+    AM_JB_FRAME frame;
+    while (m_jitterbuf->jb_getall(&frame) == AM_JB_OK) {
+        delete [](uint8_t*)frame.data;
+    }
+    m_jitterbuf->jb_destroy();
+    delete m_jitterbuf;
+    m_jitterbuf = nullptr;
+  }
 }
 
 AMISipUAServerPtr AMISipUAServer::create()
@@ -96,9 +541,9 @@ AMISipUAServer* AMSipUAServer::get_instance()
 
 bool AMSipUAServer::start()
 {
-  if (AM_LIKELY(m_run == false)) {
+  if (AM_LIKELY(!m_run)) {
     m_run = (init_sip_ua_server() && start_connect_unix_thread()
-            && start_sip_ua_server_thread());
+             && start_sip_ua_server_thread());
     m_event->signal();
   }
   return m_run;
@@ -118,10 +563,14 @@ void AMSipUAServer::stop()
   while (m_unix_sock_run) {
     INFO("Sending stop to %s", m_sock_thread->name());
     if (AM_LIKELY(UNIX_SOCK_CTRL_W >= 0)) {
-      ServerCtrlMsg msg;
-      msg.code = CMD_STOP_ALL;
-      msg.data = 0;
-      write(UNIX_SOCK_CTRL_W, &msg, sizeof(msg));
+      ServerCtrlMsg msg = {
+        .code = CMD_STOP_ALL,
+        .data = 0
+      };
+      ssize_t ret = am_write(UNIX_SOCK_CTRL_W, &msg, sizeof(msg), 10);
+      if (AM_UNLIKELY(ret != (ssize_t)sizeof(msg))) {
+        ERROR("Failed to send stop command! %s", strerror(errno));
+      }
       usleep(30000);
     }
   }
@@ -136,11 +585,6 @@ void AMSipUAServer::stop()
 uint32_t AMSipUAServer::version()
 {
   return SIP_LIB_VERSION;
-}
-
-void AMSipUAServer::inc_ref()
-{
-  ++ m_ref_count;
 }
 
 bool AMSipUAServer::set_sip_registration_parameter(AMSipRegisterParameter
@@ -291,7 +735,7 @@ bool AMSipUAServer::initiate_sip_call(AMSipCalleeAddress *address)
       break;
     }
 
-    INFO("Current connected client number is %d", m_connected_num);
+    INFO("Current connected client number is %u", m_connected_num);
     if (AM_UNLIKELY(m_connected_num >= m_sip_config->max_conn_num)) {
       WARN("Max connected number is reached!");
       break;
@@ -380,8 +824,8 @@ bool AMSipUAServer::hangup_sip_call(AMSipHangupUsername *name)
       hang_up_all();
     } else {
       for (uint32_t i = 0; i < m_sip_client_que.size(); ++i) {
-        usernames.append(" " + m_sip_client_que.front()->username);
-        if (is_str_equal(m_sip_client_que.front()->username.c_str(),
+        usernames.append(" " + m_sip_client_que.front()->m_username);
+        if (is_str_equal(m_sip_client_que.front()->m_username.c_str(),
                          name->user_name)) {
           hang_up(m_sip_client_que.front());
           m_sip_client_que.pop();
@@ -389,7 +833,7 @@ bool AMSipUAServer::hangup_sip_call(AMSipHangupUsername *name)
           find = true;
           break;
         } else {
-          SipClientInfo *sip_client = m_sip_client_que.front();
+          AMSipClientInfo *sip_client = m_sip_client_que.front();
           m_sip_client_que.pop();
           m_sip_client_que.push(sip_client);
         }
@@ -404,6 +848,11 @@ bool AMSipUAServer::hangup_sip_call(AMSipHangupUsername *name)
   return ret;
 }
 
+void AMSipUAServer::inc_ref()
+{
+  ++ m_ref_count;
+}
+
 void AMSipUAServer::release()
 {
   if ((m_ref_count >= 0) && (--m_ref_count <= 0)) {
@@ -415,31 +864,175 @@ void AMSipUAServer::release()
   }
 }
 
-AMSipUAServer::AMSipUAServer() :
-    m_context(nullptr),
-    m_uac_event(nullptr),
-    m_answer(nullptr),
-    m_ref_count(0),
-    m_server_thread(nullptr),
-    m_sock_thread(nullptr),
-    m_event(nullptr),
-    m_event_support(nullptr),
-    m_event_sdp(nullptr),
-    m_event_sdps(nullptr),
-    m_event_ssrc(nullptr),
-    m_event_kill(nullptr),
-    m_media_type(0),
-    m_connected_num(0),
-    m_rtp_port(0),
-    m_run(false),
-    m_unix_sock_run(false),
-    m_unix_sock_fd(-1),
-    m_media_service_sock_fd(-1),
-    m_sip_config(nullptr),
-    m_config(nullptr)
+void AMSipUAServer::hang_up_all()
 {
-  UNIX_SOCK_CTRL_R = -1;
-  UNIX_SOCK_CTRL_W = -1;
+  delete_invalid_sip_client();
+  int queue_size = m_sip_client_que.size();
+  NOTICE("Hang up all the %d calls!", queue_size);
+  for (int i = 0; i < queue_size; ++i) {
+    hang_up(m_sip_client_que.front());
+    m_sip_client_que.pop();
+    m_connected_num = m_connected_num ? (m_connected_num - 1) : 0;
+  }
+  if (AM_LIKELY(m_sip_client_que.empty())) {
+    INFO("Hang up all calls successfully!");
+  } else {
+    WARN("Not hang up all calls successfully!");
+  }
+}
+
+void AMSipUAServer::hang_up(AMSipClientInfo* sip_client)
+{
+  int ret = -1;
+  do {
+    if (AM_UNLIKELY(!sip_client)) {
+      ERROR("sip_client is null");
+      break;
+    }
+    /* send stop message to RTP muxer */
+    if (sip_client->m_media_info[AM_RTP_MEDIA_AUDIO].is_alive) {
+      AMRtpClientMsgKill audio_msg_kill(
+         sip_client->m_media_info[AM_RTP_MEDIA_AUDIO].ssrc,
+         0, m_unix_sock_fd);
+      if (AM_UNLIKELY(!send_rtp_control_data((uint8_t* )&audio_msg_kill,
+                                             sizeof(audio_msg_kill)))) {
+        ERROR("Failed to send kill message to RTP Muxer to kill client"
+              "SSRC: %08X!", sip_client->m_media_info[AM_RTP_MEDIA_AUDIO].ssrc);
+      } else {
+        INFO("Sent kill message to RTP Muxer to kill SSRC: %08X!",
+             sip_client->m_media_info[AM_RTP_MEDIA_AUDIO].ssrc);
+      }
+
+      if (AM_LIKELY(m_event_kill->wait(5000))) {
+        NOTICE("Client with SSRC: %08X is killed!",
+             sip_client->m_media_info[AM_RTP_MEDIA_AUDIO].ssrc);
+      } else {
+        ERROR("Failed to receive response from RTP muxer!");
+      }
+    }
+    if (sip_client->m_media_info[AM_RTP_MEDIA_VIDEO].is_alive) {
+      AMRtpClientMsgKill video_msg_kill(
+         sip_client->m_media_info[AM_RTP_MEDIA_VIDEO].ssrc,
+         0, m_unix_sock_fd);
+      if (AM_UNLIKELY(!send_rtp_control_data((uint8_t* )&video_msg_kill,
+                                             sizeof(video_msg_kill)))) {
+        ERROR("Failed to send kill message to RTP Muxer to kill client"
+              "SSRC: %08X!", sip_client->m_media_info[AM_RTP_MEDIA_VIDEO].ssrc);
+      } else {
+        INFO("Sent kill message to RTP Muxer to kill SSRC: %08X!",
+         sip_client->m_media_info[AM_RTP_MEDIA_VIDEO].ssrc);
+      }
+
+      if (AM_LIKELY(m_event_kill->wait(5000))) {
+        NOTICE("Client with SSRC: %08X is killed!",
+             sip_client->m_media_info[AM_RTP_MEDIA_VIDEO].ssrc);
+      } else {
+        ERROR("Failed to receive response from RTP muxer!");
+      }
+    }
+
+    /* send BYE message to client before send stop to media service
+     * in case the RTP write error through unix domain socket */
+    eXosip_lock (m_context);
+    ret = eXosip_call_terminate(m_context, sip_client->m_call_id,
+                                sip_client->m_dialog_id);
+    eXosip_unlock (m_context);
+    if (0 != ret) {
+      ERROR("hangup/terminate Failed!\n");
+    } else {
+      NOTICE("Hang up %s successfully!", sip_client->m_username.c_str());
+    }
+
+    /* Send stop msg to media service to release playback instance */
+    AMMediaServiceMsgBlock stop_msg;
+    stop_msg.msg_stop.base.type = AM_MEDIA_SERVICE_MSG_STOP;
+    stop_msg.msg_stop.base.length = sizeof(AMMediaServiceMsgSTOP);
+    stop_msg.msg_stop.playback_id = sip_client->m_playback_id;
+    if (AM_UNLIKELY(!send_data_to_media_service(stop_msg))) {
+      ERROR("Failed to send stop msg to media service.");
+      break;
+    } else {
+      NOTICE("Send stop msg to media service successfully.");
+    }
+
+    delete sip_client;
+
+  }while(0);
+}
+
+bool AMSipUAServer::register_to_server(int expires)
+{
+  bool ret = true;
+  char identity[100];
+  char registerer[100];
+
+  snprintf(identity, sizeof(identity), "sip:%s@%s:%d",
+           m_sip_config->username.c_str(),
+           m_sip_config->server_url.c_str(),
+           m_sip_config->sip_port);
+  snprintf(registerer, sizeof(registerer), "sip:%s:%d",
+           m_sip_config->server_url.c_str(),
+           m_sip_config->server_port);
+  do {
+    osip_message_t *reg = nullptr;
+    eXosip_lock (m_context);
+    int regid = eXosip_register_build_initial_register(m_context, identity,
+                                                       registerer,
+                                                       nullptr, /* contact */
+                                                       expires, &reg);
+    eXosip_unlock (m_context);
+
+    if(AM_UNLIKELY(regid < 1)) {
+      ERROR("register build init Failed!\n");
+      ret = false;
+      break;
+    }
+
+    eXosip_lock (m_context);
+    eXosip_clear_authentication_info(m_context);
+    eXosip_add_authentication_info(m_context, m_sip_config->username.c_str(),
+                                   m_sip_config->username.c_str(),
+                                   m_sip_config->password.c_str(), "md5",
+                                   nullptr);
+    int reg_ret = eXosip_register_send_register(m_context, regid, reg);
+    eXosip_unlock (m_context);
+
+    if(AM_UNLIKELY(0 != reg_ret)) {
+      ERROR("Register send failed!\n");
+      ret = false;
+      break;
+    }
+  } while(0);
+
+  return ret;
+}
+
+void AMSipUAServer::busy_status_timer(int arg)
+{
+  if (AM_UNLIKELY(m_busy)) {
+    m_busy = false;
+    WARN("SIP connection has not established in %d seconds!", BUSY_TIMER);
+  } else {
+      INFO("Connection established!");
+  }
+}
+
+void AMSipUAServer::delete_invalid_sip_client()
+{
+  uint32_t queue_size = m_sip_client_que.size();
+  for (uint32_t i = 0; i < queue_size; ++i) {
+    if (AM_UNLIKELY(!m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_AUDIO].
+        is_alive && !m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_VIDEO].
+        is_alive)) {
+      delete m_sip_client_que.front();
+      m_sip_client_que.pop();
+      NOTICE("Delete an invalid sip client in the queue!");
+    } else {
+      AMSipClientInfo *sip_client = m_sip_client_que.front();
+      m_sip_client_que.pop();
+      m_sip_client_que.push(sip_client);
+    }
+  }
 }
 
 AMSipUAServer::~AMSipUAServer()
@@ -463,6 +1056,7 @@ AMSipUAServer::~AMSipUAServer()
   AM_DESTROY(m_event_sdps);
   AM_DESTROY(m_event_ssrc);
   AM_DESTROY(m_event_kill);
+  AM_DESTROY(m_event_playid);
   m_media_map.clear();
   if (AM_LIKELY(m_context)) {
     eXosip_quit(m_context);
@@ -523,12 +1117,1007 @@ bool AMSipUAServer::construct()
       state = false;
       break;
     }
+    if (AM_UNLIKELY(nullptr == (m_event_playid = AMEvent::create()))) {
+      ERROR("Failed to create event playid!");
+      state = false;
+      break;
+    }
     set_media_map();
     signal(SIGPIPE, SIG_IGN);
 
   } while(0);
 
   return state;
+}
+
+uint32_t AMSipUAServer::get_random_number()
+{
+  struct timeval current = {0};
+  gettimeofday(&current, nullptr);
+  srand(current.tv_usec);
+  return (rand() % ((uint32_t)-1));
+}
+
+bool AMSipUAServer::init_sip_ua_server()
+{
+  bool ret = true;
+  TRACE_INITIALIZE(6, nullptr);
+  do {
+    m_context = eXosip_malloc();
+    if (AM_UNLIKELY(eXosip_init(m_context))) {
+      ERROR("Couldn't initialize eXosip!");
+      ret = false;
+      break;
+    }
+    if (AM_UNLIKELY(eXosip_listen_addr(m_context, IPPROTO_UDP, nullptr,
+                    m_sip_config->sip_port, AF_INET, 0))) {
+      ERROR("Couldn't initialize SIP transport layer!");
+      ret = false;
+      break;
+    }
+    eXosip_set_user_agent(m_context, "Ambarella SIP Service");
+
+    if (AM_LIKELY(m_sip_config->is_register)) {
+      ret = register_to_server(m_sip_config->expires);
+    }
+  } while(0);
+
+  return ret;
+}
+
+bool AMSipUAServer::get_supported_media_types()
+{
+  bool ret = true;
+  /* communicate with RTP-muxer to get supported media type */
+  AMRtpClientMsgSupport support_msg;
+  support_msg.length = sizeof(support_msg);
+
+  /* Send query support media type message to RTP muxer */
+  if (AM_UNLIKELY(!send_rtp_control_data((uint8_t*)&support_msg,
+                                         sizeof(support_msg)))) {
+    ERROR("Send message to RTP muxer error!");
+    ret = false;
+  } else {
+    INFO("Send query support media type message to RTP muxer.");
+    if (AM_UNLIKELY(m_event_support->wait(5000))) {
+      NOTICE("RTP muxer has returned support media type.");
+    } else {
+      ERROR("Failed to get support media type from RTP muxer!");
+      ret = false;
+    }
+  }
+  return ret;
+}
+
+bool AMSipUAServer::on_sip_call_invite_recv()
+{
+  bool ret = true;
+  do {
+    if (AM_UNLIKELY(m_busy)) {
+      eXosip_lock(m_context);
+      eXosip_call_send_answer(m_context, m_uac_event->tid, SIP_BUSY_HERE,
+                              nullptr);
+      eXosip_unlock(m_context);
+      WARN("User is busy!");
+      break;
+    }
+    INFO("Received a call from %s@%s:%s",
+          m_uac_event->request->from->url->username,
+          m_uac_event->request->from->url->host,
+          m_uac_event->request->from->url->port);
+
+    /* Reread the sip configuration file */
+    if (AM_UNLIKELY(!(m_sip_config = m_config->get_config(m_config_file)))) {
+      ERROR("Reread the sip configuration file error!");
+      ret = false;
+      break;
+    }
+    delete_invalid_sip_client();
+
+    INFO("Current connected client number is %u", m_connected_num);
+    if (AM_UNLIKELY(m_connected_num >= m_sip_config->max_conn_num)) {
+      eXosip_lock(m_context);
+      eXosip_call_send_answer(m_context, m_uac_event->tid, SIP_BUSY_HERE,
+                              nullptr);
+      eXosip_unlock(m_context);
+      WARN("Refuse the call, user is busy!");
+      break;
+    } else if (0 == m_connected_num) {
+      m_rtp_port = m_sip_config->rtp_stream_port_base;
+    }
+
+    eXosip_lock(m_context);
+    eXosip_call_send_answer(m_context, m_uac_event->tid,
+                            SIP_RINGING, nullptr);
+    if(AM_UNLIKELY(0 != eXosip_call_build_answer(m_context,
+                                                 m_uac_event->tid,
+                                                 SIP_OK, &m_answer))) {
+      eXosip_call_send_answer(m_context, m_uac_event->tid,
+                              SIP_DECLINE, nullptr);
+      ERROR("error build answer!\n");
+      eXosip_unlock(m_context);
+      ret = false;
+      break;
+    }
+    eXosip_unlock(m_context);
+
+    /* create a sip client */
+    AMSipClientInfo *sip_client = new AMSipClientInfo(m_uac_event->did,
+                                                      m_uac_event->cid);
+    if (AM_UNLIKELY(nullptr == sip_client)) {
+      ERROR("Create sip client error!");
+      ret = false;
+      break;
+    } else if (AM_UNLIKELY(!sip_client->init(m_sip_config->jitter_buffer,
+                                        m_sip_config->frames_remain_in_jb))) {
+      ERROR("Init sip client error!");
+      delete sip_client;
+      ret = false;
+      break;
+    }
+    /* Request SDP(for UAS) */
+    sdp_message_t     *msg_req = nullptr;
+    sdp_connection_t  *audio_con_req = nullptr;
+    sdp_media_t       *audio_md_req  = nullptr;
+    sdp_connection_t  *video_con_req = nullptr;
+    sdp_media_t       *video_md_req  = nullptr;
+
+    /* parse the SDP message */
+    eXosip_lock(m_context);
+    msg_req = eXosip_get_remote_sdp(m_context, m_uac_event->did);
+    eXosip_unlock(m_context);
+
+    char *str_sdp = nullptr;
+    sdp_message_to_str(msg_req, &str_sdp);
+    INFO("The caller's SDP message is: \n%s", str_sdp);
+    osip_free(str_sdp);
+
+    for(int i = 0; i < msg_req->m_medias.nb_elt; ++i) {
+      if (is_str_equal("audio",
+          ((sdp_media_t*)osip_list_get(&msg_req->m_medias, i))->m_media)) {
+        audio_con_req = eXosip_get_audio_connection(msg_req);
+        audio_md_req  = eXosip_get_audio_media(msg_req);
+        sip_client->m_media_info[AM_RTP_MEDIA_AUDIO].is_supported = true;
+        INFO("Audio is supported by the caller.");
+      } else if (is_str_equal("video",
+          ((sdp_media_t*)osip_list_get(&msg_req->m_medias, i))->m_media)) {
+          video_con_req = eXosip_get_video_connection(msg_req);
+          video_md_req  = eXosip_get_video_media(msg_req);
+          sip_client->m_media_info[AM_RTP_MEDIA_VIDEO].is_supported = true;
+          INFO("Video is supported by the caller.");
+        }
+    }
+
+    if (AM_UNLIKELY(!get_supported_media_types())){
+      delete sip_client;
+      sdp_message_free(msg_req);
+      ret = false;
+      break;
+    }
+
+    /* create audio RTP session info for communication */
+    AMRtpClientMsgInfo client_audio_info;
+    AMRtpClientInfo &audio_info = client_audio_info.info;
+    if(AM_LIKELY(sip_client->m_media_info[AM_RTP_MEDIA_AUDIO].is_supported)) {
+      /* TODO: Add IPv6 support */
+      audio_info.client_ip_domain = AM_IPV4;/* default */
+      audio_info.tcp_channel_rtp  = 0xff;   /* default UDP mode */
+      audio_info.tcp_channel_rtcp = 0xff;
+      audio_info.send_tcp_fd = false;
+      audio_info.port_srv_rtp  = m_rtp_port++;
+      audio_info.port_srv_rtcp = m_rtp_port++;
+      strcpy(audio_info.media, select_media_type(m_media_type,audio_md_req));
+
+      sockaddr_in uac_audio_addr;
+      uac_audio_addr.sin_family = AF_INET;
+      uac_audio_addr.sin_addr.s_addr = inet_addr(audio_con_req->c_addr);
+      uac_audio_addr.sin_port = htons(atoi(audio_md_req->m_port));
+      memcpy(&audio_info.udp.rtp.ipv4, &uac_audio_addr,
+             sizeof(uac_audio_addr));
+      audio_info.udp.rtp.ipv4.sin_port = htons(atoi(audio_md_req->m_port));
+
+      memcpy(&audio_info.udp.rtcp.ipv4, &uac_audio_addr,
+             sizeof(uac_audio_addr));
+      audio_info.udp.rtcp.ipv4.sin_port = htons(atoi(audio_md_req->m_port)
+                                                + 1);
+
+      memcpy(&audio_info.tcp.ipv4, &uac_audio_addr, sizeof(uac_audio_addr));
+      client_audio_info.print();
+
+      client_audio_info.session_id = get_random_number();
+      sip_client->m_media_info[AM_RTP_MEDIA_AUDIO].session_id =
+                                        client_audio_info.session_id;
+      sip_client->m_media_info[AM_RTP_MEDIA_AUDIO].media =
+                                        std::string(audio_info.media);
+      sip_client->m_media_info[AM_RTP_MEDIA_AUDIO].rtp_port =
+                                        audio_info.port_srv_rtp;
+    }
+
+    if (AM_UNLIKELY(m_rtp_port == m_sip_config->sip_port)) {
+      m_rtp_port = m_rtp_port + 2;
+    }
+
+    /* create video RTP session info for communication */
+    AMRtpClientMsgInfo client_video_info;
+    AMRtpClientInfo &video_info = client_video_info.info;
+    if(sip_client->m_media_info[AM_RTP_MEDIA_VIDEO].is_supported &&
+        m_sip_config->enable_video) {
+      /* TODO: Add IPv6 support */
+      video_info.client_ip_domain = AM_IPV4;/* default */
+      video_info.tcp_channel_rtp  = 0xff;   /* default UDP mode */
+      video_info.tcp_channel_rtcp = 0xff;
+      video_info.send_tcp_fd = false;
+      video_info.port_srv_rtp  = m_rtp_port++;
+      video_info.port_srv_rtcp = m_rtp_port++;
+      strcpy(video_info.media, select_media_type(m_media_type,video_md_req));
+
+      sockaddr_in uac_video_addr;
+      uac_video_addr.sin_family = AF_INET;
+      uac_video_addr.sin_addr.s_addr = inet_addr(video_con_req->c_addr);
+      uac_video_addr.sin_port = htons(atoi(video_md_req->m_port));
+
+      memcpy(&video_info.udp.rtp.ipv4, &uac_video_addr,
+             sizeof(uac_video_addr));
+      video_info.udp.rtp.ipv4.sin_port = htons(atoi(video_md_req->m_port));
+
+      memcpy(&video_info.udp.rtcp.ipv4, &uac_video_addr,
+             sizeof(uac_video_addr));
+      video_info.udp.rtcp.ipv4.sin_port = htons(atoi(video_md_req->m_port)
+                                                + 1);
+
+      memcpy(&video_info.tcp.ipv4, &uac_video_addr, sizeof(uac_video_addr));
+      client_video_info.print();
+
+      client_video_info.session_id = get_random_number();
+      sip_client->m_media_info[AM_RTP_MEDIA_VIDEO].session_id =
+                                        client_video_info.session_id;
+      sip_client->m_media_info[AM_RTP_MEDIA_VIDEO].media =
+                                        std::string(video_info.media);
+      sip_client->m_media_info[AM_RTP_MEDIA_VIDEO].rtp_port =
+                                        video_info.port_srv_rtp;
+
+    }
+
+    /*if not support the audio and video type then refuse the call */
+    if (AM_UNLIKELY((is_str_equal(AM_MEDIA_UNSUPPORTED, audio_info.media) ||
+                     (0 == strlen(audio_info.media))) &&
+                     (is_str_equal(AM_MEDIA_UNSUPPORTED, video_info.media) ||
+                     (0 == strlen(video_info.media))))) {
+      eXosip_lock (m_context);
+      eXosip_call_send_answer(m_context, m_uac_event->tid,
+                              SIP_UNSUPPORTED_MEDIA_TYPE, nullptr);
+      eXosip_unlock (m_context);
+      WARN("Refuse the call, not supported media type!");
+      delete sip_client;
+      sdp_message_free(msg_req);
+      break;
+    }
+
+    /* push sip_client into the sip client queue */
+    if (AM_LIKELY(nullptr != sip_client)) {
+      m_sip_client_que.push(sip_client);
+    } else {
+      sdp_message_free(msg_req);
+      ERROR("Create sip client error!");
+      ret = false;
+      break;
+    }
+
+    if (AM_LIKELY(strlen(audio_info.media) &&
+        (!is_str_equal(AM_MEDIA_UNSUPPORTED, audio_info.media)))) {
+      if (AM_UNLIKELY(!send_rtp_control_data((uint8_t*)&client_audio_info,
+                                             sizeof(client_audio_info)))) {
+        ERROR("Send message to RTP muxer error!");
+        sdp_message_free(msg_req);
+        ret = false;
+        break;
+      } else {
+        INFO("Send audio INFO messages to RTP muxer.");
+        if (AM_LIKELY(m_event_ssrc->wait(5000))) {
+          NOTICE("RTP muxer has returned SSRC info!");
+        } else {
+          ERROR("Failed to get SSRC info from RTP muxer!");
+          sdp_message_free(msg_req);
+          ret = false;
+          break;
+        }
+      }
+    } else {
+      WARN("Audio type is not supported!");
+    }
+
+    if (strlen(video_info.media) &&
+        (!is_str_equal(AM_MEDIA_UNSUPPORTED, video_info.media))) {
+      if (AM_UNLIKELY(!send_rtp_control_data((uint8_t*)&client_video_info,
+                                             sizeof(client_video_info)))) {
+        ERROR("Send message to RTP muxer error!");
+        sdp_message_free(msg_req);
+        ret = false;
+        break;
+      } else {
+        INFO("Send video INFO messages to RTP muxer.");
+        if (AM_LIKELY(m_event_ssrc->wait(5000))) {
+          NOTICE("RTP muxer has returned SSRC info!");
+        } else {
+          ERROR("Failed to get SSRC info from RTP muxer!");
+          sdp_message_free(msg_req);
+          ret = false;
+          break;
+        }
+      }
+    }
+
+    char localip[128]  = {0};
+    char uas_sdp[2048] = {0};
+    eXosip_guess_localip(m_context, AF_INET, localip, 128);
+    /* communicate with RTP-muxer to get media SDP info */
+    AMRtpClientMsgSDP sdp_msg;
+    sdp_msg.session_id = m_uac_event->did;/* use the did as session_id */
+    char full_ip[256] = {0};
+    if (m_sip_config->is_register && audio_con_req &&
+        !is_str_equal(audio_con_req->c_addr, msg_req->o_addr)) {
+      snprintf(full_ip, sizeof(full_ip), "%s:%s", "IPV4",
+               audio_con_req->c_addr);
+    } else {
+      snprintf(full_ip, sizeof(full_ip), "%s:%s", "IPV4", localip);
+    }
+    strcpy(sdp_msg.media[AM_RTP_MEDIA_HOSTIP], full_ip);
+    if(!is_str_equal(audio_info.media, AM_MEDIA_UNSUPPORTED) &&
+       strlen(audio_info.media)) {
+      strcpy(sdp_msg.media[AM_RTP_MEDIA_AUDIO], audio_info.media);
+      sdp_msg.port[AM_RTP_MEDIA_AUDIO] = audio_info.port_srv_rtp;
+    }
+    if(!is_str_equal(video_info.media, AM_MEDIA_UNSUPPORTED) &&
+       strlen(video_info.media)) {
+      strcpy(sdp_msg.media[AM_RTP_MEDIA_VIDEO],video_info.media);
+      sdp_msg.port[AM_RTP_MEDIA_VIDEO] = video_info.port_srv_rtp;
+    }
+    sdp_msg.length = sizeof(sdp_msg);
+
+    /* Send query SDP message to RTP muxer*/
+    if (AM_UNLIKELY(!send_rtp_control_data((uint8_t*)&sdp_msg,
+                                           sizeof(sdp_msg)))) {
+      ERROR("Send message to RTP muxer error!");
+      sdp_message_free(msg_req);
+      ret = false;
+      break;
+    } else {
+      INFO("Send SDP messages to RTP muxer.");
+      if (AM_LIKELY(m_event_sdp->wait(5000))) {
+        NOTICE("RTP muxer has returned SDP info!");
+      } else {
+        ERROR("Failed to get SDP info from RTP muxer!");
+        sdp_message_free(msg_req);
+        ret = false;
+        break;
+      }
+    }
+
+    /* build and send local SDP message */
+    snprintf(uas_sdp, 2048,
+             "v=0\r\n"
+             "o=Ambarella 1 1 IN IP4 %s\r\n"
+             "s=Ambarella SIP UA Server\r\n"
+             "i=Session Information\r\n"
+            //  "c=IN IP4 %s\r\n"
+             "t=0 0\r\n"
+             "%s%s",
+             localip,//localip,
+             m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_AUDIO].
+             sdp.empty() ? "m=audio 0 RTP/AVP 0\r\n" :
+             m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_AUDIO].
+             sdp.c_str(),
+             m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_VIDEO].
+             sdp.c_str());
+
+    INFO("The UAS's SDP is \n%s",uas_sdp);
+
+    eXosip_lock(m_context);
+    osip_message_set_body(m_answer, uas_sdp, strlen(uas_sdp));
+    osip_message_set_content_type(m_answer, "application/sdp");
+    eXosip_unlock(m_context);
+
+    eXosip_lock(m_context);
+    eXosip_call_send_answer(m_context, m_uac_event->tid, SIP_OK, m_answer);
+    eXosip_unlock(m_context);
+
+    sdp_message_free(msg_req);
+
+  } while(0);
+
+  return ret;
+}
+
+bool AMSipUAServer::on_sip_call_ack_recv()
+{
+  bool ret = true;
+  do {
+    for (uint32_t i = 0; i < m_sip_client_que.size(); ++i) {
+      if (m_sip_client_que.front()->m_dialog_id == m_uac_event->did) {
+        if (m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_AUDIO].ssrc) {
+          AMRtpClientMsgControl audio_ctrl_msg(AM_RTP_CLIENT_MSG_START,
+         m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_AUDIO].ssrc, 0);
+          if (AM_UNLIKELY(!send_rtp_control_data((uint8_t*)&audio_ctrl_msg,
+                                                 sizeof(audio_ctrl_msg)))) {
+            ERROR("Send control start msg to RTP muxer error: %s",
+                  strerror(errno));
+            ret = false;
+            break;
+          } else {
+            INFO("Send audio start messages to RTP muxer.");
+            m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_AUDIO].
+                is_alive = true;
+          }
+        }
+        if (m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_VIDEO].ssrc) {
+          AMRtpClientMsgControl video_ctrl_msg(AM_RTP_CLIENT_MSG_START,
+          m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_VIDEO].ssrc, 0);
+          if (AM_UNLIKELY(!send_rtp_control_data((uint8_t*)&video_ctrl_msg,
+                                                 sizeof(video_ctrl_msg)))) {
+            ERROR("Send control start msg to RTP muxer error: %s",
+                  strerror(errno));
+            ret = false;
+            break;
+          } else {
+            INFO("Send video start messages to RTP muxer.");
+            m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_VIDEO].
+                is_alive = true;
+          }
+        }
+        m_sip_client_que.front()->m_username = std::string(
+                           m_uac_event->request->from->url->username);
+        m_connected_num++;
+        INFO("The connected number is now %u.", m_connected_num);
+        if (AM_UNLIKELY(m_rtp_port == m_sip_config->sip_port)) {
+          m_rtp_port = m_rtp_port + 2;
+        }
+        INFO("The RTP port is %d", m_rtp_port);
+        break;
+      } else {
+        AMSipClientInfo *sip_client = m_sip_client_que.front();
+        m_sip_client_que.pop();
+        m_sip_client_que.push(sip_client);
+      }
+    }
+    /* Start to receive RTP packet and send to media service */
+    if (is_str_equal(AM_MEDIA_UNSUPPORTED,
+                     m_sip_client_que.front()->m_media_info
+                     [AM_RTP_MEDIA_AUDIO].media.c_str())) {
+      WARN("Audio is unsupported!");
+      break;
+    }
+    AMMediaServiceMsgBlock uds_uri;
+    if(AM_UNLIKELY(!parse_sdp(uds_uri.msg_uds,
+   m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_AUDIO].sdp.c_str(),
+   m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_AUDIO].sdp.size()))) {
+      ERROR("Failed to parse sdp information.");
+      ret = false;
+      break;
+    }
+    uds_uri.msg_uds.base.type = AM_MEDIA_SERVICE_MSG_UDS_URI;
+    uds_uri.msg_uds.base.length = sizeof(AMMediaServiceMsgUdsURI);
+    uds_uri.msg_uds.playback_id = -1;
+    /* Use base server name plus dialog id as UDS server name */
+    m_sip_client_que.front()->m_uds_server_name =
+        m_sip_config->sip_media_rtp_server_name.append(
+        std::to_string(m_sip_client_que.front()->m_dialog_id)).c_str();
+    /*Use base client name plus dialog id as UDS client name */
+    m_sip_client_que.front()->m_uds_client_name =
+        m_sip_config->sip_media_rtp_client_name.append(
+        std::to_string(m_sip_client_que.front()->m_dialog_id)).c_str();
+    strncpy(uds_uri.msg_uds.name,
+            m_sip_client_que.front()->m_uds_server_name.c_str(),
+            sizeof(uds_uri.msg_uds.name));
+    if(AM_UNLIKELY(!send_data_to_media_service(uds_uri))) {
+      ERROR("Failed to send uri data to media service.");
+      ret = false;
+      break;
+    } else {
+      NOTICE("Send uds uri to media service successfully.");
+      if (AM_LIKELY(m_event_playid->wait(5000))) {
+        NOTICE("Media service has returned playback id!");
+      } else {
+        ERROR("Failed to get playback id from media service!");
+        ret = false;
+        break;
+      }
+    }
+
+    if(AM_UNLIKELY(!m_sip_client_que.front()->setup_rtp_client_socket())) {
+      ERROR("Failed to setup rtp client socket!");
+      ret = false;
+      break;
+    }
+
+    m_sip_client_que.front()->m_rtp_thread = AMThread::create(
+        (m_sip_client_que.front()->m_username +
+        std::to_string(m_sip_client_que.front()->m_dialog_id)).c_str(),
+        AMSipClientInfo::start_process_rtp_thread, m_sip_client_que.front());
+    if (AM_UNLIKELY(!m_sip_client_que.front()->m_rtp_thread)) {
+      ERROR("Failed to create rtp_thread!");
+      m_sip_client_que.front()->m_rtp_thread = nullptr;
+      ret = false;
+      break;
+    }
+  } while(0);
+
+  return ret;
+}
+
+bool AMSipUAServer::on_sip_call_closed_recv()
+{
+  bool ret = true;
+  do {
+    for (uint32_t i = 0; i < m_sip_client_que.size(); i++) {
+      if (m_uac_event->did == m_sip_client_que.front()->m_dialog_id) {
+        if (m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_AUDIO].
+            is_alive) {
+          AMRtpClientMsgKill audio_msg_kill(
+             m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_AUDIO].ssrc,
+             0, m_unix_sock_fd);
+          if (AM_UNLIKELY(!send_rtp_control_data((uint8_t* )&audio_msg_kill,
+                                                 sizeof(audio_msg_kill)))) {
+            ERROR("Failed to send kill message to RTP Muxer to kill client"
+                  "SSRC: %08X!",
+             m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_AUDIO].ssrc);
+            ret = false;
+            break;
+          } else {
+            INFO("Sent kill message to RTP Muxer to kill "
+                 "SSRC: %08X!",
+             m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_AUDIO].ssrc);
+          }
+
+          if (AM_LIKELY(m_event_kill->wait(5000))) {
+            NOTICE("Client with SSRC: %08X is killed!",
+            m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_AUDIO].ssrc);
+          } else {
+            ERROR("Failed to receive response from RTP muxer!");
+            ret = false;
+          }
+        }
+
+        if (m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_VIDEO].
+            is_alive) {
+          AMRtpClientMsgKill video_msg_kill(
+             m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_VIDEO].ssrc,
+             0, m_unix_sock_fd);
+          if (AM_UNLIKELY(!send_rtp_control_data((uint8_t* )&video_msg_kill,
+                                                 sizeof(video_msg_kill)))) {
+            ERROR("Failed to send kill message to RTP Muxer to kill client"
+                  "SSRC: %08X!",
+             m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_VIDEO].ssrc);
+            ret = false;
+            break;
+          } else {
+            INFO("Sent kill message to RTP Muxer to kill "
+                "SSRC: %08X!",
+             m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_VIDEO].ssrc);
+          }
+
+          if (AM_LIKELY(m_event_kill->wait(5000))) {
+            NOTICE("Client with SSRC: %08X is killed!",
+            m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_AUDIO].ssrc);
+          } else {
+            ERROR("Failed to receive response from RTP muxer!");
+            ret = false;
+          }
+        }
+
+        AMMediaServiceMsgBlock stop_msg;
+        stop_msg.msg_stop.base.type = AM_MEDIA_SERVICE_MSG_STOP;
+        stop_msg.msg_stop.base.length = sizeof(AMMediaServiceMsgSTOP);
+        stop_msg.msg_stop.playback_id =
+            m_sip_client_que.front()->m_playback_id;
+        if (AM_UNLIKELY(!send_data_to_media_service(stop_msg))) {
+          ERROR("Failed to send stop msg to media service.");
+          ret = false;
+          break;
+        } else {
+          NOTICE("Send stop msg to media service successfully.");
+        }
+
+        delete m_sip_client_que.front();
+        m_sip_client_que.pop();
+        NOTICE("Hanging up!");
+        m_connected_num = m_connected_num ? (m_connected_num - 1) : 0;
+
+        break; /* break for loop */
+      } else {
+        AMSipClientInfo *sip_client = m_sip_client_que.front();
+        m_sip_client_que.pop();
+        m_sip_client_que.push(sip_client);
+      }
+    }
+  } while (0);
+
+  return ret;
+}
+
+bool AMSipUAServer::on_sip_call_answered_recv()
+{
+  bool ret = true;
+  do {
+    INFO("The callee has answered!");
+    sdp_message_t *msg_rsp = nullptr;
+    sdp_connection_t *audio_con_rsp = nullptr;
+    sdp_media_t *audio_md_rsp = nullptr;
+    sdp_connection_t *video_con_rsp = nullptr;
+    sdp_media_t *video_md_rsp = nullptr;
+
+    eXosip_lock(m_context);
+    msg_rsp = eXosip_get_sdp_info(m_uac_event->response);
+    eXosip_unlock(m_context);
+    char *str_sdp = nullptr;
+    sdp_message_to_str(msg_rsp, &str_sdp);
+    INFO("The callee's response SDP message is: \n%s", str_sdp);
+    std::string tmp_sdp_str = std::string(str_sdp);
+    osip_free(str_sdp);
+
+    /* create a sip client */
+    AMSipClientInfo *sip_client = new AMSipClientInfo(m_uac_event->did,
+                                                      m_uac_event->cid);
+    if(AM_UNLIKELY(nullptr == sip_client)) {
+      sdp_message_free(msg_rsp);
+      ERROR("Create sip client error!");
+      ret = false;
+      break;
+    } else if (AM_UNLIKELY(!sip_client->init(m_sip_config->jitter_buffer,
+                                        m_sip_config->frames_remain_in_jb))) {
+      ERROR("Init sip client error!");
+      delete sip_client;
+      ret = false;
+      break;
+    }
+    for(int i = 0; i < msg_rsp->m_medias.nb_elt; ++i) {
+      if (is_str_equal("audio",
+          ((sdp_media_t*)osip_list_get(&msg_rsp->m_medias, i))->m_media)) {
+        audio_con_rsp = eXosip_get_audio_connection(msg_rsp);
+        audio_md_rsp  = eXosip_get_audio_media(msg_rsp);
+        sip_client->m_media_info[AM_RTP_MEDIA_AUDIO].is_supported = true;
+        INFO("Audio is supported by the callee.");
+      } else if (is_str_equal("video",
+          ((sdp_media_t*)osip_list_get(&msg_rsp->m_medias, i))->m_media)) {
+          video_con_rsp = eXosip_get_video_connection(msg_rsp);
+          video_md_rsp  = eXosip_get_video_media(msg_rsp);
+          sip_client->m_media_info[AM_RTP_MEDIA_VIDEO].is_supported = true;
+          INFO("Video is supported by the callee.");
+        }
+    }
+    if (AM_UNLIKELY(!get_supported_media_types())){
+      delete sip_client;
+      sdp_message_free(msg_rsp);
+      ret = false;
+      break;
+    }
+    /* create audio RTP session info for communication */
+   AMRtpClientMsgInfo client_audio_info;
+   AMRtpClientInfo &audio_info = client_audio_info.info;
+   if(AM_LIKELY(sip_client->m_media_info[AM_RTP_MEDIA_AUDIO].is_supported)) {
+     /* TODO: Add IPv6 support */
+     audio_info.client_ip_domain = AM_IPV4;/* default */
+     audio_info.tcp_channel_rtp  = 0xff;   /* default UDP mode */
+     audio_info.tcp_channel_rtcp = 0xff;
+     audio_info.send_tcp_fd = false;
+     audio_info.port_srv_rtp  = m_rtp_port++;
+     audio_info.port_srv_rtcp = m_rtp_port++;
+     strcpy(audio_info.media,select_media_type(m_media_type,audio_md_rsp));
+
+     sockaddr_in uac_audio_addr;
+     uac_audio_addr.sin_family = AF_INET;
+     uac_audio_addr.sin_addr.s_addr = inet_addr(audio_con_rsp->c_addr);
+     uac_audio_addr.sin_port = htons(atoi(audio_md_rsp->m_port));
+     memcpy(&audio_info.udp.rtp.ipv4, &uac_audio_addr,
+            sizeof(uac_audio_addr));
+     audio_info.udp.rtp.ipv4.sin_port = htons(atoi(audio_md_rsp->m_port));
+
+     memcpy(&audio_info.udp.rtcp.ipv4, &uac_audio_addr,
+            sizeof(uac_audio_addr));
+     audio_info.udp.rtcp.ipv4.sin_port = htons(atoi(audio_md_rsp->m_port)
+                                               + 1);
+     memcpy(&audio_info.tcp.ipv4, &uac_audio_addr, sizeof(uac_audio_addr));
+     client_audio_info.print();
+     client_audio_info.session_id = get_random_number();
+     sip_client->m_media_info[AM_RTP_MEDIA_AUDIO].session_id =
+                                       client_audio_info.session_id;
+     sip_client->m_media_info[AM_RTP_MEDIA_AUDIO].media =
+                                       std::string(audio_info.media);
+     sip_client->m_media_info[AM_RTP_MEDIA_AUDIO].rtp_port =
+                                       audio_info.port_srv_rtp;
+   }
+
+   /* create video RTP session info for communication */
+   AMRtpClientMsgInfo client_video_info;
+   AMRtpClientInfo &video_info = client_video_info.info;
+   if(sip_client->m_media_info[AM_RTP_MEDIA_VIDEO].is_supported &&
+       m_sip_config->enable_video) {
+     /* TODO: Add IPv6 support */
+     video_info.client_ip_domain = AM_IPV4;/* default */
+     video_info.tcp_channel_rtp  = 0xff;   /* default UDP mode */
+     video_info.tcp_channel_rtcp = 0xff;
+     video_info.send_tcp_fd = false;
+     video_info.port_srv_rtp  = m_rtp_port++;
+     video_info.port_srv_rtcp = m_rtp_port++;
+     strcpy(video_info.media, select_media_type(m_media_type,video_md_rsp));
+
+     sockaddr_in uac_video_addr;
+     uac_video_addr.sin_family = AF_INET;
+     uac_video_addr.sin_addr.s_addr = inet_addr(video_con_rsp->c_addr);
+     uac_video_addr.sin_port = htons(atoi(video_md_rsp->m_port));
+     memcpy(&video_info.udp.rtp.ipv4, &uac_video_addr,
+            sizeof(uac_video_addr));
+     video_info.udp.rtp.ipv4.sin_port = htons(atoi(video_md_rsp->m_port));
+
+     memcpy(&video_info.udp.rtcp.ipv4, &uac_video_addr,
+            sizeof(uac_video_addr));
+     video_info.udp.rtcp.ipv4.sin_port = htons(atoi(video_md_rsp->m_port)
+                                               + 1);
+     memcpy(&video_info.tcp.ipv4, &uac_video_addr, sizeof(uac_video_addr));
+     client_video_info.print();
+     client_video_info.session_id = get_random_number();
+     sip_client->m_media_info[AM_RTP_MEDIA_VIDEO].session_id =
+                                       client_video_info.session_id;
+     sip_client->m_media_info[AM_RTP_MEDIA_VIDEO].media =
+                                       std::string(video_info.media);
+     sip_client->m_media_info[AM_RTP_MEDIA_VIDEO].rtp_port =
+                                       video_info.port_srv_rtp;
+   }
+
+   /* push sip_client into the sip client queue */
+   if (AM_LIKELY(nullptr != sip_client)) {
+     m_sip_client_que.push(sip_client);
+   } else {
+     sdp_message_free(msg_rsp);
+     ERROR("Create sip client error!");
+     ret = false;
+     break;
+   }
+   /* if UAS returns more than one payload type in 200 OK, re-INVITE */
+   if (AM_UNLIKELY(audio_md_rsp && (audio_md_rsp->m_payloads.nb_elt > 1))) {
+     WARN("%d kinds of supported payload types are received, re-INVITE.",
+          audio_md_rsp->m_payloads.nb_elt);
+
+     char localip[128]  = {0};
+     char re_uac_sdp[2048] = {0};
+     eXosip_guess_localip(m_context, AF_INET, localip, 128);
+     /* communicate with RTP-muxer to get media SDP info */
+     AMRtpClientMsgSDP sdp_msg;
+     sdp_msg.session_id = m_uac_event->did;/* use the did as session_id */
+     char full_ip[256] = {0};
+     if (m_sip_config->is_register &&
+         !is_str_equal(audio_con_rsp->c_addr, msg_rsp->o_addr)) {
+       snprintf(full_ip, sizeof(full_ip), "%s:%s", "IPV4",
+                audio_con_rsp->c_addr);
+     } else {
+       snprintf(full_ip, sizeof(full_ip), "%s:%s", "IPV4", localip);
+     }
+     strcpy(sdp_msg.media[AM_RTP_MEDIA_HOSTIP], full_ip);
+     if(!is_str_equal(audio_info.media, AM_MEDIA_UNSUPPORTED) &&
+        strlen(audio_info.media)) {
+       strcpy(sdp_msg.media[AM_RTP_MEDIA_AUDIO], audio_info.media);
+       sdp_msg.port[AM_RTP_MEDIA_AUDIO] = audio_info.port_srv_rtp;
+     }
+     if(!is_str_equal(video_info.media, AM_MEDIA_UNSUPPORTED) &&
+        strlen(video_info.media)) {
+       strcpy(sdp_msg.media[AM_RTP_MEDIA_VIDEO],video_info.media);
+       sdp_msg.port[AM_RTP_MEDIA_VIDEO] = video_info.port_srv_rtp;
+     }
+     sdp_msg.length = sizeof(sdp_msg);
+
+     /* Send query SDP message to RTP muxer*/
+     if (AM_UNLIKELY(!send_rtp_control_data((uint8_t*)&sdp_msg,
+                                            sizeof(sdp_msg)))) {
+       ERROR("Send message to RTP muxer error!");
+       sdp_message_free(msg_rsp);
+       ret = false;
+       break;
+     } else {
+       INFO("Send SDP messages to RTP muxer.");
+       if (AM_LIKELY(m_event_sdp->wait(5000))) {
+         NOTICE("RTP muxer has returned SDP info!");
+       } else {
+         ERROR("Failed to get SDP info from RTP muxer!");
+         sdp_message_free(msg_rsp);
+         ret = false;
+         break;
+       }
+     }
+
+     /* build and send local SDP message */
+     snprintf(re_uac_sdp, 2048,
+              "v=0\r\n"
+              "o=Ambarella 1 1 IN IP4 %s\r\n"
+              "s=Ambarella SIP UA Server\r\n"
+              "i=Session Information\r\n"
+            //  "c=IN IP4 %s\r\n"
+              "t=0 0\r\n"
+              "%s%s",
+              localip,//localip,
+              m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_AUDIO].
+              sdp.c_str(),
+              m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_VIDEO].
+              sdp.c_str());
+
+     INFO("The re-UAC's SDP is \n%s",re_uac_sdp);
+
+     /* Send ACK to confirm this SIP session */
+     osip_message_t *ack = nullptr;
+     eXosip_lock(m_context);
+     eXosip_call_build_ack(m_context, m_uac_event->did, &ack);
+     eXosip_call_send_ack(m_context, m_uac_event->did, ack);
+     eXosip_unlock(m_context);
+
+     /* Send re-INVITE method */
+     osip_message_t *re_invite = nullptr;
+     eXosip_lock(m_context);
+     eXosip_call_build_request(m_context, m_uac_event->did, "INVITE",
+                               &re_invite);
+     osip_message_set_body(re_invite, re_uac_sdp, strlen(re_uac_sdp));
+     osip_message_set_content_type(re_invite, "application/sdp");
+
+     eXosip_call_send_request(m_context, m_uac_event->did, re_invite);
+     eXosip_unlock(m_context);
+
+     sdp_message_free(msg_rsp);
+     break;
+   }
+
+   if (AM_LIKELY(strlen(audio_info.media) &&
+       (!is_str_equal(AM_MEDIA_UNSUPPORTED, audio_info.media)))) {
+     if (AM_UNLIKELY(!send_rtp_control_data((uint8_t*)&client_audio_info,
+                                            sizeof(client_audio_info)))) {
+       ERROR("Send message to RTP muxer error!");
+       sdp_message_free(msg_rsp);
+       ret = false;
+       break;
+     } else {
+       INFO("Send audio INFO messages to RTP muxer.");
+       if (AM_LIKELY(m_event_ssrc->wait(5000))) {
+         NOTICE("RTP muxer has returned SSRC info!");
+       } else {
+         ERROR("Failed to get SSRC info from RTP muxer!");
+         sdp_message_free(msg_rsp);
+         ret = false;
+         break;
+       }
+     }
+   }
+   if (strlen(video_info.media) &&
+       (!is_str_equal(AM_MEDIA_UNSUPPORTED, video_info.media))) {
+     if (AM_UNLIKELY(!send_rtp_control_data((uint8_t*)&client_video_info,
+                                            sizeof(client_video_info)))) {
+       ERROR("Send message to RTP muxer error!");
+       sdp_message_free(msg_rsp);
+       ret = false;
+       break;
+     } else {
+       INFO("Send video INFO messages to RTP muxer.");
+       if (AM_LIKELY(m_event_ssrc->wait(5000))) {
+         NOTICE("RTP muxer has returned SSRC info!");
+       } else {
+         ERROR("Failed to get SSRC info from RTP muxer!");
+         sdp_message_free(msg_rsp);
+         ret = false;
+         break;
+       }
+     }
+   }
+
+   /* Send ACK to confirm this SIP session */
+   osip_message_t *ack = nullptr;
+   eXosip_lock(m_context);
+   eXosip_call_build_ack(m_context, m_uac_event->did, &ack);
+   eXosip_call_send_ack(m_context, m_uac_event->did, ack);
+   eXosip_unlock(m_context);
+
+   /* Connection established, exit busy status */
+   m_busy = false;
+
+   for (uint32_t i = 0; i < m_sip_client_que.size(); ++i) {
+     if (m_sip_client_que.front()->m_dialog_id == m_uac_event->did) {
+       if (m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_AUDIO].ssrc) {
+         AMRtpClientMsgControl audio_ctrl_msg(AM_RTP_CLIENT_MSG_START,
+        m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_AUDIO].ssrc, 0);
+         if (AM_UNLIKELY(!send_rtp_control_data((uint8_t*)&audio_ctrl_msg,
+                                                sizeof(audio_ctrl_msg)))) {
+           ERROR("Send control start msg to RTP muxer error: %s",
+                 strerror(errno));
+           ret = false;
+           break;
+         } else {
+           INFO("Send audio start messages to RTP muxer.");
+           m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_AUDIO].
+               is_alive = true;
+         }
+       }
+       if (m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_VIDEO].ssrc) {
+         AMRtpClientMsgControl video_ctrl_msg(AM_RTP_CLIENT_MSG_START,
+         m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_VIDEO].ssrc, 0);
+         if (AM_UNLIKELY(!send_rtp_control_data((uint8_t*)&video_ctrl_msg,
+                                                sizeof(video_ctrl_msg)))) {
+           ERROR("Send control start msg to RTP muxer error: %s",
+                 strerror(errno));
+           ret = false;
+           break;
+         } else {
+           INFO("Send video start messages to RTP muxer.");
+           m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_VIDEO].
+               is_alive = true;
+         }
+       }
+       m_sip_client_que.front()->m_username = std::string(
+                                 m_uac_event->request->to->url->username);
+       m_connected_num++;
+       INFO("The connected number is now %u.", m_connected_num);
+       if (AM_UNLIKELY(m_rtp_port == m_sip_config->sip_port)) {
+         m_rtp_port = m_rtp_port + 2;
+       }
+       INFO("The RTP port is %d", m_rtp_port);
+       break;
+     } else {
+       AMSipClientInfo *sip_client = m_sip_client_que.front();
+       m_sip_client_que.pop();
+       m_sip_client_que.push(sip_client);
+     }
+   }
+   sdp_message_free(msg_rsp);
+
+   /* Start to receive RTP packet and send to media service */
+   AMMediaServiceMsgBlock uds_uri;
+   if(AM_UNLIKELY(!parse_sdp(uds_uri.msg_uds, tmp_sdp_str.c_str(),
+                             tmp_sdp_str.size()))) {
+     ERROR("Failed to parse sdp information.");
+     ret = false;
+     break;
+   }
+   uds_uri.msg_uds.base.type = AM_MEDIA_SERVICE_MSG_UDS_URI;
+   uds_uri.msg_uds.base.length = sizeof(AMMediaServiceMsgUdsURI);
+   uds_uri.msg_uds.playback_id = -1;
+   /* Use base server name plus dialog id as UDS server name */
+   m_sip_client_que.front()->m_uds_server_name =
+       m_sip_config->sip_media_rtp_server_name.append(
+       std::to_string(m_sip_client_que.front()->m_dialog_id)).c_str();
+   /*Use base client name plus dialog id as UDS client name */
+   m_sip_client_que.front()->m_uds_client_name =
+       m_sip_config->sip_media_rtp_client_name.append(
+       std::to_string(m_sip_client_que.front()->m_dialog_id)).c_str();
+   strncpy(uds_uri.msg_uds.name,
+           m_sip_client_que.front()->m_uds_server_name.c_str(),
+           sizeof(uds_uri.msg_uds.name));
+   if(AM_UNLIKELY(!send_data_to_media_service(uds_uri))) {
+     ERROR("Failed to send uri data to media service.");
+     ret = false;
+     break;
+   } else {
+     NOTICE("Send uds uri to media service successfully.");
+     if (AM_LIKELY(m_event_playid->wait(5000))) {
+       NOTICE("Media service has returned playback id!");
+     } else {
+       ERROR("Failed to get playback id from media service!");
+       ret = false;
+       break;
+     }
+   }
+
+   if(AM_UNLIKELY(!m_sip_client_que.front()->setup_rtp_client_socket())) {
+     ERROR("Failed to setup rtp client socket!");
+     ret = false;
+     break;
+   }
+
+   m_sip_client_que.front()->m_rtp_thread = AMThread::create(
+       (m_sip_client_que.front()->m_username +
+       std::to_string(m_sip_client_que.front()->m_dialog_id)).c_str(),
+       AMSipClientInfo::start_process_rtp_thread, m_sip_client_que.front());
+   if (AM_UNLIKELY(!m_sip_client_que.front()->m_rtp_thread)) {
+     ERROR("Failed to create rtp_thread!");
+     m_sip_client_que.front()->m_rtp_thread = nullptr;
+     ret = false;
+     break;
+   }
+  } while (0);
+
+  return ret;
 }
 
 bool AMSipUAServer::start_sip_ua_server_thread()
@@ -584,459 +2173,19 @@ void AMSipUAServer::sip_ua_server_thread()
 
     switch(m_uac_event->type) {
       case EXOSIP_CALL_INVITE: { /* new INVITE method coming */
-        if (AM_UNLIKELY(m_busy)) {
-          eXosip_lock(m_context);
-          eXosip_call_send_answer(m_context, m_uac_event->tid, SIP_BUSY_HERE,
-                                  nullptr);
-          eXosip_unlock(m_context);
-          WARN("User is busy!");
-          break;
+        if (AM_UNLIKELY(!on_sip_call_invite_recv())) {
+          ERROR("Process invite sip call error!");
         }
-        INFO("Received a call from %s@%s:%s",
-              m_uac_event->request->from->url->username,
-              m_uac_event->request->from->url->host,
-              m_uac_event->request->from->url->port);
-
-        /* Reread the sip configuration file */
-        if (AM_UNLIKELY(!(m_sip_config = m_config->get_config(m_config_file)))) {
-          ERROR("Reread the sip configuration file error!");
-          break;
-        }
-        delete_invalid_sip_client();
-
-        INFO("Current connected client number is %d", m_connected_num);
-        if (AM_UNLIKELY(m_connected_num >= m_sip_config->max_conn_num)) {
-          eXosip_lock(m_context);
-          eXosip_call_send_answer(m_context, m_uac_event->tid, SIP_BUSY_HERE,
-                                  nullptr);
-          eXosip_unlock(m_context);
-          WARN("Refuse the call, user is busy!");
-          break;
-        } else if (0 == m_connected_num) {
-          m_rtp_port = m_sip_config->rtp_stream_port_base;
-        }
-
-        eXosip_lock(m_context);
-        eXosip_call_send_answer(m_context, m_uac_event->tid,
-                                SIP_RINGING, nullptr);
-        if(AM_UNLIKELY(0 != eXosip_call_build_answer(m_context,
-                                                     m_uac_event->tid,
-                                                     SIP_OK, &m_answer))) {
-          eXosip_call_send_answer(m_context, m_uac_event->tid,
-                                  SIP_DECLINE, nullptr);
-          ERROR("error build answer!\n");
-          eXosip_unlock(m_context);
-          break;
-       }
-       eXosip_unlock(m_context);
-
-       /* create a sip client */
-       SipClientInfo *sip_client = new SipClientInfo(m_uac_event->did,
-                                                     m_uac_event->cid);
-       if (AM_UNLIKELY(!sip_client)) {
-         ERROR("create sip client error!");
-         break;
-       }
-       /* Request SDP(for UAS) */
-       sdp_message_t     *msg_req = nullptr;
-       sdp_connection_t  *audio_con_req = nullptr;
-       sdp_media_t       *audio_md_req  = nullptr;
-       sdp_connection_t  *video_con_req = nullptr;
-       sdp_media_t       *video_md_req  = nullptr;
-
-       /* parse the SDP message */
-       eXosip_lock(m_context);
-       msg_req = eXosip_get_remote_sdp(m_context, m_uac_event->did);
-       eXosip_unlock(m_context);
-
-       char *str_sdp = nullptr;
-       sdp_message_to_str(msg_req, &str_sdp);
-       INFO("The caller's SDP message is: \n%s", str_sdp);
-       osip_free(str_sdp);
-
-       for(int i = 0; i < msg_req->m_medias.nb_elt; ++i) {
-         if (is_str_equal("audio",
-             ((sdp_media_t*)osip_list_get(&msg_req->m_medias, i))->m_media)) {
-           audio_con_req = eXosip_get_audio_connection(msg_req);
-           audio_md_req  = eXosip_get_audio_media(msg_req);
-           sip_client->media_info[AM_RTP_MEDIA_AUDIO].is_supported = true;
-           INFO("Audio is supported by the caller.");
-         } else if (is_str_equal("video",
-             ((sdp_media_t*)osip_list_get(&msg_req->m_medias, i))->m_media)) {
-             video_con_req = eXosip_get_video_connection(msg_req);
-             video_md_req  = eXosip_get_video_media(msg_req);
-             sip_client->media_info[AM_RTP_MEDIA_VIDEO].is_supported = true;
-             INFO("Video is supported by the caller.");
-           }
-       }
-
-       if (AM_UNLIKELY(!get_supported_media_types())){
-         delete sip_client;
-         sdp_message_free(msg_req);
-         break;
-       }
-
-       /* create audio RTP session info for communication */
-       AMRtpClientMsgInfo client_audio_info;
-       AMRtpClientInfo &audio_info = client_audio_info.info;
-       if(AM_LIKELY(sip_client->media_info[AM_RTP_MEDIA_AUDIO].is_supported)) {
-         /* TODO: Add IPv6 support */
-         audio_info.client_ip_domain = AM_IPV4;/* default */
-         audio_info.tcp_channel_rtp  = 0xff;   /* default UDP mode */
-         audio_info.tcp_channel_rtcp = 0xff;
-         audio_info.send_tcp_fd = false;
-         audio_info.port_srv_rtp  = m_rtp_port++;
-         audio_info.port_srv_rtcp = m_rtp_port++;
-         strcpy(audio_info.media, select_media_type(m_media_type,audio_md_req));
-
-         sockaddr_in uac_audio_addr;
-         uac_audio_addr.sin_family = AF_INET;
-         uac_audio_addr.sin_addr.s_addr = inet_addr(audio_con_req->c_addr);
-         uac_audio_addr.sin_port = htons(atoi(audio_md_req->m_port));
-         memcpy(&audio_info.udp.rtp.ipv4, &uac_audio_addr,
-                sizeof(uac_audio_addr));
-         audio_info.udp.rtp.ipv4.sin_port = htons(atoi(audio_md_req->m_port));
-
-         memcpy(&audio_info.udp.rtcp.ipv4, &uac_audio_addr,
-                sizeof(uac_audio_addr));
-         audio_info.udp.rtcp.ipv4.sin_port = htons(atoi(audio_md_req->m_port)
-                                                   + 1);
-
-         memcpy(&audio_info.tcp.ipv4, &uac_audio_addr, sizeof(uac_audio_addr));
-         client_audio_info.print();
-
-         client_audio_info.session_id = get_random_number();
-         sip_client->media_info[AM_RTP_MEDIA_AUDIO].session_id =
-                                           client_audio_info.session_id;
-         sip_client->media_info[AM_RTP_MEDIA_AUDIO].media =
-                                           std::string(audio_info.media);
-         sip_client->media_info[AM_RTP_MEDIA_AUDIO].rtp_port =
-                                           audio_info.port_srv_rtp;
-       }
-
-       if (AM_UNLIKELY(m_rtp_port == m_sip_config->sip_port)) {
-         m_rtp_port = m_rtp_port + 2;
-       }
-
-       /* create video RTP session info for communication */
-       AMRtpClientMsgInfo client_video_info;
-       AMRtpClientInfo &video_info = client_video_info.info;
-       if(sip_client->media_info[AM_RTP_MEDIA_VIDEO].is_supported &&
-           m_sip_config->enable_video) {
-         /* TODO: Add IPv6 support */
-         video_info.client_ip_domain = AM_IPV4;/* default */
-         video_info.tcp_channel_rtp  = 0xff;   /* default UDP mode */
-         video_info.tcp_channel_rtcp = 0xff;
-         video_info.send_tcp_fd = false;
-         video_info.port_srv_rtp  = m_rtp_port++;
-         video_info.port_srv_rtcp = m_rtp_port++;
-         strcpy(video_info.media, select_media_type(m_media_type,video_md_req));
-
-         sockaddr_in uac_video_addr;
-         uac_video_addr.sin_family = AF_INET;
-         uac_video_addr.sin_addr.s_addr = inet_addr(video_con_req->c_addr);
-         uac_video_addr.sin_port = htons(atoi(video_md_req->m_port));
-
-         memcpy(&video_info.udp.rtp.ipv4, &uac_video_addr,
-                sizeof(uac_video_addr));
-         video_info.udp.rtp.ipv4.sin_port = htons(atoi(video_md_req->m_port));
-
-         memcpy(&video_info.udp.rtcp.ipv4, &uac_video_addr,
-                sizeof(uac_video_addr));
-         video_info.udp.rtcp.ipv4.sin_port = htons(atoi(video_md_req->m_port)
-                                                   + 1);
-
-         memcpy(&video_info.tcp.ipv4, &uac_video_addr, sizeof(uac_video_addr));
-         client_video_info.print();
-
-         client_video_info.session_id = get_random_number();
-         sip_client->media_info[AM_RTP_MEDIA_VIDEO].session_id =
-                                           client_video_info.session_id;
-         sip_client->media_info[AM_RTP_MEDIA_VIDEO].media =
-                                           std::string(video_info.media);
-         sip_client->media_info[AM_RTP_MEDIA_VIDEO].rtp_port =
-                                           video_info.port_srv_rtp;
-       }
-
-       /*if not support the audio and video type then refuse the call */
-       if (AM_UNLIKELY((is_str_equal(AM_MEDIA_UNSUPPORTED, audio_info.media) ||
-                        (0 == strlen(audio_info.media))) &&
-                       (is_str_equal(AM_MEDIA_UNSUPPORTED, video_info.media) ||
-                        (0 == strlen(video_info.media))))) {
-         eXosip_lock (m_context);
-         eXosip_call_send_answer(m_context, m_uac_event->tid,
-                                 SIP_UNSUPPORTED_MEDIA_TYPE, nullptr);
-         eXosip_unlock (m_context);
-         WARN("Refuse the call, not supported media type!");
-         delete sip_client;
-         sdp_message_free(msg_req);
-         break;
-       }
-
-       /* push sip_client into the sip client queue */
-       if (AM_LIKELY(sip_client)) {
-         m_sip_client_que.push(sip_client);
-       } else {
-         delete sip_client;
-         sdp_message_free(msg_req);
-         ERROR("Create sip client error!");
-         break;
-       }
-
-       if (AM_LIKELY(strlen(audio_info.media) &&
-           (!is_str_equal(AM_MEDIA_UNSUPPORTED, audio_info.media)))) {
-         if (AM_UNLIKELY(!send_rtp_control_data((uint8_t*)&client_audio_info,
-                                                sizeof(client_audio_info)))) {
-           ERROR("Send message to RTP muxer error!");
-           sdp_message_free(msg_req);
-           break;
-         } else {
-           INFO("Send audio INFO messages to RTP muxer.");
-           if (AM_LIKELY(m_event_ssrc->wait(5000))) {
-             NOTICE("RTP muxer has returned SSRC info!");
-           } else {
-             ERROR("Failed to get SSRC info from RTP muxer!");
-             sdp_message_free(msg_req);
-             break;
-           }
-         }
-       } else {
-         WARN("Audio type is not supported!");
-       }
-
-       if (strlen(video_info.media) &&
-           (!is_str_equal(AM_MEDIA_UNSUPPORTED, video_info.media))) {
-         if (AM_UNLIKELY(!send_rtp_control_data((uint8_t*)&client_video_info,
-                                                sizeof(client_video_info)))) {
-           ERROR("Send message to RTP muxer error!");
-           sdp_message_free(msg_req);
-           break;
-         } else {
-           INFO("Send video INFO messages to RTP muxer.");
-           if (AM_LIKELY(m_event_ssrc->wait(5000))) {
-             NOTICE("RTP muxer has returned SSRC info!");
-           } else {
-             ERROR("Failed to get SSRC info from RTP muxer!");
-             sdp_message_free(msg_req);
-             break;
-           }
-         }
-       }
-
-       char localip[128]  = {0};
-       char uas_sdp[2048] = {0};
-       eXosip_guess_localip(m_context, AF_INET, localip, 128);
-       /* communicate with RTP-muxer to get media SDP info */
-       AMRtpClientMsgSDP sdp_msg;
-       sdp_msg.session_id = m_uac_event->did;/* use the did as session_id */
-       char full_ip[256] = {0};
-       if (m_sip_config->is_register &&
-           !is_str_equal(audio_con_req->c_addr, msg_req->o_addr)) {
-         snprintf(full_ip, sizeof(full_ip), "%s:%s", "IPV4",
-                  audio_con_req->c_addr);
-       } else {
-         snprintf(full_ip, sizeof(full_ip), "%s:%s", "IPV4", localip);
-       }
-       strcpy(sdp_msg.media[AM_RTP_MEDIA_HOSTIP], full_ip);
-       if(!is_str_equal(audio_info.media, AM_MEDIA_UNSUPPORTED) &&
-          strlen(audio_info.media)) {
-         strcpy(sdp_msg.media[AM_RTP_MEDIA_AUDIO], audio_info.media);
-         sdp_msg.port[AM_RTP_MEDIA_AUDIO] = audio_info.port_srv_rtp;
-       }
-       if(!is_str_equal(video_info.media, AM_MEDIA_UNSUPPORTED) &&
-          strlen(video_info.media)) {
-         strcpy(sdp_msg.media[AM_RTP_MEDIA_VIDEO],video_info.media);
-         sdp_msg.port[AM_RTP_MEDIA_VIDEO] = video_info.port_srv_rtp;
-       }
-       sdp_msg.length = sizeof(sdp_msg);
-
-       /* Send query SDP message to RTP muxer*/
-       if (AM_UNLIKELY(!send_rtp_control_data((uint8_t*)&sdp_msg,
-                                              sizeof(sdp_msg)))) {
-         ERROR("Send message to RTP muxer error!");
-         sdp_message_free(msg_req);
-         break;
-       } else {
-         INFO("Send SDP messages to RTP muxer.");
-         if (AM_LIKELY(m_event_sdp->wait(5000))) {
-           NOTICE("RTP muxer has returned SDP info!");
-         } else {
-           ERROR("Failed to get SDP info from RTP muxer!");
-           sdp_message_free(msg_req);
-           break;
-         }
-       }
-
-       /* build and send local SDP message */
-       snprintf(uas_sdp, 2048,
-                "v=0\r\n"
-                "o=Ambarella 1 1 IN IP4 %s\r\n"
-                "s=Ambarella SIP UA Server\r\n"
-                "i=Session Information\r\n"
-              //  "c=IN IP4 %s\r\n"
-                "t=0 0\r\n"
-                "%s%s",
-                localip,//localip,
-                m_sip_client_que.front()->media_info[AM_RTP_MEDIA_AUDIO].
-                sdp.empty() ? "m=audio 0 RTP/AVP 0\r\n" :
-                m_sip_client_que.front()->media_info[AM_RTP_MEDIA_AUDIO].
-                sdp.c_str(),
-                m_sip_client_que.front()->media_info[AM_RTP_MEDIA_VIDEO].
-                sdp.c_str());
-
-       INFO("The UAS's SDP is \n%s",uas_sdp);
-
-       eXosip_lock(m_context);
-       osip_message_set_body(m_answer, uas_sdp, strlen(uas_sdp));
-       osip_message_set_content_type(m_answer, "application/sdp");
-       eXosip_unlock(m_context);
-
-       eXosip_lock(m_context);
-       eXosip_call_send_answer(m_context, m_uac_event->tid, SIP_OK, m_answer);
-       eXosip_unlock(m_context);
-
-       sdp_message_free(msg_req);
-
       }break;
       case EXOSIP_CALL_ACK: {
-        for (uint32_t i = 0; i < m_sip_client_que.size(); ++i) {
-          if (m_sip_client_que.front()->dialog_id == m_uac_event->did) {
-            if (m_sip_client_que.front()->media_info[AM_RTP_MEDIA_AUDIO].ssrc) {
-              AMRtpClientMsgControl audio_ctrl_msg(AM_RTP_CLIENT_MSG_START,
-             m_sip_client_que.front()->media_info[AM_RTP_MEDIA_AUDIO].ssrc, 0);
-              if (AM_UNLIKELY(!send_rtp_control_data((uint8_t*)&audio_ctrl_msg,
-                                                     sizeof(audio_ctrl_msg)))) {
-                ERROR("Send control start msg to RTP muxer error: %s",
-                      strerror(errno));
-                break;
-              } else {
-                INFO("Send audio start messages to RTP muxer.");
-                m_sip_client_que.front()->media_info[AM_RTP_MEDIA_AUDIO].
-                    is_alive = true;
-              }
-            }
-            if (m_sip_client_que.front()->media_info[AM_RTP_MEDIA_VIDEO].ssrc) {
-              AMRtpClientMsgControl video_ctrl_msg(AM_RTP_CLIENT_MSG_START,
-              m_sip_client_que.front()->media_info[AM_RTP_MEDIA_VIDEO].ssrc, 0);
-              if (AM_UNLIKELY(!send_rtp_control_data((uint8_t*)&video_ctrl_msg,
-                                                     sizeof(video_ctrl_msg)))) {
-                ERROR("Send control start msg to RTP muxer error: %s",
-                      strerror(errno));
-                break;
-              } else {
-                INFO("Send video start messages to RTP muxer.");
-                m_sip_client_que.front()->media_info[AM_RTP_MEDIA_VIDEO].
-                    is_alive = true;
-              }
-            }
-            m_sip_client_que.front()->username = std::string(
-                               m_uac_event->request->from->url->username);
-            m_connected_num++;
-            INFO("The connected number is now %d.", m_connected_num);
-            if (AM_UNLIKELY(m_rtp_port == m_sip_config->sip_port)) {
-              m_rtp_port = m_rtp_port + 2;
-            }
-            INFO("The RTP port is %d", m_rtp_port);
-            break;
-          } else {
-            SipClientInfo *sip_client = m_sip_client_que.front();
-            m_sip_client_que.pop();
-            m_sip_client_que.push(sip_client);
-          }
-        }
-
-        if (!is_str_equal(AM_MEDIA_UNSUPPORTED,
-     m_sip_client_que.front()->media_info[AM_RTP_MEDIA_AUDIO].media.c_str())) {
-          AMMediaServiceMsgBlock audio_info;
-          audio_info.msg_info.base.type = AM_MEDIA_SERVICE_MSG_AUDIO_INFO;
-          audio_info.msg_info.base.length = sizeof(AMMediaServiceMsgAudioINFO);
-          if(AM_UNLIKELY(!parse_sdp(audio_info.msg_info,
-         m_sip_client_que.front()->media_info[AM_RTP_MEDIA_AUDIO].sdp.c_str(),
-         m_sip_client_que.front()->media_info[AM_RTP_MEDIA_AUDIO].sdp.size()))) {
-            ERROR("Failed to parse sdp information.");
-            break;
-          }
-          if(AM_UNLIKELY(!send_data_to_media_service(audio_info))) {
-            ERROR("Failed to send info data to media service.");
-            break;
-          }
-          NOTICE("Send audio info to media service successfully.");
+        if (AM_UNLIKELY(!on_sip_call_ack_recv())) {
+          ERROR("Process ack sip call error!");
         }
       }break;
       case EXOSIP_CALL_CLOSED: { /* a BYE was received for this call */
-        for (uint32_t i = 0; i < m_sip_client_que.size(); i++) {
-          if (m_uac_event->did == m_sip_client_que.front()->dialog_id) {
-            if (m_sip_client_que.front()->media_info[AM_RTP_MEDIA_AUDIO].
-                is_alive) {
-              AMRtpClientMsgKill audio_msg_kill(
-                 m_sip_client_que.front()->media_info[AM_RTP_MEDIA_AUDIO].ssrc,
-                 0, m_unix_sock_fd);
-              if (AM_UNLIKELY(!send_rtp_control_data((uint8_t* )&audio_msg_kill,
-                                                     sizeof(audio_msg_kill)))) {
-                ERROR("Failed to send kill message to RTP Muxer to kill client"
-                      "SSRC: %08X!",
-                 m_sip_client_que.front()->media_info[AM_RTP_MEDIA_AUDIO].ssrc);
-                break;
-              } else {
-                INFO("Sent kill message to RTP Muxer to kill "
-                     "SSRC: %08X!",
-                 m_sip_client_que.front()->media_info[AM_RTP_MEDIA_AUDIO].ssrc);
-              }
-
-              if (AM_LIKELY(m_event_kill->wait(5000))) {
-                NOTICE("Client with SSRC: %08X is killed!",
-                m_sip_client_que.front()->media_info[AM_RTP_MEDIA_AUDIO].ssrc);
-              } else {
-                ERROR("Failed to receive response from RTP muxer!");
-              }
-            }
-
-            if (m_sip_client_que.front()->media_info[AM_RTP_MEDIA_VIDEO].
-                is_alive) {
-              AMRtpClientMsgKill video_msg_kill(
-                 m_sip_client_que.front()->media_info[AM_RTP_MEDIA_VIDEO].ssrc,
-                 0, m_unix_sock_fd);
-              if (AM_UNLIKELY(!send_rtp_control_data((uint8_t* )&video_msg_kill,
-                                                     sizeof(video_msg_kill)))) {
-                ERROR("Failed to send kill message to RTP Muxer to kill client"
-                      "SSRC: %08X!",
-                 m_sip_client_que.front()->media_info[AM_RTP_MEDIA_VIDEO].ssrc);
-                break;
-              } else {
-                INFO("Sent kill message to RTP Muxer to kill "
-                    "SSRC: %08X!",
-                 m_sip_client_que.front()->media_info[AM_RTP_MEDIA_VIDEO].ssrc);
-              }
-
-              if (AM_LIKELY(m_event_kill->wait(5000))) {
-                NOTICE("Client with SSRC: %08X is killed!",
-                m_sip_client_que.front()->media_info[AM_RTP_MEDIA_AUDIO].ssrc);
-              } else {
-                ERROR("Failed to receive response from RTP muxer!");
-              }
-            }
-            delete m_sip_client_que.front();
-            m_sip_client_que.pop();
-            NOTICE("Hanging up!");
-            m_connected_num = m_connected_num ? (m_connected_num - 1) : 0;
-
-            AMMediaServiceMsgBlock stop_msg;
-            stop_msg.msg_stop.base.type = AM_MEDIA_SERVICE_MSG_STOP;
-            stop_msg.msg_stop.base.length = sizeof(AMMediaServiceMsgSTOP);
-            if (AM_UNLIKELY(!send_data_to_media_service(stop_msg))) {
-              ERROR("Failed to send stop msg to media service.");
-              break;
-            }
-            NOTICE("Send stop msg to media service successfully.");
-
-            break;
-          } else {
-            SipClientInfo *sip_client = m_sip_client_que.front();
-            m_sip_client_que.pop();
-            m_sip_client_que.push(sip_client);
-          }
+        if (AM_UNLIKELY(!on_sip_call_closed_recv())) {
+          ERROR("Process closed sip call error!");
         }
-
       }break;
       case EXOSIP_MESSAGE_NEW: {
         if(AM_LIKELY(MSG_IS_MESSAGE(m_uac_event->request))) {
@@ -1062,313 +2211,9 @@ void AMSipUAServer::sip_ua_server_thread()
         INFO("Ringing...");
       }break;
       case EXOSIP_CALL_ANSWERED: {
-        INFO("The callee has answered!");
-        sdp_message_t *msg_rsp = nullptr;
-        sdp_connection_t *audio_con_rsp = nullptr;
-        sdp_media_t *audio_md_rsp = nullptr;
-        sdp_connection_t *video_con_rsp = nullptr;
-        sdp_media_t *video_md_rsp = nullptr;
-
-        eXosip_lock(m_context);
-        msg_rsp = eXosip_get_sdp_info(m_uac_event->response);
-        eXosip_unlock(m_context);
-        char *str_sdp = nullptr;
-        sdp_message_to_str(msg_rsp, &str_sdp);
-        INFO("The callee's response SDP message is: \n%s", str_sdp);
-        osip_free(str_sdp);
-
-        /* create a sip client */
-        SipClientInfo *sip_client = new SipClientInfo(m_uac_event->did,
-                                                      m_uac_event->cid);
-        if(AM_UNLIKELY(!sip_client)) {
-          sdp_message_free(msg_rsp);
-          ERROR("Create sip client error!");
-          break;
+        if (AM_UNLIKELY(!on_sip_call_answered_recv())) {
+          ERROR("Process answered sip call error!");
         }
-        for(int i = 0; i < msg_rsp->m_medias.nb_elt; ++i) {
-          if (is_str_equal("audio",
-              ((sdp_media_t*)osip_list_get(&msg_rsp->m_medias, i))->m_media)) {
-            audio_con_rsp = eXosip_get_audio_connection(msg_rsp);
-            audio_md_rsp  = eXosip_get_audio_media(msg_rsp);
-            sip_client->media_info[AM_RTP_MEDIA_AUDIO].is_supported = true;
-            INFO("Audio is supported by the callee.");
-          } else if (is_str_equal("video",
-              ((sdp_media_t*)osip_list_get(&msg_rsp->m_medias, i))->m_media)) {
-              video_con_rsp = eXosip_get_video_connection(msg_rsp);
-              video_md_rsp  = eXosip_get_video_media(msg_rsp);
-              sip_client->media_info[AM_RTP_MEDIA_VIDEO].is_supported = true;
-              INFO("Video is supported by the callee.");
-            }
-        }
-        if (AM_UNLIKELY(!get_supported_media_types())){
-          delete sip_client;
-          sdp_message_free(msg_rsp);
-          break;
-        }
-        /* create audio RTP session info for communication */
-       AMRtpClientMsgInfo client_audio_info;
-       AMRtpClientInfo &audio_info = client_audio_info.info;
-       if(AM_LIKELY(sip_client->media_info[AM_RTP_MEDIA_AUDIO].is_supported)) {
-         /* TODO: Add IPv6 support */
-         audio_info.client_ip_domain = AM_IPV4;/* default */
-         audio_info.tcp_channel_rtp  = 0xff;   /* default UDP mode */
-         audio_info.tcp_channel_rtcp = 0xff;
-         audio_info.send_tcp_fd = false;
-         audio_info.port_srv_rtp  = m_rtp_port++;
-         audio_info.port_srv_rtcp = m_rtp_port++;
-         strcpy(audio_info.media,select_media_type(m_media_type,audio_md_rsp));
-
-         sockaddr_in uac_audio_addr;
-         uac_audio_addr.sin_family = AF_INET;
-         uac_audio_addr.sin_addr.s_addr = inet_addr(audio_con_rsp->c_addr);
-         uac_audio_addr.sin_port = htons(atoi(audio_md_rsp->m_port));
-         memcpy(&audio_info.udp.rtp.ipv4, &uac_audio_addr,
-                sizeof(uac_audio_addr));
-         audio_info.udp.rtp.ipv4.sin_port = htons(atoi(audio_md_rsp->m_port));
-
-         memcpy(&audio_info.udp.rtcp.ipv4, &uac_audio_addr,
-                sizeof(uac_audio_addr));
-         audio_info.udp.rtcp.ipv4.sin_port = htons(atoi(audio_md_rsp->m_port)
-                                                   + 1);
-         memcpy(&audio_info.tcp.ipv4, &uac_audio_addr, sizeof(uac_audio_addr));
-         client_audio_info.print();
-         client_audio_info.session_id = get_random_number();
-         sip_client->media_info[AM_RTP_MEDIA_AUDIO].session_id =
-                                           client_audio_info.session_id;
-         sip_client->media_info[AM_RTP_MEDIA_AUDIO].media =
-                                           std::string(audio_info.media);
-         sip_client->media_info[AM_RTP_MEDIA_AUDIO].rtp_port =
-                                           audio_info.port_srv_rtp;
-       }
-
-       /* create video RTP session info for communication */
-       AMRtpClientMsgInfo client_video_info;
-       AMRtpClientInfo &video_info = client_video_info.info;
-       if(sip_client->media_info[AM_RTP_MEDIA_VIDEO].is_supported &&
-           m_sip_config->enable_video) {
-         /* TODO: Add IPv6 support */
-         video_info.client_ip_domain = AM_IPV4;/* default */
-         video_info.tcp_channel_rtp  = 0xff;   /* default UDP mode */
-         video_info.tcp_channel_rtcp = 0xff;
-         video_info.send_tcp_fd = false;
-         video_info.port_srv_rtp  = m_rtp_port++;
-         video_info.port_srv_rtcp = m_rtp_port++;
-         strcpy(video_info.media, select_media_type(m_media_type,video_md_rsp));
-
-         sockaddr_in uac_video_addr;
-         uac_video_addr.sin_family = AF_INET;
-         uac_video_addr.sin_addr.s_addr = inet_addr(video_con_rsp->c_addr);
-         uac_video_addr.sin_port = htons(atoi(video_md_rsp->m_port));
-         memcpy(&video_info.udp.rtp.ipv4, &uac_video_addr,
-                sizeof(uac_video_addr));
-         video_info.udp.rtp.ipv4.sin_port = htons(atoi(video_md_rsp->m_port));
-
-         memcpy(&video_info.udp.rtcp.ipv4, &uac_video_addr,
-                sizeof(uac_video_addr));
-         video_info.udp.rtcp.ipv4.sin_port = htons(atoi(video_md_rsp->m_port)
-                                                   + 1);
-         memcpy(&video_info.tcp.ipv4, &uac_video_addr, sizeof(uac_video_addr));
-         client_video_info.print();
-         client_video_info.session_id = get_random_number();
-         sip_client->media_info[AM_RTP_MEDIA_VIDEO].session_id =
-                                           client_video_info.session_id;
-         sip_client->media_info[AM_RTP_MEDIA_VIDEO].media =
-                                           std::string(video_info.media);
-         sip_client->media_info[AM_RTP_MEDIA_VIDEO].rtp_port =
-                                           video_info.port_srv_rtp;
-       }
-
-       /* push sip_client into the sip client queue */
-       if (AM_LIKELY(sip_client)) {
-         m_sip_client_que.push(sip_client);
-       } else {
-         delete sip_client;
-         sdp_message_free(msg_rsp);
-         ERROR("Create sip client error!");
-         break;
-       }
-       /* if UAS returns more than one payload type in 200 OK, re-INVITE */
-       if (AM_UNLIKELY(audio_md_rsp && (audio_md_rsp->m_payloads.nb_elt > 1))) {
-         WARN("%d kinds of supported payload types are received, re-INVITE.",
-              audio_md_rsp->m_payloads.nb_elt);
-
-         char localip[128]  = {0};
-         char re_uac_sdp[2048] = {0};
-         eXosip_guess_localip(m_context, AF_INET, localip, 128);
-         /* communicate with RTP-muxer to get media SDP info */
-         AMRtpClientMsgSDP sdp_msg;
-         sdp_msg.session_id = m_uac_event->did;/* use the did as session_id */
-         char full_ip[256] = {0};
-         if (m_sip_config->is_register &&
-             !is_str_equal(audio_con_rsp->c_addr, msg_rsp->o_addr)) {
-           snprintf(full_ip, sizeof(full_ip), "%s:%s", "IPV4",
-                    audio_con_rsp->c_addr);
-         } else {
-           snprintf(full_ip, sizeof(full_ip), "%s:%s", "IPV4", localip);
-         }
-         strcpy(sdp_msg.media[AM_RTP_MEDIA_HOSTIP], full_ip);
-         if(!is_str_equal(audio_info.media, AM_MEDIA_UNSUPPORTED) &&
-            strlen(audio_info.media)) {
-           strcpy(sdp_msg.media[AM_RTP_MEDIA_AUDIO], audio_info.media);
-           sdp_msg.port[AM_RTP_MEDIA_AUDIO] = audio_info.port_srv_rtp;
-         }
-         if(!is_str_equal(video_info.media, AM_MEDIA_UNSUPPORTED) &&
-            strlen(video_info.media)) {
-           strcpy(sdp_msg.media[AM_RTP_MEDIA_VIDEO],video_info.media);
-           sdp_msg.port[AM_RTP_MEDIA_VIDEO] = video_info.port_srv_rtp;
-         }
-         sdp_msg.length = sizeof(sdp_msg);
-
-         /* Send query SDP message to RTP muxer*/
-         if (AM_UNLIKELY(!send_rtp_control_data((uint8_t*)&sdp_msg,
-                                                sizeof(sdp_msg)))) {
-           ERROR("Send message to RTP muxer error!");
-           sdp_message_free(msg_rsp);
-           break;
-         } else {
-           INFO("Send SDP messages to RTP muxer.");
-           if (AM_LIKELY(m_event_sdp->wait(5000))) {
-             NOTICE("RTP muxer has returned SDP info!");
-           } else {
-             ERROR("Failed to get SDP info from RTP muxer!");
-             sdp_message_free(msg_rsp);
-             break;
-           }
-         }
-
-         /* build and send local SDP message */
-         snprintf(re_uac_sdp, 2048,
-                  "v=0\r\n"
-                  "o=Ambarella 1 1 IN IP4 %s\r\n"
-                  "s=Ambarella SIP UA Server\r\n"
-                  "i=Session Information\r\n"
-                //  "c=IN IP4 %s\r\n"
-                  "t=0 0\r\n"
-                  "%s%s",
-                  localip,//localip,
-                  m_sip_client_que.front()->media_info[AM_RTP_MEDIA_AUDIO].
-                  sdp.c_str(),
-                  m_sip_client_que.front()->media_info[AM_RTP_MEDIA_VIDEO].
-                  sdp.c_str());
-
-         INFO("The re-UAC's SDP is \n%s",re_uac_sdp);
-
-         /* Send ACK to confirm this SIP session */
-         osip_message_t *ack = nullptr;
-         eXosip_lock(m_context);
-         eXosip_call_build_ack(m_context, m_uac_event->did, &ack);
-         eXosip_call_send_ack(m_context, m_uac_event->did, ack);
-         eXosip_unlock(m_context);
-
-         /* Send re-INVITE method */
-         osip_message_t *re_invite = nullptr;
-         eXosip_lock(m_context);
-         eXosip_call_build_request(m_context, m_uac_event->did, "INVITE",
-                                   &re_invite);
-         osip_message_set_body(re_invite, re_uac_sdp, strlen(re_uac_sdp));
-         osip_message_set_content_type(re_invite, "application/sdp");
-
-         eXosip_call_send_request(m_context, m_uac_event->did, re_invite);
-         eXosip_unlock(m_context);
-
-         sdp_message_free(msg_rsp);
-         break;
-       }
-
-       if (AM_LIKELY(strlen(audio_info.media) &&
-           (!is_str_equal(AM_MEDIA_UNSUPPORTED, audio_info.media)))) {
-         if (AM_UNLIKELY(!send_rtp_control_data((uint8_t*)&client_audio_info,
-                                                sizeof(client_audio_info)))) {
-           ERROR("Send message to RTP muxer error!");
-           sdp_message_free(msg_rsp);
-           break;
-         } else {
-           INFO("Send audio INFO messages to RTP muxer.");
-           if (AM_LIKELY(m_event_ssrc->wait(5000))) {
-             NOTICE("RTP muxer has returned SSRC info!");
-           } else {
-             ERROR("Failed to get SSRC info from RTP muxer!");
-             sdp_message_free(msg_rsp);
-             break;
-           }
-         }
-       }
-       if (strlen(video_info.media) &&
-           (!is_str_equal(AM_MEDIA_UNSUPPORTED, video_info.media))) {
-         if (AM_UNLIKELY(!send_rtp_control_data((uint8_t*)&client_video_info,
-                                                sizeof(client_video_info)))) {
-           ERROR("Send message to RTP muxer error!");
-           sdp_message_free(msg_rsp);
-           break;
-         } else {
-           INFO("Send video INFO messages to RTP muxer.");
-           if (AM_LIKELY(m_event_ssrc->wait(5000))) {
-             NOTICE("RTP muxer has returned SSRC info!");
-           } else {
-             ERROR("Failed to get SSRC info from RTP muxer!");
-             sdp_message_free(msg_rsp);
-             break;
-           }
-         }
-       }
-
-       /* Send ACK to confirm this SIP session */
-       osip_message_t *ack = nullptr;
-       eXosip_lock(m_context);
-       eXosip_call_build_ack(m_context, m_uac_event->did, &ack);
-       eXosip_call_send_ack(m_context, m_uac_event->did, ack);
-       eXosip_unlock(m_context);
-
-       /* Connection established, exit busy status */
-       m_busy = false;
-
-       for (uint32_t i = 0; i < m_sip_client_que.size(); ++i) {
-         if (m_sip_client_que.front()->dialog_id == m_uac_event->did) {
-           if (m_sip_client_que.front()->media_info[AM_RTP_MEDIA_AUDIO].ssrc) {
-             AMRtpClientMsgControl audio_ctrl_msg(AM_RTP_CLIENT_MSG_START,
-            m_sip_client_que.front()->media_info[AM_RTP_MEDIA_AUDIO].ssrc, 0);
-             if (AM_UNLIKELY(!send_rtp_control_data((uint8_t*)&audio_ctrl_msg,
-                                                    sizeof(audio_ctrl_msg)))) {
-               ERROR("Send control start msg to RTP muxer error: %s",
-                     strerror(errno));
-               break;
-             } else {
-               INFO("Send audio start messages to RTP muxer.");
-               m_sip_client_que.front()->media_info[AM_RTP_MEDIA_AUDIO].
-                   is_alive = true;
-             }
-           }
-           if (m_sip_client_que.front()->media_info[AM_RTP_MEDIA_VIDEO].ssrc) {
-             AMRtpClientMsgControl video_ctrl_msg(AM_RTP_CLIENT_MSG_START,
-             m_sip_client_que.front()->media_info[AM_RTP_MEDIA_VIDEO].ssrc, 0);
-             if (AM_UNLIKELY(!send_rtp_control_data((uint8_t*)&video_ctrl_msg,
-                                                    sizeof(video_ctrl_msg)))) {
-               ERROR("Send control start msg to RTP muxer error: %s",
-                     strerror(errno));
-               break;
-             } else {
-               INFO("Send video start messages to RTP muxer.");
-               m_sip_client_que.front()->media_info[AM_RTP_MEDIA_VIDEO].
-                   is_alive = true;
-             }
-           }
-           m_sip_client_que.front()->username = std::string(
-                                     m_uac_event->request->to->url->username);
-           m_connected_num++;
-           INFO("The connected number is now %d.", m_connected_num);
-           if (AM_UNLIKELY(m_rtp_port == m_sip_config->sip_port)) {
-             m_rtp_port = m_rtp_port + 2;
-           }
-           INFO("The RTP port is %d", m_rtp_port);
-           break;
-         } else {
-           SipClientInfo *sip_client = m_sip_client_que.front();
-           m_sip_client_que.pop();
-           m_sip_client_que.push(sip_client);
-         }
-       }
-       sdp_message_free(msg_rsp);
-
       }break;
       case EXOSIP_CALL_NOANSWER: {
         WARN("No answer within the timeout");
@@ -1384,218 +2229,6 @@ void AMSipUAServer::sip_ua_server_thread()
         break;
     }
     eXosip_event_free(m_uac_event);
-  }
-}
-
-uint32_t AMSipUAServer::get_random_number()
-{
-  struct timeval current = {0};
-  gettimeofday(&current, nullptr);
-  srand(current.tv_usec);
-  return (rand() % ((uint32_t)-1));
-}
-
-bool AMSipUAServer::init_sip_ua_server()
-{
-  bool ret = true;
-  TRACE_INITIALIZE (6, nullptr);
-
-  m_context = eXosip_malloc();
-  if (AM_UNLIKELY(eXosip_init(m_context))) {
-    ret = false;
-    ERROR("Couldn't initialize eXosip!");
-  }
-
-  if (AM_UNLIKELY(eXosip_listen_addr(m_context, IPPROTO_UDP, nullptr,
-                  m_sip_config->sip_port, AF_INET, 0))) {
-    ret = false;
-    ERROR("Couldn't initialize SIP transport layer!");
-  }
-  eXosip_set_user_agent(m_context, "Ambarella SIP Service");
-
-  if (AM_LIKELY(m_sip_config->is_register)) {
-    ret = register_to_server(m_sip_config->expires);
-  }
-
-  return ret;
-}
-
-bool AMSipUAServer::get_supported_media_types()
-{
-  bool ret = true;
-  /* communicate with RTP-muxer to get supported media type */
-  AMRtpClientMsgSupport support_msg;
-  support_msg.length = sizeof(support_msg);
-
-  /* Send query support media type message to RTP muxer */
-  if (AM_UNLIKELY(!send_rtp_control_data((uint8_t*)&support_msg,
-                                         sizeof(support_msg)))) {
-    ERROR("Send message to RTP muxer error!");
-    ret = false;
-  } else {
-    INFO("Send query support media type message to RTP muxer.");
-    if (AM_UNLIKELY(m_event_support->wait(5000))) {
-      NOTICE("RTP muxer has returned support media type.");
-    } else {
-      ERROR("Failed to get support media type from RTP muxer!");
-      ret = false;
-    }
-  }
-  return ret;
-}
-
-void AMSipUAServer::hang_up_all()
-{
-  delete_invalid_sip_client();
-  int queue_size = m_sip_client_que.size();
-  NOTICE("Hang up all the %d calls!", queue_size);
-  for (int i = 0; i < queue_size; ++i) {
-    hang_up(m_sip_client_que.front());
-    m_sip_client_que.pop();
-    m_connected_num = m_connected_num ? (m_connected_num - 1) : 0;
-  }
-  if (AM_LIKELY(m_sip_client_que.empty())) {
-    INFO("Hang up all calls successfully!");
-  } else {
-    WARN("Not hang up all calls successfully!");
-  }
-}
-
-void AMSipUAServer::hang_up(SipClientInfo* sip_client)
-{
-  int ret = -1;
-  do {
-    if (AM_UNLIKELY(!sip_client)) {
-      ERROR("sip_client is null");
-      break;
-    }
-    /* send stop message to RTP muxer */
-    if (sip_client->media_info[AM_RTP_MEDIA_AUDIO].is_alive) {
-      AMRtpClientMsgKill audio_msg_kill(
-         sip_client->media_info[AM_RTP_MEDIA_AUDIO].ssrc,
-         0, m_unix_sock_fd);
-      if (AM_UNLIKELY(!send_rtp_control_data((uint8_t* )&audio_msg_kill,
-                                             sizeof(audio_msg_kill)))) {
-        ERROR("Failed to send kill message to RTP Muxer to kill client"
-              "SSRC: %08X!", sip_client->media_info[AM_RTP_MEDIA_AUDIO].ssrc);
-      } else {
-        INFO("Sent kill message to RTP Muxer to kill SSRC: %08X!",
-             sip_client->media_info[AM_RTP_MEDIA_AUDIO].ssrc);
-      }
-
-      if (AM_LIKELY(m_event_kill->wait(5000))) {
-        NOTICE("Client with SSRC: %08X is killed!",
-             sip_client->media_info[AM_RTP_MEDIA_AUDIO].ssrc);
-      } else {
-        ERROR("Failed to receive response from RTP muxer!");
-      }
-    }
-    if (sip_client->media_info[AM_RTP_MEDIA_VIDEO].is_alive) {
-      AMRtpClientMsgKill video_msg_kill(
-         sip_client->media_info[AM_RTP_MEDIA_VIDEO].ssrc,
-         0, m_unix_sock_fd);
-      if (AM_UNLIKELY(!send_rtp_control_data((uint8_t* )&video_msg_kill,
-                                             sizeof(video_msg_kill)))) {
-        ERROR("Failed to send kill message to RTP Muxer to kill client"
-              "SSRC: %08X!", sip_client->media_info[AM_RTP_MEDIA_VIDEO].ssrc);
-      } else {
-        INFO("Sent kill message to RTP Muxer to kill SSRC: %08X!",
-         sip_client->media_info[AM_RTP_MEDIA_VIDEO].ssrc);
-      }
-
-      if (AM_LIKELY(m_event_kill->wait(5000))) {
-        NOTICE("Client with SSRC: %08X is killed!",
-             sip_client->media_info[AM_RTP_MEDIA_VIDEO].ssrc);
-      } else {
-        ERROR("Failed to receive response from RTP muxer!");
-      }
-    }
-
-    /* send BYE message to client */
-    eXosip_lock (m_context);
-    ret = eXosip_call_terminate(m_context, sip_client->call_id,
-                                sip_client->dialog_id);
-    eXosip_unlock (m_context);
-    if (0 != ret) {
-      ERROR("hangup/terminate Failed!\n");
-    } else {
-      NOTICE("Hang up %s successfully!", sip_client->username.c_str());
-    }
-
-    delete sip_client;
-
-  }while(0);
-}
-
-void AMSipUAServer::busy_status_timer(int arg)
-{
-  if (AM_UNLIKELY(m_busy)) {
-    m_busy = false;
-    WARN("SIP connection has not established in %d seconds!", BUSY_TIMER);
-  } else {
-      INFO("Connection established!");
-  }
-}
-
-bool AMSipUAServer::register_to_server(int expires)
-{
-  bool ret = true;
-  char identity[100];
-  char registerer[100];
-
-  snprintf(identity, sizeof(identity), "sip:%s@%s:%d",
-           m_sip_config->username.c_str(),
-           m_sip_config->server_url.c_str(),
-           m_sip_config->sip_port);
-  snprintf(registerer, sizeof(registerer), "sip:%s:%d",
-           m_sip_config->server_url.c_str(),
-           m_sip_config->server_port);
-
-  osip_message_t *reg = nullptr;
-
-  eXosip_lock (m_context);
-  int regid = eXosip_register_build_initial_register(m_context, identity,
-                                                     registerer,
-                                                     nullptr, /* contact */
-                                                     expires, &reg);
-  eXosip_unlock (m_context);
-
-  if(AM_UNLIKELY(regid < 1)) {
-    ERROR("register build init Failed!\n");
-    ret = false;
-  }
-
-  eXosip_lock (m_context);
-  eXosip_clear_authentication_info(m_context);
-  eXosip_add_authentication_info(m_context, m_sip_config->username.c_str(),
-                                 m_sip_config->username.c_str(),
-                                 m_sip_config->password.c_str(), "md5", nullptr);
-  int reg_ret = eXosip_register_send_register(m_context, regid, reg);
-  eXosip_unlock (m_context);
-
-  if(AM_UNLIKELY(0 != reg_ret)) {
-    ERROR("Register send failed!\n");
-    ret = false;
-  }
-
-  return ret;
-}
-
-void AMSipUAServer::delete_invalid_sip_client()
-{
-  uint32_t queue_size = m_sip_client_que.size();
-  for (uint32_t i = 0; i < queue_size; ++i) {
-    if (AM_UNLIKELY(!m_sip_client_que.front()->media_info[AM_RTP_MEDIA_AUDIO].
-        is_alive && !m_sip_client_que.front()->media_info[AM_RTP_MEDIA_VIDEO].
-        is_alive)) {
-      delete m_sip_client_que.front();
-      m_sip_client_que.pop();
-      NOTICE("Delete an invalid sip client in the queue!");
-    } else {
-      SipClientInfo *sip_client = m_sip_client_que.front();
-      m_sip_client_que.pop();
-      m_sip_client_que.push(sip_client);
-    }
   }
 }
 
@@ -1649,6 +2282,7 @@ void AMSipUAServer::connect_unix_thread()
             close(m_unix_sock_fd);
             m_unix_sock_fd = -1;
           } else {
+            unix_socket_create_cnt = 0;
             INFO("Send %d bytes protocol messages to RTP muxer.", send_bytes);
           }
         } else {
@@ -1680,6 +2314,7 @@ void AMSipUAServer::connect_unix_thread()
             close(m_media_service_sock_fd);
             m_media_service_sock_fd = -1;
           } else {
+            media_service_sock_create_cnt = 0;
             INFO("sip send an ack to media service successfully.");
           }
         }
@@ -1703,16 +2338,10 @@ void AMSipUAServer::connect_unix_thread()
     if (AM_LIKELY(retval > 0)) {
       if (FD_ISSET(UNIX_SOCK_CTRL_R, &fdset)) {
         ServerCtrlMsg msg = {0};
-        uint32_t read_cnt = 0;
-        ssize_t read_ret = 0;
-        do {
-          read_ret = read(UNIX_SOCK_CTRL_R, &msg, sizeof(msg));
-        }while ((++ read_cnt < 5) && ((read_ret == 0) || ((read_ret < 0) &&
-                ((errno == EAGAIN) || (errno == EWOULDBLOCK) ||
-                 (errno == EINTR)))));
-
-        if (AM_UNLIKELY(read_ret < 0)) {
-          PERROR("read");
+        ssize_t ret = am_read(UNIX_SOCK_CTRL_R, &msg, sizeof(msg),
+                              DEFAULT_IO_RETRY_COUNT);
+        if (ret != sizeof(msg)) {
+          PERROR("Failed to read msg from SOCK_CTRL_R!");
         } else if (AM_LIKELY((msg.code == CMD_ABRT_ALL) ||
                              (msg.code == CMD_STOP_ALL))) {
           switch (msg.code) {
@@ -1740,8 +2369,11 @@ void AMSipUAServer::connect_unix_thread()
         AM_MEDIA_NET_STATE  recv_ret = AM_MEDIA_NET_OK;
         recv_ret = recv_data_from_media_service(recv_msg);
         switch(recv_ret) {
-          case AM_MEDIA_NET_OK:
-            break;
+          case AM_MEDIA_NET_OK: {
+            if (AM_UNLIKELY(!process_msg_from_media_service(&recv_msg))) {
+              ERROR("Process msg from media service error!");
+            }
+          }break;
           case AM_MEDIA_NET_ERROR :
           case AM_MEDIA_NET_PEER_SHUTDOWN: {
             NOTICE("Close connection with media_service");
@@ -1768,6 +2400,7 @@ void AMSipUAServer::connect_unix_thread()
   } /* while */
   release_resource();
   if (AM_LIKELY(m_unix_sock_run)) {
+    m_unix_sock_run = false;
     INFO("SIP.unix exits due to server abort!");
   } else {
     INFO("SIP.unix exits mainloop!");
@@ -1787,39 +2420,6 @@ void AMSipUAServer::release_resource()
   }
   unlink(m_sip_config->sip_unix_domain_name.c_str());
   unlink(m_sip_config->sip_to_media_service_name.c_str());
-}
-
-int AMSipUAServer::unix_socket_conn(int fd, const char *server_name)
-{
-  bool isok = true;
-  do {
-    socklen_t len = 0;
-    sockaddr_un un;
-    memset(&un, 0, sizeof(un));
-    un.sun_family = AF_UNIX;
-    strcpy(un.sun_path, server_name);
-    len = offsetof(struct sockaddr_un, sun_path) + strlen(un.sun_path);
-    if (AM_UNLIKELY(connect(fd, (struct sockaddr*)&un, len) < 0)) {
-      if (AM_LIKELY(errno == ENOENT)) {
-        NOTICE("RTP Muxer is not working, wait and try again...");
-      } else {
-        PERROR("connect");
-      }
-      isok = false;
-      break;
-    } else {
-      INFO("SIP.unix connect to RTP Muxer successfully!");
-    }
-  } while(0);
-
-  if (AM_UNLIKELY(!isok)) {
-    if (AM_LIKELY(fd >= 0)) {
-      close(fd);
-      fd = -1;
-    }
-  }
-
-  return fd;
 }
 
 bool AMSipUAServer::recv_rtp_control_data()
@@ -1869,21 +2469,21 @@ bool AMSipUAServer::recv_rtp_control_data()
           }break;
           case AM_RTP_CLIENT_MSG_SDP: {
             for (uint32_t i = 0; i < m_sip_client_que.size(); i++) {
-              if ((uint32_t)m_sip_client_que.front()->dialog_id ==
+              if ((uint32_t)m_sip_client_que.front()->m_dialog_id ==
                   union_msg.msg_sdp.session_id) {
-                m_sip_client_que.front()->media_info[AM_RTP_MEDIA_AUDIO].sdp.
+                m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_AUDIO].sdp.
                     clear();
-                m_sip_client_que.front()->media_info[AM_RTP_MEDIA_AUDIO].sdp =
+                m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_AUDIO].sdp =
                     std::string(union_msg.msg_sdp.media[AM_RTP_MEDIA_AUDIO]);
 
-                m_sip_client_que.front()->media_info[AM_RTP_MEDIA_VIDEO].sdp.
+                m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_VIDEO].sdp.
                     clear();
-                m_sip_client_que.front()->media_info[AM_RTP_MEDIA_VIDEO].sdp =
+                m_sip_client_que.front()->m_media_info[AM_RTP_MEDIA_VIDEO].sdp =
                     std::string(union_msg.msg_sdp.media[AM_RTP_MEDIA_VIDEO]);
                 m_event_sdp->signal();
                 break;
               } else {
-                SipClientInfo *client_info = m_sip_client_que.front();
+                AMSipClientInfo *client_info = m_sip_client_que.front();
                 m_sip_client_que.pop();
                 m_sip_client_que.push(client_info);
               }
@@ -1904,18 +2504,18 @@ bool AMSipUAServer::recv_rtp_control_data()
               bool is_found = false;
               for (uint32_t i = 0; i < m_sip_client_que.size(); ++i) {
                 for (uint32_t j = 0; j < AM_RTP_MEDIA_NUM; ++j) {
-                  if (m_sip_client_que.front()->media_info[j].ssrc
+                  if (m_sip_client_que.front()->m_media_info[j].ssrc
                       == union_msg.msg_ctrl.ssrc) {
-                    m_sip_client_que.front()->media_info[j].is_alive = false;
-                    if (!m_sip_client_que.front()->media_info
+                    m_sip_client_que.front()->m_media_info[j].is_alive = false;
+                    if (!m_sip_client_que.front()->m_media_info
                         [AM_RTP_MEDIA_AUDIO].is_alive && !m_sip_client_que.
-                        front()->media_info[AM_RTP_MEDIA_VIDEO].is_alive) {
+                        front()->m_media_info[AM_RTP_MEDIA_VIDEO].is_alive) {
                       NOTICE("Client is invalid, remove it from the queue!");
                       delete m_sip_client_que.front();
                       m_sip_client_que.pop();
                       m_connected_num = m_connected_num ? (m_connected_num - 1)
                                         : 0;
-                      INFO("Current connected number is %d", m_connected_num);
+                      INFO("Current connected number is %u", m_connected_num);
                     }
                     is_found = true;
                     break;
@@ -1924,7 +2524,7 @@ bool AMSipUAServer::recv_rtp_control_data()
                 if(is_found) {
                   break;
                 } else {
-                  SipClientInfo *client_info = m_sip_client_que.front();
+                  AMSipClientInfo *client_info = m_sip_client_que.front();
                   m_sip_client_que.pop();
                   m_sip_client_que.push(client_info);
                 }
@@ -1938,11 +2538,11 @@ bool AMSipUAServer::recv_rtp_control_data()
             AMRtpClientMsgControl &msg_ctrl = union_msg.msg_ctrl;
             for (uint32_t i = 0; i < m_sip_client_que.size(); ++i) {
               for (uint32_t j = 0; j < AM_RTP_MEDIA_NUM; ++j) {
-                if (m_sip_client_que.front()->media_info[j].session_id ==
+                if (m_sip_client_que.front()->m_media_info[j].session_id ==
                     msg_ctrl.session_id) {
-                  m_sip_client_que.front()->media_info[j].ssrc = msg_ctrl.ssrc;
+                  m_sip_client_que.front()->m_media_info[j].ssrc = msg_ctrl.ssrc;
                   NOTICE("get SSRC %X of %s",msg_ctrl.ssrc,
-                         m_sip_client_que.front()->media_info[j].media.c_str());
+                         m_sip_client_que.front()->m_media_info[j].media.c_str());
                   is_found = true;
                   m_event_ssrc->signal();
                   break;
@@ -1951,7 +2551,7 @@ bool AMSipUAServer::recv_rtp_control_data()
               if(is_found) {
                 break;
               } else {
-                SipClientInfo *client_info = m_sip_client_que.front();
+                AMSipClientInfo *client_info = m_sip_client_que.front();
                 m_sip_client_que.pop();
                 m_sip_client_que.push(client_info);
               }
@@ -2095,7 +2695,7 @@ const char* AMSipUAServer::select_media_type(uint32_t uas_type,
       }
     }
     if (is_str_equal(media_type, "PCMA") || is_str_equal(media_type,"PCMU")) {
-      media_type = "g711";
+      media_type = "g711-8k";
     } else if (is_str_equal(media_type, "G726-40") ||
                is_str_equal(media_type, "G726-32") ||
                is_str_equal(media_type, "G726-24") ||
@@ -2159,40 +2759,16 @@ void AMSipUAServer::set_media_map()
   m_media_map["JPEG"]          = AM_VIDEO_MJPEG;
 }
 
-bool AMSipUAServer::parse_sdp(AMMediaServiceMsgAudioINFO& info,
+bool AMSipUAServer::parse_sdp(AMMediaServiceMsgUdsURI& uri,
                               const char *audio_sdp, int32_t size)
 {
   bool ret = true;
   std::string audio_type_indicator;
   const char *audio_fmt_indicator = "rtpmap:";
-  const char *udp_port_indicator = "audio";
-  const char *ip_domain_indicator = "c=IN IP";
   const char *indicator_uri = nullptr;
   char *end_ptr = nullptr;
-  indicator_uri = (const char*) memmem(audio_sdp, size,
-                   udp_port_indicator, strlen(udp_port_indicator));
+
   do {
-    if(AM_LIKELY(indicator_uri)) {
-      if(AM_LIKELY(strlen(indicator_uri) > strlen(udp_port_indicator))) {
-        info.udp_port = strtol(indicator_uri + strlen(udp_port_indicator),
-                          &end_ptr, 10);
-        if(AM_LIKELY(info.udp_port > 0 &&  end_ptr)) {
-          INFO("Get udp port from sdp, udp_port = %d", info.udp_port);
-        } else {
-          ERROR("Strtol udp_port error.");
-          ret = false;
-          break;
-        }
-      } else {
-        ERROR("memmem udp port error.");
-        ret = false;
-        break;
-      }
-    } else {
-      ERROR("Not find \"audio\" in the sdp: %s", audio_sdp);
-      ret = false;
-      break;
-    }
     indicator_uri = (const char*) memmem(audio_sdp, size,
                            audio_fmt_indicator, strlen(audio_fmt_indicator));
     int audio_type = -1;
@@ -2253,26 +2829,26 @@ bool AMSipUAServer::parse_sdp(AMMediaServiceMsgAudioINFO& info,
     if(AM_UNLIKELY(!ret)) {
       break;
     }
-    info.audio_format = AM_AUDIO_TYPE(m_media_map[audio_type_indicator.c_str()]);
+    uri.audio_type = AM_AUDIO_TYPE(m_media_map[audio_type_indicator.c_str()]);
     indicator_uri = (const char*) memmem(audio_sdp, size,
                                          audio_type_indicator.c_str(),
                                          audio_type_indicator.size());
     if(AM_LIKELY(indicator_uri)) {
       if(AM_LIKELY(strlen(indicator_uri) > audio_type_indicator.size())) {
-        info.sample_rate = strtol(indicator_uri +
-                         audio_type_indicator.size() + 1, &end_ptr, 10);
-        if(AM_LIKELY(info.sample_rate > 0 &&  end_ptr)) {
+        uri.sample_rate = strtol(indicator_uri +
+                          audio_type_indicator.size() + 1, &end_ptr, 10);
+        if(AM_LIKELY(uri.sample_rate > 0 &&  end_ptr)) {
           INFO("Get audio sample rate from sdp, sample rate = %d",
-               info.sample_rate);
+               uri.sample_rate);
         } else {
           ERROR("Strtol sample rate error.");
           ret = false;
           break;
         }
         indicator_uri = end_ptr + 1;
-        info.channel = strtol(indicator_uri, &end_ptr, 10);
-        if(AM_LIKELY(info.channel > 0 && end_ptr)) {
-          INFO("Get audio channel from sdp, channel = %d", info.channel);
+        uri.channel = strtol(indicator_uri, &end_ptr, 10);
+        if(AM_LIKELY(uri.channel > 0 && end_ptr)) {
+          INFO("Get audio channel from sdp, channel = %d", uri.channel);
         } else {
           ERROR("Strtol channel error.");
           ret = false;
@@ -2285,27 +2861,6 @@ bool AMSipUAServer::parse_sdp(AMMediaServiceMsgAudioINFO& info,
       }
     } else {
       ERROR("Not find: %s", audio_type_indicator.c_str());
-      ret = false;
-      break;
-    }
-    indicator_uri = (const char*)memmem(audio_sdp, size,
-                                        ip_domain_indicator,
-                                        strlen(ip_domain_indicator));
-    if(AM_LIKELY(indicator_uri)) {
-      if(AM_LIKELY(strlen(indicator_uri) > strlen(ip_domain_indicator))) {
-        info.ip_domain = AM_PLAYBACK_IP_DOMAIN(strtol(indicator_uri +
-                                strlen(ip_domain_indicator), &end_ptr, 10));
-        if(AM_LIKELY(end_ptr)) {
-          INFO("Get ip domain from sdp, ip domain is IPV%d",
-               info.ip_domain);
-        } else {
-          ERROR("Strtol ip domain error.");
-          ret = false;
-          break;
-        }
-      }
-    } else {
-      ERROR("Not find %s.", ip_domain_indicator);
       ret = false;
       break;
     }
@@ -2378,69 +2933,52 @@ AM_MEDIA_NET_STATE AMSipUAServer::recv_data_from_media_service(
   return ret;
 }
 
+bool AMSipUAServer::process_msg_from_media_service(AMMediaServiceMsgBlock
+                                                   *service_msg)
+{
+  bool ret = true;
+  do {
+    AMMediaServiceMsgBase *msg_base = (AMMediaServiceMsgBase*)service_msg;
+    switch(msg_base->type) {
+      case AM_MEDIA_SERVICE_MSG_ACK: {
+        INFO("Recv ACK msg from media service.");
+      }break;
+      case AM_MEDIA_SERVICE_MSG_PLAYBACK_ID: {
+        AMMediaServiceMsgPlaybackID *play_id =
+            (AMMediaServiceMsgPlaybackID*)service_msg;
+        m_sip_client_que.front()->m_playback_id = play_id->playback_id;
+        INFO("Recv playback id %d from media service.", play_id->playback_id);
+        m_event_playid->signal();
+      }break;
+      default :
+        break;
+    }
+  } while(0);
+
+  return ret;
+}
+
 bool AMSipUAServer::send_data_to_media_service(AMMediaServiceMsgBlock& send_msg)
 {
   bool ret = true;
-  int count = 0;
-  uint32_t send_ret = 0;
-  if(!is_fd_valid(m_media_service_sock_fd)) {
-    ERROR("m_media_service_sock_fd is not valid. "
-        "Can not send data to media service.");
-    return false;
-  }
-  AMMediaServiceMsgBase *base = (AMMediaServiceMsgBase*)&send_msg;
-  while((++ count < 5) && (base->length !=
-      (send_ret = write(m_media_service_sock_fd, &send_msg, base->length)))) {
-    if(AM_LIKELY((errno != EAGAIN) &&
-                 (errno != EWOULDBLOCK) &&
-                 (errno != EINTR))) {
+  do {
+    if(!is_fd_valid(m_media_service_sock_fd)) {
+      ERROR("m_media_service_sock_fd is not valid. "
+            "Can not send data to media service.");
       ret = false;
-      PERROR("write");
       break;
     }
-  }
-  return (ret && (send_ret == base->length) && (count < 5));
-}
-
-int AMSipUAServer::create_unix_socket_fd(const char *socket_name)
-{
-  socklen_t len = 0;
-  sockaddr_un un;
-  int fd = -1;
-  do{
-    if (AM_UNLIKELY((fd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)) {
-      PERROR("unix domain socket");
+    AMMediaServiceMsgBase *base = (AMMediaServiceMsgBase*)&send_msg;
+    ssize_t send_ret = am_write(m_media_service_sock_fd, &send_msg,
+                                base->length,
+                                DEFAULT_IO_RETRY_COUNT);
+    if (AM_UNLIKELY(send_ret != ssize_t(base->length))) {
+      PERROR("Failed to send data to media service!");
+      ret = false;
       break;
     }
 
-    memset(&un, 0, sizeof(un));
-    un.sun_family = AF_UNIX;
-    strcpy(un.sun_path, socket_name);
-    len = offsetof(struct sockaddr_un, sun_path) + strlen(un.sun_path);
-    if (AM_UNLIKELY(AMFile::exists(socket_name))) {
-      NOTICE("%s already exists! Remove it first!", socket_name);
-      if (AM_UNLIKELY(unlink(socket_name) < 0)) {
-        PERROR("unlink");
-        close(fd);
-        fd = -1;
-        break;
-      }
-    }
-    if (AM_UNLIKELY(!AMFile::create_path(AMFile::dirname(socket_name).
-                                         c_str()))) {
-      ERROR("Failed to create path %s",
-            AMFile::dirname(socket_name).c_str());
-      close(fd);
-      fd = -1;
-      break;
-    }
+  } while(0);
 
-    if (AM_UNLIKELY(bind(fd, (struct sockaddr*)&un, len) < 0)) {
-      PERROR("unix domain bind");
-      close(fd);
-      fd = -1;
-      break;
-    }
-  }while(0);
-  return fd;
+  return ret;
 }

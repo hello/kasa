@@ -3,14 +3,33 @@
  *
  * History:
  *	2015/03/13 - [Zhaoyang Chen] created file
- * Copyright (C) 2015-2019, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 #include <config.h>
 #include <linux/module.h>
 #include <linux/ambpriv_device.h>
@@ -443,69 +462,83 @@ int iav_create_mmap_table(struct ambarella_iav *iav)
 	}
 	iav->mmap_base = (u32)base;
 
-	iav->mmap[IAV_BUFFER_BSB].phys = bsb_start;
-	iav->mmap[IAV_BUFFER_BSB].virt = (u32)base;
+	iav->mmap[IAV_BUFFER_BSB].phys = IAV_DRAM_BSB ? bsb_start : 0;
+	iav->mmap[IAV_BUFFER_BSB].virt = IAV_DRAM_BSB ? (u32)base : 0;
 	iav->mmap[IAV_BUFFER_BSB].size = IAV_DRAM_BSB;
 	iav->bsb_free_bytes = iav->mmap[IAV_BUFFER_BSB].size;
 	bsb_offset += iav->mmap[IAV_BUFFER_BSB].size;
 
-	iav->mmap[IAV_BUFFER_USR].phys = bsb_start + bsb_offset;
-	iav->mmap[IAV_BUFFER_USR].virt = (u32)(base + bsb_offset);
+	iav->mmap[IAV_BUFFER_USR].phys = IAV_DRAM_USR ? (bsb_start + bsb_offset) : 0;
+	iav->mmap[IAV_BUFFER_USR].virt = IAV_DRAM_USR ? (u32)(base + bsb_offset) : 0;
 	iav->mmap[IAV_BUFFER_USR].size = IAV_DRAM_USR;
 	bsb_offset += iav->mmap[IAV_BUFFER_USR].size;
 
-	iav->mmap[IAV_BUFFER_OVERLAY].phys = bsb_start + bsb_offset;
-	iav->mmap[IAV_BUFFER_OVERLAY].virt = (u32)(base + bsb_offset);
+	iav->mmap[IAV_BUFFER_MV].phys = IAV_DRAM_MV ? (bsb_start + bsb_offset) : 0;
+	iav->mmap[IAV_BUFFER_MV].virt = IAV_DRAM_MV ? (u32)(base + bsb_offset) : 0;
+	iav->mmap[IAV_BUFFER_MV].size = IAV_DRAM_MV;
+	bsb_offset += iav->mmap[IAV_BUFFER_MV].size;
+
+	iav->mmap[IAV_BUFFER_OVERLAY].phys = IAV_DRAM_OVERLAY ? (bsb_start + bsb_offset) : 0;
+	iav->mmap[IAV_BUFFER_OVERLAY].virt = IAV_DRAM_OVERLAY ? (u32)(base + bsb_offset) : 0;
 	iav->mmap[IAV_BUFFER_OVERLAY].size = IAV_DRAM_OVERLAY;
 	bsb_offset += iav->mmap[IAV_BUFFER_OVERLAY].size;
 
-	iav->mmap[IAV_BUFFER_QPMATRIX].phys = bsb_start + bsb_offset;
-	iav->mmap[IAV_BUFFER_QPMATRIX].virt = (u32)(base + bsb_offset);
+	iav->mmap[IAV_BUFFER_QPMATRIX].phys = IAV_DRAM_QPM ? (bsb_start + bsb_offset) : 0;
+	iav->mmap[IAV_BUFFER_QPMATRIX].virt = IAV_DRAM_QPM ? (u32)(base + bsb_offset) : 0;
 	iav->mmap[IAV_BUFFER_QPMATRIX].size = IAV_DRAM_QPM;
 	bsb_offset += iav->mmap[IAV_BUFFER_QPMATRIX].size;
 
-	iav->mmap[IAV_BUFFER_WARP].phys = bsb_start + bsb_offset;
-	iav->mmap[IAV_BUFFER_WARP].virt = (u32)(base + bsb_offset);
+	iav->mmap[IAV_BUFFER_WARP].phys = IAV_DRAM_WARP ? (bsb_start + bsb_offset) : 0;
+	iav->mmap[IAV_BUFFER_WARP].virt = IAV_DRAM_WARP ? (u32)(base + bsb_offset) : 0;
 	iav->mmap[IAV_BUFFER_WARP].size = IAV_DRAM_WARP;
 	bsb_offset += iav->mmap[IAV_BUFFER_WARP].size;
 
-	iav->mmap[IAV_BUFFER_QUANT].phys = bsb_start + bsb_offset;
-	iav->mmap[IAV_BUFFER_QUANT].virt = (u32)(base + bsb_offset);
+	iav->mmap[IAV_BUFFER_QUANT].phys = IAV_DRAM_QUANT ? (bsb_start + bsb_offset) : 0;
+	iav->mmap[IAV_BUFFER_QUANT].virt = IAV_DRAM_QUANT ? (u32)(base + bsb_offset) : 0;
 	iav->mmap[IAV_BUFFER_QUANT].size = IAV_DRAM_QUANT;
 	bsb_offset += iav->mmap[IAV_BUFFER_QUANT].size;
 
-	iav->mmap[IAV_BUFFER_IMG].phys = bsb_start + bsb_offset;
-	iav->mmap[IAV_BUFFER_IMG].virt = (u32)(base + bsb_offset);
+	iav->mmap[IAV_BUFFER_IMG].phys = IAV_DRAM_IMG ? (bsb_start + bsb_offset) : 0;
+	iav->mmap[IAV_BUFFER_IMG].virt = IAV_DRAM_IMG ? (u32)(base + bsb_offset) : 0;
 	iav->mmap[IAV_BUFFER_IMG].size = IAV_DRAM_IMG;
 	bsb_offset += iav->mmap[IAV_BUFFER_IMG].size;
 
 	/* BPC and MCTF share the same buffer */
-	iav->mmap[IAV_BUFFER_PM_BPC].phys = bsb_start + bsb_offset;
-	iav->mmap[IAV_BUFFER_PM_BPC].virt = (u32)(base + bsb_offset);
+	iav->mmap[IAV_BUFFER_PM_BPC].phys = IAV_DRAM_PM ? (bsb_start + bsb_offset) : 0;
+	iav->mmap[IAV_BUFFER_PM_BPC].virt = IAV_DRAM_PM ? (u32)(base + bsb_offset) : 0;
 	iav->mmap[IAV_BUFFER_PM_BPC].size = IAV_DRAM_PM;
-	iav->mmap[IAV_BUFFER_PM_MCTF].phys = bsb_start + bsb_offset;
-	iav->mmap[IAV_BUFFER_PM_MCTF].virt = (u32)(base + bsb_offset);
+	iav->mmap[IAV_BUFFER_PM_MCTF].phys = IAV_DRAM_PM ? (bsb_start + bsb_offset) : 0;
+	iav->mmap[IAV_BUFFER_PM_MCTF].virt = IAV_DRAM_PM ? (u32)(base + bsb_offset) : 0;
 	iav->mmap[IAV_BUFFER_PM_MCTF].size = IAV_DRAM_PM;
 	bsb_offset += IAV_DRAM_PM;
 
-	iav->mmap[IAV_BUFFER_BPC].phys = bsb_start + bsb_offset;
-	iav->mmap[IAV_BUFFER_BPC].virt = (u32)(base + bsb_offset);
+	iav->mmap[IAV_BUFFER_BPC].phys = IAV_DRAM_BPC ? (bsb_start + bsb_offset) : 0;
+	iav->mmap[IAV_BUFFER_BPC].virt = IAV_DRAM_BPC ? (u32)(base + bsb_offset) : 0;
 	iav->mmap[IAV_BUFFER_BPC].size = IAV_DRAM_BPC;
 	bsb_offset += iav->mmap[IAV_BUFFER_BPC].size;
 
-	iav->mmap[IAV_BUFFER_CMD_SYNC].phys = bsb_start + bsb_offset;
-	iav->mmap[IAV_BUFFER_CMD_SYNC].virt = (u32)(base + bsb_offset);
+	iav->mmap[IAV_BUFFER_CMD_SYNC].phys = IAV_DRAM_CMD_SYNC ? (bsb_start + bsb_offset) : 0;
+	iav->mmap[IAV_BUFFER_CMD_SYNC].virt = IAV_DRAM_CMD_SYNC ? (u32)(base + bsb_offset) : 0;
 	iav->mmap[IAV_BUFFER_CMD_SYNC].size = IAV_DRAM_CMD_SYNC;
 	bsb_offset += iav->mmap[IAV_BUFFER_CMD_SYNC].size;
 
+	iav->mmap[IAV_BUFFER_VCA].phys = IAV_DRAM_VCA ? (bsb_start + bsb_offset) : 0;
+	iav->mmap[IAV_BUFFER_VCA].virt = IAV_DRAM_VCA ? (u32)(base + bsb_offset) : 0;
+	iav->mmap[IAV_BUFFER_VCA].size = IAV_DRAM_VCA;
+	bsb_offset += iav->mmap[IAV_BUFFER_VCA].size;
+
 	BUG_ON(bsb_offset > IAV_DRAM_MAX);
 
-	iav->mmap[IAV_BUFFER_FB_DATA].phys = bsb_start + DSP_BSB_SIZE + DSP_IAVRSVD_SIZE;
-	iav->mmap[IAV_BUFFER_FB_DATA].virt = (u32)(base + DSP_BSB_SIZE + DSP_IAVRSVD_SIZE);
+	iav->mmap[IAV_BUFFER_FB_DATA].phys =
+		IAV_DRAM_FB_DATA ? (bsb_start + DSP_BSB_SIZE + DSP_IAVRSVD_SIZE) : 0;
+	iav->mmap[IAV_BUFFER_FB_DATA].virt =
+		IAV_DRAM_FB_DATA ? (u32)(base + DSP_BSB_SIZE + DSP_IAVRSVD_SIZE) : 0;
 	iav->mmap[IAV_BUFFER_FB_DATA].size = IAV_DRAM_FB_DATA;
 
-	iav->mmap[IAV_BUFFER_FB_AUDIO].phys = iav->mmap[IAV_BUFFER_FB_DATA].phys + DSP_FASTDATA_SIZE;
-	iav->mmap[IAV_BUFFER_FB_AUDIO].virt = iav->mmap[IAV_BUFFER_FB_DATA].virt + DSP_FASTDATA_SIZE;
+	iav->mmap[IAV_BUFFER_FB_AUDIO].phys =
+		IAV_DRAM_FB_AUDIO ? (iav->mmap[IAV_BUFFER_FB_DATA].phys + DSP_FASTDATA_SIZE) : 0;
+	iav->mmap[IAV_BUFFER_FB_AUDIO].virt =
+		IAV_DRAM_FB_AUDIO ? (iav->mmap[IAV_BUFFER_FB_DATA].virt + DSP_FASTDATA_SIZE)  : 0;
 	iav->mmap[IAV_BUFFER_FB_AUDIO].size = IAV_DRAM_FB_AUDIO;
 
 	return 0;

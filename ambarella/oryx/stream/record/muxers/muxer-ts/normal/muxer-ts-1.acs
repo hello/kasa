@@ -1,0 +1,53 @@
+--[[
+ambarella/oryx/stream/record/muxers/muxer-ts/muxer-ts-1.acs
+
+History:
+  2014-12-23 - [ccJing] created file
+
+Copyright (c) 2016 Ambarella, Inc.
+
+This file and its contents ("Software") are protected by intellectual
+property rights including, without limitation, U.S. and/or foreign
+copyrights. This Software is also the confidential and proprietary
+information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+disclose, distribute, modify, or otherwise prepare derivative works of this
+Software or any portion thereof except pursuant to a signed license agreement
+or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+In the absence of such an agreement, you agree to promptly notify and return
+this Software to Ambarella, Inc.
+
+THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+
+--]]
+
+_muxer_ts_ = {
+  muxer_id                    = 13,  --do not modify
+  file_duration               = 300,    --unit second. 0 means do not split file
+  file_name_prefix            = "Amba",
+  max_file_num_per_folder     = 512,   --Max file number in one folder
+  recording_file_num          = 0,  --0 means file recording would not be stopped until stop cmd was received.
+  recording_duration          = 0,  --unit :second. 0 means file recording would not be stopped until stop cmd was received.
+  file_location               = "/storage/sda1/video/ts-1",
+  file_location_auto_parse    = true, --if true,  will parse the proper sdax directory. if false,  will use the directory specified by file_location.
+  video_id                    = 1,
+  audio_type                  = "aac",  -- If audio is not needed, this value should be set to "none".
+  audio_sample_rate           = 0, --0 means maximum. This value can be set to be 48000 or 16000 or 8000
+  muxer_attr                  = "normal",
+  smallest_free_space         = 20,  --Unit:MB. when free space smaller than this value, the file muxer will stop work.
+  hls_enable                  = false,  -- true means enable http live streaming, false means disable.
+  max_file_size               = 1024, --MB
+  write_sync_enable           = false,
+  auto_file_writing           = true, --auto file writing when media service starts to run.
+}
+
+return _muxer_ts_

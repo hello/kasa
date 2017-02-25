@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<glgps xmlns="http://www.glpals.com/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.glpals.com/ glconfig.xsd" >
+  <!--HAL Confguration  -->
+  <hal 
+       PortName="/dev/ttyUSB0"
+       BaudRate="115200"
+       GpioNStdbyPath="/sys/class/gpio/gpio113/value"
+       GpioDelayMs="130"
+       NvStorageDir="/tmp/gps/data/"
+       NmeaOutName="/tmp/gps/glgpsctrl"
+       LogEnabled="true"
+       Log="FILE"
+       LogDirectory="/tmp/gps/log/"
+       HalLogLevel="LOG_VERBOSE"
+
+       IgnoreJniTime="true"
+  />
+
+  <gll 
+       LogPriMask="LOG_DEBUG"
+       LogFacMask="LOG_GLLAPI | LOG_NMEA | LOG_RAWDATA"
+	   FrqPlan="FRQ_PLAN_26MHZ_2PPM"
+       RfType="GL_RF_4752_BRCM_EXT_LNA"
+  />
+  <gll_features
+       EnableLowPowerEls="false"
+       EnableLowPowerPmm="true"
+  />
+  
+<!-- Periodic Position Fix using default settings -->
+<job Id="Periodic">
+    <task>
+        <req_pos/>
+    </task>
+</job>  
+
+<!-- Systematic Test: Repetitive cold starts -->
+<job Id="Cold_Starts">
+   <task Repeat="100">
+       <startup
+           IgnoreOsc="false"
+           IgnoreRomAlm="false"
+           IgnoreRamAlm="false"
+           IgnorePosition="true"
+           IgnoreNav="true"
+           IgnoreTime="true"
+       />
+       <req_pos ValidFixes="10"/>
+   </task>
+</job>
+
+</glgps>
+

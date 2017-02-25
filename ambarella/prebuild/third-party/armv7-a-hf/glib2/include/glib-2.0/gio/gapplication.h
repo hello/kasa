@@ -41,11 +41,6 @@ G_BEGIN_DECLS
 typedef struct _GApplicationPrivate                         GApplicationPrivate;
 typedef struct _GApplicationClass                           GApplicationClass;
 
-/**
- * GApplication:
- *
- * Since: 2.28
- */
 struct _GApplication
 {
   /*< private >*/
@@ -159,7 +154,7 @@ GLIB_AVAILABLE_IN_2_42
 const gchar *           g_application_get_resource_base_path            (GApplication             *application);
 GLIB_AVAILABLE_IN_2_42
 void                    g_application_set_resource_base_path            (GApplication             *application,
-                                                                         const gchar              *resource_base_path);
+                                                                         const gchar              *resource_path);
 
 GLIB_DEPRECATED
 void                    g_application_set_action_group                  (GApplication             *application,
@@ -168,6 +163,15 @@ void                    g_application_set_action_group                  (GApplic
 GLIB_AVAILABLE_IN_2_40
 void                    g_application_add_main_option_entries           (GApplication             *application,
                                                                          const GOptionEntry       *entries);
+
+GLIB_AVAILABLE_IN_2_42
+void                    g_application_add_main_option                   (GApplication             *application,
+                                                                         const char               *long_name,
+                                                                         char                      short_name,
+                                                                         GOptionFlags              flags,
+                                                                         GOptionArg                arg,
+                                                                         const char               *description,
+                                                                         const char               *arg_description);
 GLIB_AVAILABLE_IN_2_40
 void                    g_application_add_option_group                  (GApplication             *application,
                                                                          GOptionGroup             *group);
@@ -213,6 +217,8 @@ GLIB_AVAILABLE_IN_2_38
 void                    g_application_mark_busy                         (GApplication             *application);
 GLIB_AVAILABLE_IN_2_38
 void                    g_application_unmark_busy                       (GApplication             *application);
+GLIB_AVAILABLE_IN_2_44
+gboolean                g_application_get_is_busy                       (GApplication             *application);
 
 GLIB_AVAILABLE_IN_2_40
 void                    g_application_send_notification                 (GApplication             *application,
@@ -221,6 +227,16 @@ void                    g_application_send_notification                 (GApplic
 GLIB_AVAILABLE_IN_2_40
 void                    g_application_withdraw_notification             (GApplication             *application,
                                                                          const gchar              *id);
+
+GLIB_AVAILABLE_IN_2_44
+void                    g_application_bind_busy_property                (GApplication             *application,
+                                                                         gpointer                  object,
+                                                                         const gchar              *property);
+
+GLIB_AVAILABLE_IN_2_44
+void                    g_application_unbind_busy_property              (GApplication             *application,
+                                                                         gpointer                  object,
+                                                                         const gchar              *property);
 
 G_END_DECLS
 

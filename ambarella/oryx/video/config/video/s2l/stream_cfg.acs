@@ -1,0 +1,153 @@
+--[[
+Copyright (c) 2016 Ambarella, Inc.
+
+This file and its contents ("Software") are protected by intellectual
+property rights including, without limitation, U.S. and/or foreign
+copyrights. This Software is also the confidential and proprietary
+information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+disclose, distribute, modify, or otherwise prepare derivative works of this
+Software or any portion thereof except pursuant to a signed license agreement
+or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+In the absence of such an agreement, you agree to promptly notify and return
+this Software to Ambarella, Inc.
+
+THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+--]]
+--h26x_config
+    --gop_model (int),             -- 0: simple GOP model, 8:long reference P GOP model
+    --bitrate_control (string),    -- "cbr"|"vbr"
+    --profile_level (string),      -- for h264: "baseline"|"main"|"high"
+                                   -- for h265: "main"
+    --au_type (int),               -- 0~3
+        --0: NO_AUD_NO_SEI
+        --1: AUD_BEFORE_SPS_WITH_SEI
+        --2: AUD_AFTER_SPS_WITH_SEI
+        --3: NO_AUD_WITH_SEI
+    --M (int),                     -- 1~3
+    --N (int),                     -- 1~4095
+    --idr_interval (int),          -- 1~4
+    --target_bitrate (int),        -- bit per second@30FPS, 64000 ~ 12000000
+    --mv_threshold (int),          -- 0~64
+    --flat_area_improve (bool),    -- false|true, only for h264
+    --multi_ref_p (bool),          -- false|true
+    --fast_seek_intvl (int),       -- 0~63
+    --chroma_format (string),      -- "420"|"mono"
+    --i_frame_max_size             -- limit i frame max size(KB)
+                                   -- <0:determined by oryx
+                                   -- 0:disable
+                                   -- >0:user value
+
+--mjpeg_config
+    --quality (int),               -- 1~99
+    --chroma_format (string),      --"420"|"mono"
+
+stream_config = {
+--stream A config
+  {
+    h26x_config = {
+      gop_model         = 0,
+      bitrate_control   = "cbr",
+      profile_level     = "main",
+      au_type           = 0,
+      chroma_format     = "420",
+      M                 = 1,
+      N                 = 30,
+      idr_interval      = 1,
+      target_bitrate    = 4000000,
+      mv_threshold      = 0,
+      flat_area_improve = false,
+      multi_ref_p       = false,
+      fast_seek_intvl   = 0,
+      i_frame_max_size  = -1,
+    },
+    mjpeg_config = {
+      quality           = 80,
+      chroma_format     = "420",
+    },
+  },
+
+  --stream B config
+  {
+    h26x_config = {
+      gop_model = 0,
+      bitrate_control   = "cbr",
+      profile_level     = "main",
+      au_type           = 0,
+      chroma_format     = "420",
+      M                 = 1,
+      N                 = 30,
+      idr_interval      = 1,
+      target_bitrate    = 4000000,
+      mv_threshold      = 0,
+      flat_area_improve = false,
+      multi_ref_p       = false,
+      fast_seek_intvl   = 0,
+      i_frame_max_size  = -1,
+    },
+    mjpeg_config = {
+      quality           = 80,
+      chroma_format     = "420",
+    },
+  },
+
+  --stream C config
+  {
+    h26x_config = {
+      gop_model = 0,
+      bitrate_control   = "cbr",
+      profile_level     = "main",
+      au_type           = 0,
+      chroma_format     = "420",
+      M                 = 1,
+      N                 = 30,
+      idr_interval      = 1,
+      target_bitrate    = 4000000,
+      mv_threshold      = 0,
+      flat_area_improve = false,
+      multi_ref_p       = false,
+      fast_seek_intvl   = 0,
+      i_frame_max_size  = -1,
+    },
+    mjpeg_config = {
+      quality           = 80,
+      chroma_format     = "420",
+    },
+  },
+
+  --stream D config
+  {
+    h26x_config = {
+      gop_model         = 0,
+      bitrate_control   = "cbr",
+      profile_level     = "main",
+      au_type           = 0,
+      chroma_format     = "420",
+      M                 = 1,
+      N                 = 30,
+      idr_interval      = 1,
+      target_bitrate    = 4000000,
+      mv_threshold      = 0,
+      flat_area_improve = false,
+      multi_ref_p       = false,
+      fast_seek_intvl   = 0,
+      i_frame_max_size  = -1,
+    },
+    mjpeg_config = {
+      quality           = 80,
+      chroma_format     = "420",
+    },
+  }
+}
+
+return stream_config
+

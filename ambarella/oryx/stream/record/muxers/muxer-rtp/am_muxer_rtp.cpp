@@ -4,12 +4,29 @@
  * History:
  *   2015-1-4 - [ypchang] created file
  *
- * Copyright (C) 2008-2015, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -31,7 +48,9 @@
 #include "am_file.h"
 #include "am_event.h"
 #include "am_mutex.h"
+#include "am_timer.h"
 #include "am_thread.h"
+#include "am_plugin.h"
 
 #include <sys/types.h>
 #include <sys/un.h>
@@ -47,7 +66,7 @@
 
 static const char* audio_type_to_string(AM_AUDIO_TYPE type)
 {
-  const char *name = "";
+  const char *name = "Unknown";
   switch(type) {
     case AM_AUDIO_NULL:   name = "NULL";       break;
     case AM_AUDIO_LPCM:   name = "PCM";        break;
@@ -135,6 +154,47 @@ AMIMuxerCodec* get_muxer_codec(const char* config)
   return (AMIMuxerCodec*)AMMuxerRtp::create(config);
 }
 
+AMSessionPlugin* AMSessionPlugin::create(AMPlugin *so, AMIRtpSession *session)
+{
+  AMSessionPlugin *plugin = (so && session) ?
+      new AMSessionPlugin(so, session) : nullptr;
+  if (AM_LIKELY(plugin)) {
+    plugin->add_ref();
+  }
+  return plugin;
+}
+
+AMIRtpSession*& AMSessionPlugin::session()
+{
+  return m_session;
+}
+
+void AMSessionPlugin::destroy(bool notify)
+{
+  std::lock_guard<AMMemLock> lock(m_lock);
+  if (AM_LIKELY(-- m_ref_count == 0)) {
+    m_session->del_clients_all(notify);
+    delete this;
+  }
+}
+
+void AMSessionPlugin::add_ref()
+{
+  std::lock_guard<AMMemLock> lock(m_lock);
+  ++ m_ref_count;
+}
+
+AMSessionPlugin::AMSessionPlugin(AMPlugin *so, AMIRtpSession *session) :
+  m_so(so),
+  m_session(session)
+{}
+
+AMSessionPlugin::~AMSessionPlugin()
+{
+  delete m_session;
+  AM_DESTROY(m_so);
+}
+
 AMMuxerRtp* AMMuxerRtp::create(const char *conf_file)
 {
   AMMuxerRtp *result = new AMMuxerRtp();
@@ -164,15 +224,16 @@ AM_STATE AMMuxerRtp::start()
       m_run = false;
       break;
     }
+
     m_event_work->signal();
-    while (!m_work_run) {
+    while (!m_work_run.load()) {
       usleep(100000);
     }
     m_event_server->signal();
-    while(!m_server_run) {
+    while(!m_server_run.load()) {
       usleep(100000);
     }
-    AUTO_SPIN_LOCK(m_lock);
+    AUTO_MEM_LOCK(m_lock);
     m_muxer_state = AM_MUXER_CODEC_RUNNING;
     state = AM_STATE_OK;
   }while(0);
@@ -191,9 +252,9 @@ AM_STATE AMMuxerRtp::stop()
       m_event_work->signal();
       m_event_server->signal();
     }
-    m_lock->lock();
+    m_lock.lock();
     m_muxer_state = AM_MUXER_CODEC_STOPPED;
-    m_lock->unlock();
+    m_lock.unlock();
     AM_DESTROY(m_thread_work);
     AM_DESTROY(m_thread_server);
   }
@@ -201,21 +262,20 @@ AM_STATE AMMuxerRtp::stop()
   return AM_STATE_OK;
 }
 
-bool AMMuxerRtp::start_file_writing()
+const char* AMMuxerRtp::name()
 {
-  WARN("Should not call start file writing function in rtp muxer.");
-  return true;
+  return "muxer-rtp";
 }
 
-bool AMMuxerRtp::stop_file_writing()
+void* AMMuxerRtp::get_muxer_codec_interface(AM_REFIID refiid)
 {
-  WARN("Should not call stop file writing function in rtp muxer.");
-  return true;
+  return (refiid == IID_AMIMuxerCodec) ? ((AMIMuxerCodec*)this) :
+      ((void*)nullptr);
 }
 
 bool AMMuxerRtp::is_running()
 {
-  return m_run;
+  return m_run.load();
 }
 
 AM_STATE AMMuxerRtp::set_config(AMMuxerCodecConfig *config)
@@ -233,9 +293,19 @@ AM_MUXER_ATTR AMMuxerRtp::get_muxer_attr()
   return AM_MUXER_NETWORK_NORMAL;
 }
 
+uint8_t AMMuxerRtp::get_muxer_codec_stream_id()
+{
+  return (0x0f);
+}
+
+uint32_t AMMuxerRtp::get_muxer_id()
+{
+  return m_muxer_config->muxer_id;
+}
+
 AM_MUXER_CODEC_STATE AMMuxerRtp::get_state()
 {
-  AUTO_SPIN_LOCK(m_lock);
+  AUTO_MEM_LOCK(m_lock);
   return m_muxer_state;
 }
 
@@ -254,18 +324,18 @@ void AMMuxerRtp::kill_client(uint32_t client_ssrc)
 AMMuxerRtp::AMMuxerRtp() :
     m_muxer_config(nullptr),
     m_config(nullptr),
-    m_lock(nullptr),
+    m_timer(nullptr),
     m_event_work(nullptr),
     m_event_server(nullptr),
     m_thread_work(nullptr),
     m_thread_server(nullptr),
-    m_run(true),
-    m_work_run(false),
-    m_server_run(false),
-    m_active_kill(false),
     m_muxer_state(AM_MUXER_CODEC_INIT),
     m_rtp_unix_fd(-1),
-    m_support_media_type(0)
+    m_support_media_type(0),
+    m_active_kill(false),
+    m_run(true),
+    m_work_run(false),
+    m_server_run(false)
 {
   CTRL_FD_CLIENT = -1;
   CTRL_FD_MUXER  = -1;
@@ -282,11 +352,11 @@ AMMuxerRtp::~AMMuxerRtp()
   clear_client_kill_queue();
   clear_all_resources();
   delete m_config;
-  AM_DESTROY(m_lock);
   AM_DESTROY(m_thread_work);
   AM_DESTROY(m_thread_server);
   AM_DESTROY(m_event_work);
   AM_DESTROY(m_event_server);
+  AM_DESTROY(m_timer);
   if (AM_LIKELY(m_rtp_unix_fd >= 0)) {
     close(m_rtp_unix_fd);
     unlink(m_unix_sock_name.c_str());
@@ -313,14 +383,8 @@ AM_STATE AMMuxerRtp::init(const char *conf)
 
     m_muxer_config = m_config->get_config(conf);
     if (AM_UNLIKELY(!m_muxer_config)) {
-      ERROR("Failed to get RTP Muxer configration from %s", conf);
+      ERROR("Failed to get RTP Muxer configuration from %s", conf);
       state = AM_STATE_ERROR;
-      break;
-    }
-
-    m_lock = AMSpinLock::create();
-    if (AM_UNLIKELY(!m_lock)) {
-      ERROR("Failed to create lock!");
       break;
     }
 
@@ -352,6 +416,13 @@ AM_STATE AMMuxerRtp::init(const char *conf)
       state = AM_STATE_NO_MEMORY;
       break;
     }
+
+    m_timer = AMTimer::create();
+    if (AM_UNLIKELY(!m_timer)) {
+      ERROR("Failed to create AMTimer object for server thread!");
+      state = AM_STATE_NO_MEMORY;
+      break;
+    }
   }while(0);
 
   return state;
@@ -367,12 +438,24 @@ void AMMuxerRtp::static_server_thread(void *data)
   ((AMMuxerRtp*)data)->server_thread();
 }
 
+bool AMMuxerRtp::static_timeout_kill_session(void *data)
+{
+  if (AM_LIKELY(data)) {
+    std::string key = ((SessionDeleteData*)data)->key;
+    AMMuxerRtp *muxer = ((SessionDeleteData*)data)->muxer;
+    muxer->remove_session_del_data(key, ((SessionDeleteData*)data));
+    muxer->kill_session(key);
+  }
+
+  return false;
+}
+
 void AMMuxerRtp::work_thread()
 {
   m_event_work->wait();
   m_work_run = true;
   m_support_media_type = 0;
-  while (m_run) {
+  while (m_run.load()) {
     AMPacket *packet = NULL;
 
     clear_client_kill_queue();
@@ -380,123 +463,155 @@ void AMMuxerRtp::work_thread()
       usleep(10000);
       continue;
     }
-    packet = m_packet_q.front();
-    m_packet_q.pop();
+    packet = m_packet_q.front_pop();
     if (AM_LIKELY(packet)) {
       switch(packet->get_type()) {
         case AMPacket::AM_PAYLOAD_TYPE_INFO: {
           switch(packet->get_attr()) {
             case AMPacket::AM_PAYLOAD_ATTR_AUDIO: {
               AM_AUDIO_INFO *ainfo = (AM_AUDIO_INFO*)packet->get_data_ptr();
-              const char *key = audio_type_to_key(ainfo->type);
-              AMIRtpSession *session = nullptr;
-              AMRtpSessionMap::iterator iter = m_session_map.find(key);
-
-              m_support_media_type |= (1 << ainfo->type);
-              switch(ainfo->type) {
-                case AM_AUDIO_AAC: {
-                  session = create_aac_session(
-                      key, m_muxer_config->max_send_queue_size, ainfo);
-                }break;
-                case AM_AUDIO_OPUS:  {
-                  session = create_opus_session(
-                      key, m_muxer_config->max_send_queue_size, ainfo);
-                }break;
-                case AM_AUDIO_SPEEX: {
-                  session = create_speex_session(
-                      key, m_muxer_config->max_send_queue_size, ainfo);
-                }break;
-                case AM_AUDIO_G726_40:
-                case AM_AUDIO_G726_32:
-                case AM_AUDIO_G726_24:
-                case AM_AUDIO_G726_16: {
-                  session = create_g726_session(
-                      key, m_muxer_config->max_send_queue_size, ainfo);
-                }break;
-                case AM_AUDIO_G711A:
-                case AM_AUDIO_G711U: {
-                  session = create_g711_session(
-                      key, m_muxer_config->max_send_queue_size, ainfo);
-                }break;
-                default: {
-                  ERROR("RTP doesn't support audio type %s",
-                        audio_type_to_string(ainfo->type));
-                }break;
-              }
-              if (AM_LIKELY(session && (iter == m_session_map.end()))) {
-                session->set_config(m_muxer_config);
-                m_session_map[key] = session;
-                NOTICE("RTP session for %s is created!", key);
-                SupportAudioInfo *audio_info = new SupportAudioInfo;
-                if (AM_LIKELY(audio_info)) {
-                  audio_info->audio_type = ainfo->type;
-                  m_rtp_audio_list.push_back(audio_info);
-                } else {
-                  ERROR("Failed to create SupportAudioInfo struct!");
-                }
-              } else if (AM_LIKELY(session)) {
-                NOTICE("RTP session for %s is already created!", key);
-                delete session;
+              RtpSessionTypeMap::iterator session_type_iter =
+                  m_muxer_config->rtp_session_map.find((int32_t)ainfo->type);
+              if (AM_UNLIKELY(session_type_iter ==
+                              m_muxer_config->rtp_session_map.end())) {
+                ERROR("RTP doesn't support audio type %s!",
+                      audio_type_to_string(ainfo->type));
               } else {
-                ERROR("Failed to create session for %s!", key);
+                const RtpSessionType &session_type =
+                    m_muxer_config->rtp_session_map[(int32_t)ainfo->type];
+                std::string def_key = session_type.codec;
+                std::string key = def_key + "-" +
+                    std::to_string(ainfo->sample_rate / 1000) + "k";
+                AMSessionPlugin *session_plugin =
+                    load_session_plugin(key.c_str(), key.c_str(), ainfo);
+                AMRtpSessionMap::iterator iter;
+
+                /* Prevent the timer from deleting the session */
+                stop_timer_kill_session(def_key);
+                stop_timer_kill_session(key);
+
+                m_session_lock.lock();
+                iter = m_session_map.find(key);
+                if ((ainfo->type == AM_AUDIO_G711A) ||
+                    (ainfo->type == AM_AUDIO_G711U)) {
+                  if (8000 == ainfo->sample_rate) {
+                    m_support_media_type |= (1 << ainfo->type);
+                  }
+                } else {
+                  m_support_media_type |= (1 << ainfo->type);
+                }
+                if (AM_LIKELY(session_plugin &&
+                              (iter == m_session_map.end()))) {
+                  AMRtpSessionMap::iterator def = m_session_map.find(def_key);
+                  m_session_map[key] = session_plugin;
+                  if (AM_LIKELY(def == m_session_map.end())) {
+                    session_plugin->add_ref();
+                    m_session_map[def_key] = session_plugin;
+                    NOTICE("Use %s as the default RTP session for %s",
+                           key.c_str(), def_key.c_str());
+                  } else {
+                    uint32_t session_clock =
+                        session_plugin->session()->get_session_clock();
+                    uint32_t def_session_clock =
+                        def->second->session()->get_session_clock();
+                    if (AM_LIKELY(session_clock > def_session_clock)) {
+                      /* Always set the default audio session to the audio
+                       * session with the highest audio sample rate
+                       */
+                      session_plugin->add_ref();
+                      m_session_map[def_key]->destroy();
+                      m_session_map[def_key] = session_plugin;
+                      NOTICE("Use %s as the default RTP session for %s",
+                             key.c_str(), def_key.c_str());
+                    }
+                  }
+                  m_session_lock.unlock();
+                  NOTICE("RTP session for %s is created!", key.c_str());
+                  SupportAudioInfo *audio_info = new SupportAudioInfo;
+                  if (AM_LIKELY(audio_info)) {
+                    audio_info->audio_type = ainfo->type;
+                    audio_info->sample_rate = ainfo->sample_rate;
+                    m_rtp_audio_list.push_back(audio_info);
+                  } else {
+                    ERROR("Failed to create SupportAudioInfo structure!");
+                  }
+                } else if (AM_LIKELY(session_plugin)) {
+                  NOTICE("RTP session for %s is already created!", key.c_str());
+                  session_plugin->destroy();
+                } else {
+                  ERROR("Failed to create session for %s!",
+                        session_type.name.c_str());
+                }
               }
             }break;
             case AMPacket::AM_PAYLOAD_ATTR_VIDEO: {
               AM_VIDEO_INFO *vinfo = (AM_VIDEO_INFO*)packet->get_data_ptr();
-              AMIRtpSession *session = nullptr;
-              std::string key = "video" + std::to_string(vinfo->stream_id);
-              AMRtpSessionMap::iterator iter = m_session_map.find(key);
-              std::string video_name;
-              m_support_media_type |= (1 << vinfo->type);
-              switch(vinfo->type) {
-                case AM_VIDEO_H264: {
-                  session = create_h264_session(
-                      key.c_str(), m_muxer_config->max_send_queue_size, vinfo);
-                  video_name = "H.264";
-                }break;
-                case AM_VIDEO_H265: /* todo: add H.265 support */ break;
-                case AM_VIDEO_MJPEG: {
-                  session = create_mjpeg_session(
-                      key.c_str(), m_muxer_config->max_send_queue_size, vinfo);
-                  video_name = "MJPEG";
-                }break;
-                default: break;
-
-              }
-              if (AM_LIKELY(session && (iter == m_session_map.end()))) {
-                session->set_config(m_muxer_config);
-                m_session_map[key] = session;
-                NOTICE("Rtp session for %s stream%u{%s} is created!",
-                       key.c_str(), vinfo->stream_id, video_name.c_str());
-                bool find = false;
-                for (uint8_t i = 0; i < m_rtp_video_list.size(); ++i) {
-                  if (vinfo->type == m_rtp_video_list.at(i)->video_type) {
-                    find = true;
-                  }
-                }
-                if (!find) {
-                  SupportVideoInfo *video_info = new SupportVideoInfo;
-                  if (AM_LIKELY(video_info)) {
-                    video_info->video_type = vinfo->type;
-                    /* Always use stream ID 1(640*480) */
-                    video_info->stream_id = 1; /* vinfo->stream_id */
-                    m_rtp_video_list.push_back(video_info);
-                  } else {
-                    ERROR("Failed to create SupportVideoInfo struct!");
-                  }
-                }
-              } else if (AM_LIKELY(session && m_session_map[key])) {
-                if (AM_LIKELY(session->type() == m_session_map[key]->type())) {
-                  NOTICE("RTP session for %s is already created!", key.c_str());
-                } else {
-                  NOTICE("Video%u has change its type from %s to %s!",
-                         m_session_map[key]->type_string().c_str(),
-                         session->type_string().c_str());
-                  delete m_session_map[key];
-                  m_session_map[key] = session;
-                }
+              RtpSessionTypeMap::iterator session_type_iter =
+                  m_muxer_config->rtp_session_map.find((int32_t)vinfo->type);
+              if (AM_UNLIKELY(session_type_iter ==
+                              m_muxer_config->rtp_session_map.end())) {
+                ERROR("RTP doesn't support video type %d!", vinfo->type);
               } else {
-                ERROR("Failed to create session for %s!", video_name.c_str());
+                const RtpSessionType &session_type =
+                    m_muxer_config->rtp_session_map[(int32_t)vinfo->type];
+                std::string key = "video" + std::to_string(vinfo->stream_id);
+                AMSessionPlugin *session_plugin =
+                    load_session_plugin(session_type.codec.c_str(),
+                                        key.c_str(),
+                                        vinfo);
+                AMRtpSessionMap::iterator iter;
+
+                /* Prevent the timer from deleting the session */
+                stop_timer_kill_session(key);
+
+                m_session_lock.lock();
+                iter = m_session_map.find(key);
+
+                m_support_media_type |= (1 << vinfo->type);
+
+                if (AM_LIKELY(session_plugin &&
+                              (iter == m_session_map.end()))) {
+                  m_session_map[key] = session_plugin;
+                  NOTICE("Rtp session for %s stream%u{%s} is created!",
+                         key.c_str(),
+                         vinfo->stream_id,
+                         session_type.name.c_str());
+                  bool find = false;
+                  for (uint8_t i = 0; i < m_rtp_video_list.size(); ++i) {
+                    if (vinfo->type == m_rtp_video_list.at(i)->video_type) {
+                      find = true;
+                    }
+                  }
+                  if (!find) {
+                    SupportVideoInfo *video_info = new SupportVideoInfo;
+                    if (AM_LIKELY(video_info)) {
+                      video_info->video_type = vinfo->type;
+                      /* Always use stream ID 1(640*480) */
+                      video_info->stream_id = 1; /* vinfo->stream_id */
+                      m_rtp_video_list.push_back(video_info);
+                    } else {
+                      ERROR("Failed to create SupportVideoInfo struct!");
+                    }
+                  }
+                } else if (AM_LIKELY(session_plugin && m_session_map[key])) {
+                  if (AM_LIKELY(session_plugin->session()->type() ==
+                      m_session_map[key]->session()->type())) {
+                    NOTICE("RTP session for %s{%s} is already created!",
+                           key.c_str(),
+                           session_type.name.c_str());
+                    session_plugin->destroy();
+                  } else {
+                    NOTICE("Video%u has change its type from %s to %s!",
+                           m_session_map[key]->session()->type_string().c_str(),
+                           session_plugin->session()->type_string().c_str());
+                    m_session_map[key]->destroy();
+                    m_session_map[key] = session_plugin;
+                  }
+                } else {
+                  ERROR("Failed to create session for %s!",
+                        session_type.name.c_str());
+                }
+                m_session_lock.unlock();
               }
             }break;
             default: break;
@@ -508,16 +623,19 @@ void AMMuxerRtp::work_thread()
           std::string key;
           switch(packet->get_attr()) {
             case AMPacket::AM_PAYLOAD_ATTR_AUDIO: {
-              key = audio_type_to_key(AM_AUDIO_TYPE(packet->get_frame_type()));
+              key = std::string(audio_type_to_key(
+                  AM_AUDIO_TYPE(packet->get_frame_type()))) + "-" +
+                  std::to_string(packet->get_frame_attr() / 1000) + "k";
             }break;
             case AMPacket::AM_PAYLOAD_ATTR_VIDEO: {
               key = "video" + std::to_string(packet->get_stream_id());
             }break;
             default: break;
           }
+          m_session_lock.lock();
           iter = m_session_map.find(key);
           if (AM_LIKELY(iter != m_session_map.end())) {
-            AMIRtpSession *&session = iter->second;
+            AMIRtpSession *&session = iter->second->session();
             state = session->process_data(*packet,
                                           m_muxer_config->max_tcp_payload_size);
           } else {
@@ -526,30 +644,46 @@ void AMMuxerRtp::work_thread()
           if (AM_UNLIKELY(state == AM_SESSION_ERROR)) {
             if (AM_LIKELY(iter != m_session_map.end())) {
               ERROR("Error occurs in RTP session %s, delete it!",
-                    iter->second->type_string().c_str());
-              delete iter->second;
+                    iter->second->session()->type_string().c_str());
+              iter->second->destroy();
             }
             m_session_map.erase(key);
           }
+          m_session_lock.unlock();
         }break; /* case AMPacket::AM_PAYLOAD_TYPE_DATA: */
         case AMPacket::AM_PAYLOAD_TYPE_EOS: {
           std::string key;
+          m_session_lock.lock();
           switch(packet->get_attr()) {
             case AMPacket::AM_PAYLOAD_ATTR_AUDIO: {
-              key = audio_type_to_key(AM_AUDIO_TYPE(packet->get_frame_type()));
+              std::string def_key =
+                  audio_type_to_key(AM_AUDIO_TYPE(packet->get_frame_type()));
+              AMRtpSessionMap::iterator def_iter;
+
+              def_iter = m_session_map.find(def_key);
+              uint32_t sample_rate = packet->get_frame_attr();
+
+              key = def_key + "-" + std::to_string(sample_rate / 1000) + "k";
+              if (AM_LIKELY((def_iter != m_session_map.end()) &&
+                            (sample_rate == def_iter->second->session()->\
+                                                      get_session_clock()))) {
+                timer_kill_session(def_key);
+              }
             }break;
             case AMPacket::AM_PAYLOAD_ATTR_VIDEO: {
               key = "video" + std::to_string(packet->get_stream_id());
             }break;
             default: break;
           }
-          delete m_session_map[key];
-          m_session_map.erase(key);
-          NOTICE("RTP session %s received EOS!", key.c_str());
-          if (AM_LIKELY(m_session_map.size() == 0)) {
-            NOTICE("All streams are stopped!");
+          if (AM_LIKELY(!key.empty())) {
+            timer_kill_session(key);
           }
+          m_session_lock.unlock();
+
         }break; /* case AMPacket::AM_PAYLOAD_TYPE_EOS: */
+        case AMPacket ::AM_PAYLOAD_TYPE_EVENT : {
+          INFO("RTP muxer receive event packet, ignore.");
+        } break;
         default: {
           ERROR("Unsupported packet type: %u!", packet->get_type());
         }break;
@@ -572,7 +706,7 @@ void AMMuxerRtp::server_thread()
 {
   m_event_server->wait();
   m_server_run = true;
-  while(m_server_run) {
+  while(m_server_run.load()) {
     int retval = -1;
     int maxfd = -1;
     int fd = -1;
@@ -614,11 +748,18 @@ void AMMuxerRtp::server_thread()
         for (uint32_t i = 0; i < AM_RTP_CLIENT_PROTO_NUM; ++ i) {
           if (AM_LIKELY((m_client_proto_fd[i] >= 0) &&
                         FD_ISSET(m_client_proto_fd[i], &fdset))) {
-            NOTICE("Received message from %s(%d)...",
-                   proto_to_string(AM_RTP_CLIENT_PROTO(i)),
-                                   m_client_proto_fd[i]);
-            fd = m_client_proto_fd[i];
-            break;
+            if (AM_LIKELY(is_fd_valid(m_client_proto_fd[i]))) {
+              NOTICE("Received message from %s(%d)...",
+                     proto_to_string(AM_RTP_CLIENT_PROTO(i)),
+                     m_client_proto_fd[i]);
+              fd = m_client_proto_fd[i];
+              break;
+            } else {
+              NOTICE("%s is now disconnected!",
+                     proto_to_string(AM_RTP_CLIENT_PROTO(i)));
+              close(m_client_proto_fd[i]);
+              m_client_proto_fd[i] = -1;
+            }
           }
         }
       }
@@ -645,6 +786,7 @@ void AMMuxerRtp::server_thread()
             }
           }
         }break;
+        case AM_NET_AGAIN:
         default:break;
       }
     } else {
@@ -677,41 +819,117 @@ void AMMuxerRtp::server_thread()
   NOTICE("RTP Muxer server thread exits!");
 }
 
+void AMMuxerRtp::kill_session(const std::string &key)
+{
+  m_session_lock.lock();
+  /* timeout, start to kill all the sessions in the kill queue */
+  if (AM_LIKELY(m_session_map.find(key) != m_session_map.end())) {
+    m_session_map.at(key)->destroy();
+    m_session_map.erase(key);
+    NOTICE("RTP session %s received EOS!", key.c_str());
+  } else {
+    NOTICE("RTP session %s received EOS, but INFO was not received!",
+           key.c_str());
+  }
+  if (AM_LIKELY(m_session_map.size() == 0)) {
+    NOTICE("All streams are stopped!");
+  }
+  m_session_lock.unlock();
+}
+
+void AMMuxerRtp::timer_kill_session(const std::string &key)
+{
+  SessionDeleteData *data = new SessionDeleteData(this, key);
+  bool kill_now = false;
+  if (AM_LIKELY(data)) {
+    std::string timer_name = key + ".del";
+    if (AM_UNLIKELY(!m_timer->single_shot(
+                     timer_name.c_str(),
+                     m_muxer_config->kill_session_timeout,
+                     static_timeout_kill_session,
+                     data))) {
+      kill_now = true;
+      ERROR("Failed to delete session in timer!");
+      delete data;
+    } else {
+      m_session_data_lock.lock();
+      m_session_del_map[timer_name] = data;
+      m_session_data_lock.unlock();
+    }
+  } else {
+    kill_now = true;
+    ERROR("Failed to create SessionDeleteData, kill sessin now!");
+  }
+
+  if (AM_LIKELY(kill_now)) {
+    kill_session(key);
+  }
+}
+
+void AMMuxerRtp::stop_timer_kill_session(const std::string &key)
+{
+  std::string timer_name = key + ".del";
+  SessionDeleteData *data = (SessionDeleteData*)m_timer->
+      single_stop(timer_name.c_str());
+  remove_session_del_data(key, data);
+}
+
+void AMMuxerRtp::remove_session_del_data(const std::string &key,
+                                         SessionDeleteData *data)
+{
+  std::string map_key = key + ".del";
+  SessionDeleteMap::iterator iter;
+  m_session_data_lock.lock();
+  iter = m_session_del_map.find(map_key);
+  if (AM_LIKELY(iter != m_session_del_map.end())) {
+    if (AM_UNLIKELY(data != iter->second)) {
+      WARN("Timer of %s has returned different data!", map_key.c_str());
+      delete data;
+    }
+    delete iter->second;
+    m_session_del_map.erase(iter);
+  }
+  m_session_data_lock.unlock();
+}
+
 void AMMuxerRtp::clear_client_kill_queue()
 {
   while(!m_client_kill_q.empty()) {
-    uint32_t ssrc = m_client_kill_q.front();
-    m_client_kill_q.pop();
-    kill_client_by_ssrc(ssrc);
+    kill_client_by_ssrc(m_client_kill_q.front_pop());
   }
 }
 
 void AMMuxerRtp::clear_all_resources()
 {
   while(!m_packet_q.empty()) {
-    m_packet_q.front()->release();
-    m_packet_q.pop();
+    m_packet_q.front_pop()->release();
   }
+  m_session_lock.lock();
   for (AMRtpSessionMap::iterator iter = m_session_map.begin();
       iter != m_session_map.end(); ++ iter) {
-    delete iter->second;
+    iter->second->destroy(false); /* Dont' ask client to send notify back*/
   }
   m_session_map.clear();
+  m_session_lock.unlock();
 
-  for (AMRtpAudioList::iterator iter = m_rtp_audio_list.begin();
-      iter != m_rtp_audio_list.end(); iter++) {
-    if (NULL != *iter) {
-      delete *iter;
-      *iter = NULL;
-    }
+  m_session_data_lock.lock();
+  for (SessionDeleteMap::iterator iter = m_session_del_map.begin();
+       iter != m_session_del_map.end(); ++ iter) {
+    m_timer->single_stop(iter->first.c_str());
+    delete iter->second;
+  }
+  m_session_del_map.clear();
+  m_session_data_lock.unlock();
+
+  for (uint32_t i = 0; i < m_rtp_audio_list.size(); ++ i) {
+    delete m_rtp_audio_list[i];
+    m_rtp_audio_list[i] = nullptr;
   }
   m_rtp_audio_list.clear();
-  for (AMRtpVideoList::iterator iter = m_rtp_video_list.begin();
-      iter != m_rtp_video_list.end(); iter++) {
-    if (NULL != *iter) {
-      delete *iter;
-      *iter = NULL;
-    }
+
+  for (uint32_t i = 0; i < m_rtp_video_list.size(); ++ i) {
+    delete m_rtp_video_list[i];
+    m_rtp_video_list[i] = nullptr;
   }
   m_rtp_video_list.clear();
 
@@ -719,10 +937,12 @@ void AMMuxerRtp::clear_all_resources()
 
 void AMMuxerRtp::kill_client_by_ssrc(uint32_t ssrc)
 {
+  m_session_lock.lock();
   for (AMRtpSessionMap::iterator iter = m_session_map.begin();
       iter != m_session_map.end(); ++ iter) {
-    iter->second->del_client(ssrc);
+    iter->second->session()->del_client(ssrc);
   }
+  m_session_lock.unlock();
 }
 
 void AMMuxerRtp::close_all_connections()
@@ -750,7 +970,8 @@ AM_NET_STATE AMMuxerRtp::recv_client_msg(int fd,
 
     do {
       read_ret = recv(fd, ((uint8_t *)client_msg) + received,
-                      sizeof(AMRtpClientMsgBase) - received, 0);
+                      sizeof(AMRtpClientMsgBase) - received,
+                      0);
       if (AM_LIKELY(read_ret > 0)) {
         received += read_ret;
       }
@@ -770,25 +991,44 @@ AM_NET_STATE AMMuxerRtp::recv_client_msg(int fd,
                                                      (errno == EAGAIN))))) {
         read_ret = recv(fd,
                         ((uint8_t *)client_msg) + received,
-                        msg->length - received, 0);
+                        msg->length - received,
+                        0);
         if (AM_LIKELY(read_ret > 0)) {
           received += read_ret;
         }
       }
     }
 
-    if (AM_LIKELY(read_ret <= 0)) {
-      if (AM_LIKELY((errno == ECONNRESET) || (read_ret == 0))) {
-        NOTICE("%s closed its connection while reading data!",
-               fd_to_proto_string(fd).c_str());
+    if (AM_LIKELY(read_ret < 0)) {
+      switch(errno) {
+        case ECONNRESET: {
+          NOTICE("%s closed its connection while reading data!",
+                 fd_to_proto_string(fd).c_str());
+          ret = AM_NET_PEER_SHUTDOWN;
+        }break;
+        case EBADF: {
+          ret = AM_NET_BADFD;
+          ERROR("Failed to receive message(%d): %s!",
+                errno,  strerror(errno));
+        }break;
+        case EINTR:
+        case EAGAIN: {
+          ret = AM_NET_AGAIN;
+          WARN("Failed to receive message(%d): %s!",
+               errno,  strerror(errno));
+        }break;
+        default: {
+          ret = AM_NET_ERROR;
+          ERROR("Failed to receive message(%d): %s!",
+                errno,  strerror(errno));
+        }break;
+      }
+    } else if (read_ret == 0) {
+      if (AM_LIKELY((errno == 0)) || (errno == EAGAIN)) {
         ret = AM_NET_PEER_SHUTDOWN;
       } else {
-        if (AM_LIKELY(errno == EBADF)) {
-          ret = AM_NET_BADFD;
-        } else {
-          ret = AM_NET_ERROR;
-        }
-        ERROR("Failed to receive message(%d): %s!", errno,  strerror(errno));
+        ret = AM_NET_AGAIN;
+        WARN("Received 0 bytes of data(%d: %s)!", errno, strerror(errno));
       }
     }
   }
@@ -868,9 +1108,10 @@ bool AMMuxerRtp::process_client_msg(int fd, AMRtpClientMsgBlock &client_msg)
       AMRtpSessionMap::iterator iter;
 
       std::transform(media.begin(), media.end(), media.begin(), ::tolower);
+      m_session_lock.lock();
       iter = m_session_map.find(ack.media);
       if (AM_LIKELY(iter != m_session_map.end())) {
-        AMIRtpSession *&session = iter->second;
+        AMIRtpSession *&session = iter->second->session();
         AMRtpClient *client = session->find_client_by_ssrc(ack.ssrc);
         if (AM_LIKELY(client)) {
           client->send_ack();
@@ -880,6 +1121,7 @@ bool AMMuxerRtp::process_client_msg(int fd, AMRtpClientMsgBlock &client_msg)
                  ack.ssrc, media.c_str());
         }
       }
+      m_session_lock.unlock();
     }break;
     case AM_RTP_CLIENT_MSG_SDP: {
       const char *addr = client_msg.msg_sdp.media[AM_RTP_MEDIA_NUM];
@@ -910,10 +1152,11 @@ bool AMMuxerRtp::process_client_msg(int fd, AMRtpClientMsgBlock &client_msg)
                  media_name.c_str(), media.c_str());
           client_msg.msg_sdp.media[i][0] = '\0';
           std::transform(media.begin(), media.end(), media.begin(), ::tolower);
-          iter = m_session_map.find(media);
 
+          m_session_lock.lock();
+          iter = m_session_map.find(media);
           if (AM_LIKELY(iter != m_session_map.end())) {
-            AMIRtpSession *&session = iter->second;
+            AMIRtpSession *&session = iter->second->session();
             AM_RTP_MEDIA_TYPE media_type = AM_RTP_MEDIA_NUM;
 
             switch(session->type()) {
@@ -935,6 +1178,7 @@ bool AMMuxerRtp::process_client_msg(int fd, AMRtpClientMsgBlock &client_msg)
               found = true;
             }
           }
+          m_session_lock.unlock();
           if (AM_UNLIKELY(!found)) {
             memset(client_msg.msg_sdp.media[i], 0, MAX_SDP_LEN);
             NOTICE("Can NOT find media: %s in %s session!",
@@ -950,13 +1194,18 @@ bool AMMuxerRtp::process_client_msg(int fd, AMRtpClientMsgBlock &client_msg)
       std::string sdp_param;
       std::string sdps;
       for (uint8_t i = 0; i < m_rtp_audio_list.size(); ++i) {
-        const char *key = audio_type_to_key(m_rtp_audio_list.at(i)->audio_type);
+        const char *type = audio_type_to_key(m_rtp_audio_list.at(i)->audio_type);
+        std::string key = std::string(type) + "-" +
+              std::to_string(m_rtp_audio_list.at(i)->sample_rate / 1000) + "k";
+        m_session_lock.lock();
         if (m_session_map.find(key) != m_session_map.end()) {
-          payloads.append(" " + m_session_map[key]->get_payload_type());
-          sdp_param.append(m_session_map[key]->get_param_sdp());
+          payloads.append(" ").
+              append(m_session_map[key]->session()->get_payload_type());
+          sdp_param.append(m_session_map[key]->session()->get_param_sdp());
         } else {
-          ERROR("No matched RTP audio session %s was found!", key);
+          ERROR("No matched RTP audio session %s was found!", key.c_str());
         }
+        m_session_lock.unlock();
       }
       sdps = "m=audio " +
              std::to_string(client_msg.msg_sdps.port[AM_RTP_MEDIA_AUDIO]) +
@@ -967,15 +1216,18 @@ bool AMMuxerRtp::process_client_msg(int fd, AMRtpClientMsgBlock &client_msg)
         for (uint8_t i = 0; i < m_rtp_video_list.size(); ++i) {
           std::string key = "video" +
               std::to_string(m_rtp_video_list.at(i)->stream_id);
+          m_session_lock.lock();
           if (m_session_map.find(key) != m_session_map.end()) {
-            payloads.append(" " + m_session_map[key]->get_payload_type());
-            sdp_param.append(m_session_map[key]->get_param_sdp());
+            payloads.append(" ").
+                append(m_session_map[key]->session()->get_payload_type());
+            sdp_param.append(m_session_map[key]->session()->get_param_sdp());
             sdps.append("m=video " +
                std::to_string(client_msg.msg_sdps.port[AM_RTP_MEDIA_VIDEO]) +
                " RTP/AVP" + payloads + "\r\n" + "a=sendonly\r\n" + sdp_param);
           } else {
             ERROR("No matched RTP video session %s was found!", key.c_str());
           }
+          m_session_lock.unlock();
         }
       }
       strncpy(client_msg.msg_sdps.media_sdp, sdps.c_str(), MAX_SDP_LEN);
@@ -986,7 +1238,7 @@ bool AMMuxerRtp::process_client_msg(int fd, AMRtpClientMsgBlock &client_msg)
     case AM_RTP_CLIENT_MSG_KILL: {
       if (AM_LIKELY(fd == CTRL_FD_MUXER)) {
         NOTICE("Session is asking to shut down client(SSRC: %08X) "
-               "with session id: %08X",
+               "with session ID: %08X",
                client_msg.msg_kill.ssrc,
                client_msg.msg_kill.session_id);
         client_msg.msg_kill.active_kill = m_active_kill;
@@ -995,6 +1247,9 @@ bool AMMuxerRtp::process_client_msg(int fd, AMRtpClientMsgBlock &client_msg)
                               sizeof(client_msg.msg_kill));
         m_active_kill = false;
       } else {
+        NOTICE("Client(SSRC: %08X) with session ID: %08X is going to be closed",
+               client_msg.msg_kill.ssrc,
+               client_msg.msg_kill.session_id);
         m_active_kill = true;
         kill_client(client_msg.msg_kill.ssrc);
       }
@@ -1011,10 +1266,14 @@ bool AMMuxerRtp::process_client_msg(int fd, AMRtpClientMsgBlock &client_msg)
       std::string rtp_client_conf =
           std::string(MUXER_CONF_DIR) + "/rtp-client.acs";
       AMRtpClientMsgInfo &msg_info = client_msg.msg_info;
-      AMRtpSessionMap::iterator iter =
-          m_session_map.find(msg_info.info.media);
-      AMIRtpSession *session =
-          (iter != m_session_map.end()) ? iter->second : nullptr;
+      AMRtpSessionMap::iterator iter;
+      AMIRtpSession *session = nullptr;
+
+      m_session_lock.lock();
+      iter = m_session_map.find(msg_info.info.media);
+      session = (iter != m_session_map.end()) ?
+          iter->second->session() : nullptr;
+      m_session_lock.unlock();
       AMRtpClient *client = session ? AMRtpClient::create(rtp_client_conf,
                                                           fd,
                                                           client_tcp_fd,
@@ -1038,13 +1297,14 @@ bool AMMuxerRtp::process_client_msg(int fd, AMRtpClientMsgBlock &client_msg)
         } else if (!client) {
           ERROR("Failed to create client!");
         }
-        ret = false;
+        ret = true;
       }
     }break;
     case AM_RTP_CLIENT_MSG_START: {
+      m_session_lock.lock();
       for (AMRtpSessionMap::iterator iter = m_session_map.begin();
            iter != m_session_map.end(); ++ iter) {
-        AMIRtpSession *&rtp = iter->second;
+        AMIRtpSession *&rtp = iter->second->session();
         std::string seq_ntp = rtp->get_client_seq_ntp(client_msg.msg_ctrl.ssrc);
 
         if (AM_LIKELY(!seq_ntp.empty())) {
@@ -1059,12 +1319,16 @@ bool AMMuxerRtp::process_client_msg(int fd, AMRtpClientMsgBlock &client_msg)
           break;
         }
       }
+      m_session_lock.unlock();
     }break;
     case AM_RTP_CLIENT_MSG_STOP: {
+      m_session_lock.lock();
       for (AMRtpSessionMap::iterator iter = m_session_map.begin();
           iter != m_session_map.end(); ++ iter) {
-        iter->second->set_client_enable(client_msg.msg_ctrl.ssrc, false);
+        iter->second->session()->set_client_enable(client_msg.msg_ctrl.ssrc,
+                                                 false);
       }
+      m_session_lock.unlock();
     }break;
     case AM_RTP_CLIENT_MSG_PROTO: {
       if (AM_LIKELY((client_msg.msg_proto.proto >= 0) &&
@@ -1156,4 +1420,49 @@ std::string AMMuxerRtp::fd_to_proto_string(int fd)
   }
 
   return str;
+}
+
+AMSessionPlugin* AMMuxerRtp::load_session_plugin(
+    const char *name,
+    const char *session_name,
+    void *data)
+{
+  AMSessionPlugin *session_plugin = nullptr;
+  AMPlugin *so = nullptr;
+  AMIRtpSession *session = nullptr;
+  std::string session_so = ORYX_MUXER_DIR;
+  session_so.append("/rtp-session/rtp-session-").append(name).append(".so");
+
+  do {
+
+    so = AMPlugin::create(session_so.c_str());
+    if (AM_UNLIKELY(!so)) {
+      ERROR("Failed to load RTP session plugin: rtp-session-%s.so", name);
+      break;
+    }
+    CreateRtpSession create_rtp_session =
+        (CreateRtpSession)so->get_symbol(CREATE_RTP_SESSION);
+    if (AM_UNLIKELY(!create_rtp_session)) {
+      ERROR("Invalid RTP session plugin: %s", session_so.c_str());
+      AM_DESTROY(so);
+      break;
+    }
+    session = create_rtp_session(session_name, m_muxer_config, data);
+    if (AM_UNLIKELY(!session)) {
+      ERROR("Failed to create object of rtp session plugin: %s!",
+            session_so.c_str());
+      AM_DESTROY(so);
+      break;
+    }
+
+    session_plugin = AMSessionPlugin::create(so, session);
+    if (AM_UNLIKELY(!session_plugin)) {
+      ERROR("Failed to allocate memory for RTP SessionPlugin object!");
+      delete session;
+      AM_DESTROY(so);
+      break;
+    }
+  }while(0);
+
+  return session_plugin;
 }

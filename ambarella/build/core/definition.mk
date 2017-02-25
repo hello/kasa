@@ -6,12 +6,29 @@
 ## History:
 ##    2011/12/09 - [Cao Rongrong] Create
 ##
-## Copyright (C) 2012-2016, Ambarella, Inc.
+## Copyright (C) 2015 Ambarella, Inc.
 ##
-## All rights reserved. No Part of this file may be reproduced, stored
-## in a retrieval system, or transmitted, in any form, or by any means,
-## electronic, mechanical, photocopying, recording, or otherwise,
-## without the prior consent of Ambarella, Inc.
+## This file and its contents ("Software") are protected by intellectual
+## property rights including, without limitation, U.S. and/or foreign
+## copyrights. This Software is also the confidential and proprietary
+## information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+## disclose, distribute, modify, or otherwise prepare derivative works of this
+## Software or any portion thereof except pursuant to a signed license agreement
+## or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+## In the absence of such an agreement, you agree to promptly notify and return
+## this Software to Ambarella, Inc.
+##
+## THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+## INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+## MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+## IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+## INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+## (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+## LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+## INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+## CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+## ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+## POSSIBILITY OF SUCH DAMAGE.
 ##
 
 ALL_TARGETS :=
@@ -85,10 +102,10 @@ define build-static-library
 		@echo CREATE $@ > $(dir $@)/ar.mac
 		@echo SAVE >> $(dir $@)/ar.mac
 		@echo END >> $(dir $@)/ar.mac
-		@ar -M < $(dir $@)/ar.mac
+		@$(CROSS_COMPILE)ar -M < $(dir $@)/ar.mac
 	)
 
-	$(if $(filter %.o,$^),@ar -c -q $@ $(filter %.o, $^))
+	$(if $(filter %.o,$^),@$(CROSS_COMPILE)ar -c -q $@ $(filter %.o, $^))
 	$(if $(filter %.a, $^),
 		@echo OPEN $@ > $(dir $@)/ar.mac
 		$(foreach LIB, $(filter %.a, $^),
@@ -96,7 +113,7 @@ define build-static-library
 		)
 		@echo SAVE >> $(dir $@)/ar.mac
 		@echo END >> $(dir $@)/ar.mac
-		@ar -M < $(dir $@)/ar.mac
+		@$(CROSS_COMPILE)ar -M < $(dir $@)/ar.mac
 		@rm -rf $(dir $@)/ar.mac
 	)
 endef

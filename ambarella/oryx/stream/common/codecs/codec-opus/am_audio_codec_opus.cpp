@@ -4,12 +4,29 @@
  * History:
  *   2014-11-10 - [ccjing] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -261,64 +278,9 @@ uint32_t AMAudioCodecOpus::encode(uint8_t *input,
                                   uint8_t *output,
                                   uint32_t *out_data_size)
 {
-  *out_data_size = 0;
-  /* Opus Raw data separator */
-  output[0] = 'O';
-  output[1] = 'P';
-  output[2] = 'U';
-  output[3] = 'S';
-  /* Opus Raw data size */
-  output[4] = 0;
-  output[5] = 0;
-  output[6] = 0;
-  output[7] = 0;
-  if (AM_LIKELY(0 == (in_data_size % m_encode_frame_bytes))) {
-    bool is_ok = true;
-    uint8_t *out = m_enc_output_buf;
-    uint32_t &enc_output_size = m_opus_config->encode.enc_output_size;
-    uint32_t count = in_data_size / m_encode_frame_bytes;
-
-    m_repacketizer = opus_repacketizer_init(m_repacketizer);
-    for (uint32_t i = 0; i < count; i ++) {
-      const opus_int16* pcm = (opus_int16*) (input + i * m_encode_frame_bytes);
-      int ret = opus_encode(m_encoder,
-                            pcm,
-                            m_encode_frame_size,
-                            out,
-                            enc_output_size);
-      if (AM_LIKELY(ret > 0)) {
-        int retval = opus_repacketizer_cat(m_repacketizer, out, ret);
-        if (AM_UNLIKELY(retval != OPUS_OK)) {
-          ERROR("Opus repacketizer error: %s", opus_strerror(retval));
-          is_ok = false;
-          break;
-        }
-        out += ret;
-      } else {
-        ERROR("Opus encode error: %s", opus_strerror(ret));
-        is_ok = false;
-        break;
-      }
-    }
-    if (AM_LIKELY(is_ok)) {
-      int ret = opus_repacketizer_out(m_repacketizer, output + 8,
-                                      enc_output_size);
-      if (AM_LIKELY(ret > 0)) {
-        output[4] = (ret & 0xff000000) >> 24;
-        output[5] = (ret & 0x00ff0000) >> 16;
-        output[6] = (ret & 0x0000ff00) >>  8;
-        output[7] = (ret & 0x000000ff);
-        *out_data_size = ret + 8;
-      } else {
-        ERROR("Opus repacketizer error: %s", opus_strerror(ret));
-      }
-    }
-  } else {
-    ERROR("Invalid input data length: %u, must be multiple of %u!",
-          in_data_size,
-          m_encode_frame_bytes);
-  }
-  return *out_data_size;
+  return m_opus_config->encode.repacketize ?
+      encode_repackeize(input, in_data_size, output, out_data_size) :
+      encode_single(input, in_data_size, output, out_data_size);
 }
 
 uint32_t AMAudioCodecOpus::decode(uint8_t *input,
@@ -413,3 +375,114 @@ bool AMAudioCodecOpus::init(const char* config)
 
   return ret;
 }
+
+uint32_t AMAudioCodecOpus::encode_repackeize(uint8_t *input,
+                                             uint32_t in_data_size,
+                                             uint8_t *output,
+                                             uint32_t *out_data_size)
+{
+  *out_data_size = 0;
+  /* Opus Raw data separator */
+  output[0] = 'O';
+  output[1] = 'P';
+  output[2] = 'U';
+  output[3] = 'S';
+  /* Opus Raw data size */
+  output[4] = 0;
+  output[5] = 0;
+  output[6] = 0;
+  output[7] = 0;
+  if (AM_LIKELY(0 == (in_data_size % m_encode_frame_bytes))) {
+    bool is_ok = true;
+    uint8_t *out = m_enc_output_buf;
+    uint32_t &enc_output_size = m_opus_config->encode.enc_output_size;
+    uint32_t count = in_data_size / m_encode_frame_bytes;
+
+    m_repacketizer = opus_repacketizer_init(m_repacketizer);
+    for (uint32_t i = 0; i < count; i ++) {
+      const opus_int16* pcm = (opus_int16*) (input + i * m_encode_frame_bytes);
+      int ret = opus_encode(m_encoder,
+                            pcm,
+                            m_encode_frame_size,
+                            out,
+                            enc_output_size);
+      if (AM_LIKELY(ret > 0)) {
+        int retval = opus_repacketizer_cat(m_repacketizer, out, ret);
+        if (AM_UNLIKELY(retval != OPUS_OK)) {
+          ERROR("Opus repacketizer error: %s", opus_strerror(retval));
+          is_ok = false;
+          break;
+        }
+        out += ret;
+      } else {
+        ERROR("Opus encode error: %s", opus_strerror(ret));
+        is_ok = false;
+        break;
+      }
+    }
+    if (AM_LIKELY(is_ok)) {
+      int ret = opus_repacketizer_out(m_repacketizer, output + 8,
+                                      enc_output_size);
+      if (AM_LIKELY(ret > 0)) {
+        output[4] = (ret & 0xff000000) >> 24;
+        output[5] = (ret & 0x00ff0000) >> 16;
+        output[6] = (ret & 0x0000ff00) >>  8;
+        output[7] = (ret & 0x000000ff);
+        *out_data_size = ret + 8;
+      } else {
+        ERROR("Opus repacketizer error: %s", opus_strerror(ret));
+      }
+    }
+  } else {
+    ERROR("Invalid input data length: %u, must be multiple of %u!",
+          in_data_size,
+          m_encode_frame_bytes);
+  }
+  return *out_data_size;
+}
+
+uint32_t AMAudioCodecOpus::encode_single(uint8_t *input,
+                                         uint32_t in_data_size,
+                                         uint8_t *output,
+                                         uint32_t *out_data_size)
+{
+  uint8_t *out = output;
+  *out_data_size = 0;
+
+  if (AM_LIKELY(0 == (in_data_size % m_encode_frame_bytes))) {
+    uint32_t &enc_output_size = m_opus_config->encode.enc_output_size;
+    uint32_t count = in_data_size / m_encode_frame_bytes;
+
+    for (uint32_t i = 0; i < count; i ++) {
+      const opus_int16* pcm = (opus_int16*) (input + i * m_encode_frame_bytes);
+      int ret = opus_encode(m_encoder,
+                            pcm,
+                            m_encode_frame_size,
+                            (out + 8), /* Skip out header */
+                            enc_output_size);
+      if (AM_LIKELY(ret > 0)) {
+        /* Opus Raw data separator */
+        out[0] = 'O';
+        out[1] = 'P';
+        out[2] = 'U';
+        out[3] = 'S';
+        /* Opus Raw data size */
+        out[4] = (ret & 0xff000000) >> 24;
+        out[5] = (ret & 0x00ff0000) >> 16;
+        out[6] = (ret & 0x0000ff00) >>  8;
+        out[7] = (ret & 0x000000ff);
+        out += (ret + 8);
+        *out_data_size += (ret + 8);
+      } else {
+        ERROR("Opus encode error: %s", opus_strerror(ret));
+        break;
+      }
+    }
+  } else {
+    ERROR("Invalid input data length: %u, must be multiple of %u!",
+          in_data_size,
+          m_encode_frame_bytes);
+  }
+  return *out_data_size;
+}
+

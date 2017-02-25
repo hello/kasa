@@ -9,6 +9,13 @@ config BUILD_BROADCOM_WIFI_SDIO
 		This module adds support for wireless adapters based on
 		Broadcom 43362/43340/43341/43438 chipset.
 
+config BUILD_BROADCOM_WIFI_PROC_PM_STATE
+	depends on BUILD_BROADCOM_WIFI_SDIO
+	bool "Add PM State in proc file"
+	default n
+	help
+		Select Add PM State in "/proc/ambarella/wifi_pm_state"
+
 config BUILD_BROADCOM_WIFI_ARP_OFFLOAD
 	depends on BUILD_BROADCOM_WIFI_SDIO
 	bool "Support WiFi ARP offload"
@@ -21,7 +28,17 @@ config BUILD_BROADCOM_WIFI_TXGLOM
 	bool "Support WiFi txglom"
 	default n
 	help
-		Select Support WiFi txglom
+		Select enable txglom in config.txt by "bus:rxglom=1", disable it by "bus:rxglom=0".
+		Should disable it for transfer video frame with 33ms interval which is faster than sg speed.
+
+config BUILD_BROADCOM_WIFI_INSMOD_NO_FW_LOAD
+	depends on BUILD_BROADCOM_WIFI_SDIO
+	bool "Support WiFi insmod no fw load"
+	default n
+	help
+		Select it if connect WL_REG_ON in HW.
+		It will pull LOW of WL_REG_ON when ifconfig wlan0 down,
+		and pull HIGH of WL_REG_ON when ifconfig wlan0 up
 
 config BUILD_BROADCOM_WIFI_SDIO_OOB
 	depends on BUILD_BROADCOM_WIFI_SDIO
@@ -51,6 +68,20 @@ config GPIO_BCM_WL_REG_ON
 	help
 		Config GPIO_BCM_WL_REG_ON(Ironman 102, Kiwi 113)
 
+config GPIO_BCM_WL_REG_ON_ACTIVE
+	depends on BUILD_BROADCOM_WIFI_SDIO
+	int "The GPIO active value to control WiFi WL_REG_ON"
+	default 1
+	help
+		Config GPIO_BCM_WL_REG_ON_ACTIVE(Ironman 1, flashman 0)
+
+config WIFI_CONN_SD_SLOT_NUM
+	depends on BUILD_BROADCOM_WIFI_SDIO
+	int "The SD Slot Number that Wifi connect"
+	default 0
+	help
+		Config SD Slot Number(Ironman=0, Antman=1)
+
 #########
 choice
 	prompt "Broadcom WiFi driver Version"
@@ -65,7 +96,7 @@ config BUILD_BROADCOM_WIFI_SDIO_V3_0
 		Verified on Kernel 3.8, 3.10
 
 config BUILD_BROADCOM_WIFI_SDIO_V2_V3_0
-	bool "Kernel 3.10; Driver 1.201.34 (r491657)"
+	bool "Kernel 3.10; Driver 1.201.59.8 (r506368)"
 	help
 		Select driver base on Kernel [3.0, 3.10)
 		Verified on Kernel 3.10
@@ -106,6 +137,25 @@ config BUILD_BROADCOM_WIFI_SDIO_MODULE_AP6212
 	help
 		Select BCM43438(AP6212)
 
+config BUILD_BROADCOM_WIFI_SDIO_MODULE_AP6452
+	bool "BCM43438(AP6452)"
+	help
+		Select BCM43438(AP6452)
+
+config BUILD_BROADCOM_WIFI_SDIO_MODULE_AP6212A
+	bool "BCM43438A1(AP6212A)"
+	help
+		Select BCM43438A1(AP6212A)
+
+config BUILD_BROADCOM_WIFI_SDIO_MODULE_AP6255
+	bool "BCM43455(AP6255)"
+	help
+		Select BCM43455(AP6255)
+
+config BUILD_BROADCOM_WIFI_SDIO_MODULE_AP62X2
+	bool "BCM43241(AP62X2)"
+	help
+		Select BCM43241(AP62X2)
 endchoice
 ######### END of prompt "Broadcom WiFi Firmware and nvram Version"
 
@@ -127,7 +177,7 @@ choice
 		Select the WiFi driver base on Kernel version.
 
 config BUILD_BROADCOM_WIFI_USB_V3_0
-	bool "Kernel 3.10; Driver 1.88.56.3.1 (r)"
+	bool "Kernel 3.10; Driver 1.88.56.3.3 (r)"
 	help
 		Select driver version base on Kernel [3.0,  3.10)
 		Verified on Kernel 3.10

@@ -4,14 +4,33 @@
  * History:
  *	2014/04/28 - [Zhaoyang Chen] created file
  *
- * Copyright (C) 2012-2013, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 
 #include <config.h>
 
@@ -61,7 +80,6 @@
 #include <plat/ambsyncproc.h>
 #include <plat/ambasyncproc.h>
 #include <plat/ambevent.h>
-#include <plat/debug.h>
 #include <plat/ambcache.h>
 #include <mach/init.h>
 
@@ -89,9 +107,14 @@ static u64 hwtimer_overflow_count 		= 0;
 static u64 hwtimer_init_output_value 	= 0;
 static u32 hwtimer_init_overflow_value 	= 0;
 static u32 hwtimer_input_freq			= 0;
+static u32 hwtimer_input_gcd			= 0;
 static u32 hwtimer_curr_outfreq			= 0;
+static u32 hwtimer_output_gcd			= 0;
 
-static spinlock_t timer_isr_lock;
+static u32 hwtimer_curr_reg_tick		= 0xFFFFFFFF;
+
+static spinlock_t timer_lock;
+static struct timer_list sw_timer;
 
 static int hwtimer_reset(void);
 
@@ -158,49 +181,38 @@ static inline int get_gcd(int a, int b)
 
 static int calc_output_ticks(u64 *out_tick)
 {
-	u64 total_ticks;
-	u64 overflow_ticks;
-	u64 overflow_count;
-	u64 overflow_count0;
-	u64 hwtimer_ticks;
-	unsigned long flags;
+	u64 total_ticks, overflow_ticks, hwtimer_ticks;
+	u64 overflow_count, hwtimer_init;
 	u32 curr_reg_value;
-	u32 curr_reg_value0;
-	int input_freq = hwtimer_input_freq;
-	int output_freq = hwtimer_curr_outfreq;
+	u32 input_gcd, output_gcd;
+	unsigned long flags;
 
-	int gcd;
-
-	curr_reg_value0 = ambarella_hwtimer_read();
-	overflow_count0 = hwtimer_overflow_count;
-
-	spin_lock_irqsave(&timer_isr_lock, flags);
+	spin_lock_irqsave(&timer_lock, flags);
+	hwtimer_init = hwtimer_init_output_value;
 	curr_reg_value = ambarella_hwtimer_read();
-	overflow_count = hwtimer_overflow_count;
-	spin_unlock_irqrestore(&timer_isr_lock, flags);
-
-	// update overflow count for register value rollback case
-	if ((curr_reg_value0 < curr_reg_value) &&
-		(overflow_count == overflow_count0)) {
-		overflow_count = overflow_count + 1;
+	if (curr_reg_value >= hwtimer_curr_reg_tick) {
+		overflow_count = hwtimer_overflow_count + 1;
+	} else {
+		overflow_count = hwtimer_overflow_count;
 	}
+	input_gcd = hwtimer_input_gcd;
+	output_gcd = hwtimer_output_gcd;
+	spin_unlock_irqrestore(&timer_lock, flags);
 
 	overflow_ticks = overflow_count * hwtimer_init_overflow_value;
 	hwtimer_ticks = hwtimer_init_overflow_value - curr_reg_value;
 	total_ticks = overflow_ticks + hwtimer_ticks;
 
 	// change frequency from apb clock to current output frequency
-	gcd = get_gcd(output_freq, (int)input_freq);
-	total_ticks = total_ticks * (output_freq / gcd) +
-		input_freq / (gcd * 2);
-	if (hwtimer_init_overflow_value) {
-		do_div(total_ticks, input_freq / gcd);
+	total_ticks = total_ticks * output_gcd + (input_gcd >> 1);
+	if (input_gcd) {
+		do_div(total_ticks, input_gcd);
 	} else {
 		printk("HWTimer: calculate output ticks failed! Can not divide zero!\n");
 		return -EINVAL;
 	}
 	// generate output ticks
-	*out_tick = total_ticks + hwtimer_init_output_value;
+	*out_tick = hwtimer_init + total_ticks;
 
 	return 0;
 }
@@ -209,25 +221,29 @@ static ssize_t hwtimer_write_proc(struct file *file, const char __user *buffer,
 		size_t count, loff_t *data)
 {
 	ssize_t retval = 0;
+	u64 value;
 	char buf[50];
+	unsigned long flags;
 
-	if (count >= 50) {
+	if (count >= 50 || count <= 1) {
 		printk("HWTimer: %s: count %d out of size!\n", __func__, (u32)count);
 		retval = -ENOSPC;
 		goto hwtimer_write_proc_exit;
 	}
-	if (count > 1) {
-		if (copy_from_user(buf, buffer, count)) {
-			printk("HWTimer: %s: copy_from_user fail!\n", __func__);
-			retval = -EFAULT;
-			goto hwtimer_write_proc_exit;
-		}
-		buf[count] = '\0';
-		hwtimer_init_output_value = simple_strtoull(buf, NULL, 10);
+
+	if (copy_from_user(buf, buffer, count)) {
+		printk("HWTimer: %s: copy_from_user fail!\n", __func__);
+		retval = -EFAULT;
+		goto hwtimer_write_proc_exit;
 	}
-	spin_lock_irq(&timer_isr_lock);
+	buf[count] = '\0';
+	value = simple_strtoull(buf, NULL, 10);
+
+	spin_lock_irqsave(&timer_lock, flags);
+	del_timer(&sw_timer);
+	hwtimer_init_output_value = value;
 	hwtimer_reset();
-	spin_unlock_irq(&timer_isr_lock);
+	spin_unlock_irqrestore(&timer_lock, flags);
 
 	retval = count;
 
@@ -336,21 +352,31 @@ static ssize_t hwtimer_outfreq_write_proc(struct file *file,
 {
 	ssize_t retval = 0;
 	char buf[50];
+	u32 gcd, input, output, out_freq;
+	unsigned long flags;
 
-	if (count >= 50) {
+	if (count >= 50 || count <= 1) {
 		printk("HWTimer: %s: count %d out of size!\n", __func__, (u32)count);
 		retval = -ENOSPC;
 		goto hwtimer_outfreq_write_proc_exit;
 	}
-	if (count > 1) {
-		if (copy_from_user(buf, buffer, count)) {
-			printk("HWTimer: %s: copy_from_user fail!\n", __func__);
-			retval = -EFAULT;
-			goto hwtimer_outfreq_write_proc_exit;
-		}
-		buf[count] = '\0';
-		hwtimer_curr_outfreq= simple_strtoull(buf, NULL, 10);
+
+	if (copy_from_user(buf, buffer, count)) {
+		printk("HWTimer: %s: copy_from_user fail!\n", __func__);
+		retval = -EFAULT;
+		goto hwtimer_outfreq_write_proc_exit;
 	}
+	buf[count] = '\0';
+	out_freq = (u32)simple_strtoull(buf, NULL, 10);
+	gcd = get_gcd(hwtimer_input_freq, out_freq);
+	input = hwtimer_input_freq / gcd;
+	output = out_freq / gcd;
+
+	spin_lock_irqsave(&timer_lock, flags);
+	hwtimer_curr_outfreq= out_freq;
+	hwtimer_input_gcd = input;
+	hwtimer_output_gcd = output;
+	spin_unlock_irqrestore(&timer_lock, flags);
 
 	retval = count;
 
@@ -381,13 +407,21 @@ static int hwtimer_create_outfreq_proc(void)
 	return err_code;
 }
 
-static irqreturn_t hwtimer_isr(int irq, void *dev_id)
+static void swtimer_routine(unsigned long data)
 {
-	spin_lock(&timer_isr_lock);
-	hwtimer_overflow_count++;
-	spin_unlock(&timer_isr_lock);
+	u32 curr_tick;
+	unsigned long flags;
 
-	return IRQ_HANDLED;
+	/* sw timer is scheduled per second */
+	spin_lock_irqsave(&timer_lock, flags);
+	mod_timer(&sw_timer, jiffies + HZ);
+
+	curr_tick = ambarella_hwtimer_read();
+	if (curr_tick >= hwtimer_curr_reg_tick) {
+		hwtimer_overflow_count++;
+	}
+	hwtimer_curr_reg_tick = curr_tick;
+	spin_unlock_irqrestore(&timer_lock, flags);
 }
 
 static void hwtimer_remove_proc(void)
@@ -400,21 +434,53 @@ static void hwtimer_remove_outfreq_proc(void)
 	remove_proc_entry(AMBARELLA_HWTIMER_OUTFREQ, get_ambarella_proc_dir());
 }
 
-int hwtimer_reset()
+#ifdef CONFIG_PM
+int hwtimer_suspend(void)
+{
+	u64 suspend_ticks = 0;
+	get_hwtimer_output_ticks(&suspend_ticks);
+	hwtimer_init_output_value = suspend_ticks;
+
+	ambarella_hwtimer_disable();
+	del_timer(&sw_timer);
+
+	return 0;
+}
+
+EXPORT_SYMBOL(hwtimer_suspend);
+int hwtimer_resume(void)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&timer_lock, flags);
+	hwtimer_reset();
+	spin_unlock_irqrestore(&timer_lock, flags);
+
+	return 0;
+}
+EXPORT_SYMBOL(hwtimer_resume);
+#endif
+
+int hwtimer_reset(void)
 {
 	hwtimer_overflow_count = 0;
-	hwtimer_input_freq = AMBARELLA_HWTIMER_INPUT_FREQ;
-	hwtimer_init_overflow_value = hwtimer_input_freq * HWTIMER_OVERFLOW_SECONDS;
-	hwtimer_curr_outfreq = HWTIMER_DEFAULT_OUTPUT_FREQ;
 	hwtimer_enable_flag = 0;
 	ambarella_hwtimer_init();
+
+	init_timer(&sw_timer);
+	hwtimer_curr_reg_tick = 0xFFFFFFFF;
+	sw_timer.function = &swtimer_routine;
+	sw_timer.expires = jiffies + HZ;
+	add_timer(&sw_timer);
 
 	return 0;
 }
 
 static int __init hwtimer_init(void)
 {
-	int err_code = 0;
+	int gcd, err_code = 0;
+	unsigned long flags;
+
 	err_code = hwtimer_create_proc();
 	if (err_code) {
 		printk("HWTimer: create proc file for hw timer failed!\n");
@@ -426,25 +492,25 @@ static int __init hwtimer_init(void)
 		goto hwtimer_init_err_create_outfreq_proc;
 	}
 
-	hwtimer_overflow_count = 0;
-	err_code = request_irq(AMBARELLA_HWTIMER_IRQ, hwtimer_isr,
-					IRQF_TRIGGER_RISING, AMBARELLA_HWTIMER_NAME, NULL);
-	if (err_code) {
-		printk("HWTimer: request irq for hw timer failed!\n");
-		goto hwtimer_init_err_request_irq;
+	spin_lock_init(&timer_lock);
+	if (HWTIMER_OVERFLOW_SECONDS < 2) {
+		printk("HWTimer: overflow seconds should be >= 2!\n");
+		err_code = -1;
+		goto hwtimer_init_err_create_outfreq_proc;
 	}
 
 	hwtimer_input_freq = AMBARELLA_HWTIMER_INPUT_FREQ;
 	hwtimer_init_overflow_value = hwtimer_input_freq * HWTIMER_OVERFLOW_SECONDS;
 	hwtimer_curr_outfreq = HWTIMER_DEFAULT_OUTPUT_FREQ;
-	hwtimer_enable_flag = 0;
-	ambarella_hwtimer_init();
-	spin_lock_init(&timer_isr_lock);
+	gcd = get_gcd(hwtimer_input_freq, hwtimer_curr_outfreq);
+	hwtimer_input_gcd = hwtimer_input_freq / gcd;
+	hwtimer_output_gcd = hwtimer_curr_outfreq / gcd;
+
+	spin_lock_irqsave(&timer_lock, flags);
+	hwtimer_reset();
+	spin_unlock_irqrestore(&timer_lock, flags);
 
 	goto hwtimer_init_err_na;
-
-hwtimer_init_err_request_irq:
-	free_irq(AMBARELLA_HWTIMER_IRQ, NULL);
 
 hwtimer_init_err_create_outfreq_proc:
 	hwtimer_remove_outfreq_proc();
@@ -462,7 +528,7 @@ static void __exit hwtimer_exit(void)
 		ambarella_hwtimer_disable();
 		hwtimer_enable_flag = 0;
 	}
-	free_irq(AMBARELLA_HWTIMER_IRQ, NULL);
+	del_timer(&sw_timer);
 	hwtimer_remove_outfreq_proc();
 	hwtimer_remove_proc();
 }

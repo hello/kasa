@@ -4,12 +4,29 @@
  * History:
  *   2014-11-3 - [ypchang] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -155,101 +172,126 @@ bool AMAudioCodecAac::initialize(AM_AUDIO_INFO *srcAudioInfo,
     switch(m_mode) {
       case AM_AUDIO_CODEC_MODE_ENCODE: {
         AM_AUDIO_INFO *audioInfo = &m_audio_info[AUDIO_INFO_ENCODE];
-        if (AM_LIKELY(audioInfo->sample_format == AM_SAMPLE_S16LE)) {
-          audioInfo->type = AM_AUDIO_AAC;
+        m_is_initialized = false;
+        do {
+          if (AM_LIKELY(audioInfo->sample_format != AM_SAMPLE_S16LE)) {
+            ERROR("Invalid input audio sample type! Only S16LE is supported!");
+            break;
+          }
           if (AM_LIKELY(!m_enc_buffer)) {
             m_enc_buffer = new uint8_t[m_aac_config->encode.enc_buf_size];
           }
-          if (AM_LIKELY(m_enc_buffer)) {
-            if (AM_LIKELY(!m_enc_conf)) {
-              m_enc_conf = new au_aacenc_config_t;
-            }
-            if (AM_LIKELY(m_enc_conf)) {
-              memset(m_enc_conf, 0, sizeof(*m_enc_conf));
-              m_enc_conf->sample_freq = audioInfo->sample_rate;
-              m_enc_conf->Src_numCh   = audioInfo->channels;
-              m_enc_conf->enc_mode    = m_aac_config->encode.format;
-              /*m_enc_conf->Out_numCh   = m_aac_config->encode.output_channel;*/
-              m_enc_conf->tns         = m_aac_config->encode.tns;
-              m_enc_conf->ffType      = m_aac_config->encode.fftype;
-              m_enc_conf->bitRate     = m_aac_config->encode.bitrate;
-              m_enc_conf->quantizerQuality =
-                  m_aac_config->encode.quantizer_quality;
-              m_enc_conf->codec_lib_mem_adr = (uint32_t*)m_enc_buffer;
-              if (AM_UNLIKELY((m_enc_conf->Src_numCh != 2) &&
-                              (m_aac_config->encode.format == AACPLUS_PS))) {
-                ERROR("AAC Plus PS requires stereo audio input, "
-                    "but source audio channel number is: %u",
-                    audioInfo->channels);
-                m_is_initialized = false;
-              } else {
-                if (AM_LIKELY(m_aac_config->encode.format == AACPLUS_PS)) {
-                  /* AACPlus_PS's output channel number is always 1 */
-                  audioInfo->channels = 1;
-                }
-                aacenc_setup(m_enc_conf);
-                aacenc_open(m_enc_conf);
-                m_is_initialized = true;
-                INFO("AAC codec is initialized for encoding!");
-              }
-            } else {
-              ERROR("Failed to allocate AAC codec encode config structure!");
-              delete[] m_enc_buffer;
-              m_enc_buffer = NULL;
-            }
-          } else {
+          if (AM_UNLIKELY(!m_enc_buffer)) {
             ERROR("Failed to allocate AAC codec encode buffer!");
+            break;
           }
-        } else {
-          ERROR("Invalid input audio sample type! Only S16LE is supported!");
+          if (AM_LIKELY(!m_enc_conf)) {
+            m_enc_conf = new au_aacenc_config_t;
+          }
+          if (AM_UNLIKELY(!m_enc_conf)) {
+            ERROR("Failed to allocate AAC codec encode config structure!");
+            break;
+          }
+          memset(m_enc_conf, 0, sizeof(*m_enc_conf));
+          audioInfo->type = AM_AUDIO_AAC;
+          m_enc_conf->sample_freq = audioInfo->sample_rate;
+          m_enc_conf->Src_numCh   = audioInfo->channels;
+          m_enc_conf->enc_mode    = m_aac_config->encode.format;
+          /*m_enc_conf->Out_numCh = m_aac_config->encode.output_channel;*/
+          m_enc_conf->tns         = m_aac_config->encode.tns;
+          m_enc_conf->ffType      = m_aac_config->encode.fftype;
+          m_enc_conf->bitRate     = m_aac_config->encode.bitrate;
+          m_enc_conf->quantizerQuality =
+              m_aac_config->encode.quantizer_quality;
+          m_enc_conf->codec_lib_mem_adr = (uint32_t*)m_enc_buffer;
+          if (AM_UNLIKELY((m_enc_conf->Src_numCh != 2) &&
+                          (m_aac_config->encode.format == AACPLUS_PS))) {
+            ERROR("AAC Plus PS requires stereo audio input, "
+                "but source audio channel number is: %u",
+                audioInfo->channels);
+            break;
+          }
+          if (AM_LIKELY(m_aac_config->encode.format == AACPLUS_PS)) {
+            /* AACPlus_PS's output channel number is always 1 */
+            audioInfo->channels = 1;
+          }
+          aacenc_setup(m_enc_conf);
+          aacenc_open(m_enc_conf);
+          m_is_initialized = true;
+          INFO("AAC codec is initialized for encoding!");
+        }while(0);
+        if (AM_UNLIKELY(!m_is_initialized)) {
+          delete[] m_enc_buffer;
+          delete[] m_enc_conf;
+          m_enc_buffer = nullptr;
+          m_enc_conf = nullptr;
         }
       }break;
       case AM_AUDIO_CODEC_MODE_DECODE: {
         AM_AUDIO_INFO *audioInfo = &m_audio_info[AUDIO_INFO_DECODE];
-        if (AM_LIKELY(!m_dec_buffer)) {
-          m_dec_buffer = new uint32_t[m_aac_config->decode.dec_buf_size];
-        }
-        if (AM_LIKELY(m_dec_buffer)) {
+        m_is_initialized = false;
+        do {
+          if (AM_LIKELY(!m_dec_buffer)) {
+            m_dec_buffer = new uint32_t[m_aac_config->decode.dec_buf_size];
+          }
+          if (AM_UNLIKELY(!m_dec_buffer)) {
+            ERROR("Failed to allocate AAC codec decode buffer!");
+            break;
+          }
           if (AM_LIKELY(!m_dec_conf)) {
             m_dec_conf = new au_aacdec_config_t;
           }
-          if (AM_LIKELY(m_dec_conf)) {
-            memset(m_dec_conf, 0, sizeof(*m_dec_conf));
-            if (AM_LIKELY(!m_dec_out_buffer)) {
-              m_dec_out_buffer =
-                  new int32_t[m_aac_config->decode.dec_out_buf_size];
-            }
-            if (AM_LIKELY(m_dec_out_buffer)) {
-              m_dec_conf->bsFormat = ADTS_BSFORMAT; /* Fix to ADTS */
-              m_dec_conf->srcNumCh = audioInfo->channels;
-              m_dec_conf->outNumCh = m_aac_config->decode.output_channel;
-              m_dec_conf->Out_res  = m_aac_config->decode.output_resolution;
-              m_dec_conf->codec_lib_mem_addr = m_dec_buffer;
-              m_dec_conf->externalSamplingRate = audioInfo->sample_rate;
-              switch(m_dec_conf->Out_res) {
-                case 16: audioInfo->sample_format = AM_SAMPLE_S16LE; break;
-                case 32: audioInfo->sample_format = AM_SAMPLE_S32LE; break;
-                default:break;
-              }
-              audioInfo->sample_size = m_dec_conf->Out_res / 8;
-              aacdec_setup(m_dec_conf);
-              aacdec_open(m_dec_conf);
-              m_is_initialized = true;
-              INFO("AAC codec is initialized for decoding!");
+          if (AM_UNLIKELY(!m_dec_conf)) {
+            ERROR("Failed to allocate AAC decode config structure!");
+            break;
+          }
+          if (AM_LIKELY(!m_dec_out_buffer)) {
+            m_dec_out_buffer =
+                new int32_t[m_aac_config->decode.dec_out_buf_size];
+          }
+          if (AM_LIKELY(!m_dec_out_buffer)) {
+            ERROR("Failed to allocate AAC decode output buffer!");
+            break;
+          }
+          memset(m_dec_conf, 0, sizeof(*m_dec_conf));
+          m_dec_conf->srcNumCh = audioInfo->channels;
+          m_dec_conf->outNumCh = m_aac_config->decode.output_channel;
+          m_dec_conf->Out_res  = m_aac_config->decode.output_resolution;
+          m_dec_conf->codec_lib_mem_addr   = m_dec_buffer;
+          m_dec_conf->externalSamplingRate = audioInfo->sample_rate;
+          if (AM_LIKELY(audioInfo->codec_info)) {
+            if (is_str_equal((const char*)audioInfo->codec_info, "adts")) {
+              m_dec_conf->bsFormat = ADTS_BSFORMAT;
+            } else if (is_str_equal((const char*)audioInfo->codec_info,
+                                    "raw")) {
+              m_dec_conf->bsFormat = RAW_BSFORMAT;
             } else {
-              ERROR("Failed to allocate AAC decode output buffer!");
-              delete m_dec_conf;
-              delete[] m_dec_buffer;
-              m_dec_conf = NULL;
-              m_dec_buffer = NULL;
+              ERROR("Invalid bit stream format! Neither ADTS nor RAW!");
+              break;
             }
           } else {
-            ERROR("Failed to allocate AAC decode config structure!");
-            delete[] m_dec_buffer;
-            m_dec_buffer = NULL;
+            /* If codec info is not set, use default mode */
+            m_dec_conf->bsFormat = ADTS_BSFORMAT;
           }
-        } else {
-          ERROR("Failed to allocate AAC codec decode buffer!");
+          switch(m_dec_conf->Out_res) {
+            case 16: audioInfo->sample_format = AM_SAMPLE_S16LE; break;
+            case 32: audioInfo->sample_format = AM_SAMPLE_S32LE; break;
+            default:break;
+          }
+          audioInfo->sample_size = m_dec_conf->Out_res / 8;
+          aacdec_setup(m_dec_conf);
+          aacdec_open(m_dec_conf);
+          m_is_initialized = true;
+          INFO("AAC codec is initialized for decoding!");
+
+        }while(0);
+        if (AM_UNLIKELY(!m_is_initialized)) {
+          delete m_dec_conf;
+          delete[] m_dec_buffer;
+          delete[] m_dec_out_buffer;
+          m_dec_conf = nullptr;
+          m_dec_buffer = nullptr;
+          m_dec_out_buffer = nullptr;
         }
       }break;
       default: break;

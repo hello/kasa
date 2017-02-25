@@ -1,23 +1,34 @@
-/*-------------------------------------------------------------------------------------------------------------------*\
- *  @FileName       :: AmbaDSP_Img3aStatistics.h
+/*
+ * include/arch_s2l/AmbaDSP_Img3aStatistics.h
  *
- *  @Copyright      :: Copyright (C) 2012 Ambarella Corporation. All rights reserved.
+ * History:
+ *	12/12/2012  - [Steve Chen] created file
  *
- *                     No part of this file may be reproduced, stored in a retrieval system,
- *                     or transmitted, in any form, or by any means, electronic, mechanical, photocopying,
- *                     recording, or otherwise, without the prior consent of Ambarella Corporation.
+ * Copyright (C) 2015 Ambarella, Inc.
  *
- *  @Description    :: Definitions & Constants for Ambarella DSP Image Kernel Aaa Stat APIs
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
  *
- *  @History        ::
- *      Date        Name        Comments
- *      12/12/2012  Steve Chen  Created
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
- *  $LastChangedDate: 2013-10-22 17:05:12 +0800 (?±‰?, 22 ?ÅÊ? 2013) $
- *  $LastChangedRevision: 6855 $
- *  $LastChangedBy: hfwang $
- *  $HeadURL: http://ambtwsvn2/svn/DSC_Platform/trunk/SoC/A9/DSP/inc/AmbaDSP_Img3aStatistics.h $
-\*-------------------------------------------------------------------------------------------------------------------*/
+ */
 
 #ifndef _AMBA_DSP_IMG_AAA_STAT_H_
 #define _AMBA_DSP_IMG_AAA_STAT_H_
@@ -158,6 +169,40 @@ typedef struct _AMBA_DSP_IMG_AAA_FLOAT_TILE_INFO_s_ {
     AMBA_DSP_IMG_FLOAT_TILE_CONFIG_s    FloatTileConfig[32];
 } AMBA_DSP_IMG_AAA_FLOAT_TILE_INFO_s;
 
+typedef struct amba_img_dsp_aaa_histogram_s
+{
+    UINT32 Mode;
+    UINT16 AeFileMask[8];
+}amba_img_dsp_aaa_histogram_t;
+
+typedef struct amba_img_dsp_aaa_pseudo_y_s
+{
+    UINT32 Mode;
+    UINT32 SumShift;
+    UINT8  PixelWeight[4];
+    UINT8  ToneCurve[32];
+	UINT8  Reserved0;
+	UINT8  Reserved1;
+}amba_img_dsp_aaa_pseudo_y_t;
+
+
+typedef struct amba_img_dsp_aaa_early_wb_gain_s
+{
+    UINT32 RedMultiplier;
+    UINT32 GreenMultiplierEven;
+    UINT32 GreenMultiplierOdd;
+    UINT32 BlueMultiplier;
+    UINT8  EnableAeWbGain;
+    UINT8  EnableAfWbGain;
+    UINT8  EnableHistogramWbGain;
+    UINT8  Reserved;
+    UINT32 RedWbMultiplier;
+    UINT32 GreenWbMultiplierEven;
+    UINT32 GreenWbMultiplierOdd;
+    UINT32 BlueWbMultiplier;
+}amba_img_dsp_aaa_early_wb_gain_t;
+
+
 typedef struct _AMBA_DSP_TRANSFER_AAA_STATISTIC_DATA_s_ {
     UINT32  RgbAaaDataAddr;
     UINT32  CfaAaaDataAddr;
@@ -227,6 +272,33 @@ int amba_dsp_img_3a_set_af_stat_ex_info(int fd_iav, amba_img_dsp_mode_cfg_t *pMo
 
 /* Get tile advanced configuration for AF statistics calculation.          */
 int amba_dsp_img_3a_get_af_stat_ex_info(int fd_iav, amba_img_dsp_mode_cfg_t *pMode, amba_dsp_img_af_stat_ex_info_t *pAfStatEx);
+
+int   amba_dsp_img_set_3a_pseudo_y(
+                    int fd_iav,
+                    amba_img_dsp_mode_cfg_t         *pMode,
+                    amba_img_dsp_aaa_pseudo_y_t     *pPseudoY);
+int   amba_dsp_img_get_3a_pseudo_y(
+                    int fd_iav,
+                    amba_img_dsp_mode_cfg_t         *pMode,
+                    amba_img_dsp_aaa_pseudo_y_t     *pPseudoY);
+
+int   amba_dsp_img_set_3a_histogram(
+                    int fd_iav,
+                    amba_img_dsp_mode_cfg_t         *pMode,
+                    amba_img_dsp_aaa_histogram_t     *pHistogram);
+int   amba_dsp_img_get_3a_histogram(
+                    int fd_iav,
+                    amba_img_dsp_mode_cfg_t         *pMode,
+                    amba_img_dsp_aaa_histogram_t     *pHistogram);
+int   amba_dsp_img_set_3a_early_wb_gain(
+                    int fd_iav,
+                    amba_img_dsp_mode_cfg_t              *pMode,
+                    amba_img_dsp_aaa_early_wb_gain_t     *pEarlyWbGain);
+int   amba_dsp_img_get_3a_early_wb_gain(
+                    int fd_iav,
+                    amba_img_dsp_mode_cfg_t              *pMode,
+                    amba_img_dsp_aaa_early_wb_gain_t     *pEarlyWbGain);
+
 
 
 

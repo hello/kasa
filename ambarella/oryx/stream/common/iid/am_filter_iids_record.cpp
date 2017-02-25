@@ -4,12 +4,29 @@
  * History:
  *   2014-12-2 - [ypchang] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -41,3 +58,11 @@ AM_DEFINE_IID(IID_AMIAVQueue,
 /* {27529a9f-5bd1-4a6f-b285-05eaa7b3070e} */
 AM_DEFINE_IID(IID_AMIMuxer,
 0x27529a9f, 0x5bd1, 0x4a6f, 0xb2, 0x85, 0x05, 0xea, 0xa7, 0xb3, 0x07, 0x0e);
+
+/*{cbba79ae-b540-11e6-b243-085700d7b992}*/
+AM_DEFINE_IID(IID_AMIGsensorSource,
+0xcbba79ae, 0xb540, 0x11e6, 0xb2, 0x43, 0x08, 0x57, 0x00, 0xd7, 0xb9, 0x92);
+
+/* {255de478-eb48-11e5-afc5-085700d7b992} */
+AM_DEFINE_IID(IID_AMIGpsSource,
+0x255de478, 0xeb48, 0x11e5, 0xaf, 0xc5, 0x08, 0x57, 0x00, 0xd7, 0xb9, 0x92);

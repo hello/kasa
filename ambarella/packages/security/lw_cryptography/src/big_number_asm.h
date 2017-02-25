@@ -1,16 +1,34 @@
-/**
+/*******************************************************************************
  * big_number_asm.h
  *
  * History:
  *  2015/06/25 - [Zhi He] create file
  *
- * Copyright (C) 2014 - 2024, the Ambarella Inc.
+ * Copyright (C) 2015 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of the Ambarella Inc.
- */
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ ******************************************************************************/
 
 #ifndef __BIG_NUMBER_ASM_H__
 #define __BIG_NUMBER_ASM_H__
@@ -36,7 +54,7 @@
     "movl   %%edx,   %%ecx      \n\t"   \
     "stosl                      \n\t"
 
-#if defined(POLARSSL_HAVE_SSE2)
+#if defined(HAVE_SSE2)
 
 #define MULADDC_HUIT                            \
     "movd     %%ecx,     %%mm1      \n\t"   \
@@ -540,15 +558,15 @@
             "ldr    r1, %4                      \n\t"   \
             "ldr    r2, %5                      \n\t"   \
             "ldr    r3, %6                      \n\t"   \
-            "lsr    r7, r3, #16                 \n\t"   \
-            "mov    r9, r7                      \n\t"   \
-            "lsl    r7, r3, #16                 \n\t"   \
-            "lsr    r7, r7, #16                 \n\t"   \
-            "mov    r8, r7                      \n\t"
+            "lsr    r10, r3, #16                 \n\t"   \
+            "mov    r9, r10                      \n\t"   \
+            "lsl    r10, r3, #16                 \n\t"   \
+            "lsr    r10, r10, #16                 \n\t"   \
+            "mov    r8, r10                      \n\t"
 
 #define MULADDC_CORE                                    \
     "ldmia  r0!, {r6}                   \n\t"   \
-    "lsr    r7, r6, #16                 \n\t"   \
+    "lsr    r10, r6, #16                 \n\t"   \
     "lsl    r6, r6, #16                 \n\t"   \
     "lsr    r6, r6, #16                 \n\t"   \
     "mov    r4, r8                      \n\t"   \
@@ -556,12 +574,12 @@
     "mov    r3, r9                      \n\t"   \
     "mul    r6, r3                      \n\t"   \
     "mov    r5, r9                      \n\t"   \
-    "mul    r5, r7                      \n\t"   \
+    "mul    r5, r10                      \n\t"   \
     "mov    r3, r8                      \n\t"   \
-    "mul    r7, r3                      \n\t"   \
+    "mul    r10, r3                      \n\t"   \
     "lsr    r3, r6, #16                 \n\t"   \
     "add    r5, r5, r3                  \n\t"   \
-    "lsr    r3, r7, #16                 \n\t"   \
+    "lsr    r3, r10, #16                 \n\t"   \
     "add    r5, r5, r3                  \n\t"   \
     "add    r4, r4, r2                  \n\t"   \
     "mov    r2, #0                      \n\t"   \
@@ -569,7 +587,7 @@
     "lsl    r3, r6, #16                 \n\t"   \
     "add    r4, r4, r3                  \n\t"   \
     "adc    r5, r2                      \n\t"   \
-    "lsl    r3, r7, #16                 \n\t"   \
+    "lsl    r3, r10, #16                 \n\t"   \
     "add    r4, r4, r3                  \n\t"   \
     "adc    r5, r2                      \n\t"   \
     "ldr    r3, [r1]                    \n\t"   \
@@ -584,7 +602,7 @@
     : "=m" (c),  "=m" (d), "=m" (s)        \
         : "m" (s), "m" (d), "m" (c), "m" (b)   \
         : "r0", "r1", "r2", "r3", "r4", "r5",  \
-        "r6", "r7", "r8", "r9", "cc"         \
+        "r6", "r10", "r8", "r9", "cc"         \
         );
 
 #else
@@ -601,9 +619,9 @@
     "mov    r5, #0                      \n\t"   \
     "ldr    r6, [r1]                    \n\t"   \
     "umlal  r2, r5, r3, r4              \n\t"   \
-    "adds   r7, r6, r2                  \n\t"   \
+    "adds   r10, r6, r2                  \n\t"   \
     "adc    r2, r5, #0                  \n\t"   \
-    "str    r7, [r1], #4                \n\t"
+    "str    r10, [r1], #4                \n\t"
 
 #define MULADDC_STOP                                    \
     "str    r2, %0                      \n\t"   \
@@ -612,7 +630,7 @@
     : "=m" (c),  "=m" (d), "=m" (s)        \
         : "m" (s), "m" (d), "m" (c), "m" (b)   \
         : "r0", "r1", "r2", "r3", "r4", "r5",  \
-        "r6", "r7", "cc"                     \
+        "r6", "r10", "cc"                     \
         );
 
 #endif /* Thumb */
@@ -708,7 +726,7 @@
     __asm   mov     ecx, edx                    \
     __asm   stosd
 
-#if defined(POLARSSL_HAVE_SSE2)
+#if defined(HAVE_SSE2)
 
 #define EMIT __asm _emit
 
@@ -792,22 +810,51 @@
 #endif /* MSVC */
 
 #if !defined(MULADDC_CORE)
+#if defined(DHAVE_DOUBLE_LONG_INT)
 
 #define MULADDC_INIT                    \
-    {                                       \
-        t_udbl r;                           \
-        t_uint r0, r1;
+{                                       \
+    TUDBL r;                           \
+    TUINT r0, r1;
 
 #define MULADDC_CORE                    \
-    r   = *(s++) * (t_udbl) b;          \
-    r0  = (t_uint) r;                   \
-    r1  = (t_uint)( r >> biL );         \
+    r   = *(s++) * (TUDBL) b;          \
+    r0  = (TUINT) r;                   \
+    r1  = (TUINT)( r >> DBITS_IN_LIMB );         \
     r0 += c;  r1 += (r0 <  c);          \
     r0 += *d; r1 += (r0 < *d);          \
     c = r1; *(d++) = r0;
 
 #define MULADDC_STOP                    \
-    }
+}
+
+#else
+#define MULADDC_INIT                    \
+{                                       \
+    TUINT s0, s1, b0, b1;              \
+    TUINT r0, r1, rx, ry;              \
+    b0 = ( b << DHALF_BITS_IN_LIMB ) >> DHALF_BITS_IN_LIMB;           \
+    b1 = ( b >> DHALF_BITS_IN_LIMB );
+
+#define MULADDC_CORE                    \
+    s0 = ( *s << DHALF_BITS_IN_LIMB ) >> DHALF_BITS_IN_LIMB;          \
+    s1 = ( *s >> DHALF_BITS_IN_LIMB ); s++;            \
+    rx = s0 * b1; r0 = s0 * b0;         \
+    ry = s1 * b0; r1 = s1 * b1;         \
+    r1 += ( rx >> DHALF_BITS_IN_LIMB );                \
+    r1 += ( ry >> DHALF_BITS_IN_LIMB );                \
+    rx <<= DHALF_BITS_IN_LIMB; ry <<= DHALF_BITS_IN_LIMB;             \
+    r0 += rx; r1 += (r0 < rx);          \
+    r0 += ry; r1 += (r0 < ry);          \
+    r0 +=  c; r1 += (r0 <  c);          \
+    r0 += *d; r1 += (r0 < *d);          \
+    c = r1; *(d++) = r0;
+
+#define MULADDC_STOP                    \
+}
+
+#endif /* C (generic)  */
+
 
 #endif
 

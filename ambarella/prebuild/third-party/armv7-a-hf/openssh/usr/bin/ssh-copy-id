@@ -207,7 +207,7 @@ populate_new_ids() {
   printf '%s: INFO: attempting to log in with the new key(s), to filter out any that are already installed\n' "$0" >&2
   NEW_IDS=$(
     eval $GET_ID | {
-      while read ID ; do
+      while read ID || [[ -n $ID ]]; do
         printf '%s\n' "$ID" > $L_TMP_ID_FILE
 
         # the next line assumes $PRIV_ID_FILE only set if using a single id file - this
@@ -274,9 +274,7 @@ case "$REMOTE_VERSION" in
       populate_new_ids 0
     fi
     [ "$DRY_RUN" ] || printf '%s\n' "$NEW_IDS" | ssh "$@" "
-		umask 077 ;
-		mkdir -p .ssh && cat >> .ssh/authorized_keys || exit 1 ;
-		if type restorecon >/dev/null 2>&1 ; then restorecon -F .ssh .ssh/authorized_keys ; fi" \
+		exec sh -c 'umask 077; mkdir -p .ssh && cat >> .ssh/authorized_keys || exit 1; if type restorecon >/dev/null 2>&1; then restorecon -F .ssh .ssh/authorized_keys; fi'" \
       || exit 1
     ADDED=$(printf '%s\n' "$NEW_IDS" | wc -l)
     ;;

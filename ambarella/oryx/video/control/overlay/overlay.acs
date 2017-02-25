@@ -1,0 +1,646 @@
+--[[
+Copyright (c) 2016 Ambarella, Inc.
+
+This file and its contents ("Software") are protected by intellectual
+property rights including, without limitation, U.S. and/or foreign
+copyrights. This Software is also the confidential and proprietary
+information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+disclose, distribute, modify, or otherwise prepare derivative works of this
+Software or any portion thereof except pursuant to a signed license agreement
+or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+In the absence of such an agreement, you agree to promptly notify and return
+this Software to Ambarella, Inc.
+
+THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+--]]
+--This is the configuration of overlay
+--s_num_max: stream max number used for overlay
+--a_num_max: area max number for each stream
+  --note: memory size for each area is depend on s_num_max and a_num_max:
+  -- area size = total size for overlay / (s_num_max * a_num_max).
+--area_num: real area number used for stream, it must be <= a_num_max
+--enable: whether display when create
+--rotate: rotate or not osd content when stream is rotate or flip
+--buf_num: buffer number for a area, it is usefull when type is animation  or bmp type
+  -- which frequently do update manipulate.
+  -- Don't put more than one Animation data in one area when  buf_ num > 1
+--w: area or data block width; h: area or data block height;
+--x: area or data block hor start; y: area or data block  ver start
+--bg_color: background color for the all area. format:v:24-31,u:16-23,y:8-15,a:0-7
+--data_num: data block for the area
+--type: data block type, 0,string; 1,picture; 2,time, it is a special string type; 3,animation,
+  -- it is a special picture type; 4,line;
+  -- each stream can't add more than one time and animation type data block
+--font_color: 0,white;1,black;2,red;3,blue;4,green;5,yellow;6,cyan;7,magenta;
+  -->7,user custom(v:24-31,u:16-23,y:8-15,a:0-7)
+--spacing: char spacing
+--format: date and time display format, 0:YYYY-MM-DD hh:mm:ss;
+   -- 1:MM/DD/YYYY hh:mm:ss; 2:DD/MM/YYYY hh:mm:ss.
+--is_12h: 12H notation for Time
+--ckey: transparent color(v:24-31,u:16-23,y:8-15,a:0-7)
+--crange: transparent color range
+--bmp_num: bmp number in the picture file, it is used for animation type
+--interval: frame interval to display the animation
+
+osd_overlay = {
+  s_num_max = 2,
+  a_num_max = 2,
+
+  s_config = {
+    --stream 0
+    {
+      area_num = 2,
+
+      a_config = {
+        --area 0
+        {
+          enable = 1,
+          rotate = 1,
+          w = 1824,
+          h = 200,
+          x = 50,
+          y = 0,
+          bg_color = 0,
+          buf_num = 1,
+          data_num = 1,
+
+          d_config = {
+            -- data block 0
+            {
+              w = 0,
+              h = 0,
+              x = 0,
+              y = 0,
+              type = 1,
+
+              string = {
+                str = "Welcome to Ambarella!",
+                spacing = 0,
+                font_name = "/usr/share/fonts/FreeSansBold.ttf",
+                font_size = 30,
+                font_color = 4,
+                font_outline_w = 0,
+                font_ver_bold = 0,
+                font_hor_bold = 0,
+                font_italic = 0,
+                bg_color = 0,
+                ol_color = 0,
+              },
+
+              picture = {
+                ckey = 0x8080eb00,
+                crange = 20,
+                pic = "/usr/share/oryx/video/overlay/Ambarella-256x128-8bit.bmp",
+              },
+
+              time = {
+                pre_str = "Ambarella @AMBARELLA_ARCH@ ",
+                suf_str = "",
+                format = 0,
+                is_12h = 0,
+                spacing = 0,
+                en_msec = 0,
+                font_name = "",
+                font_size = 32,
+                font_color = 0,
+                font_outline_w = 0,
+                font_ver_bold = 0,
+                font_hor_bold = 0,
+                font_italic = 0,
+                bg_color = 0,
+                ol_color = 0,
+              },
+
+              animation = {
+                ckey = 0x8080eb00,
+                crange = 20,
+                pic = "/usr/share/oryx/video/overlay/Animation-logo.bmp",
+                bmp_num = 4,
+                interval = 5,
+              },
+
+              line = {
+                line_color = 0,
+                line_thickness = 2,
+                p_x = {
+                10,150
+                },
+                p_y = {
+                10,20
+                }
+              },
+            },
+
+            -- data block 1
+            {
+              w = 500,
+              h = 100,
+              x = 600,
+              y = 10,
+              type = 0,
+
+              string = {
+                str = "Welcome to Ambarella!",
+                spacing = 0,
+                font_name = "/usr/share/fonts/FreeSansBold.ttf",
+                font_size = 30,
+                font_color = 4,
+                font_outline_w = 0,
+                font_ver_bold = 0,
+                font_hor_bold = 0,
+                font_italic = 0,
+                bg_color = 0,
+                ol_color = 0,
+              },
+
+              picture = {
+                ckey = 0x8080eb00,
+                crange = 20,
+                pic = "/usr/share/oryx/video/overlay/Ambarella-256x128-8bit.bmp",
+              },
+
+              time = {
+                pre_str = "Ambarella @AMBARELLA_ARCH@ ",
+                suf_str = "",
+                format = 0,
+                is_12h = 0,
+                spacing = 0,
+                en_msec = 0,
+                font_name = "",
+                font_size = 32,
+                font_color = 0,
+                font_outline_w = 0,
+                font_ver_bold = 0,
+                font_hor_bold = 0,
+                font_italic = 0,
+                bg_color = 0,
+                ol_color = 0,
+              },
+
+              animation = {
+                ckey = 0x8080eb00,
+                crange = 20,
+                pic = "/usr/share/oryx/video/overlay/Animation-logo.bmp",
+                bmp_num = 4,
+                interval = 5,
+              },
+
+              line = {
+                line_color = 0,
+                line_thickness = 2,
+                p_x = {
+                10,150
+                },
+                p_y = {
+                10,20
+                }
+              },
+            },
+
+            -- data block 2
+            {
+              w = 700,
+              h = 100,
+              x = 1100,
+              y = 10,
+              type = 2,
+
+              string = {
+                str = "Welcome to Ambarella!",
+                spacing = 0,
+                font_name = "/usr/share/fonts/FreeSansBold.ttf",
+                font_size = 30,
+                font_color = 4,
+                font_outline_w = 0,
+                font_ver_bold = 0,
+                font_hor_bold = 0,
+                font_italic = 0,
+                bg_color = 0,
+                ol_color = 0,
+              },
+
+              picture = {
+                ckey = 0x8080eb00,
+                crange = 20,
+                pic = "/usr/share/oryx/video/overlay/Ambarella-256x128-8bit.bmp",
+              },
+
+              time = {
+                pre_str = "Ambarella @AMBARELLA_ARCH@ ",
+                suf_str = "",
+                format = 0,
+                is_12h = 0,
+                spacing = 0,
+                en_msec = 0,
+                font_name = "",
+                font_size = 32,
+                font_color = 0,
+                font_outline_w = 0,
+                font_ver_bold = 0,
+                font_hor_bold = 0,
+                font_italic = 0,
+                bg_color = 0,
+                ol_color = 0,
+              },
+
+              animation = {
+                ckey = 0x8080eb00,
+                crange = 20,
+                pic = "/usr/share/oryx/video/overlay/Animation-logo.bmp",
+                bmp_num = 4,
+                interval = 5,
+              },
+
+              line = {
+                line_color = 0,
+                line_thickness = 2,
+                p_x = {
+                10,150
+                },
+                p_y = {
+                10,20
+                }
+              },
+            }
+          }
+        },
+
+        --area 1
+        {
+          enable = 1,
+          rotate = 1,
+          w = 704,
+          h = 100,
+          x = 1920,
+          y = 1080,
+          bg_color = 0,
+          buf_num = 1,
+          data_num = 1,
+
+          d_config = {
+            -- data block 0
+            {
+              w = 700,
+              h = 100,
+              x = 0,
+              y = 0,
+              type = 2,
+
+              string = {
+                str = "Welcome to Ambarella!",
+                spacing = 0,
+                font_name = "/usr/share/fonts/FreeSansBold.ttf",
+                font_size = 30,
+                font_color = 4,
+                font_outline_w = 0,
+                font_ver_bold = 0,
+                font_hor_bold = 0,
+                font_italic = 0,
+                bg_color = 0,
+                ol_color = 0,
+              },
+
+              picture = {
+                ckey = 0x8080eb00,
+                crange = 20,
+                pic = "/usr/share/oryx/video/overlay/Ambarella-256x128-8bit.bmp",
+              },
+
+              time = {
+                pre_str = "Ambarella @AMBARELLA_ARCH@ ",
+                suf_str = "",
+                format = 0,
+                is_12h = 0,
+                spacing = 0,
+                en_msec = 0,
+                font_name = "",
+                font_size = 32,
+                font_color = 0,
+                font_outline_w = 0,
+                font_ver_bold = 0,
+                font_hor_bold = 0,
+                font_italic = 0,
+                bg_color = 0,
+                ol_color = 0,
+              },
+
+              animation = {
+                ckey = 0x8080eb00,
+                crange = 20,
+                pic = "/usr/share/oryx/video/overlay/Animation-logo.bmp",
+                bmp_num = 4,
+                interval = 5,
+              },
+
+              line = {
+                line_color = 0,
+                line_thickness = 2,
+                p_x = {
+                10,150
+                },
+                p_y = {
+                10,20
+                }
+              },
+            },
+          },
+        },
+      }
+    },
+
+    --stream 1
+    {
+      area_num = 0,
+
+      a_config = {
+        --area 0
+        {
+          enable = 1,
+          rotate = 1,
+          w = 704,
+          h = 200,
+          x = 0,
+          y = 0,
+          bg_color = 0,
+          data_num = 3;
+
+          d_config = {
+            -- data block 0
+            {
+              w = 0,
+              h = 0,
+              x = 0,
+              y = 0,
+              type = 1,
+
+              string = {
+                str = "Welcome to Ambarella!",
+                spacing = 0,
+                font_name = "/usr/share/fonts/FreeSansBold.ttf",
+                font_size = 15,
+                font_color = 4,
+                font_outline_w = 0,
+                font_ver_bold = 0,
+                font_hor_bold = 0,
+                font_italic = 0,
+              },
+
+              picture = {
+                ckey = 0x8080eb00,
+                crange = 20,
+                pic = "/usr/share/oryx/video/overlay/Ambarella-256x128-8bit.bmp",
+              },
+
+              time = {
+                pre_str = "Ambarella @AMBARELLA_ARCH@ ",
+                suf_str = "",
+                format = 0,
+                is_12h = 0,
+                spacing = 0,
+                en_msec = 0,
+                font_name = "",
+                font_size = 15,
+                font_color = 0,
+                font_outline_w = 0,
+                font_ver_bold = 0,
+                font_hor_bold = 0,
+                font_italic = 0,
+              },
+
+              animation = {
+                ckey = 0x8080eb00,
+                crange = 20,
+                pic = "/usr/share/oryx/video/overlay/Animation-logo.bmp",
+                bmp_num = 4,
+                interval = 5,
+              },
+
+              line = {
+                line_color = 0,
+                line_thickness = 2,
+                p_x = {
+                10,150
+                },
+                p_y = {
+                10,20
+                }
+              },
+            },
+
+            -- data block 1
+            {
+              w = 400,
+              h = 50,
+              x = 300,
+              y = 50,
+              type = 0,
+
+              string = {
+                str = "Welcome to Ambarella!",
+                spacing = 0,
+                font_name = "/usr/share/fonts/FreeSansBold.ttf",
+                font_size = 15,
+                font_color = 4,
+                font_outline_w = 0,
+                font_ver_bold = 0,
+                font_hor_bold = 0,
+                font_italic = 0,
+              },
+
+              picture = {
+                ckey = 0x8080eb00,
+                crange = 20,
+                pic = "/usr/share/oryx/video/overlay/Ambarella-256x128-8bit.bmp",
+              },
+
+              time = {
+                pre_str = "Ambarella @AMBARELLA_ARCH@ ",
+                suf_str = "",
+                format = 0,
+                is_12h = 0,
+                spacing = 0,
+                en_msec = 0,
+                font_name = "",
+                font_size = 15,
+                font_color = 0,
+                font_outline_w = 0,
+                font_ver_bold = 0,
+                font_hor_bold = 0,
+                font_italic = 0,
+              },
+
+              animation = {
+                ckey = 0x8080eb00,
+                crange = 20,
+                pic = "/usr/share/oryx/video/overlay/Animation-logo.bmp",
+                bmp_num = 4,
+                interval = 5,
+              },
+
+              line = {
+                line_color = 0,
+                line_thickness = 2,
+                p_x = {
+                10,150
+                },
+                p_y = {
+                10,20
+                }
+              },
+            },
+
+            -- data block 2
+            {
+              w = 400,
+              h = 50,
+              x = 300,
+              y = 0,
+              type = 2,
+
+              string = {
+                str = "Welcome to Ambarella!",
+                spacing = 0,
+                font_name = "/usr/share/fonts/FreeSansBold.ttf",
+                font_size = 15,
+                font_color = 4,
+                font_outline_w = 0,
+                font_ver_bold = 0,
+                font_hor_bold = 0,
+                font_italic = 0,
+              },
+
+              picture = {
+                ckey = 0x8080eb00,
+                crange = 20,
+                pic = "/usr/share/oryx/video/overlay/Ambarella-256x128-8bit.bmp",
+              },
+
+              time = {
+                pre_str = "Ambarella @AMBARELLA_ARCH@ ",
+                suf_str = "",
+                format = 0,
+                is_12h = 0,
+                spacing = 0,
+                en_msec = 0,
+                font_name = "",
+                font_size = 15,
+                font_color = 0,
+                font_outline_w = 0,
+                font_ver_bold = 0,
+                font_hor_bold = 0,
+                font_italic = 0,
+              },
+
+              animation = {
+                ckey = 0x8080eb00,
+                crange = 20,
+                pic = "/usr/share/oryx/video/overlay/Animation-logo.bmp",
+                bmp_num = 4,
+                interval = 5,
+              },
+
+              line = {
+                line_color = 0,
+                line_thickness = 2,
+                p_x = {
+                10,150
+                },
+                p_y = {
+                10,20
+                }
+              },
+            }
+          }
+        },
+
+        --area 1
+        {
+          enable = 1,
+          rotate = 1,
+          w = 704,
+          h = 200,
+          x = 0,
+          y = 0,
+          bg_color = 0,
+          data_num = 1,
+
+          d_config = {
+            -- data block 0
+            {
+              w = 0,
+              h = 0,
+              x = 0,
+              y = 0,
+              type = 1,
+
+              string = {
+                str = "Welcome to Ambarella!",
+                spacing = 0,
+                font_name = "/usr/share/fonts/FreeSansBold.ttf",
+                font_size = 15,
+                font_color = 4,
+                font_outline_w = 0,
+                font_ver_bold = 0,
+                font_hor_bold = 0,
+                font_italic = 0,
+              },
+
+              picture = {
+                ckey = 0x8080eb00,
+                crange = 20,
+                pic = "/usr/share/oryx/video/overlay/Ambarella-256x128-8bit.bmp",
+              },
+
+              time = {
+                pre_str = "Ambarella @AMBARELLA_ARCH@ ",
+                suf_str = "",
+                format = 0,
+                is_12h = 0,
+                spacing = 0,
+                en_msec = 0,
+                font_name = "",
+                font_size = 15,
+                font_color = 0,
+                font_outline_w = 0,
+                font_ver_bold = 0,
+                font_hor_bold = 0,
+                font_italic = 0,
+              },
+
+              animation = {
+                ckey = 0x8080eb00,
+                crange = 20,
+                pic = "/usr/share/oryx/video/overlay/Animation-logo.bmp",
+                bmp_num = 4,
+                interval = 5,
+              },
+
+              line = {
+                line_color = 0,
+                line_thickness = 2,
+                p_x = {
+                10,150
+                },
+                p_y = {
+                10,20
+                }
+              },
+            },
+          }
+        },
+      }
+    },
+  }
+}
+
+return osd_overlay

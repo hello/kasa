@@ -1,3 +1,35 @@
+/*
+ * image data
+ *
+ * History:
+ *    Author: Lu Wang <lwang@ambarella.com>
+ *
+ * Copyright (C) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
+
 #include "img_adv_struct_arch.h"
 
 img_aeb_tile_config_t ov4689_aeb_tile_config ={
@@ -211,6 +243,97 @@ img_aeb_expo_lines_t ov4689_aeb_expo_lines_mz128bp2810icr ={
         }},
 };
 
+img_aeb_expo_lines_t ov4689_aeb_expo_lines_2x_hdr_mz128bp2810icr = {
+        .header = {
+                AEB_EXPO_LINES_PIRIS_HDR1,
+                2,				// total ae table number
+                {7, 1, 0, 0}		// ae lines per ae table
+        },
+
+        .expo_tables[0] ={{	// frame 0
+				{
+				{{SHUTTER_1BY16000, ISO_100, APERTURE_F11}}, {{SHUTTER_1BY480, ISO_100,APERTURE_F11}}
+				},
+
+				{
+				{{SHUTTER_1BY480, ISO_100, APERTURE_F11}}, {{SHUTTER_1BY480, ISO_100,APERTURE_F5P6}}
+				},
+
+                {
+                {{SHUTTER_1BY480, ISO_100, APERTURE_F5P6}}, {{SHUTTER_1BY100, ISO_100,APERTURE_F5P6}}
+                },
+
+				{
+				{{SHUTTER_1BY100, ISO_100, APERTURE_F5P6}}, {{SHUTTER_1BY100, ISO_100,APERTURE_F2P8}}
+				},
+
+                {
+                {{SHUTTER_1BY100, ISO_100, APERTURE_F2P8}}, {{SHUTTER_1BY100, ISO_300, APERTURE_F2P8}}
+                },
+
+				{
+				{{SHUTTER_1BY50, ISO_100, APERTURE_F2P8}}, {{SHUTTER_1BY50, ISO_100, APERTURE_F1P6}}
+				},
+
+                {
+                {{SHUTTER_1BY50, ISO_100, APERTURE_F1P6}}, {{SHUTTER_1BY50, ISO_6400,APERTURE_F1P6}}
+                }
+        }},
+	.expo_tables[1] ={{		// frame 1
+		{
+		{{SHUTTER_1BY16000, ISO_100, 0}}, {{SHUTTER_1BY200, ISO_100,0}}
+		},
+	}},
+};
+
+img_aeb_expo_lines_t ov4689_aeb_expo_lines_3x_hdr_mz128bp2810icr = {
+        .header = {
+                AEB_EXPO_LINES_PIRIS_HDR2,
+                3,				// total ae table number
+                {7, 1, 1, 0}		// ae lines per ae table
+        },
+
+        .expo_tables[0] ={{		// frame 0
+			{
+			{{SHUTTER_1BY16000, ISO_100, APERTURE_F11}}, {{SHUTTER_1BY480, ISO_100,APERTURE_F11}}
+			},
+
+			{
+			{{SHUTTER_1BY480, ISO_100, APERTURE_F11}}, {{SHUTTER_1BY480, ISO_100,APERTURE_F5P6}}
+			},
+
+			{
+			{{SHUTTER_1BY480, ISO_100, APERTURE_F5P6}}, {{SHUTTER_1BY100, ISO_100,APERTURE_F5P6}}
+			},
+
+			{
+			{{SHUTTER_1BY100, ISO_100, APERTURE_F5P6}}, {{SHUTTER_1BY100, ISO_100,APERTURE_F2P8}}
+			},
+
+			{
+			{{SHUTTER_1BY100, ISO_100, APERTURE_F2P8}}, {{SHUTTER_1BY100, ISO_300, APERTURE_F2P8}}
+			},
+
+			{
+			{{SHUTTER_1BY50, ISO_100, APERTURE_F2P8}}, {{SHUTTER_1BY50, ISO_100, APERTURE_F1P6}}
+			},
+
+			{
+			{{SHUTTER_1BY50, ISO_100, APERTURE_F1P6}}, {{SHUTTER_1BY50, ISO_6400,APERTURE_F1P6}}
+			}
+        }},
+	.expo_tables[1] ={{		// frame 1
+		{
+		{{SHUTTER_1BY16000, ISO_100, 0}}, {{SHUTTER_1BY240, ISO_100,0}}
+		},
+	}},
+	.expo_tables[2] ={{		// frame 2
+		{
+		{{SHUTTER_1BY16000, ISO_100, 0}}, {{SHUTTER_1BY960, ISO_100,0}}
+		},
+	}},
+};
+
 img_aeb_wb_param_t ov4689_aeb_wb_param ={
          .header = {
                 AEB_WB_PARAM,
@@ -346,5 +469,92 @@ img_aeb_gain_table_t ov4689_aeb_gain_table ={
                 222195,224607,227044,229508,231998,234516,237061,239633,242234,244863,
                 247520,250206,252921,255666,258440,
         },
+};
+
+img_aeb_digit_wdr_param_t ov4689_aeb_digit_wdr_config = {
+	.header = {
+		AEB_DIGIT_WDR,
+		1,
+		{1, 0, 0, 0},
+	},
+	.digit_wdr_config = {
+		0, 	// enable
+		{	// strength
+		0,	// 0db
+		0,	// 0db
+		0,	// 0db
+		0,	// 6db
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		},
+	},
+};
+
+img_aeb_digit_wdr_param_t ov4689_aeb_digit_wdr_config_2x_hdr = {
+	.header = {
+		AEB_DIGIT_WDR_2X_HDR,
+		1,
+		{1, 0, 0, 0},
+	},
+	.digit_wdr_config = {
+		0, 	// enable
+		{	// strength
+		0,	// 0db
+		0,	// 0db
+		0,	// 0db
+		0,	// 6db
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		},
+	},
+};
+
+img_aeb_digit_wdr_param_t ov4689_aeb_digit_wdr_config_3x_hdr = {
+	.header = {
+		AEB_DIGIT_WDR_3X_HDR,
+		1,
+		{1, 0, 0, 0},
+	},
+	.digit_wdr_config = {
+		0, 	// enable
+		{	// strength
+		0,	// 0db
+		0,	// 0db
+		0,	// 0db
+		0,	// 6db
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		},
+	},
 };
 

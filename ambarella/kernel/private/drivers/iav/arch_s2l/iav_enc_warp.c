@@ -3,14 +3,33 @@
  *
  * History:
  *	2012/04/13 - [Jian Tang] created file
- * Copyright (C) 2007-2016, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 #include <config.h>
 #include <linux/random.h>
 #include <linux/slab.h>
@@ -106,7 +125,16 @@ static int check_warp_main_state(struct ambarella_iav *iav)
 static int check_lens_warp_param(struct ambarella_iav *iav,
 	struct iav_warp_area *lens_warp)
 {
-	return 0;
+	struct iav_rect *vin;
+	int rval = 0;
+	get_vin_win(iav, &vin, 0);
+
+	if ((lens_warp->input.x + lens_warp->input.width > vin->width) ||
+		(lens_warp->input.y + lens_warp->input.height > vin->height)) {
+		iav_error("Input window exceeds VIN!\n");
+		rval = -1;
+	}
+	return rval;
 }
 
 static int cfg_lens_warp_param(struct ambarella_iav *iav,
@@ -739,6 +767,10 @@ int iav_ioc_g_warp_ctrl(struct ambarella_iav* iav, void __user *arg)
 
 	mutex_unlock(&iav->iav_mutex);
 
+	if (!rval) {
+		rval = copy_to_user(arg, &warp_ctrl, sizeof(warp_ctrl));
+	}
+
 	return rval;
 }
 
@@ -785,6 +817,7 @@ int iav_ioc_a_warp_ctrl(struct ambarella_iav* iav, void __user *arg)
 	u32 user_warp_virt, dsp_warp_virt;
 	u32 user_warp_phys, dsp_warp_phys;
 	struct iav_gdma_param gparam;
+	struct iav_rect *vin;
 
 	if (copy_from_user(&flags, arg, sizeof(flags)))
 		return -EFAULT;
@@ -831,8 +864,8 @@ int iav_ioc_a_warp_ctrl(struct ambarella_iav* iav, void __user *arg)
 				update_warp_aspect_ratio(IAV_SRCBUF_MN, 0,
 					&iav->warp->area[0].input, &iav->warp->area[0].output);
 			} else {
-				update_warp_aspect_ratio(IAV_SRCBUF_MN, 0,
-					&iav->vinc[0]->vin_format.vin_win,
+				get_vin_win(iav, &vin, 0);
+				update_warp_aspect_ratio(IAV_SRCBUF_MN, 0, vin,
 					(struct iav_rect *)&iav->srcbuf[IAV_SRCBUF_MN].win);
 			}
 

@@ -66,6 +66,9 @@ struct ambdma_chan {
 	dma_addr_t			rt_addr;
 	u32				rt_attr;
 	u32				force_stop;
+	u32				ch_ctl;
+	u32				ch_sta;
+	u32				ch_da;
 	enum ambdma_status		status;
 };
 
@@ -83,6 +86,10 @@ struct ambdma_device {
 	u32				copy_align;
 	/* support pause/resume/stop */
 	u32				support_prs : 1;
+	u32				nr_channels;
+	u32				dma_requests;
+	u32				dma_channel_type[NUM_DMA_CHANNELS];
+	u32				dma_channel_sel[NUM_DMA_CHANNELS];
 };
 
 

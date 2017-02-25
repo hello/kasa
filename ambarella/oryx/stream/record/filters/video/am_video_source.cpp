@@ -2,14 +2,31 @@
  * am_video_source.cpp
  *
  * History:
- *   2014-12-11 - [ypchang] created file
+ *   Sep 11, 2015 - [ypchang] created file
  *
- * Copyright (C) 2008-2014, Ambarella Co, Ltd.
+ * Copyright (c) 2016 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
 
@@ -27,6 +44,7 @@
 #include "am_amf_packet_pool.h"
 
 #include "am_video_reader_if.h"
+#include "am_video_address_if.h"
 #include "am_video_source_if.h"
 #include "am_video_source.h"
 #include "am_video_source_config.h"
@@ -46,6 +64,16 @@ struct AMVideoPtsInfo
       pts(0),
       streamid(0),
       is_eos(false)
+    {}
+};
+
+struct AMVideoFrameNumInfo
+{
+    uint32_t  frame_num;
+    uint32_t  streamid;
+    AMVideoFrameNumInfo() :
+      frame_num(0),
+      streamid(0)
     {}
 };
 
@@ -110,27 +138,27 @@ AMIPacketPin* AMVideoSource::get_output_pin(uint32_t index)
 
 AM_STATE AMVideoSource::start()
 {
-  AUTO_SPIN_LOCK(m_lock);
-  m_lock_state->lock();
+  AUTO_MEM_LOCK(m_lock);
+  m_lock_state.lock();
   if (AM_LIKELY((m_filter_state == AM_VIDEO_SRC_STOPPED) ||
                 (m_filter_state == AM_VIDEO_SRC_INITTED) ||
                 (m_filter_state == AM_VIDEO_SRC_WAITING))) {
     m_packet_pool->enable(true);
     m_event->signal();
   }
-  m_lock_state->unlock();
+  m_lock_state.unlock();
   return AM_STATE_OK;
 }
 
 AM_STATE AMVideoSource::stop()
 {
-  AUTO_SPIN_LOCK(m_lock);
-  m_lock_state->lock();
+  AUTO_MEM_LOCK(m_lock);
+  m_lock_state.lock();
   if (AM_UNLIKELY(m_filter_state == AM_VIDEO_SRC_WAITING)) {
     /* on_run is blocked on m_event->wait(), need unblock it */
     m_event->signal();
   }
-  m_lock_state->unlock();
+  m_lock_state.unlock();
   m_run = false;
   m_packet_pool->enable(false);
   for(uint32_t i = m_video_info.size(); i > 0; -- i) {
@@ -154,25 +182,22 @@ void AMVideoSource::on_run()
   ack(AM_STATE_OK);
   post_engine_msg(engine_msg);
 
-  m_lock_state->lock();
+  m_lock_state.lock();
   m_filter_state = AM_VIDEO_SRC_WAITING;
-  m_lock_state->unlock();
+  m_lock_state.unlock();
 
   m_event->wait();
 
-  m_run = (AM_RESULT_OK == m_video_reader->get_bsb_mem(m_bsb_mem));
-  if (AM_UNLIKELY(!m_run)) {
-    ERROR("Failed to get BSB memory!");
-  }
+  m_run = true;
 
-  m_lock_state->lock();
+  m_lock_state.lock();
   m_filter_state = AM_VIDEO_SRC_RUNNING;
-  m_lock_state->unlock();
+  m_lock_state.unlock();
 
-  while(m_run) {
+  while(m_run.load()) {
     AMPacket *packet = nullptr;
     if (AM_LIKELY(!m_packet_pool->alloc_packet(packet, 0))) {
-      if (AM_LIKELY(!m_run)) {
+      if (AM_LIKELY(!m_run.load())) {
         /* !m_run means stop is called */
         INFO("Stop is called!");
       } else {
@@ -183,52 +208,48 @@ void AMVideoSource::on_run()
     } else {
       bool isOK = true;
       AM_RESULT result = m_video_reader->query_video_frame(
-          m_frame_desc, m_vconfig->query_op_timeout);
+          *m_frame_desc, m_vconfig->query_op_timeout);
       if (AM_LIKELY(AM_RESULT_OK == result)) {
         packet->set_attr(AMPacket::AM_PAYLOAD_ATTR_VIDEO);
-        switch(m_frame_desc->frame_type) {
+        switch(m_frame_desc->type) {
           case AM_DATA_FRAME_TYPE_VIDEO: {
             AMVideoFrameDesc &video = m_frame_desc->video;
-            if (AM_LIKELY((video.video_type != AM_VIDEO_FRAME_TYPE_SJPEG) &&
-                          (video.video_type != AM_VIDEO_FRAME_TYPE_NONE))) {
+            if (AM_LIKELY(video.type != AM_VIDEO_FRAME_TYPE_SJPEG)) {
+              //check_video_pts_and_frame_num(*m_frame_desc);
               isOK = process_video(*m_frame_desc, packet);
               if (AM_LIKELY(isOK)) {
+                packet->add_ref();
                 send_packet(packet);
-              } else {
-                packet->release();
               }
             } else {
-              ERROR("Invalid video type: %d", video.video_type);
+              WARN("Invalid video type: %d", video.type);
             }
           }break;
           case AM_DATA_FRAME_TYPE_YUV:
-          case AM_DATA_FRAME_TYPE_LUMA:
-          case AM_DATA_FRAME_TYPE_BAYER_PATTERN_RAW:
-          case AM_DATA_FRAME_TYPE_GENERIC_DATA:
+          case AM_DATA_FRAME_TYPE_ME1:
+          case AM_DATA_FRAME_TYPE_RAW:
+          case AM_DATA_FRAME_TYPE_VCA:
           default: {
-            packet->release();
-            NOTICE("Invalid frame type: %d", m_frame_desc->frame_type);
+            NOTICE("Invalid frame type: %d", m_frame_desc->type);
           }break;
         }
-      } else if (AM_RESULT_ERR_AGAIN == result) {
-        packet->release();
-      } else {
+      } else if (AM_RESULT_ERR_AGAIN != result) {
         isOK = false;
-        packet->release();
         ERROR("Error occurred! Abort!");
       }
+      packet->release();
       if (AM_UNLIKELY(!isOK)) {
         break;
       }
     }
   }
 
-  m_lock_state->lock();
+  m_lock_state.lock();
   m_filter_state = AM_VIDEO_SRC_STOPPED;
-  m_lock_state->unlock();
+  m_lock_state.unlock();
 
   m_event->clear();
-  if (AM_LIKELY(!m_run)) {
+  if (AM_LIKELY(!m_run.load())) {
     NOTICE("%s exits mainloop!", m_name);
   } else {
     NOTICE("%s aborted!", m_name);
@@ -242,12 +263,10 @@ AMVideoSource::AMVideoSource(AMIEngine *engine) :
     m_vconfig(nullptr),
     m_config(nullptr),
     m_packet_pool(nullptr),
-    m_lock(nullptr),
-    m_lock_state(nullptr),
     m_event(nullptr),
-    m_bsb_mem(nullptr),
     m_frame_desc(nullptr),
     m_video_reader(nullptr),
+    m_video_address(nullptr),
     m_input_num(0),
     m_output_num(0),
     m_filter_state(AM_VIDEO_SRC_CREATED),
@@ -255,23 +274,22 @@ AMVideoSource::AMVideoSource(AMIEngine *engine) :
 {
   m_video_info.clear();
   m_last_pts.clear();
+  m_last_frame_num.clear();
   m_outputs.clear();
 }
 
 AMVideoSource::~AMVideoSource()
 {
   AM_DESTROY(m_packet_pool);
-  AM_DESTROY(m_lock);
-  AM_DESTROY(m_lock_state);
   AM_DESTROY(m_event);
   for (uint32_t i = 0; i < m_outputs.size(); ++ i) {
     AM_DESTROY(m_outputs[i]);
   }
   m_outputs.clear();
   delete m_config;
-  delete m_bsb_mem;
   delete m_frame_desc;
   m_video_reader = nullptr;
+  m_video_address = nullptr;
   for (uint32_t i = 0; i < m_video_info.size(); ++ i) {
     delete m_video_info[i];
     m_video_info[i] = nullptr;
@@ -282,7 +300,12 @@ AMVideoSource::~AMVideoSource()
     delete m_last_pts[i];
     m_last_pts[i] = nullptr;
   }
+  for (uint32_t i = 0; i < m_last_frame_num.size(); ++ i) {
+    delete m_last_frame_num[i];
+    m_last_frame_num[i] = nullptr;
+  }
   m_last_pts.clear();
+  m_last_frame_num.clear();
 }
 
 AM_STATE AMVideoSource::init(const std::string& config,
@@ -304,20 +327,6 @@ AM_STATE AMVideoSource::init(const std::string& config,
     if (AM_UNLIKELY(!m_vconfig)) {
       ERROR("Can not get configuration from file %s, please check!",
             config.c_str());
-      state = AM_STATE_ERROR;
-      break;
-    }
-
-    m_lock = AMSpinLock::create();
-    if (AM_UNLIKELY(!m_lock)) {
-      ERROR("Failed to create lock!");
-      state = AM_STATE_ERROR;
-      break;
-    }
-
-    m_lock_state = AMSpinLock::create();
-    if (AM_UNLIKELY(!m_lock_state)) {
-      ERROR("Failed to create lock for filter state!");
       state = AM_STATE_ERROR;
       break;
     }
@@ -372,30 +381,29 @@ AM_STATE AMVideoSource::init(const std::string& config,
     }
 
     m_video_reader = AMIVideoReader::get_instance();
-    if (!m_video_reader || (AM_RESULT_OK != m_video_reader->init())) {
+    if (!m_video_reader) {
       ERROR("Failed to get instance of VideoReader!");
       state = AM_STATE_ERROR;
       break;
     }
-    m_bsb_mem = new AMMemMapInfo();
 
-    if (AM_UNLIKELY(!m_bsb_mem)) {
-      ERROR("Failed to create BSB memory info object!");
-      state = AM_STATE_NO_MEMORY;
+    m_video_address = AMIVideoAddress::get_instance();
+    if (!m_video_address) {
+      ERROR("Failed to get instance of VideoAddress!");
+      state = AM_STATE_ERROR;
       break;
     }
-    memset(m_bsb_mem, 0, sizeof(*m_bsb_mem));
 
-    m_frame_desc = new AMQueryDataFrameDesc();
+    m_frame_desc = new AMQueryFrameDesc();
     if (AM_UNLIKELY(!m_frame_desc)) {
       ERROR("Failed to create frame description object!");
       state = AM_STATE_NO_MEMORY;
       break;
     }
     memset(m_frame_desc, 0, sizeof(*m_frame_desc));
-    m_lock_state->lock();
+    m_lock_state.lock();
     m_filter_state = AM_VIDEO_SRC_INITTED;
-    m_lock_state->unlock();
+    m_lock_state.unlock();
   }while(0);
 
   return state;
@@ -428,6 +436,19 @@ AMVideoPtsInfo* AMVideoSource::find_video_last_pts(uint32_t streamid)
   return pts;
 }
 
+AMVideoFrameNumInfo* AMVideoSource::find_video_last_frame_num(uint32_t streamid)
+{
+  AMVideoFrameNumInfo *frame_num = nullptr;
+
+  for (uint32_t i = 0; i < m_last_frame_num.size(); ++ i) {
+    if (AM_LIKELY(m_last_frame_num[i]->streamid == streamid)) {
+      frame_num = m_last_frame_num[i];
+      break;
+    }
+  }
+  return frame_num;
+}
+
 static const char* video_type_to_string(AM_VIDEO_TYPE type)
 {
   const char *str = "Unknown";
@@ -441,13 +462,14 @@ static const char* video_type_to_string(AM_VIDEO_TYPE type)
   return str;
 }
 
-bool AMVideoSource::process_video(AMQueryDataFrameDesc &frame,
+bool AMVideoSource::process_video(AMQueryFrameDesc &frame,
                                   AMPacket *&packet)
 {
   bool ret = true;
   AMVideoFrameDesc  &video = frame.video;
   AM_VIDEO_INFO     *vinfo = find_video_info(video.stream_id);
   AMVideoPtsInfo *last_pts = find_video_last_pts(video.stream_id);
+  AMVideoFrameNumInfo *last_frame_num = find_video_last_frame_num(video.stream_id);
 
   do {
     if (AM_UNLIKELY(!vinfo)) {
@@ -472,7 +494,7 @@ bool AMVideoSource::process_video(AMQueryDataFrameDesc &frame,
       AMVideoPtsInfo *pts_info = new AMVideoPtsInfo();
       if (AM_LIKELY(pts_info)) {
         pts_info->streamid = video.stream_id;
-        pts_info->pts = (int64_t)frame.mono_pts;
+        pts_info->pts = frame.pts;
         m_last_pts.push_back(pts_info);
         last_pts = find_video_last_pts(video.stream_id);
       } else {
@@ -483,43 +505,68 @@ bool AMVideoSource::process_video(AMQueryDataFrameDesc &frame,
       }
     }
 
-    last_pts->pts = (int64_t)frame.mono_pts;
+    if (AM_UNLIKELY(!last_frame_num)) {
+      /* Add one for this stream id, if it doesn't exist */
+      AMVideoFrameNumInfo *frame_num_info = new AMVideoFrameNumInfo();
+      if (AM_LIKELY(frame_num_info)) {
+        frame_num_info->streamid = video.stream_id;
+        frame_num_info->frame_num = video.frame_num;
+        m_last_frame_num.push_back(frame_num_info);
+        last_frame_num = find_video_last_frame_num(video.stream_id);
+      } else {
+        ERROR("Failed to allocate AMVideoFrameNumInfo for stream%u",
+              video.stream_id);
+        ret = false;
+        break;
+      }
+    }
 
+    last_frame_num->frame_num = video.frame_num;
     if (AM_UNLIKELY(video.stream_end_flag)) {
       packet->set_type(AMPacket::AM_PAYLOAD_TYPE_EOS);
       packet->set_attr(AMPacket::AM_PAYLOAD_ATTR_VIDEO);
       packet->set_data_ptr(nullptr);
       packet->set_data_size(0);
-      packet->set_pts(last_pts->pts);
+      packet->set_pts((frame.pts < 0) ? last_pts->pts : frame.pts);
+      packet->set_video_type(vinfo->type);
       packet->set_stream_id(video.stream_id);
-      packet->set_frame_type(vinfo->type);
+      last_pts->pts = frame.pts;
       last_pts->is_eos = true;
-    } else {
+    } else if (AM_LIKELY(video.type != AM_VIDEO_FRAME_TYPE_NONE)) {
       bool send_info = false;
+      bool is_new_session = false;
       AM_VIDEO_TYPE vtype = AM_VIDEO_NULL;
+      AMAddress vaddr = {0};
 
-      switch(video.video_type) {
-        case AM_VIDEO_FRAME_TYPE_MJPEG: {
+      if (AM_UNLIKELY(m_video_address->video_addr_get(frame, vaddr) !=
+                      AM_RESULT_OK)) {
+        ERROR("Failed to get video data address!");
+        ret = false;
+        break;
+      }
+      switch(video.stream_type) {
+        case AM_STREAM_TYPE_MJPEG: {
           vtype = AM_VIDEO_MJPEG;
         }break;
-        case AM_VIDEO_FRAME_TYPE_H264_IDR:
-        case AM_VIDEO_FRAME_TYPE_H264_I:
-        case AM_VIDEO_FRAME_TYPE_H264_B:
-        case AM_VIDEO_FRAME_TYPE_H264_P: {
+        case AM_STREAM_TYPE_H264: {
           vtype = AM_VIDEO_H264;
         }break;
-        /* todo: H.265 ? */
+        case AM_STREAM_TYPE_H265: {
+          vtype = AM_VIDEO_H265;
+        }break;
         default:break; /* Won't come here */
       }
+      is_new_session = m_video_address->is_new_video_session(
+          video.session_id,
+          AM_STREAM_ID(video.stream_id));
       send_info = (((vinfo->type != vtype) && (vtype != AM_VIDEO_NULL)) ||
-          (vinfo->width != video.width) ||
-          (vinfo->height != video.height) ||
-          m_video_reader->is_new_video_session(video.stream_id));
+                    (vinfo->width != video.width) ||
+                    (vinfo->height != video.height));
 
-      if (AM_UNLIKELY(send_info)) {
+      if (AM_UNLIKELY(send_info || is_new_session)) {
         AMPacket *info = nullptr;
         if (AM_LIKELY(!m_packet_pool->alloc_packet(info, 0))) {
-          if (AM_LIKELY(!m_run)) {
+          if (AM_LIKELY(!m_run.load())) {
             /* !m_run means stop is called */
             INFO("Stop is called!");
             break;
@@ -533,41 +580,49 @@ bool AMVideoSource::process_video(AMQueryDataFrameDesc &frame,
           AMStreamInfo stream_info;
           stream_info.stream_id = AM_STREAM_ID(video.stream_id);
           if (AM_LIKELY(AM_RESULT_OK ==
-              m_video_reader->query_stream_info(&stream_info))) {
-            vinfo->type   = vtype;
-            vinfo->width  = video.width;
-            vinfo->height = video.height;
-            vinfo->M      = stream_info.m;
-            vinfo->N      = stream_info.n;
-            vinfo->mul    = stream_info.mul;
-            vinfo->div    = stream_info.div;
-            vinfo->rate   = stream_info.rate;
-            vinfo->scale  = stream_info.scale;
+              m_video_reader->query_stream_info(stream_info))) {
+            vinfo->type      = vtype;
+            vinfo->width     = video.width;
+            vinfo->height    = video.height;
+            vinfo->slice_num = video.tile_slice.slice_num;
+            vinfo->tile_num  = video.tile_slice.tile_num;
+            vinfo->M         = stream_info.m;
+            vinfo->N         = stream_info.n;
+            vinfo->mul       = stream_info.mul;
+            vinfo->div       = stream_info.div;
+            vinfo->rate      = stream_info.rate;
+            vinfo->scale     = stream_info.scale;
             info->set_type(AMPacket::AM_PAYLOAD_TYPE_INFO);
             info->set_attr(AMPacket::AM_PAYLOAD_ATTR_VIDEO);
             info->set_data_ptr((uint8_t*)vinfo);
             info->set_data_size(sizeof(*vinfo));
             info->set_stream_id(video.stream_id);
             INFO("\nVideo Stream%u Information:"
-                "\n    Width: %u"
-                "\n   Height: %u"
-                "\n     Type: %s"
-                "\n        M: %hu"
-                "\n        N: %hu"
-                "\n     Rate: %u"
-                "\n    Scale: %u"
-                "\n      Mul: %hu"
-                "\n      Div: %hu",
-                video.stream_id,
-                video.width,
-                video.height,
-                video_type_to_string(vtype),
-                vinfo->M,
-                vinfo->N,
-                vinfo->rate,
-                vinfo->scale,
-                vinfo->mul,
-                vinfo->div);
+                 "\nSessionID: %08X"
+                 "\n    Width: %u"
+                 "\n   Height: %u"
+                 "\n     Type: %s"
+                 "\n        M: %hu"
+                 "\n        N: %hu"
+                 "\nSlice Num: %hu"
+                 "\n Tile Num: %hu"
+                 "\n     Rate: %u"
+                 "\n    Scale: %u"
+                 "\n      Mul: %hu"
+                 "\n      Div: %hu",
+                 video.stream_id,
+                 video.session_id,
+                 video.width,
+                 video.height,
+                 video_type_to_string(vtype),
+                 vinfo->M,
+                 vinfo->N,
+                 vinfo->slice_num,
+                 vinfo->tile_num,
+                 vinfo->rate,
+                 vinfo->scale,
+                 vinfo->mul,
+                 vinfo->div);
             send_packet(info);
           } else {
             info->release();
@@ -578,15 +633,24 @@ bool AMVideoSource::process_video(AMQueryDataFrameDesc &frame,
       }
       packet->set_type(AMPacket::AM_PAYLOAD_TYPE_DATA);
       packet->set_attr(AMPacket::AM_PAYLOAD_ATTR_VIDEO);
-      packet->set_pts((int64_t)frame.mono_pts);
+      packet->set_pts(frame.pts);
       packet->set_stream_id(video.stream_id);
       packet->set_frame_attr(video.jpeg_quality);
-      packet->set_frame_type(video.video_type);
+      packet->set_frame_type(video.type);
+      packet->set_video_type(vtype);
       packet->set_data_size(video.data_size);
-      packet->set_data_ptr(m_bsb_mem->addr + video.data_addr_offset);
-      packet->set_addr_offset(video.data_addr_offset);
-      packet->set_frame_count(1);
+      packet->set_data_ptr(vaddr.data);
+      packet->set_addr_offset(video.data_offset);
+      packet->set_frame_number(video.frame_num);
+      packet->set_frame_count(((video.tile_slice.slice_num << 24) |
+                               (video.tile_slice.slice_id  << 16) |
+                               (video.tile_slice.tile_num  <<  8) |
+                               video.tile_slice.tile_id));
       last_pts->is_eos = false;
+      last_pts->pts = frame.pts;
+    } else {
+      ret = false;
+      ERROR("Invalid video type!");
     }
   } while(0);
 
@@ -602,4 +666,71 @@ void AMVideoSource::send_packet(AMPacket *packet)
     }
     packet->release();
   }
+}
+
+void AMVideoSource::check_video_pts_and_frame_num(AMQueryFrameDesc &frame)
+{
+  AMVideoFrameDesc  &video = frame.video;
+  AMVideoPtsInfo *last_pts = find_video_last_pts(video.stream_id);
+  AMVideoFrameNumInfo *last_frame_num = find_video_last_frame_num(video.stream_id);
+  do {/*for invalid pts*/
+    if ((video.type == AM_VIDEO_FRAME_TYPE_MJPEG) ||
+        (video.type == AM_VIDEO_FRAME_TYPE_SJPEG) ||
+        (video.type == AM_VIDEO_FRAME_TYPE_NONE)) {
+      break;
+    }
+    if (last_pts && !video.stream_end_flag) {
+      if ((frame.pts - last_pts->pts) < 0) { // pts diff < 0
+        if (video.type == AM_VIDEO_FRAME_TYPE_B) {
+          break;
+        } else {
+          WARN("\n Stream%u Video PTS abnormal!!!"
+               "\n          last PTS: %lld"
+               "\n       Current PTS: %lld"
+               "\n          PTS Diff: %lld"
+               "\n    Last Frame Num: %u"
+               "\n Current Frame Num: %u,"
+               "\n    Frame Num Diff: %d",
+               video.stream_id,
+               last_pts->pts,
+               frame.pts,
+               (frame.pts - last_pts->pts),
+               last_frame_num->frame_num,
+               video.frame_num,
+               (int32_t )(video.frame_num - last_frame_num->frame_num));
+          break;
+        }
+      }
+      if ((frame.pts - last_pts->pts) > 10000) { // pts diff too large
+        WARN("\n Stream%u Video PTS abnormal!!!"
+             "\n          last PTS: %lld"
+             "\n       Current PTS: %lld"
+             "\n          PTS Diff: %lld"
+             "\n    Last Frame Num: %u"
+             "\n Current Frame Num: %u,"
+             "\n    Frame Num Diff: %d",
+             video.stream_id,
+             last_pts->pts,
+             frame.pts,
+             (frame.pts - last_pts->pts),
+             last_frame_num->frame_num,
+             video.frame_num,
+             (int32_t )(video.frame_num - last_frame_num->frame_num));
+        break;
+      } // pts diff too large
+    }
+#if 0
+    if (last_frame_num) {
+      if ((video.frame_num - last_frame_num->frame_num) != 1) {
+        WARN("video frame num abnormal, stream %u, last pts : %lld, current pts : %lld,"
+             "pts diff : %lld, last frame number : %u, current frame number"
+             " : %u, frame number diff : %d", video.stream_id,
+             last_pts->pts, frame.pts, (frame.pts - last_pts->pts),
+             last_frame_num->frame_num, video.frame_num,
+             (int32_t )(video.frame_num - last_frame_num->frame_num));
+        break;
+      }
+    }
+#endif
+  } while (0);
 }

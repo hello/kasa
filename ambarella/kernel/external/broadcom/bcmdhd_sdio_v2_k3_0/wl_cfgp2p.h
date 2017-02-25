@@ -3,7 +3,7 @@
  *
  * $Copyright Open Broadcom Corporation$
  *
- * $Id: wl_cfgp2p.h 472818 2014-04-25 08:07:56Z $
+ * $Id: wl_cfgp2p.h 497431 2014-08-19 11:03:27Z $
  */
 #ifndef _wl_cfgp2p_h_
 #define _wl_cfgp2p_h_
@@ -56,7 +56,7 @@ struct p2p_saved_ie {
 };
 
 struct p2p_bss {
-	u32 bssidx;
+	s32 bssidx;
 	struct net_device *dev;
 	struct p2p_saved_ie saved_ie;
 	void *private_data;
@@ -168,6 +168,18 @@ enum wl_cfgp2p_status {
 		timer->data = (unsigned long) cfg; \
 		add_timer(timer); \
 	} while (0);
+
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 0, 8))
+#ifdef WL_SUPPORT_BACKPORTED_KPATCHES
+#undef WL_SUPPORT_BACKPORTED_KPATCHES
+#endif
+#endif
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 2, 0))
+#ifdef WL_CFG80211_STA_EVENT
+#undef WL_CFG80211_STA_EVENT
+#endif
+#endif
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)) && !defined(WL_CFG80211_P2P_DEV_IF)
 #define WL_CFG80211_P2P_DEV_IF

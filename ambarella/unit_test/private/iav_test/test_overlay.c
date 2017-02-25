@@ -3,12 +3,29 @@
  *
  * History:
  * 2013/12/02  - [Jian Tang] created for S2L
- * Copyright (C) 2012-2016, Ambarella, Inc.
+ * Copyright (C) 2015 Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -112,6 +129,7 @@ typedef struct stream_info_s {
 	int win_width;
 	int win_height;
 	osd_info_t osd[MAX_OVERLAY_AREA_NUM];
+	int osd_insert_always;
 } stream_info_t;
 
 static int autorun_flag = 0;
@@ -504,6 +522,7 @@ static int prepare_overlay_config(void)
 		if (stream_info[i].enable == OSD_ENABLE) {
 			win_width = stream_info[i].win_width;
 			win_height = stream_info[i].win_height;
+			overlay_insert[i].osd_insert_always = stream_info[i].osd_insert_always;
 			for (j = 0, total_size = 0; j < MAX_OVERLAY_AREA_NUM; j++) {
 				osd = &stream_info[i].osd[j];
 				area = &overlay_insert[i].area[j];
@@ -656,6 +675,7 @@ static int autorun_overlay(void)
 
 		if (stream_info[i].enable == OSD_ENABLE) {
 			overlay_insert[i].enable = 1;
+			overlay_insert[i].osd_insert_always = stream_info[i].osd_insert_always;
 			total_size = 0;
 			spacing = ROUND_DOWN(stream_info[i].win_width /
 					MAX_OVERLAY_AREA_NUM, 2);
@@ -746,6 +766,7 @@ static struct option long_options[] = {
 	{"width", HAS_ARG, 0, 'w'},
 	{"height", HAS_ARG, 0, 'h'},
 	{"update", NO_ARG, 0, 'u'},
+	{"insert-always", HAS_ARG, 0, 'i'},
 
 	{"clut_file", HAS_ARG, 0, 'c'},
 	{"data_file", HAS_ARG, 0, 'd'},
@@ -760,7 +781,7 @@ static struct option long_options[] = {
 	{0, 0, 0, 0}
 };
 
-static const char *short_options = "ABCDa:x:y:w:h:uc:d:nsr:lv";
+static const char *short_options = "ABCDa:x:y:w:h:ui:c:d:nsr:lv";
 
 struct hint_s {
 	const char *arg;
@@ -779,6 +800,7 @@ static const struct hint_s hint[] = {
 	{"", "\t\tset width (must be larger than 32)"},
 	{"", "\t\tset height"},
 	{"", "\t\tupdate overlay data every second."},
+	{"", "\tAlways insert overlay including skipped frame; 0: disable, 1: enable, default is 0."},
 
 	{"filename", "read clut from file"},
 	{"filename", "read yuv index from file"},
@@ -820,6 +842,8 @@ void usage(void)
 			"    test_overlay -A -a0 -x0 -y100 -w64 -h128 -u\n"
 			"  Updata OSD every frame:\n"
 			"    test_overlay -r 1\n"
+			"  Always insert OSD including skipped frame:\n"
+			"    test_overlay -A -a0 -x0 -y100 -w64 -h128 -u -i 1\n"
 			"  Show current overlay area settings of streams:\n"
 			"    test_overlay -A -l\n");
 	printf("\n");
@@ -874,6 +898,10 @@ int init_param(int argc, char **argv)
 			VERIFY_AREAID(current_area);
 			stream_info[current_stream].osd[current_area].update = 1;
 			update_flag = 1;
+			break;
+		case 'i':
+			VERIFY_STREAMID(current_stream);
+			stream_info[current_stream].osd_insert_always = !!(atoi(optarg));
 			break;
 		case 'c':
 			VERIFY_STREAMID(current_stream);
@@ -938,6 +966,7 @@ static int show_overlay_config(int stream_id)
 				total_size += area->total_size;
 			}
 			printf("  Total Size : [%d].\n", total_size);
+			printf("  Always Insert : [%s].\n", overlay_insert[i].osd_insert_always ? "Enable" : "Disable");
 		}
 	}
 	return 0;

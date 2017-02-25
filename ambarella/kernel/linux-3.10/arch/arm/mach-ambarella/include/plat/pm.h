@@ -36,6 +36,12 @@
 extern int ambarella_init_pm(void);
 extern int ambarella_finish_suspend(unsigned long);
 extern void ambarella_cpu_resume(void);
+
+#ifdef CONFIG_AMBARELLA_SREF_FIFO_EXEC
+extern int ambarella_optimize_suspend(unsigned long);
+extern int ambarella_optimize_suspend_sz;
+#endif /* CONFIG_AMBARELLA_SREF_FIFO_EXEC */
+
 #else
 static inline int ambarella_init_pm(void){return 0;}
 #endif

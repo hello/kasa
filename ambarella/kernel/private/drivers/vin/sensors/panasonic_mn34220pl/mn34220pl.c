@@ -4,15 +4,33 @@
  * History:
  *    2013/06/08 - [Long Zhao] Create
  *
- * Copyright (C) 2004-2013, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
  *
- * This file is produced by perl.
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
 #include <linux/module.h>
 #include <linux/ambpriv_device.h>
 #include <linux/interrupt.h>
@@ -23,16 +41,11 @@
 #include <iav_utils.h>
 #include <vin_api.h>
 #include "mn34220pl.h"
+#include "mn34220pl_table.c"
 
 static int bus_addr = (0 << 16) | (0x6C >> 1);
 module_param(bus_addr, int, 0644);
 MODULE_PARM_DESC(bus_addr, " bus and addr: bit16~bit31: bus, bit0~bit15: addr");
-
-static int hdr_mode = 0;
-module_param(hdr_mode, int, 0644);
-MODULE_PARM_DESC(hdr_mode, "Set HDR mode 0:linear 1:2x HDR 2:3x HDR 3:4x HDR");
-
-#define GAIN_160_STEPS (1)
 
 struct mn34220pl_priv {
 	void *control_data;
@@ -43,9 +56,7 @@ struct mn34220pl_priv {
 	u32 frame_length_lines;
 };
 
-#include "mn34220pl_table.c"
-
-static int mn34220pl_write_reg( struct vin_device *vdev, u32 subaddr, u32 data)
+static int mn34220pl_write_reg(struct vin_device *vdev, u32 subaddr, u32 data)
 {
 	int rval;
 	struct mn34220pl_priv *mn34220pl;
@@ -74,7 +85,37 @@ static int mn34220pl_write_reg( struct vin_device *vdev, u32 subaddr, u32 data)
 	return 0;
 }
 
-static int mn34220pl_read_reg( struct vin_device *vdev, u32 subaddr, u32 *data)
+static int mn34220pl_write_reg2(struct vin_device *vdev, u32 subaddr, u32 data)
+{
+	int rval;
+	struct mn34220pl_priv *mn34220pl;
+	struct i2c_client *client;
+	struct i2c_msg msgs[1];
+	u8 pbuf[4];
+
+	mn34220pl = (struct mn34220pl_priv *)vdev->priv;
+	client = mn34220pl->control_data;
+
+	pbuf[0] = (subaddr & 0xff00) >> 8;
+	pbuf[1] = subaddr & 0xff;
+	pbuf[2] = data >> 8;
+	pbuf[3] = data & 0xff;
+
+	msgs[0].len = 4;
+	msgs[0].addr = client->addr;
+	msgs[0].flags = client->flags;
+	msgs[0].buf = pbuf;
+
+	rval = i2c_transfer(client->adapter, msgs, 1);
+	if (rval < 0) {
+		vin_error("failed(%d): [0x%x:0x%x]\n", rval, subaddr, data);
+		return rval;
+	}
+
+	return 0;
+}
+
+static int mn34220pl_read_reg(struct vin_device *vdev, u32 subaddr, u32 *data)
 {
 	int rval = 0;
 	struct mn34220pl_priv *mn34220pl;
@@ -86,7 +127,7 @@ static int mn34220pl_read_reg( struct vin_device *vdev, u32 subaddr, u32 *data)
 	mn34220pl = (struct mn34220pl_priv *)vdev->priv;
 	client = mn34220pl->control_data;
 
-	pbuf0[0] = (subaddr &0xff00) >> 8;
+	pbuf0[0] = (subaddr & 0xff00) >> 8;
 	pbuf0[1] = subaddr & 0xff;
 
 	msgs[0].len = 2;
@@ -100,7 +141,7 @@ static int mn34220pl_read_reg( struct vin_device *vdev, u32 subaddr, u32 *data)
 	msgs[1].len = 1;
 
 	rval = i2c_transfer(client->adapter, msgs, 2);
-	if (rval < 0){
+	if (rval < 0) {
 		vin_error("failed(%d): [0x%x]\n", rval, subaddr);
 		return rval;
 	}
@@ -114,7 +155,7 @@ static int mn34220pl_set_vin_mode(struct vin_device *vdev, struct vin_video_form
 {
 	struct vin_device_config mn34220pl_config;
 
-	memset(&mn34220pl_config, 0, sizeof (mn34220pl_config));
+	memset(&mn34220pl_config, 0, sizeof(mn34220pl_config));
 
 	mn34220pl_config.interface_type = SENSOR_SERIAL_LVDS;
 	mn34220pl_config.sync_mode = SENSOR_SYNC_MODE_MASTER;
@@ -126,7 +167,7 @@ static int mn34220pl_set_vin_mode(struct vin_device *vdev, struct vin_video_form
 		mn34220pl_config.slvds_cfg.lane_number = SENSOR_6_LANE;
 	}
 
-	if(format->hdr_mode == AMBA_VIDEO_LINEAR_MODE) {
+	if (format->hdr_mode == AMBA_VIDEO_LINEAR_MODE) {
 		mn34220pl_config.slvds_cfg.sync_code_style = SENSOR_SYNC_STYLE_SONY;
 	} else {
 		mn34220pl_config.slvds_cfg.sync_code_style = SENSOR_SYNC_STYLE_PANASONIC;
@@ -156,7 +197,7 @@ static int mn34220pl_set_vin_mode(struct vin_device *vdev, struct vin_video_form
 
 static void mn34220pl_sw_reset(struct vin_device *vdev)
 {
-	mn34220pl_write_reg(vdev, 0x3001, 0x0000);
+	mn34220pl_write_reg(vdev, MN34220PL_RESET, 0x00);
 }
 
 static int mn34220pl_init_device(struct vin_device *vdev)
@@ -171,16 +212,16 @@ static int mn34220pl_update_hv_info(struct vin_device *vdev)
 	u32 val_high, val_low;
 	struct mn34220pl_priv *pinfo = (struct mn34220pl_priv *)vdev->priv;
 
-	mn34220pl_read_reg(vdev, 0x0343, &val_low);	/* HCYCLE_LSB */
-	mn34220pl_read_reg(vdev, 0x0342, &val_high);	/* HCYCLE_MSB */
+	mn34220pl_read_reg(vdev, MN34220PL_HCYCLE_L, &val_low); /* HCYCLE_LSB */
+	mn34220pl_read_reg(vdev, MN34220PL_HCYCLE_H, &val_high);/* HCYCLE_MSB */
 	pinfo->line_length = (val_high << 8) + val_low;
-	if(unlikely(!pinfo->line_length)) {
+	if (unlikely(!pinfo->line_length)) {
 		vin_error("line length is 0!\n");
 		return -EIO;
 	}
 
-	mn34220pl_read_reg(vdev, 0x0341, &val_low);/* VCYCLE_LSB */
-	mn34220pl_read_reg(vdev, 0x0340, &val_high);/* VCYCLE_MSB */
+	mn34220pl_read_reg(vdev, MN34220PL_VCYCLE_L, &val_low); /* VCYCLE_LSB */
+	mn34220pl_read_reg(vdev, MN34220PL_VCYCLE_H, &val_high);/* VCYCLE_MSB */
 	pinfo->frame_length_lines = (val_high << 8) + val_low;
 
 	return 0;
@@ -201,7 +242,7 @@ static int mn34220pl_get_line_time(struct vin_device *vdev)
 
 static int mn34220pl_set_format(struct vin_device *vdev, struct vin_video_format *format)
 {
-	struct vin_reg_16_16 *regs;
+	struct vin_reg_16_8 *regs;
 	int i, regs_num;
 	int rval;
 
@@ -224,8 +265,8 @@ static int mn34220pl_set_format(struct vin_device *vdev, struct vin_video_format
 	default:
 		regs = NULL;
 		regs_num = 0;
-		vin_info("Unknown mode\n");
-		break;
+		vin_error("Unknown mode\n");
+		return -EPERM;
 	}
 
 	for (i = 0; i < regs_num; i++)
@@ -249,8 +290,7 @@ static int mn34220pl_set_fps(struct vin_device *vdev, int fps)
 	v_lines = DIV64_CLOSEST(v_lines, pinfo->line_length);
 	v_lines = DIV64_CLOSEST(v_lines, 512000000);
 
-	mn34220pl_write_reg(vdev, 0x0340, (u8)(v_lines >> 8));
-	mn34220pl_write_reg(vdev, 0x0341, (u8)v_lines);
+	mn34220pl_write_reg2(vdev, MN34220PL_VCYCLE_H, v_lines&0xFFFF);
 
 	pinfo->frame_length_lines = (u32)v_lines;
 
@@ -275,20 +315,10 @@ static int mn34220pl_set_agc_index(struct vin_device *vdev, int agc_idx)
 
 	agc_idx = MN34220PL_GAIN_0DB - agc_idx;
 
-	mn34220pl_write_reg(vdev, 0x0204, (MN34220PL_GAIN_TABLE[agc_idx][MN34220PL_GAIN_COL_AGAIN] >> 8) & 0x3);
-	mn34220pl_write_reg(vdev, 0x0205, (u8)MN34220PL_GAIN_TABLE[agc_idx][MN34220PL_GAIN_COL_AGAIN]);
-	/* DGAIN-Gr */
-	mn34220pl_write_reg(vdev, 0x020E, (MN34220PL_GAIN_TABLE[agc_idx][MN34220PL_GAIN_COL_DGAIN] >> 8) & 0x3);
-	mn34220pl_write_reg(vdev, 0x020F, (u8)MN34220PL_GAIN_TABLE[agc_idx][MN34220PL_GAIN_COL_DGAIN]);
-	/* DGAIN-R */
-	mn34220pl_write_reg(vdev, 0x0210, (MN34220PL_GAIN_TABLE[agc_idx][MN34220PL_GAIN_COL_DGAIN] >> 8) & 0x3);
-	mn34220pl_write_reg(vdev, 0x0211, (u8)MN34220PL_GAIN_TABLE[agc_idx][MN34220PL_GAIN_COL_DGAIN]);
-	/* DGAIN-B */
-	mn34220pl_write_reg(vdev, 0x0212, (MN34220PL_GAIN_TABLE[agc_idx][MN34220PL_GAIN_COL_DGAIN] >> 8) & 0x3);
-	mn34220pl_write_reg(vdev, 0x0213, (u8)MN34220PL_GAIN_TABLE[agc_idx][MN34220PL_GAIN_COL_DGAIN]);
-	/* DGAIN-Gb */
-	mn34220pl_write_reg(vdev, 0x0214, (MN34220PL_GAIN_TABLE[agc_idx][MN34220PL_GAIN_COL_DGAIN] >> 8) & 0x3);
-	mn34220pl_write_reg(vdev, 0x0215, (u8)MN34220PL_GAIN_TABLE[agc_idx][MN34220PL_GAIN_COL_DGAIN]);
+	/* AGAIN */
+	mn34220pl_write_reg2(vdev, MN34220PL_AGAIN_H, MN34220PL_GAIN_TABLE[agc_idx][MN34220PL_GAIN_COL_AGAIN] & 0x3FFF);
+	/* DGAIN */
+	mn34220pl_write_reg2(vdev, MN34220PL_DGAIN_H, MN34220PL_GAIN_TABLE[agc_idx][MN34220PL_GAIN_COL_DGAIN] & 0x3FFF);
 
 	return 0;
 }
@@ -319,10 +349,10 @@ static int mn34220pl_set_mirror_mode(struct vin_device *vdev,
 		return -EINVAL;
 	}
 
-	mn34220pl_read_reg(vdev, 0x0101, &tmp_reg);
+	mn34220pl_read_reg(vdev, MN34220PL_MODE, &tmp_reg);
 	tmp_reg &= (~MN34220PL_V_FLIP);
 	tmp_reg |= readmode;
-	mn34220pl_write_reg(vdev, 0x0101, tmp_reg);
+	mn34220pl_write_reg(vdev, MN34220PL_MODE, tmp_reg);
 
 	if (mirror_mode->bayer_pattern == VINDEV_BAYER_PATTERN_AUTO)
 		mirror_mode->bayer_pattern = bayer_pattern;
@@ -354,63 +384,66 @@ static int mn34220pl_set_wdr_shutter_row_group(struct vin_device *vdev,
 	shutter_short3 = p_shutter_gp->s3;
 
 	/* shutter limitation check */
-	switch(vdev->cur_format->hdr_mode){
-		case AMBA_VIDEO_2X_HDR_MODE:
-			if(shutter_long + shutter_short1 + 5 > pinfo->frame_length_lines){
-				vin_error("shutter exceeds limitation! long:%d, short:%d, V:%d\n",
-					shutter_long, shutter_short1, pinfo->frame_length_lines);
-				return -EPERM;
-			}else if(shutter_short1 + 2 > pinfo->frame_length_lines - active_lines) {
-				vin_error("short frame offset exceeds limitation! short:%d, VB:%d\n",
-					shutter_short1, pinfo->frame_length_lines - active_lines);
-			}
-			break;
-		case AMBA_VIDEO_3X_HDR_MODE:
-			if(shutter_long + shutter_short1 + shutter_short2 + 7 > pinfo->frame_length_lines){
-				vin_error("shutter exceeds limitation! long:%d, short1:%d, short2:%d, V:%d\n",
-					shutter_long, shutter_short1, shutter_short2, pinfo->frame_length_lines);
-				return -EPERM;
-			}else if(shutter_short1 + shutter_short2 + 4 > pinfo->frame_length_lines - active_lines) {
-				vin_error("short frame offset exceeds limitation! short1:%d, short2:%d, VB:%d\n",
-					shutter_short1, shutter_short2, pinfo->frame_length_lines - active_lines);
-			}
-			break;
-		case AMBA_VIDEO_4X_HDR_MODE:
-			if(shutter_long + shutter_short1 + shutter_short2 + 9 > pinfo->frame_length_lines){
-				vin_error("shutter exceeds limitation! long:%d, short1:%d, short2:%d, short3:%d, V:%d\n",
-					shutter_long, shutter_short1, shutter_short2, shutter_short3, pinfo->frame_length_lines);
-				return -EPERM;
-			}else if(shutter_short1 + shutter_short2 + shutter_short3 + 6 > pinfo->frame_length_lines - active_lines) {
-				vin_error("short frame offset exceeds limitation! short1:%d, short2:%d, short3:%d, VB:%d\n",
-					shutter_short1, shutter_short2, shutter_short3, pinfo->frame_length_lines - active_lines);
-			}
-			break;
-		case AMBA_VIDEO_LINEAR_MODE:
-		default:
-			vin_error("Unsupported mode\n");
+	switch (vdev->cur_format->hdr_mode) {
+	case AMBA_VIDEO_2X_HDR_MODE:
+		if (shutter_long + shutter_short1 + 5 > pinfo->frame_length_lines) {
+			vin_error("shutter exceeds limitation! long:%d, short:%d, V:%d\n",
+				shutter_long, shutter_short1, pinfo->frame_length_lines);
 			return -EPERM;
+		} else if (shutter_short1 + 2 > pinfo->frame_length_lines - active_lines) {
+			vin_error("short frame offset exceeds limitation! short:%d, VB:%d\n",
+				shutter_short1, pinfo->frame_length_lines - active_lines);
+			return -EPERM;
+		}
+		break;
+	case AMBA_VIDEO_3X_HDR_MODE:
+		if (shutter_long + shutter_short1 + shutter_short2 + 7 > pinfo->frame_length_lines) {
+			vin_error("shutter exceeds limitation! long:%d, short1:%d, short2:%d, V:%d\n",
+				shutter_long, shutter_short1, shutter_short2, pinfo->frame_length_lines);
+			return -EPERM;
+		} else if (shutter_short1 + shutter_short2 + 4 > pinfo->frame_length_lines - active_lines) {
+			vin_error("short frame offset exceeds limitation! short1:%d, short2:%d, VB:%d\n",
+				shutter_short1, shutter_short2, pinfo->frame_length_lines - active_lines);
+			return -EPERM;
+		}
+		break;
+	case AMBA_VIDEO_4X_HDR_MODE:
+		if (shutter_long + shutter_short1 + shutter_short2 + 9 > pinfo->frame_length_lines) {
+			vin_error("shutter exceeds limitation! long:%d, short1:%d, short2:%d, short3:%d, V:%d\n",
+				shutter_long, shutter_short1, shutter_short2, shutter_short3, pinfo->frame_length_lines);
+			return -EPERM;
+		} else if (shutter_short1 + shutter_short2 + shutter_short3 + 6 > pinfo->frame_length_lines - active_lines) {
+			vin_error("short frame offset exceeds limitation! short1:%d, short2:%d, short3:%d, VB:%d\n",
+				shutter_short1, shutter_short2, shutter_short3, pinfo->frame_length_lines - active_lines);
+			return -EPERM;
+		}
+		break;
+	case AMBA_VIDEO_LINEAR_MODE:
+	default:
+		vin_error("Unsupported mode\n");
+		return -EPERM;
 	}
 
 	/* long shutter */
-	mn34220pl_write_reg(vdev, 0x0203, (u8)(shutter_long & 0xFF));
-	mn34220pl_write_reg(vdev, 0x0202, (u8)(shutter_long >> 8));
-	mn34220pl_write_reg(vdev, 0x0221, (u8)((shutter_long >> 16) & 0x1));
+	mn34220pl_write_reg(vdev, MN34220PL_SHTPOS_L, (u8)(shutter_long & 0xFF));
+	mn34220pl_write_reg(vdev, MN34220PL_SHTPOS_M, (u8)(shutter_long >> 8));
+	mn34220pl_write_reg(vdev, MN34220PL_SHTPOS_H, (u8)((shutter_long >> 16) & 0x1));
 
 	/* short shutter 1 */
-	mn34220pl_write_reg(vdev, 0x312B, (u8)(shutter_short1 & 0xFF));
-	mn34220pl_write_reg(vdev, 0x312A, (u8)(shutter_short1 >> 8));
+	mn34220pl_write_reg(vdev, MN34220PL_SHTPOS_WDR1_L, (u8)(shutter_short1 & 0xFF));
+	mn34220pl_write_reg(vdev, MN34220PL_SHTPOS_WDR1_H, (u8)(shutter_short1 >> 8));
 
 	/* short shutter 2 */
-	mn34220pl_write_reg(vdev, 0x312D, (u8)(shutter_short2 & 0xFF));
-	mn34220pl_write_reg(vdev, 0x312C, (u8)(shutter_short2 >> 8));
+	mn34220pl_write_reg(vdev, MN34220PL_SHTPOS_WDR2_L, (u8)(shutter_short2 & 0xFF));
+	mn34220pl_write_reg(vdev, MN34220PL_SHTPOS_WDR2_H, (u8)(shutter_short2 >> 8));
 
 	/* short shutter 3 */
-	mn34220pl_write_reg(vdev, 0x312F, (u8)(shutter_short3 & 0xFF));
-	mn34220pl_write_reg(vdev, 0x312E, (u8)(shutter_short3 >> 8));
+	mn34220pl_write_reg(vdev, MN34220PL_SHTPOS_WDR3_L, (u8)(shutter_short3 & 0xFF));
+	mn34220pl_write_reg(vdev, MN34220PL_SHTPOS_WDR3_H, (u8)(shutter_short3 >> 8));
 
 	memcpy(&(pinfo->wdr_shutter_gp),  p_shutter_gp, sizeof(struct vindev_wdr_gp_s));
 
-	switch(vdev->cur_format->hdr_mode) {
+	switch (vdev->cur_format->hdr_mode) {
 	case AMBA_VIDEO_2X_HDR_MODE:
 		vb_time = pinfo->frame_length_lines - vdev->cur_format->height - pinfo->wdr_shutter_gp.s1;
 		break;
@@ -453,8 +486,7 @@ static int mn34220pl_set_wdr_again_idx_group(struct vin_device *vdev,
 	u32 again_index;
 
 	again_index = MN34220PL_GAIN_0DB - p_again_gp->l;
-	mn34220pl_write_reg(vdev, 0x0204, (MN34220PL_GAIN_TABLE[again_index][MN34220PL_GAIN_COL_AGAIN] >> 8) & 0x3);
-	mn34220pl_write_reg(vdev, 0x0205, (u8)MN34220PL_GAIN_TABLE[again_index][MN34220PL_GAIN_COL_AGAIN]);
+	mn34220pl_write_reg2(vdev, MN34220PL_AGAIN_H, MN34220PL_GAIN_TABLE[again_index][MN34220PL_GAIN_COL_AGAIN] & 0x3FFF);
 
 	memcpy(&(pinfo->wdr_again_gp), p_again_gp, sizeof(struct vindev_wdr_gp_s));
 
@@ -481,72 +513,9 @@ static int mn34220pl_set_wdr_dgain_idx_group(struct vin_device *vdev,
 
 	/* long frame */
 	gain_index = MN34220PL_WDR_GAIN_30DB - p_dgain_gp->l;
-	if(vdev->cur_format->hdr_mode == AMBA_VIDEO_2X_HDR_MODE) {// Fix me, for 2x setting, use 0x3108 and 0x3109 as dgain
-		mn34220pl_write_reg(vdev, 0x3108, (MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN] >> 8) & 0x3);
-		mn34220pl_write_reg(vdev, 0x3109, (u8)MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN]);
-		return 0;
-	} else {
-		/* DGAIN-Gr */
-		mn34220pl_write_reg(vdev, 0x020E, (MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN] >> 8) & 0x3);
-		mn34220pl_write_reg(vdev, 0x020F, (u8)MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN]);
-		/* DGAIN-R */
-		mn34220pl_write_reg(vdev, 0x0210, (MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN] >> 8) & 0x3);
-		mn34220pl_write_reg(vdev, 0x0211, (u8)MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN]);
-		/* DGAIN-B */
-		mn34220pl_write_reg(vdev, 0x0212, (MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN] >> 8) & 0x3);
-		mn34220pl_write_reg(vdev, 0x0213, (u8)MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN]);
-		/* DGAIN-Gb */
-		mn34220pl_write_reg(vdev, 0x0214, (MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN] >> 8) & 0x3);
-		mn34220pl_write_reg(vdev, 0x0215, (u8)MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN]);
-	}
-
-	/* short frame 1 */
-	gain_index = MN34220PL_WDR_GAIN_30DB - p_dgain_gp->s1;
-	/* DGAIN-Gr */
-	mn34220pl_write_reg(vdev, 0x310A, (MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN] >> 8) & 0x3);
-	mn34220pl_write_reg(vdev, 0x310B, (u8)MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN]);
-	/* DGAIN-R */
-	mn34220pl_write_reg(vdev, 0x310C, (MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN] >> 8) & 0x3);
-	mn34220pl_write_reg(vdev, 0x310D, (u8)MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN]);
-	/* DGAIN-B */
-	mn34220pl_write_reg(vdev, 0x310E, (MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN] >> 8) & 0x3);
-	mn34220pl_write_reg(vdev, 0x310F, (u8)MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN]);
-	/* DGAIN-Gb */
-	mn34220pl_write_reg(vdev, 0x3110, (MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN] >> 8) & 0x3);
-	mn34220pl_write_reg(vdev, 0x3111, (u8)MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN]);
-
-	/* short frame 2 */
-	gain_index = MN34220PL_WDR_GAIN_30DB - p_dgain_gp->s2;
-	/* DGAIN-Gr */
-	mn34220pl_write_reg(vdev, 0x3112, (MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN] >> 8) & 0x3);
-	mn34220pl_write_reg(vdev, 0x3113, (u8)MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN]);
-	/* DGAIN-R */
-	mn34220pl_write_reg(vdev, 0x3114, (MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN] >> 8) & 0x3);
-	mn34220pl_write_reg(vdev, 0x3115, (u8)MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN]);
-	/* DGAIN-B */
-	mn34220pl_write_reg(vdev, 0x3116, (MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN] >> 8) & 0x3);
-	mn34220pl_write_reg(vdev, 0x3117, (u8)MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN]);
-	/* DGAIN-Gb */
-	mn34220pl_write_reg(vdev, 0x3118, (MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN] >> 8) & 0x3);
-	mn34220pl_write_reg(vdev, 0x3119, (u8)MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN]);
-
-	/* short frame 3 */
-	gain_index = MN34220PL_WDR_GAIN_30DB - p_dgain_gp->s3;
-	/* DGAIN-Gr */
-	mn34220pl_write_reg(vdev, 0x311A, (MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN] >> 8) & 0x3);
-	mn34220pl_write_reg(vdev, 0x311B, (u8)MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN]);
-	/* DGAIN-R */
-	mn34220pl_write_reg(vdev, 0x311C, (MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN] >> 8) & 0x3);
-	mn34220pl_write_reg(vdev, 0x311D, (u8)MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN]);
-	/* DGAIN-B */
-	mn34220pl_write_reg(vdev, 0x311E, (MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN] >> 8) & 0x3);
-	mn34220pl_write_reg(vdev, 0x311F, (u8)MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN]);
-	/* DGAIN-Gb */
-	mn34220pl_write_reg(vdev, 0x3120, (MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN] >> 8) & 0x3);
-	mn34220pl_write_reg(vdev, 0x3121, (u8)MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN]);
+	mn34220pl_write_reg2(vdev, MN34220PL_DGAIN_H, MN34220PL_GAIN_TABLE[gain_index][MN34220PL_GAIN_COL_DGAIN] & 0x3FFF);
 
 	memcpy(&(pinfo->wdr_dgain_gp), p_dgain_gp, sizeof(struct vindev_wdr_gp_s));
-
 	return 0;
 }
 
@@ -606,9 +575,8 @@ static int mn34220pl_set_shutter_row(struct vin_device *vdev, u32 row)
 	max_line = pinfo->frame_length_lines - 2;
 	num_line = clamp(num_line, min_line, max_line);
 
-	mn34220pl_write_reg(vdev, 0x0221, (num_line >> 16) & 0x01);
-	mn34220pl_write_reg(vdev, 0x0202, (num_line >> 8) & 0xFF);
-	mn34220pl_write_reg(vdev, 0x0203, num_line & 0xFF);
+	mn34220pl_write_reg(vdev, MN34220PL_SHTPOS_H, (num_line >> 16) & 0x01);
+	mn34220pl_write_reg2(vdev, MN34220PL_SHTPOS_M, num_line & 0xFFFF);
 
 	exposure_lines = num_line;
 	exposure_lines = exposure_lines * (u64)pinfo->line_length * 512000000;
@@ -620,13 +588,13 @@ static int mn34220pl_set_shutter_row(struct vin_device *vdev, u32 row)
 	return 0;
 }
 
-static int mn34220pl_shutter2row(struct vin_device *vdev, u32* shutter_time)
+static int mn34220pl_shutter2row(struct vin_device *vdev, u32 *shutter_time)
 {
 	u64 exposure_lines;
 	int rval = 0;
 	struct mn34220pl_priv *pinfo = (struct mn34220pl_priv *)vdev->priv;
 
-	if(unlikely(!pinfo->line_length)) {
+	if (unlikely(!pinfo->line_length)) {
 		rval = mn34220pl_update_hv_info(vdev);
 		if (rval < 0)
 			return rval;
@@ -641,16 +609,58 @@ static int mn34220pl_shutter2row(struct vin_device *vdev, u32* shutter_time)
 	return rval;
 }
 
+static int mn34220pl_get_aaa_info(struct vin_device *vdev,
+	struct vindev_aaa_info *aaa_info)
+{
+	struct mn34220pl_priv *pinfo = (struct mn34220pl_priv *)vdev->priv;
+
+	aaa_info->sht0_max = pinfo->frame_length_lines - 7;
+	aaa_info->sht1_max = pinfo->frame_length_lines - vdev->cur_format->height - 2;
+	aaa_info->sht2_max = (vdev->cur_format->hdr_mode == AMBA_VIDEO_3X_HDR_MODE) ?
+		(aaa_info->sht1_max - 2) : 0;
+
+	return 0;
+}
+
+#ifdef CONFIG_PM
+static int mn34220pl_suspend(struct vin_device *vdev)
+{
+	u32 i, tmp;
+
+	for (i = 0; i < ARRAY_SIZE(pm_regs); i++) {
+		mn34220pl_read_reg(vdev, pm_regs[i].addr, &tmp);
+		pm_regs[i].data = (u8)tmp;
+	}
+
+	return 0;
+}
+
+static int mn34220pl_resume(struct vin_device *vdev)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(pm_regs); i++)
+		mn34220pl_write_reg(vdev, pm_regs[i].addr, pm_regs[i].data);
+
+	return 0;
+}
+#endif
+
 static struct vin_ops mn34220pl_ops = {
 	.init_device		= mn34220pl_init_device,
 	.set_format		= mn34220pl_set_format,
-	.set_shutter_row = mn34220pl_set_shutter_row,
-	.shutter2row = mn34220pl_shutter2row,
+	.set_shutter_row	= mn34220pl_set_shutter_row,
+	.shutter2row		= mn34220pl_shutter2row,
 	.set_frame_rate		= mn34220pl_set_fps,
 	.set_agc_index		= mn34220pl_set_agc_index,
 	.set_mirror_mode	= mn34220pl_set_mirror_mode,
+	.get_aaa_info		= mn34220pl_get_aaa_info,
 	.read_reg		= mn34220pl_read_reg,
 	.write_reg		= mn34220pl_write_reg,
+#ifdef CONFIG_PM
+	.suspend		= mn34220pl_suspend,
+	.resume			= mn34220pl_resume,
+#endif
 
 	/* for wdr sensor */
 	.set_wdr_again_idx_gp = mn34220pl_set_wdr_again_idx_group,
@@ -662,7 +672,6 @@ static struct vin_ops mn34220pl_ops = {
 	.wdr_shutter2row = mn34220pl_wdr_shutter2row,
 };
 
-/*	< include init.c here for aptina sensor, which is produce by perl >  */
 /* ========================================================================== */
 static int mn34220pl_probe(struct i2c_client *client,
 	const struct i2c_device_id *id)
@@ -681,14 +690,14 @@ static int mn34220pl_probe(struct i2c_client *client,
 	vdev->sub_type = VINDEV_SUBTYPE_CMOS;
 	vdev->default_mode = AMBA_VIDEO_MODE_1080P;
 	vdev->default_hdr_mode = AMBA_VIDEO_LINEAR_MODE;
-	vdev->agc_db_max = 0x3C000000;	// 60dB
-	vdev->agc_db_min = 0x00000000;	// 0dB
+	vdev->agc_db_max = 0x3C000000; /* 60dB */
+	vdev->agc_db_min = 0x00000000; /* 0dB */
 #if GAIN_160_STEPS
-	vdev->agc_db_step = 0x00600000;	// 0.375dB
+	vdev->agc_db_step = 0x00600000;/* 0.375dB */
 #else
-	vdev->agc_db_step = 0x00180000;	// 0.09375dB
+	vdev->agc_db_step = 0x00180000;/* 0.09375dB */
 #endif
-	vdev->pixel_size = 0x0002C000;	/* 2.75um */
+	vdev->pixel_size = 0x0002C000; /* 2.75um */
 
 	vdev->wdr_again_idx_min = 0;
 	vdev->wdr_again_idx_max = MN34220PL_WDR_GAIN_30DB;

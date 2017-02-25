@@ -4,14 +4,33 @@
  * Histroy:
  *  July 23, 2014 - [Lei Hong] created file
  *
- * Copyright (C) 2008-2014, Ambarella ShangHai Co,Ltd
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella
+ * Copyright (c) 2015 Ambarella, Inc.
  *
- ******************************************************************************/
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
+
 #include <linux/kernel.h>
 #include <linux/mm.h>
 #include <linux/init.h>
@@ -26,6 +45,7 @@
 #include <linux/syslog.h>
 #include <asm/uaccess.h>
 #include <linux/sched.h>
+#include <linux/version.h>
 
 MODULE_AUTHOR("Lei Hong<lhong@ambarella.com>");
 MODULE_DESCRIPTION("Ambarella print private driver");
@@ -51,10 +71,11 @@ struct drv_log {
 extern u64 local_clock(void);
 
 /* printk's without a loglevel use this.. */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
+#define DEFAULT_MESSAGE_LOGLEVEL CONFIG_MESSAGE_LOGLEVEL_DEFAULT
+#else
 #define DEFAULT_MESSAGE_LOGLEVEL CONFIG_DEFAULT_MESSAGE_LOGLEVEL
-
-
-/*DECLARE_WAIT_QUEUE_HEAD(log_wait);*/
+#endif
 
 /*
  * The drv_logbuf_lock protects drvmsg buffer, indices, counters. It is also
@@ -485,12 +506,12 @@ static int drv_syslog_print_all(char __user *buf, int size, bool clear)
 }
 
 #ifdef CONFIG_SECURITY_DMESG_RESTRICT
-int drv_dmesg_restrict = 1;
+static int drv_dmesg_restrict = 1;
 #else
-int drv_dmesg_restrict;
+static int drv_dmesg_restrict = 0;
 #endif
 
-static int syslog_action_restricted(int type)
+static int drv_syslog_action_restricted(int type)
 {
 	if (drv_dmesg_restrict)
 		return 1;
@@ -498,7 +519,7 @@ static int syslog_action_restricted(int type)
 	return type != SYSLOG_ACTION_READ_ALL && type != SYSLOG_ACTION_SIZE_BUFFER;
 }
 
-static int check_syslog_permissions(int type, bool from_file)
+static int check_drv_syslog_permissions(int type, bool from_file)
 {
 	/*
 	 * If this is from /proc/kmsg and we've already opened it, then we've
@@ -507,7 +528,7 @@ static int check_syslog_permissions(int type, bool from_file)
 	if (from_file && type != SYSLOG_ACTION_OPEN)
 		return 0;
 
-	if (syslog_action_restricted(type)) {
+	if (drv_syslog_action_restricted(type)) {
 		if (capable(CAP_SYSLOG))
 			return 0;
 		/* For historical reasons, accept CAP_SYS_ADMIN too, with a warning */
@@ -528,7 +549,7 @@ int do_drv_syslog(int type, char __user *buf, int len, bool from_file)
 	bool clear = false;
 	int error;
 
-	error = check_syslog_permissions(type, from_file);
+	error = check_drv_syslog_permissions(type, from_file);
 	if (error)
 		goto out;
 

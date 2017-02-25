@@ -5,14 +5,33 @@
  *	2012/09/27 - [Cao Rongrong] Created
  *	2014/03/03 - [Jian Tang] Modified
  *
- * Copyright (C) 2012 -2016, Ambarella, Inc.
  *
- * All rights reserved. No Part of this file may be reproduced, stored
- * in a retrieval system, or transmitted, in any form, or by any means,
- * electronic, mechanical, photocopying, recording, or otherwise,
- * without the prior consent of Ambarella, Inc.
+ * Copyright (c) 2015 Ambarella, Inc.
+ *
+ * This file and its contents ("Software") are protected by intellectual
+ * property rights including, without limitation, U.S. and/or foreign
+ * copyrights. This Software is also the confidential and proprietary
+ * information of Ambarella, Inc. and its licensors. You may not use, reproduce,
+ * disclose, distribute, modify, or otherwise prepare derivative works of this
+ * Software or any portion thereof except pursuant to a signed license agreement
+ * or nondisclosure agreement with Ambarella, Inc. or its authorized affiliates.
+ * In the absence of such an agreement, you agree to promptly notify and return
+ * this Software to Ambarella, Inc.
+ *
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF NON-INFRINGEMENT,
+ * MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL AMBARELLA, INC. OR ITS AFFILIATES BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; COMPUTER FAILURE OR MALFUNCTION; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 
 #include <linux/module.h>
 #include <linux/ambpriv_device.h>
@@ -250,6 +269,7 @@ static void dsp_transfer_cmd(struct ambarella_dsp *dsp, struct dsp_cmd_port *por
 #if !USE_INSTANT_CMD
 	port->cmd_array[idx].num_cmds = 0;
 	port->cmd_array[idx].num_enc_cmds = 0;
+	port->cmd_array[idx].num_vout_cmds = 0;
 	port->cmd_list_idx = (idx + 1) % DSP_CMD_LIST_NUM;
 #endif
 }
@@ -410,14 +430,14 @@ static int dsp_irq_init(struct ambarella_dsp *dsp)
 	int rval;
 
 	rval = request_irq(CODE_VDSP_0_IRQ, vdsp_irq,
-			IRQF_TRIGGER_RISING | IRQF_DISABLED,
+			IRQF_TRIGGER_RISING,
 			"vdsp", dsp);
 	if (rval < 0) {
 		iav_error("request_irq failed (vdsp)\n");
 		return rval;
 	}
 	rval = request_irq(VENC_IRQ_NO, venc_irq,
-			IRQF_TRIGGER_RISING | IRQF_DISABLED,
+			IRQF_TRIGGER_RISING,
 			"venc", dsp);
 	if (rval < 0) {
 		iav_error("request_irq failed (venc)\n");
@@ -498,6 +518,7 @@ static int dsp_init_cmd_port(struct dsp_cmd_port *port, u32 probe_mode)
 		INIT_LIST_HEAD(&port->cmd_array[i].cmd_list);
 		port->cmd_array[i].num_cmds = 0;
 		port->cmd_array[i].num_enc_cmds = 0;
+		port->cmd_array[i].num_vout_cmds = 0;
 		port->cmd_array[i].update_cmd_seq_num = 1;
 	}
 
@@ -525,13 +546,17 @@ static int dsp_fill_init_data(struct ambarella_dsp *dsp)
 	init_data->result_queue_size = DSP_MSG_BUF_SIZE;
 
 	/* setup default cmd queue address */
-	init_data->default_config_ptr = (u32 *)PHYS_TO_DSP(dsp->default_cmd_phys);
-	init_data->default_config_size = dsp->total_default_cmd_size;
+	init_data->default_config_ptr = (u32 *)PHYS_TO_DSP(DSP_DEF_CMD_BUF_START);
+	init_data->default_config_size = DSP_DEF_CMD_BUF_SIZE;
+	if (dsp->probe_op_mode == DSP_UNKNOWN_MODE) {
+		memset(dsp->default_cmd_virt, 0, dsp->total_default_cmd_size);
+	}
 
 	/* setup dsp buffer */
 	init_data->DSP_buf_ptr = (u32 *)PHYS_TO_DSP(dsp->dsp_dev.buffer_start);
 	init_data->DSP_buf_size = dsp->dsp_dev.buffer_size;
 	init_data->dsp_log_buf_ptr = PHYS_TO_DSP(DSP_LOG_AREA_PHYS);
+	init_data->dsp_log_size = DSP_LOG_SIZE;
 
 	/* chip ID */
 	init_data->chip_id_ptr = (u32 *)PHYS_TO_DSP(DSP_CHIP_ID_START);
@@ -555,6 +580,12 @@ static int dsp_fill_init_data(struct ambarella_dsp *dsp)
 		init_data->cmdmsg_protocol_version = MPV_FIXED_BUFFER;
 	}
 
+#ifdef CONFIG_AMBARELLA_IAV_DRAM_VOUT_ONLY
+	init_data->vout_profile = DEFAULT_VOUT0_4M_ROTATE_PROFILE;
+#else
+	init_data->vout_profile = DEFAULT_VOUT_PROFILE;
+#endif
+
 	clean_d_cache(init_data, sizeof(dsp_init_data_t));
 
 	return 0;
@@ -564,44 +595,52 @@ int dsp_init_data(struct ambarella_dsp *dsp)
 {
 	int rval = 0;
 
-	dsp->dsp_init_data = (dsp_init_data_t *)DSP_INIT_DATA_BASE;
+	dsp->dsp_init_data = ioremap_nocache(DSP_INIT_DATA_START, sizeof(dsp_init_data_t));
+	if (!dsp->dsp_init_data) {
+		iav_error("Failed to call ioremap() for INIT DATA.\n");
+		rval = -ENOMEM;
+		goto dsp_init_data_err1;
+	}
+
 	/* dsp_init_data_pm is used to store dsp_init_data when system suspend */
 	dsp->dsp_init_data_pm = kzalloc(sizeof(dsp_init_data_t), GFP_KERNEL);
 	if (!dsp->dsp_init_data_pm) {
 		iav_error("Out of memory (%d)!\n", __LINE__);
 		rval = -ENOMEM;
-		goto dsp_init_data_err1;
+		goto dsp_init_data_err2;
 	}
 
 	/* prepare memory for default commands */
-	dsp->total_default_cmd_size = sizeof(DSP_HEADER_CMD) + MAX_DEFAULT_CMD_SIZE;
-	dsp->default_cmd_virt = dma_alloc_coherent(NULL,
-		dsp->total_default_cmd_size, &dsp->default_cmd_phys, GFP_KERNEL);
+	dsp->total_default_cmd_size = DSP_DEF_CMD_BUF_SIZE;
+	dsp->default_cmd_phys = DSP_DEF_CMD_BUF_START;
+	dsp->default_cmd_virt = ioremap_nocache(dsp->default_cmd_phys,
+		dsp->total_default_cmd_size);
 	if (!dsp->default_cmd_virt) {
-		iav_error("Out of memory (%d)!\n", __LINE__);
+		iav_error("Failed to call ioremap() for default_cmd.\n");
 		rval = -ENOMEM;
-		goto dsp_init_data_err2;
+		goto dsp_init_data_err3;
 	}
-	memset(dsp->default_cmd_virt, 0, dsp->total_default_cmd_size);
 
 	/* Fill initialized data for DSP */
 	rval = dsp_fill_init_data(dsp);
 	if (rval < 0) {
-		goto dsp_init_data_err3;
+		goto dsp_init_data_err4;
 	}
 
-	bopt_sync((void *)DSP_INIT_DATA_BASE, (void *)DSP_IDSP_BASE,
+	bopt_sync((void *)DSP_INIT_DATA_START, (void *)DSP_IDSP_BASE,
 		(void *)DSP_UCODE_START, NULL);
 
 	return 0;
 
-dsp_init_data_err3:
-	dma_free_coherent(NULL, dsp->total_default_cmd_size,
-		dsp->default_cmd_virt, dsp->default_cmd_phys);
+dsp_init_data_err4:
+	iounmap((void __iomem *)dsp->default_cmd_virt);
 	dsp->default_cmd_virt = NULL;
-dsp_init_data_err2:
+	dsp->default_cmd_phys = 0;
+dsp_init_data_err3:
 	kfree(dsp->dsp_init_data_pm);
 	dsp->dsp_init_data_pm = NULL;
+dsp_init_data_err2:
+	iounmap((void __iomem *)dsp->dsp_init_data);
 dsp_init_data_err1:
 	return rval;
 }
@@ -611,12 +650,12 @@ static void dsp_free_data(struct ambarella_dsp *dsp)
 	iounmap((void __iomem *)dsp->chip_id);
 	dsp->chip_id = NULL;
 	dsp->vdsp_info = NULL;
+	iounmap((void __iomem *)dsp->dsp_init_data);
 
 	kfree(dsp->dsp_init_data_pm);
 	dsp->dsp_init_data_pm = NULL;
 
-	dma_free_coherent(NULL, MAX_DEFAULT_CMD_SIZE,
-		dsp->default_cmd_virt, dsp->default_cmd_phys);
+	iounmap((void __iomem *)dsp->default_cmd_virt);
 	dsp->default_cmd_virt = NULL;
 }
 
@@ -706,6 +745,7 @@ static int dsp_drv_probe(struct ambpriv_device *ambdev)
 	dsp_dev->get_cmd = dsp_get_cmd;
 	dsp_dev->get_multi_cmds = dsp_get_multi_cmds;
 	dsp_dev->put_cmd = dsp_put_cmd;
+	dsp_dev->print_cmd = NULL;
 	dsp_dev->release_cmd = dsp_release_cmd;
 	dsp_dev->set_op_mode = dsp_set_op_mode;
 	dsp_dev->set_enc_sub_mode = dsp_set_enc_sub_mode;
@@ -718,6 +758,7 @@ static int dsp_drv_probe(struct ambpriv_device *ambdev)
 	dsp_dev->suspend = dsp_suspend;
 	dsp_dev->resume = dsp_resume;
 #endif
+	dsp_dev->set_clock_state = dsp_set_clock_state;
 
 	rval = dsp_drv_probe_status(dsp);
 	if (rval < 0)
@@ -791,11 +832,52 @@ static int dsp_drv_remove(struct ambpriv_device *ambdev)
 #ifdef CONFIG_PM
 int dsp_suspend(struct dsp_device *dsp_dev)
 {
+	int i = 0;
+	struct ambarella_dsp *dsp = NULL;
+	struct dsp_cmd_port *port = NULL;
+	DSP_HEADER_CMD *hdr_cmd = NULL;
+	struct amb_dsp_cmd *first, *_first;
+
+	/* Avoid DSP to touch memory in suspend */
+	dsp_halt();
+
+	dsp = ambpriv_get_drvdata(ambpriv_dsp_device);
+
+	/* The following code is not must have, it's better to re-init the dsp cmd/msg queue */
+	port = &dsp->gen_cmd_port;
+	memset((u8 *)port->cmd_queue, 0, port->total_cmd_size);
+	memset((u8 *)port->msg_queue, 0, port->total_msg_size);
+
+	/* Must clear prev_cmd_seq_num as well, otherwise DSP will be crashed */
+	dsp->dsp_init_data->prev_cmd_seq_num = 0;
+	port->current_msg = port->msg_queue;
+	port->prev_cmd_seq_num = 0;
+	port->cmd_list_idx = 0;
+
+	hdr_cmd = (DSP_HEADER_CMD *)port->cmd_queue;
+	hdr_cmd->cmd_seq_num = 0;
+	hdr_cmd->num_cmds = 0;
+
+	for (i = 0; i < DSP_CMD_LIST_NUM; ++i) {
+		if (port->cmd_array[i].num_cmds) {
+			list_for_each_entry_safe(first, _first, &port->cmd_array[i].cmd_list, node) {
+				list_move(&first->node, &dsp->free_list);
+				list_splice(&first->head, &dsp->free_list);
+			}
+
+			port->cmd_array[i].num_cmds = 0;
+			port->cmd_array[i].num_enc_cmds = 0;
+			port->cmd_array[i].num_vout_cmds = 0;
+			port->cmd_array[i].update_cmd_seq_num = 1;
+		}
+	}
+
 	return 0;
 }
+
 int dsp_resume(struct dsp_device *dsp_dev)
 {
-	struct ambarella_dsp *dsp;
+	struct ambarella_dsp *dsp = NULL;
 
 	dsp = ambpriv_get_drvdata(ambpriv_dsp_device);
 

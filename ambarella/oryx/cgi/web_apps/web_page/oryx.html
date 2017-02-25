@@ -1,325 +1,873 @@
 <!doctype html>
 <html>
-  <header>
+  <head>
     <title>Oryx Service Test</title>
-    <link rel="stylesheet"  type="text/css" href="css/jquery-ui-1.11.4.custom.min.css">
+    <meta name="author" content="Huaiqing Wang"/>
+    <meta name="Copyright" content="Copyright (c) 2016 Ambarella, Inc."/>
+    <link rel="stylesheet" type="text/css" href="css/jquery-ui-1.11.4.custom.min.css"/>
+    <link rel="stylesheet" type="text/css" href="css/oryx.css"/>
     <script src="js/jquery-1.11.3.min.js"></script>
     <script src="js/jquery-ui-1.11.4.custom.min.js"></script>
     <script src="js/oryx.js"></script>
     <script>
-$(function() {
-  $( ".accordion" ).accordion({collapsible: true,active:false, heightStyle:"content"});
-  $( "#tabs" ).tabs({collapsible: false,event: "mouseover",active:0});
+      $(function() {
+        $("ul#menu>li:has(ul)").hover(
+          function(){$(this).children('a').addClass('green').end().find('ul').fadeIn(100);},
+          function(){$(this).children('a').removeClass('green').end().find('ul').fadeOut(100); });
 
-  $( ".radio" ).buttonset();
-  $(".input_button").button();
-  $("#stream_state_control").button({create: function(event, ui){set_stream_control_init_state();}});
+        for (var i = 1; i <= 30; ++ i) {
+          if (i === 30) {
+            $("#enc_ctrl_stream_framerate").append("<option value=30 selected='selected'>30</option>");
+          } else {
+            $("#enc_ctrl_stream_framerate").append("<option value='" + i + "'>" + i + "</option>");
+          }
+        }
+        $( "#enc_ctrl_stream_bitrate" ).spinner({min: 1, max:64000, step: 1, start: 4000,
+            spin: function(event, ui) { $("#enc_ctrl_stream_bitrate").val(ui.value); enc_ctrl_stream_control(this);},
+        });
+        $( "#enc_ctrl_stream_mjpeg_quality" ).spinner({min: 1, max:100, step: 1, start: 80,
+            spin: function(event, ui) { $("#enc_ctrl_stream_mjpeg_quality").val(ui.value); enc_ctrl_stream_control(this);},
+        });
+        $( "#enc_ctrl_stream_gop_n" ).spinner({min: 15, max:1800, step: 1, start: 30,
+            spin: function(event, ui) { $("#enc_ctrl_stream_gop_n").val(ui.value); enc_ctrl_stream_control(this);},
+        });
+        $( "#enc_ctrl_stream_gop_idr" ).spinner({min: 1, max:4, step: 1, start: 1,
+            spin: function(event, ui) { $("#enc_ctrl_stream_gop_idr").val(ui.value); enc_ctrl_stream_control(this);},
+        });
 
-  $("#success_dialog").dialog({autoOpen: false,modal:true,resizable: false});
-  $("#err_dialog").dialog({autoOpen: false,modal:true,resizable: false});
+        $( ".radio" ).buttonset();
+        $( "#media_file_checkbox" ).buttonset();
+        $(".AM_button").button();
+        $("#encode_state_control").button({create: function(event, ui){set_encode_control_init_state();}});
 
-  $("#overlay_font_type").autocomplete({minLength:0,autoFocus: true,
-    create: function(event, ui){get_overlay_available_fonts_from_remote();},
-  });
-  $("#overlay_picture_file").autocomplete({minLength:0,autoFocus: true,
-    create: function(event, ui){get_overlay_available_bmps_from_remote();},
-  });
+        $("#success_dialog").dialog({autoOpen: false,modal:true,resizable: true,
+            position: {at: "left+250 top+250"},
+            buttons: {
+              Ok: function() {
+                $( this ).dialog( "close" );
+              }
+        }});
+        $("#err_dialog").dialog({autoOpen: false,modal:true,resizable: false,
+            position: {at: "left+250 top+250"},
+            buttons: {
+              Ok: function() {
+                $( this ).dialog( "close" );
+              }
+        }});
 
-  $( "#overlay_font_r,#overlay_font_g,#overlay_font_b" ).slider({min:0,max: 255,value: 127,step:1,
-    orientation: "horizontal", range: "min",
-    slide: function( event, ui ) { refresh_font_color_swatch();},
-    change: function( event, ui ) {refresh_font_color_swatch();}
-  });
-  $( "#overlay_font_r,#overlay_font_g,#overlay_font_b" ).slider( "value", 127 );
-  $( "#zoom_slider" ).slider({min : 0.25, max : 8.00, step: 0.01,
-    create: function( event, ui ) { $("#zoom").val(1.00); $( "#zoom_slider" ).slider( "value",1.00);},
-    slide: function(event, ui) { $("#zoom").val(ui.value); },
-    stop: function(event, ui) { set_dptz_zoom(ui.value); },
-  });
-  $( "#pan_slider" ).slider({min : -1.0, max : 1.0, step: 0.1,
-    create: function( event, ui ) { $("#pan").val(0); },
-    slide: function(event, ui) { $("#pan").val(ui.value); },
-    stop: function(event, ui) { set_dptz_pan(ui.value); },
-  });
-  $( "#tilt_slider" ).slider({min : -1.0, max : 1.0, step: 0.1,
-    create: function( event, ui ) { $("#tilt").val(0); },
-    slide: function(event, ui) { $("#tilt").val(ui.value); },
-    stop: function(event, ui) { set_dptz_tilt(ui.value); },
-  });
-  $( "#strength_slider" ).slider({min : 0.00, max : 20.00, step: 0.01,
-    create: function( event, ui ) { $("#strength").val(0);$( "#strength_slider" ).slider( "value",0);},
-    slide: function(event, ui) { $("#strength").val(ui.value); },
-    stop: function(event, ui) { set_dewarp(ui.value); },
-  });
-})
+        $("#overlay_font_type").autocomplete({minLength:0,autoFocus: true,
+            create: function(event, ui){get_overlay_available_fonts_from_remote();},
+        });
+        $("#overlay_picture_file").autocomplete({minLength:0,autoFocus: true,
+            create: function(event, ui){get_overlay_available_bmps_from_remote();},
+        });
+
+        $( ".slider_color_r, .slider_color_g, .slider_color_b" ).slider({min:0,max: 255,value: 127,step:1,
+            orientation: "horizontal", range: "min",
+            slide: function( event, ui ) { refresh_color_swatch(this);},
+            change: function( event, ui ) {refresh_color_swatch(this);}
+        });
+        $( ".slider_color_r, .slider_color_g, .slider_color_b" ).slider( "value", 127 );
+        $( "#overlay_area_a_slider" ).slider({min : 0.00, max : 255.00, step: 1,
+            create: function( event, ui ) { $("#overlay_area_a").val(1.00); $( "#overlay_area_a_slider" ).slider( "value",1.00);},
+            slide: function(event, ui) { $("#overlay_area_a").val(ui.value); },
+        });
+
+        $( "#zoom_slider" ).slider({min : 0.10, max : 8.00, step: 0.01,orientation: "vertical",
+            create: function( event, ui ) { $("#zoom").val(0.10); $( "#zoom_slider" ).slider( "value",0.10);},
+            slide: function(event, ui) { $("#zoom").val(ui.value); },
+            stop: function(event, ui) { set_dptz_zoom(ui.value); },
+        });
+        $( "#strength_slider" ).slider({min : 0.00, max : 36.00, step: 0.01,orientation: "vertical",
+            create: function( event, ui ) { $("#strength").val(12);$( "#strength_slider" ).slider( "value",12);},
+            slide: function(event, ui) { $("#strength").val(ui.value); },
+            stop: function(event, ui) { set_dewarp_parameter(); },
+        });
+        $( "#warp_hor_zoom_slider" ).slider({min : 0.1, max : 10.00, step: 0.01,orientation: "vertical",
+            create: function( event, ui ) { $("#warp_hor_zoom").val(1.00);$("#warp_hor_zoom_slider").slider( "value",1.00);},
+            slide: function(event, ui) { $("#warp_hor_zoom").val(ui.value); },
+            stop: function(event, ui) { set_dewarp_parameter();},
+        });
+        $( "#warp_ver_zoom_slider" ).slider({min : 0.1, max : 10.00, step: 0.01,orientation: "vertical",
+            create: function( event, ui ) { $("#warp_ver_zoom").val(1.00);$("#warp_ver_zoom_slider").slider( "value",1.00);},
+            slide: function(event, ui) { $("#warp_ver_zoom").val(ui.value); },
+            stop: function(event, ui) { set_dewarp_parameter();},
+        });
+        $( "#pano_hfov_slider" ).slider({min : 1.0, max : 180.0, step: 0.5, value:180, orientation: "vertical",
+            create: function(event, ui ) { $("#pano_hfov").val(180);$( "#pano_hfov_slider" ).slider( "value",180);},
+            slide: function(event, ui) { $("#pano_hfov").val(ui.value); },
+            stop: function(event, ui) { set_dewarp_parameter(); },
+        });
+        $( "#hue_slider,#saturation_slider,#sharpness_slider,#brightness_slider,#contrast_slider" ).slider({min : -2, max : 2, step: 1,orientation: "vertical",
+            create: function(event, ui ) { get_image_style_init_state(); },
+            stop: function(event, ui) { set_image_style(); },
+        });
+        $( "#mctf_strength_slider" ).slider({min : 0, max : 11, step: 1,value:0,
+            create: function(event, ui ) { get_denoise_init_state(); },
+            slide: function(event, ui) { $("#mctf_strength").val(ui.value); },
+            stop: function(event, ui) { set_denoise(); },
+        });
+
+        $(".AM_selectmenu").selectmenu({
+            create: function(event, ui){get_parameter(this);},
+            change: function( event, ui ) {set_parameter(this);},
+            select: function( event, ui ) {select_to_set_parameter(this);}
+        });
+
+        $( "#vlc_delay" ).spinner({min: 160, step: 1, start: 600});
+        $( "#ae_target_ratio" ).spinner({min: 25, max:400, step: 1, start: 100,
+            spin: function(event, ui) { $("#ae_target_ratio").val(ui.value); set_parameter(this);},
+        });
+        $( "#sensor_gain_max" ).spinner({min: 0, max:48, step: 1, start: 36,
+            spin: function(event, ui) { $("#sensor_gain_max").val(ui.value); set_parameter(this);},
+        });
+        $( "#sensor_gain_manual" ).spinner({min: 0, max:36, step: 1,
+            spin: function(event, ui) { $("#sensor_gain_manual").val(ui.value); set_parameter(this);},
+        });
+
+        $( "#card_life_consumed_bar" ).progressbar({
+            value: 0
+        });
+
+        $("#menu li a").click(function() {
+          $("#menu li a").css("color","#2e6e9e");
+          $(this).css("color", "#e17009");
+          $(this).parent().parent().siblings().css("color", "#e17009");
+        });
+
+        $("iframe").css("height", window.screen.availHeight - 130);
+        get_AE_init_state();
+        vlc_init();
+      })
     </script>
     <style type="text/css">
-.ui-slider-horizontal {
-  height: 15px;
-  width: 300px;
-}
-.accordion{
-  margin:-17.6px -24.64px;
-}
-div{
-  margin-bottom:20px;
-}
-#overlay_font_r .ui-slider-range { background: #ef2929; }
-#overlay_font_r .ui-slider-handle { border-color: #ef2929; }
-#overlay_font_g .ui-slider-range { background: #8ae234; }
-#overlay_font_g .ui-slider-handle { border-color: #8ae234; }
-#overlay_font_b .ui-slider-range { background: #729fcf; }
-#overlay_font_b .ui-slider-handle { border-color: #729fcf; }
+      .ui-slider-horizontal {
+        height: 15px;
+        width: 350px;
+      }
+      #overlay_manipulate_select-button {
+        margin-left:5px;
+        margin-bottom:-10px;
+      }
+      #overlay_data_manipulate_select-button {
+        margin-left:5px;
+        margin-bottom:-10px;
+      }
+      #getting_started {
+        resize:both;
+        overflow:auto;
+      }
     </style>
-  </header>
+  </head>
 
   <body>
-    <div id="header" class="ui-accordion-header ui-state-default ui-corner-all ui-accordion-icons ui-accordion-header-icon"  style="margin-bottom:0px;">
-      <img src="css/images/logo.gif"  style="float:left;margin:5px 50px;" onload="adjust_log_size(this)" />
-      <h1 style="padding-left:200px;">Ambarella Oryx</h1>
-    </div>
+    <nav id="top-nav"  class="ui-state-default ui-corner-all" style="padding-left: 0px;padding-right: 0px;">
+      <div class="wrapper">
+        <div id="nav-logo" style="float:left;"><a href="#">Ambarella</a></div>
+        <div id="nav-menu">
+          <ul id="menu">
+            <li><a onclick="switch_service_option('getting_started')">Getting Started</a></li>
+            <li><a>Video</a>
+              <ul>
+                <li><a class="ui-state-default ui-corner-all" onclick="switch_service_option('video_encode_ctrl')">Encode control</a></li>
+                <li><a class="ui-state-default ui-corner-all" onclick="switch_service_option('video_overlay')">Overlay</a></li>
+                <li><a class="ui-state-default ui-corner-all" onclick="switch_service_option('video_dptz_dewarp')">Dptz/Dewarp</a></li>
+              </ul>
+            </li>
+            <li><a>Media</a>
+              <ul>
+                <li><a class="ui-state-default ui-corner-all" onclick="switch_service_option('media_recording')">Recording</a></li>
+                <li><a class="ui-state-default ui-corner-all" onclick="switch_service_option('media_playback')">Playback</a></li>
+              </ul>
+            </li>
+            <li><a onclick="switch_service_option('image')">Image</a></li>
+            <li><a>Audio</a></li>
+            <li><a>Event</a></li>
+            <li><a onclick="switch_service_option('system')">System</a></li>
+            <li><a>Sip</a></li>
+          </ul><!-- end of <ul id="menu">-->
+        </div><!-- end of <div id="nav-menu">-->
+      </div><!-- end of <div class="wrapper">-->
+    </nav>
 
-    <div id="tabs">
-      <ul>
-        <li><a href="#tabs-1">Video</a></li>
-        <li><a href="#tabs-2">Media</a></li>
-        <li><a href="#tabs-3">Audio</a></li>
-        <li><a href="#tabs-4">Image</a></li>
-        <li><a href="#tabs-5">Event</a></li>
-        <li><a href="#tabs-6">System</a></li>
-        <li><a href="#tabs-7">Sip</a></li>
-      </ul>
+    <div id="getting_started" style="margin:50px 0px 0px 0px;padding:0;display:none;">
+      <iframe src="media/getting_started/index.html" style="margin:0; padding:0; width:99%;" frameborder="0"></iframe>
+    </div><!-- end of <div id="getting_started" style="display:none">-->
 
-      <div id="tabs-1">
-        <div class=accordion>
-          <h3>Encode control</h3>
-          <div>
-            <div id="video_enc_ctrl_stream">
-              <label>1.Stream:  </label>
-              <button id="stream_state_control"   onclick="stream_state_control()">Start</button>
-              <button id="get_stream_status"  class=input_button    onclick="get_stream_status()">Get status</button>
-            </div>
-            <div id="video_enc_ctrl_forceidr">
-              <label>2.Forceidr:  </label>
-              <label for="forceidr_stream_id">Stream ID</label>
-              <input id="forceidr_stream_id" class="ui-corner-all"  style="float:center;height:30px;width:60px" value=0 />
-              <button id="force_idr"  class=input_button   onclick="force_idr()">Set</button>
+    <div id="oryx_using" class="oryx-border" style="position:absolute;z-index:-1;margin-top:50px;padding:10px;width:100%;">
+      <div id="oryx_ctrl" style="float:left;margin-right:20px;">
+
+        <div id="video_encode_ctrl" style="display:none;">
+          <div id="video_enc_ctrl_encode" >
+            <label>1.Encode Control:  </label>
+            <div style="margin-top:10px;margin-left:20%">
+              <button id="encode_state_control"  style="margin-right:10%" onclick="encode_state_control()">Start</button>
+              <button id="get_encode_status"  class="AM_button" onclick="get_encode_status()">Get status</button>
             </div>
           </div>
-
-          <h3>Overlay</h3>
-          <div>
-            <div id="video_overlay_add">
-              <label>1.Add area: </label>
-              <div style="border-style: solid;border-color: rgb(221, 221, 221);border-width: 2px;border-radius: 8px;padding:20px;">
-                <label for="overlay_add_stream_id">Stream ID</label>
-                <input id="overlay_add_stream_id" class="ui-corner-all"  style="float:center;height:30px;width:60px" value=0 />
-                <label for="overlay_rotate">Rotate</label>
-                <button id="overlay_rotate"  value=1 onclick="overlay_rotate()" class="input_button" >true</button>
-                <label for="overlay_state">State</label>
-                <button id="overlay_state"  value="enable" onclick="overlay_state()" class="input_button" >enable</button>
-                <br/>
-                <label for="overlay_layout_select">Layout</label>
-                <select  id="overlay_layout_select"  class="ui-state-default ui-corner-all" style="float:center;height:37px;margin:10px 0px;"  onclick="overlay_layout()">
-                  <option value=0 selected="selected">left top</option>
-                  <option value=1 >right top</option>
-                  <option value=2 >left bottom</option>
-                  <option value=3 >right bottom</option>
-                  <option value=4 >custom</option>
+          <div id="video_enc_ctrl_stream">
+            <label>2.Stream Control:  </label>
+            <div class="oryx-border" style="margin-top:10px;padding-bottom:0px; height:240px">
+              <span style="float:left;margin-top:13px;padding-right:10px">Please Choose a Stream ID:</span>
+              <select name="enc_ctrl_stream_id" id="enc_ctrl_stream_id"  value="-1" class="AM_selectmenu" style="width:120px;">
+              </select>
+              <div style="width:100%;height:2px; background:rgb(221, 221, 221);"></div>
+              <div style="float:left;clear:left;margin-right:5px;margin-bottom:10px">
+                <label for="enc_ctrl_stream_type"  style="display:block;">Encode Type:</label>
+                <select name="enc_ctrl_stream_type" id="enc_ctrl_stream_type" class="AM_selectmenu" style="width:100px;">
+                  <option value=1 selected="selected">H264</option>
+                  <option value=2>H265</option>
+                  <option value=3 >MJPEG</option>
                 </select>
-                <span id="overlay_area_offset"  style="display:none">
-                  <label for="overlay_area_startx">start x</label>
-                  <input id="overlay_area_startx"  class="ui-corner-all"  style="float:center;height:30px;width:60px" value=0 />
-                  <label for="overlay_area_starty">start y</label>
-                  <input id="overlay_area_starty"  class="ui-corner-all" style="float:center;height:30px;width:60px"value=0 />
-                </span> <br/>
-
-                <div class="radio" id=type_radio style="border-radius: 0px;margin-bottom:0;">
-                  <label for="type_radio">Type</label>
-                  <input type="radio" id="overlay_type_string"  name="radio"  onclick="show_overlay_string()" class="ui-corner-custom"/>
-                  <label for="overlay_type_string">string</label>
-                  <input type="radio" id="overlay_type_time"  name="radio"  onclick="show_overlay_time()" />
-                  <label for="overlay_type_time">time</label>
-                  <input type="radio" id="overlay_type_picture"  name="radio" checked="checked" onclick="show_overlay_picture()" />
-                  <label for="overlay_type_picture">picture</label>
-                  <input type="radio" id="overlay_type_test"  name="radio"  onclick="show_overlay_test()" />
-                  <label for="overlay_type_test">test mode</label>
-                </div>
-
-                <div style="border-style: solid;border-color: rgb(221, 221, 221);border-width: 2px;border-radius: 8px;padding:10px;margin-bottom:10px">
-                  <div id="overlay_area_size" style="display:none;margin-bottom:10px">
-                    <label for="overlay_area_width">Area width</label>
-                    <input id="overlay_area_width"  type="text" class="ui-corner-all"  style="float:center;height:30px;width:60px" value=0 /> &nbsp
-                    <label for="overlay_area_height">Area height</label>
-                    <input id="overlay_area_height" type="text" class="ui-corner-all" style="float:center;height:30px;width:60px" value=0 />
-                  </div>
-
-                  <div id="overlay_text" style="display:none;margin-bottom:10px;">
-                    <span>Font setting: </span> <br />
-                    <div style="border-style: solid;border-color: rgb(221, 221, 221);border-width: 2px;border-radius: 8px;padding:5px;margin-bottom:10px">
-                      <label for="overlay_font_type">Type</label> 
-                      <input id="overlay_font_type"  type="text"  class="ui-corner-all"  style="float:center;height:30px;width:240px" value="" />
-                      <label for="overlay_font_size">Size</label>
-                      <input id="overlay_font_size"  type="text" class="ui-corner-all"  style="float:center;height:30px;width:60px" value=0 />
-                      <br/>
-                      <label for="overlay_font_outwidth">Outline width</label>
-                      <input id="overlay_font_outwidth"  type="text" class="ui-corner-all"  style="float:center;height:30px;width:100px" value=0 />
-                      <label for="overlay_font_italic">Italic size</label>
-                      <input id="overlay_font_italic"  type="text" class="ui-corner-all"  style="float:center;height:30px;width:100px" value=0 />
-                      <br/>
-                      <label for="overlay_font_horbold">Horizontal bold</label>
-                      <input id="overlay_font_horbold"  type="text" class="ui-corner-all"  style="float:center;height:30px;width:80px" value=0 />
-                      <label for="overlay_font_verbold">Vertical bold</label>
-                      <input id="overlay_font_verbold"  type="text" class="ui-corner-all"  style="float:center;height:30px;width:80px" value=0 />
-                      <br/>
-                      <label for="overlay_font_color">Color:</label>
-                      <div id="overlay_font_color" >
-                        <div id="overlay_font_r" style="float: left;clear: left;margin-left:10px;margin-top:5px;width: 250px;"></div>
-                        <div id="overlay_font_g" style="float: left;clear: left;margin-left:10px;width: 250px;"></div>
-                        <div id="overlay_font_b" style="float: left;clear: left;margin-left:10px;width: 250px;"></div>
-                        <div id="font_color_swatch" class="ui-widget-content ui-corner-all" style="width: 120px;height: 100px;margin-left: 280px;background-image: none;"></div>
-                      </div> <!-- end of  <div id="overlay_font_color">-->
-                    </div>
-                    <div id=overlay_string style="display:none;margin-bottom:10px;">
-                      <label for="overlay_string_text">Text</label>
-                      <input id="overlay_string_text"  type="text"  class="ui-corner-all"  style="float:center;height:30px;width:365px" value="" />
-                    </div>
-                  </div><!-- end of <div id="overlay_text" style="display:none"> -->
-
-                  <div id="overlay_picture" style="margin-bottom:10px;">
-                    <label for="overlay_picture_file">Bmp file</label>
-                    <input id="overlay_picture_file"  type="text" class="ui-corner-all"  style="float:center;height:30px;width:330px; margin-bottom:10px;" value=""/>
-                    <br/>
-                    <span>Bmp transparent setting: </span>
-                    <div style="border-style: solid;border-color: rgb(221, 221, 221);border-width: 2px;border-radius: 8px;padding:5px;margin-bottom:0px;">
-                      <label for="overlay_bmp_color_r">R</label>
-                      <input id="overlay_bmp_color_r"  type="text"  class="ui-corner-all"  style="float:center;height:30px;width:50px" value=255 />
-                      <label for="overlay_bmp_color_g">G</label>
-                      <input id="overlay_bmp_color_g"  type="text"  class="ui-corner-all"  style="float:center;height:30px;width:50px" value=255 />
-                      <label for="overlay_bmp_color_b">B</label>
-                      <input id="overlay_bmp_color_b"  type="text"  class="ui-corner-all"  style="float:center;height:30px;width:50px" value=255 />
-                      <label for="overlay_bmp_color_a">A</label>
-                      <input id="overlay_bmp_color_a"  type="text"  class="ui-corner-all"  style="float:center;height:30px;width:50px" value=255 />
-                      <label for="overlay_bmp_color_range">Range</label>
-                      <input id="overlay_bmp_color_range"  type="text" class="ui-corner-all"  style="float:center;height:30px;width:50px" value=20 /> <br />
-                    </div>
-                  </div>
-                </div>
-                <button id="add_overlay" class=input_button onclick="add_overlay()" style="margin: 0% 10%;">Apply</button>
               </div>
-            </div><!-- end of  <div id="video_overlay_add">  -->
+              <div style="float:left;margin-right:5px;margin-bottom:10px">
+                <label for="enc_ctrl_stream_resolution"  style="display:block;">Resolution:</label>
+                <select name="enc_ctrl_stream_resolution" id="enc_ctrl_stream_resolution" class="AM_selectmenu" style="width:120px;">
+                  <option value=0 selected="selected">1920x1080</option>
+                  <option value=1>1280x960(Full FOV)</option>
+                  <option value=2>1280x960</option>
+                  <option value=3>1280x720</option>
+                  <option value=4>720x480(Full FOV)</option>
+                  <option value=5>720x480</option>
+                  <option value=6>640x480(Full FOV)</option>
+                  <option value=7>640x480</option>
+                  <option value=8>640x360</option>
+                </select>
+              </div>
+              <div style="float:left;margin-right:5px;margin-bottom:10px">
+                <label for="enc_ctrl_stream_state"  style="display:block;">Stream State:</label>
+                <button id="enc_ctrl_stream_state"  class="AM_button" style="width:100px;height:32px" onclick="enc_ctrl_stream_control(this)" value=0 autocomplete="off">Disable</button>
+              </div><br/>
+              <div style="float:left;clear: left;margin-right:15px;margin-bottom:5px">
+                <label for="enc_ctrl_stream_framerate" style="display:block;">Frame Rate:</label>
+                <select name="enc_ctrl_stream_framerate" id="enc_ctrl_stream_framerate" class="AM_selectmenu" style="width:100px;">
+                </select>
+              </div>
+              <div style="float:left;margin-right:15px;margin-bottom:5px">
+                <label for="enc_ctrl_stream_bitrate" style="display:block;">Bit Rate(Kbps):</label>
+                <input id="enc_ctrl_stream_bitrate" name="enc_ctrl_stream_bitrate" class="AM_spinner" value=4000 onchange="enc_ctrl_stream_control(this)" style="width:70px;height:24px">
+              </div>
+              <div style="float:left;margin-right:5px;margin-bottom:5px">
+                <label for="enc_ctrl_stream_mjpeg_quality" style="display:block;">MJPEG Quality:</label>
+                <input id="enc_ctrl_stream_mjpeg_quality" name="enc_ctrl_stream_mjpeg_quality" class="AM_spinner" value=80 onchange="enc_ctrl_stream_control(this)" style="width:70px;height:24px" autocomplete="off">
+              </div><br/>
+              <div style="float:left;clear: left;margin-right:15px;margin-bottom:5px">
+                <label for="enc_ctrl_stream_force_idr" style="display:block;">Force IDR:</label>
+                <button id="enc_ctrl_stream_force_idr"  class="AM_button" style="width:100px;height:32px" onclick="enc_ctrl_stream_control(this)">Set</button>
+              </div>
+              <div style="float:left;margin-right:15px;margin-bottom:5px">
+                <label for="enc_ctrl_stream_gop_n" style="display:block;">GOP N:</label>
+                <input id="enc_ctrl_stream_gop_n" name="enc_ctrl_stream_gop_n" class="AM_spinner" value=30 onchange="enc_ctrl_stream_control(this)" style="width:70px;height:24px">
+              </div>
+              <div style="float:left;margin-right:5px;margin-bottom:25px">
+                <label for="enc_ctrl_stream_gop_idr" style="display:block;">GOP IDR:</label>
+                <input id="enc_ctrl_stream_gop_idr" name="enc_ctrl_stream_gop_idr" class="AM_spinner" value=1 onchange="enc_ctrl_stream_control(this)" style="width:70px;height:24px">
+              </div><br/>
+            </div>
+          </div>
+        </div><!-- end of <div id="video_encode_ctrl"> -->
+        <div id="video_overlay"  style="display:none;">
+          <div id="video_overlay_add">
+            <label>1.Area Manipulate: </label>
+            <div class="oryx-border">
+              <div>
+                <label for="overlay_stream_id">Stream ID</label>
+                <input id="overlay_stream_id" class="ui-corner-all" style="float: center; height: 30px; width: 60px" value=0 />
+                <label for="overlay_area_id">Area ID</label>
+                <input id="overlay_area_id" class="ui-corner-all" style="float: center; height: 30px; width: 60px" value=0 autocomplete="off"/>
+                <select name="overlay_manipulate_select" id="overlay_manipulate_select" class="AM_selectmenu" style="width:120px;"autocomplete="off">
+                  <option value="init" >Init</option>
+                  <option value="enable" selected="selected">Enable</option>
+                  <option value="disable">Disable</option>
+                  <option value="delete">Delete</option>
+                  <option value="destory">Destory</option>
+                  <option value="get">Get</option>
+                  <option value="save">Save</option>
+                </select>
+              </div>
+              <div id="overlay_init" class="oryx-border" style="margin:-10px;padding:10px ;padding-bottom:0px;width:390px; display: none">
+                <label for="overlay_area_width">Width</label>
+                <input id="overlay_area_width" type="text" class="ui-corner-all" style="float: center; height: 30px; width: 60px" value=0 />
+                <label for="overlay_area_height">Height</label>
+                <input id="overlay_area_height" type="text" class="ui-corner-all" style="float: center; height: 30px; width: 60px" value=0 />
+                <label for="overlay_area_buf_num" style="margin-left:5px">Buffer Number</label>
+                <input id="overlay_area_buf_num" class="ui-corner-all"  style="float: center; height: 30px; width: 60px" value=1 />
+                </br>
+                <label for="overlay_area_startx">Start X</label>
+                <input id="overlay_area_startx" class="ui-corner-all" style="float: center; height: 30px; width: 60px" value=0 />
+                <label for="overlay_area_starty">Start Y</label>
+                <input id="overlay_area_starty" class="ui-corner-all"  style="float: center; height: 30px; width: 60px" value=0 />
+                <label for="overlay_area_rotate" style="margin-left:20px">Rotate</label>
+                <button id="overlay_area_rotate" value=1 onclick="overlay_area_rotate()" class="AM_button" style="width:80px">true</button>
+                </br> </br>
+                <label for="overlay_area_color" >Background Color:</label>
+                <div id="overlay_area_color">
+                  <div id="overlay_area_r" class="slider_color_r" style="float: left; clear: left; margin-left: 10px; margin-top: 5px; width: 240px;"></div>
+                  <div id="overlay_area_g" class="slider_color_g" style="float: left; clear: left; margin-left: 10px; width: 240px;"></div>
+                  <div id="overlay_area_b" class="slider_color_b" style="float: left; clear: left; margin-left: 10px; width: 240px;"></div>
+                  <div id="overlay_area_swatch"  class="ui-widget-content ui-corner-all" style="width: 120px; height: 100px; margin-left: 270px; background-image: none;"></div>
+                  <div id="overlay_area_a_slider" style="float: left; clear: left; margin-left: 10px; width: 240px;"></div>
+                  <label for="overlay_area_a"  style="margin-left:20px">Alpha:</label>
+                  <input type="text" id="overlay_area_a" readonly style="border:0; color:#f6931f; font-weight:bold;width:30px" />
+                </div><!-- end of  <div id="overlay_area_color">-->
+                <button id="overlay_init_apply" class="AM_button" onclick="init_overlay()" style="margin: 0% 40% 1%;">Apply</button>
+              </div>
+            </div>
+          </div><!-- end of  <div id="video_overlay_add">  -->
 
-            <div id="video_overlay_manipulate">
-              <label>2.Area manipulate:  </label>
-              <div style="border-style: solid;border-color: rgb(221, 221, 221);border-width: 2px;border-radius: 8px;padding:20px">
-                <div>
-                  <label for="overlay_stream_id">Stream ID</label>
-                  <input id="overlay_stream_id" class="ui-corner-all"  style="float:center;height:30px;width:60px" value=0 />
-                  <label for="overlay_area_id">Area ID</label>
-                  <input id="overlay_area_id" class="ui-corner-all"  style="float:center;height:30px;width:60px" value=0 />
-                  <select  id="overlay_manipulate_select"  class="ui-state-default ui-corner-all" style="float:center;height:37px;"  onclick="overlay_manipulate()">
-                    <option selected="selected">Enable</option>
-                    <option>Disable</option>
-                    <option>Delete</option>
-                    <option>Get</option>
-                  </select>
+          <div id="video_overlay_manipulate" style="width:450px">
+            <label>2.Data Block Manipulate: </label>
+            <div class="oryx-border" >
+              <label for="overlay_data_stream_id">Stream</label>
+              <input id="overlay_data_stream_id" class="ui-corner-all" style="float: center; height: 30px; width: 50px" value=0 />
+              <label for="overlay_data_area_id">Area</label>
+              <input id="overlay_data_area_id" class="ui-corner-all" style="float: center; height: 30px; width: 50px" value=0 />
+              <label for="overlay_data_id">Block</label>
+              <input id="overlay_data_id" class="ui-corner-all" style="float: center; height: 30px; width: 50px" value=0 />
+              <select name="overlay_data_manipulate_select" id="overlay_data_manipulate_select" class="AM_selectmenu" style="width:100px;"autocomplete="off">
+                <option value="set" >Add</option>
+                <option value="update" selected="selected">Update</option>
+                <option value="delete">Delete</option>
+              </select>
+              <div id="overlay_data_rect"  style="margin-top:10px; display:none" autocomplete="off">
+                <label for="overlay_data_width">Width</label>
+                <input id="overlay_data_width" type="text" class="ui-corner-all" style="float: center; height: 30px; width: 50px" value=0 />
+                <label for="overlay_data_height">Height</label>
+                <input id="overlay_data_height" type="text" class="ui-corner-all" style="float: center; height: 30px; width: 50px" value=0 />
+                <label for="overlay_data_startx">Start X</label>
+                <input id="overlay_data_startx" class="ui-corner-all" style="float: center; height: 30px; width: 50px" value=0 />
+                <label for="overlay_data_starty">Start Y</label>
+                <input id="overlay_data_starty" class="ui-corner-all"  style="float: center; height: 30px; width: 50px" value=0 />
+              </div>
+              <div id="overlay_data_content">
+              <label for="type_radio">Type</label>
+              <div class="radio" id=type_radio style="border-radius: 0px; margin-bottom: 0; margin-left: 20px; display:inline" >
+                <input type="radio"  id="overlay_type_string" name="radio" onclick="show_overlay_string()" class="ui-corner-custom" autocomplete="off"/>
+                <label for="overlay_type_string">String</label>
+                <input type="radio" id="overlay_type_time" name="radio" onclick="show_overlay_time()" autocomplete="off"/>
+                <label for="overlay_type_time">Time</label>
+                <input type="radio" id="overlay_type_picture" name="radio" checked="checked" onclick="show_overlay_picture()" autocomplete="off"/>
+                <label for="overlay_type_picture">Picture</label>
+                <input type="radio" id="overlay_type_test" name="radio"  onclick="show_overlay_animation()" autocomplete="off"/>
+                <label for="overlay_type_test">Animation</label>
+              </div>
+              <div class="oryx-border" style="margin:0px -10px 10px -10px;padding: 10px; width:402px">
+                <div id="overlay_text" style="display: none; margin-bottom: 10px;">
+                  <span>Font setting: </span> <br />
+                  <div class="oryx-border" style="padding: 5px; margin-bottom: 10px">
+                    <label for="overlay_font_type">Type</label>
+                    <input  id="overlay_font_type" type="text" class="ui-corner-all" style="float: center; height: 30px; width: 240px" value="" />
+                    <label for="overlay_font_size">Size</label>
+                    <input id="overlay_font_size" type="text" class="ui-corner-all"  style="float: center; height: 30px; width: 60px" value=0 /> <br />
+                    <label for="overlay_font_outwidth">Outline width</label>
+                    <input  id="overlay_font_outwidth" type="text" class="ui-corner-all" style="float: center; height: 30px; width: 100px" value=0 />
+                    <label for="overlay_font_italic">Italic size</label>
+                    <input id="overlay_font_italic" type="text" class="ui-corner-all" style="float: center; height: 30px; width: 100px" value=0 />
+                    <br /> <label for="overlay_font_horbold">Horizontal bold</label>
+                    <input id="overlay_font_horbold" type="text" class="ui-corner-all" style="float: center; height: 30px; width: 80px" value=0 />
+                    <label for="overlay_font_verbold">Vertical bold</label>
+                    <input id="overlay_font_verbold" type="text" class="ui-corner-all" style="float: center; height: 30px; width: 80px" value=0 /> <br />
+                    <label for="overlay_font_color">Color:</label>
+                    <div id="overlay_font_color">
+                      <div id="overlay_font_r" class="slider_color_r" style="float: left; clear: left; margin-left: 10px; margin-top: 5px; width: 240px;"></div>
+                      <div id="overlay_font_g" class="slider_color_g" style="float: left; clear: left; margin-left: 10px; width: 240px;"></div>
+                      <div id="overlay_font_b" class="slider_color_b" style="float: left; clear: left; margin-left: 10px; width: 240px;"></div>
+                      <div id="font_color_swatch"  class="ui-widget-content ui-corner-all" style="width: 120px; height: 100px; margin-left: 270px; background-image: none;"></div>
+                    </div><!-- end of  <div id="overlay_font_color">-->
+                  </div>
+                  <span id="overlay_spacing" style="display: none; margin-bottom: 10px;">
+                    <label for="overlay_string_spacing">Spacing</label>
+                    <input id="overlay_string_spacing" type="text" class="ui-corner-all" style="float: center; height: 30px; width: 50px" value=0 autocomplete="off"/>
+                  </span>
+                  <span id="overlay_string" style="display: none; margin-bottom: 10px;">
+                    <label for="overlay_string_text">Text</label>
+                    <input id="overlay_string_text" type="text" class="ui-corner-all" style="float: center; height: 30px; width: 260px" value="" />
+                  </span>
+                  <span id="overlay_msec" style="display: none; margin-bottom: 10px;">
+                    <label for="overlay_data_msec" style="margin-left:90px">Display Msec</label>
+                    <button id="overlay_data_msec" value=0 onclick="overlay_data_msec()" class="AM_button" style="width:90px">disabled</button>
+                  </span>
+                  <div id="overlay_time_string" style="display:none; margin-top:5px">
+                    <label for="overlay_time_string_prefix">Prefix</label>
+                    <input id="overlay_time_string_prefix" type="text" class="ui-corner-all" style="float: center; height: 30px; width: 150px" value="" />
+                    <label for="overlay_time_string_suffix">Suffix</label>
+                    <input id="overlay_time_string_suffix" type="text" class="ui-corner-all" style="float: center; height: 30px; width: 150px" value="" />
+                  </div>
+                </div><!-- end of <div id="overlay_text" style="display:none"> -->
+
+                <div id="overlay_picture" style="margin-bottom: 10px;">
+                  <label for="overlay_picture_file">Bmp file</label>
+                  <input  id="overlay_picture_file" type="text" class="ui-corner-all" style="float: center; height: 30px; width: 330px; margin-bottom: 10px;" value="" />
+                  <br /> <span>Bmp transparent setting: </span>
+                  <div class="oryx-border" style="padding: 5px; margin-bottom: 0px;">
+                    <label for="overlay_bmp_color_r">R</label>
+                    <input  id="overlay_bmp_color_r" type="text" class="ui-corner-all" style="float: center; height: 30px; width: 50px" value=255 />
+                    <label for="overlay_bmp_color_g">G</label>
+                    <input id="overlay_bmp_color_g" type="text" class="ui-corner-all" style="float: center; height: 30px; width: 50px" value=255 />
+                    <label for="overlay_bmp_color_b">B</label>
+                    <input id="overlay_bmp_color_b" type="text" class="ui-corner-all" style="float: center; height: 30px; width: 50px" value=255 />
+                    <label for="overlay_bmp_color_a">A</label>
+                    <input id="overlay_bmp_color_a" type="text" class="ui-corner-all" style="float: center; height: 30px; width: 50px" value=255 />
+                    <label for="overlay_bmp_color_range">Range</label>
+                    <input id="overlay_bmp_color_range" type="text" class="ui-corner-all" style="float: center; height: 30px; width: 50px" value=20 />
+                    <br />
+                  </div><br />
+                  <span id="overlay_bmp_num" style="display: none; margin-bottom: 10px;">
+                    <label for="overlay_data_bmp_num">BMP Number</label>
+                    <input id="overlay_data_bmp_num" type="text" class="ui-corner-all" style="float: center; height: 30px; width: 60px" value=0 autocomplete="off"/>
+                  </span>
+                  <span id="overlay_bmp_interval" style="margin-left:30px;display: none; margin-bottom: 10px;">
+                    <label for="overlay_data_bmp_interval">Display Interval</label>
+                    <input id="overlay_data_bmp_interval" type="text" class="ui-corner-all" style="float: center; height: 30px; width: 60px" value=0 autocomplete="off"/>
+                    (frames)
+                  </span>
                 </div>
-                <button id="destroy_overlay"  class=input_button   onclick="destroy_overlay()">Delete all areas</button>
-                <button id="save_overlay_config"  class=input_button   onclick="save_overlay_config()">Save all configs</button>
+              </div>
+              <button id="overlay_data_manipulate" class="AM_button" onclick="manipulate_overlay_data()" style="margin: 0% 40%;">Apply</button>
               </div>
             </div>
           </div>
+        </div><!-- end of <div id="video_overlay"> -->
 
-          <h3>Dptz/Dewarp</h3>
-          <div>
-            <div id="dptz">
-              <label>1.Dptz:  </label>
+        <div  id="video_dptz_dewarp" style="display:none;">
+          <div id="dptz" class="oryx-border" style="clear:both;margin-bottom:0px;padding:10px;width: 430px;height:290px">
+            <label>1.Dptz:  </label>
+            <div style="margin-top:10px; display:inline">
+              <div class="radio" id="dptz_type_radio" style="border-radius: 0px; margin-bottom: 10px; display:inline" >
+                <input type="radio"  id="dptz_ratio" name="radio" onclick="switch_dptz_option('ratio')" class="ui-corner-custom" autocomplete="off"/>
+                <label for="dptz_ratio">Ratio</label>
+                <input type="radio" id="dptz_size" name="radio" onclick="switch_dptz_option('size')" autocomplete="off"/>
+                <label for="dptz_size">Rect</label>
+              </div>
               <label for="dptz_buffer_id">Buffer ID</label>
-              <input id="dptz_buffer_id" class="ui-corner-all"  style="float:center;height:30px;width:60px" value=0 />
-              <button id="set_dptz_buffer"  class=input_button   onclick="set_dptz_buffer()">Choose</button><br/><br/>
-              <div id="zoom_slider" style="margin-bottom:5px;margin-top:0px"></div>
-              <label for="zoom" >Zoom:</label>
-              <input type="text" id="zoom" readonly style="border:0; color:#f6931f; font-weight:bold;" />
-              <div id="pan_slider" style="margin-bottom:5px;margin-top:10px"></div>
-              <label for="pan">Pan:</label>
-              <input type="text" id="pan" readonly style="border:0; color:#f6931f; font-weight:bold;" />
-              <div id="tilt_slider" style="margin-bottom:5px;margin-top:10px"></div>
-              <label for="tilt">Tilt:</label>
-              <input type="text" id="tilt" readonly style="border:0; color:#f6931f; font-weight:bold;" />
-            </div>
-            <div id="dewarp">
-              <label>2.Dewarp:  </label>
-              <div id="strength_slider" style="margin-bottom:5px;margin-top:10px"></div>
-              <label for="strength">Strength:</label>
-              <input type="text" id="strength" readonly style="border:0; color:#f6931f; font-weight:bold;" />
+              <input id="dptz_buffer_id" class="ui-corner-all"  style="float:center;height:30px;width:50px" value=0 autocomplete="off"/>
+              <button id="set_dptz_buffer"  class="AM_button"   onclick="set_dptz_buffer()">Choose</button>
+              <div id="dptz_ratio_option" style="margin-left:5px;margin-top:0px">
+                <div style="float:left; width:100px; margin-bottom:0px">
+                  <div id="zoom_slider" style="height:180px; margin-top:5px; margin-left:35px"></div>
+                  <label for="zoom" style="margin-left:10px">Zoom:</label>
+                  <input type="text" id="zoom" readonly style="border:0; color:#f6931f; font-weight:bold;width:30px" />
+                </div>
+                <div style="float:left;margin-top:15px;margin-left:65px;margin-bottom:0px; width:180px">
+                  <div class="fouth-arrow-pan" style="left:0px;float:left;">
+                    <div class="arrow arrow-up" onclick="set_dptz_tilt(-0.05)"></div>
+                    <div class="arrow arrow-right" onclick="set_dptz_pan(0.05)"></div>
+                    <div class="arrow arrow-down" onclick="set_dptz_tilt(0.05)"></div>
+                    <div class="arrow arrow-left" onclick="set_dptz_pan(-0.05)"></div>
+                    <div class="arrow-inner">
+                      <div class="row_div"></div>
+                      <div class="clu_div"></div>
+                    </div>
+                  </div>
+                  <div style="float:left;margin-left:65px;margin-top:35px;">
+                    <label for="tilt">Tilt:</label>
+                    <input type="text" id="tilt" readonly style="border:0; color:#f6931f; font-weight:bold;width:40px" />
+                  </div>
+                </div>
+                <div style="float:left;clear:right;margin-top:85px;width:80px">
+                  <label for="pan">Pan:</label>
+                  <input type="text" id="pan" readonly style="border:0; color:#f6931f; font-weight:bold;width:40px" />
+                </div>
+              </div>
+              <div id="dptz_size_option" style="display:none;margin-left:10px">
+                <label for="dptz_x">X</label>
+                <input id="dptz_x" class="ui-corner-all"  style="float:center;height:30px;width:60px" value=0 />
+                <label for="dptz_y">Y</label>
+                <input id="dptz_y" class="ui-corner-all"  style="float:center;height:30px;width:60px" value=0 />
+                <label for="dptz_w">W</label>
+                <input id="dptz_w" class="ui-corner-all"  style="float:center;height:30px;width:60px" value=0 />
+                <label for="dptz_h">H</label>
+                <input id="dptz_h" class="ui-corner-all"  style="float:center;height:30px;width:60px" value=0 /><br/><br/>
+                <button id="set_dptz_size"  class="AM_button"   onclick="set_dptz_size()" style="margin-left:35%">Apply</button>
+              </div>
             </div>
           </div>
-
-        </div> <!-- end of  <div class=accordion> -->
-      </div> <!-- end of  <div id="tabs-1">-->
-
-      <div id="tabs-2">
-        <div class=accordion>
-          <h3>Recording</h3>
-          <div id="media_recording">
-            <div id="media_recording_switch">
-              <label>1.Media:  </label>
-              <button id="media_start_recording"  class=input_button   onclick="media_start_recording()">Start</button>
-              <button id="media_stop_recording"  class=input_button    onclick="media_stop_recording()">Stop</button>
-            </div><!-- end of <div id="media_recording_switch"> -->
-            <div id="media_file_recording">
-              <label>2.File:  </label>
-              <button id="media_file_recording_start"  class=input_button   onclick="media_file_recording_start()">Start</button>
-              <button id="media_file_recording_stop"  class=input_button    onclick="media_file_recording_stop()">Stop</button>
-            </div><!-- end of <div id="media_file_recording"> -->
-            <div id="media_event_recording">
-              <label>3.Event:  </label>
-              <button id="media_event_recording"  class=input_button   onclick="media_event_recording()">Send</button>
-            </div><!-- end of <div id="media_event_recording"> -->
-          </div> <!-- end of <div id="media_recording">-->
-
-          <h3>Playback</h3>
-          <div id="media_playback">
-            <div id="media_playback_audio">
-              <label>Audio:  </label>
-              <div id="media_playback_audio_file" >
-                <div style="margin-bottom:5px;">Path
-                  <input id="media_playback_audio_file0"  type="text"  class="ui-corner-all"  style="float:center;height:30px;width:350px" value="" />
-                  <button onclick="media_playback_add_audio_file()" class="ui-corner-all" style="height:35px;width:35px">+</button>
+          <div id="dewarp"class="oryx-border" style="clear:both;margin-bottom:0px;padding:10px;width: 430px;height:280px">
+            <label>2.Dewarp:  </label>
+            <div class="radio" id="warp_mode_radio" style="border-radius: 0px;display:inline">
+              <input type="radio" id="rectangle_mode_ratio" name="radio" onclick="switch_warp_mode('rectangle')" class="ui-corner-custom" autocomplete="off"/>
+              <label for="rectangle_mode_ratio">Normal</label>
+              <input type="radio" id="panorama_mode_ratio" name="radio" onclick="switch_warp_mode('panorama')" autocomplete="off"/>
+              <label for="panorama_mode_ratio">Panorama</label>
+            </div>
+            <label for="len_max_radius">Len Max Radius</label>
+            <input id="len_max_radius" class="ui-corner-all"  style="float:center;height:30px;width:50px" value=0 autocomplete="off"/>
+            <label>pixel</label>
+            <div style="float:left;clear:left; margin:10px 5px">
+              <div id="strength_slider" style="height:180px;margin:5px 20px"></div>
+              <label for="strength">Strength:</label><br/>
+              <input type="text" id="strength" readonly style="border:0; color:#f6931f; font-weight:bold;width:40px" />
+            </div>
+            <div id="rectangle_mode_option" style="margin:10px 5px;">
+              <div style="float:left;margin-left:5px">
+                <div id="warp_hor_zoom_slider" style="height:180px;margin:5px 20px"></div>
+                <label for="warp_hor_zoom">H Zoom:</label><br/>
+                <input type="text" id="warp_hor_zoom" readonly style="border:0; color:#f6931f; font-weight:bold;width:30px" />
+              </div>
+              <div style="float:left;margin-left:5px">
+                <div id="warp_ver_zoom_slider" style="height:180px;margin:5px 20px"></div>
+                <label for="warp_ver_zoom">V Zoom:</label><br/>
+                <input type="text" id="warp_ver_zoom" readonly style="border:0; color:#f6931f; font-weight:bold;width:30px" />
+              </div>
+            </div>
+            <div id="panorama_mode_option" style="margin:10px 5px;display:none">
+              <div style="float:left;margin-right:19px">
+                <div id="pano_hfov_slider" style="height:180px;margin-top:5px;margin-left:35px;margin-bottom:4px"></div>
+                <label for="pano_hfov">Panorama FOV :</label><br/>
+                <input type="text" id="pano_hfov" readonly style="border:0; color:#f6931f; font-weight:bold;width:40px" />
+                <label >degree</label>
+              </div>
+            </div>
+            <div style="float:left;margin-top:15px;margin-left:0px;width:165px">
+              <div class="fouth-arrow-pan" style="left:0px;float:left;">
+                <div class="arrow arrow-up" onclick="set_warp_region_pitch(-1)"></div>
+                <div class="arrow arrow-right" onclick="set_warp_region_yaw(-1)"></div>
+                <div class="arrow arrow-down" onclick="set_warp_region_pitch(1)"></div>
+                <div class="arrow arrow-left" onclick="set_warp_region_yaw(1)"></div>
+                <div class="arrow-inner">
+                  <div class="row_div"></div>
+                  <div class="clu_div"></div>
                 </div>
-              </div><!-- end of <div id="media_playback_audio_file"> -->
-              <button id="media_palyback_audio_add"  class="input_button" style="icons:ui-icon-play;margin-left:35px;" onclick="media_palyback_audio_add()">Add file</button>
-              <button id="media_palyback_audio_play"  class="input_button" style="icons:ui-icon-play;" onclick="media_palyback_audio_play()">Play</button>
-              <button id="media_palyback_audio_pause"  class="input_button" style="icons:ui-icon-play;" onclick="media_palyback_audio_pause()">Pause</button>
-              <button id="media_palyback_audio_stop"  class="input_button" style="icons:ui-icon-play;" onclick="media_palyback_audio_stop()">Stop</button>
-            </div><!-- end of <div id="media_playback_audio">-->
-          </div><!-- end of <div id="media_playback"> -->
-        </div><!-- end of   <div class=accordion>-->
-      </div><!-- end of  <div id="tabs-2">-->
+              </div>
+              <div style="float:left;margin-left:65px;margin-top:35px;">
+                <label for="pitch">Pitch:</label>
+                <input type="text" id="pitch" readonly style="border:0; color:#f6931f; font-weight:bold;width:40px" value=0 />
+                <label >degree</label>
+              </div>
+            </div>
+            <div style="float:left;clear:right;margin-top:85px;width:80px">
+              <label for="yaw">Yaw:</label>
+              <input type="text" id="yaw" readonly style="border:0; color:#f6931f; font-weight:bold;width:40px" value=0 />
+              <label >degree</label>
+            </div>
+          </div>
+        </div> <!-- end of <div id="video_dptz_dewarp">-->
 
-      <div id="tabs-3">
-        <p>Audio to be continued</p>
-      </div><!-- end of  <div id="tabs-3">-->
+        <div id="media_recording" style="display:none;">
+          <div id="media_recording_switch">
+            <label>1.Media:  </label>
+            <div style="margin-top:10px;">
+              <button id="media_start_recording"  class="AM_button" onclick="media_start_recording()">Start</button>
+              <button id="media_stop_recording"  class="AM_button" onclick="media_stop_recording()">Stop</button>
+            </div>
+          </div><!-- end of <div id="media_recording_switch"> -->
+          <div id="media_file_recording">
+            <label>2.File:  </label><br/>
+            <label for="media_file_checkbox">Muxer ID</label>
+            <div id="media_file_checkbox" style="display:inline">
+              <input type="checkbox" id="media_file_mp4" ><label for="media_file_mp4">MP4</label>
+              <input type="checkbox" id="media_file_ts" ><label for="media_file_ts">TS</label>
+              <input type="checkbox" id="media_file_jpeg" ><label for="media_file_jpeg">JPEG</label>
+            </div>
+            <div style="margin-top:10px;margin-left:60px" >
+              <button id="media_file_recording_start"  class="AM_button" onclick="media_file_recording_start()">Start</button>
+              <button id="media_file_recording_stop"  class="AM_button" onclick="media_file_recording_stop()">Stop</button>
+            </div>
+          </div><!-- end of <div id="media_file_recording"> -->
+          <div id="media_event_recording">
+            <label>3.Event:  </label>
+            <div style="margin-top:10px;">
+              <label for="event_type_radio">Recording Type</label>
+              <div class="radio" id="event_type_radio" style="border-radius: 0px; margin-bottom: 0; margin-left: 0px; display:inline" >
+                <input type="radio"  id="media_event_h26x" name="radio" onclick="switch_media_event_option('h26x')" class="ui-corner-custom" autocomplete="off"/>
+                <label for="media_event_h26x">H26X</label>
+                <input type="radio" id="media_event_mjpeg" name="radio" onclick="switch_media_event_option('mjpeg')" autocomplete="off"/>
+                <label for="media_event_mjpeg">MJPEG</label>
+              </div>
+              <div class="oryx-border" style="margin-bottom:0px;padding-bottom:10px;padding-right:0px">
+                <label id="media_event_id_label" for="media_recording_event_id">Event ID</label>
+                <input id="media_recording_event_id" class="ui-corner-all"  style="float:center;height:30px;width:120px" value=0 autocomplete="off"/>
+                <div id="event_mjpeg_block" style="display:none" autocomplete="off">
+                  <label for="media_recording_history_dur">History Duration</label>
+                  <input id="media_recording_history_dur" class="ui-corner-all"  style="float:center;height:30px;width:60px" value=0>(frames)</input><br/>
+                  <label for="media_recording_future_dur">Future Duration</label>
+                  <input id="media_recording_future_dur" class="ui-corner-all"  style="float:center;height:30px;width:60px" value=0>(frames)</input><br/>
+                  <label for="media_recording_closest_dur">Closest Duration</label>
+                  <input id="media_recording_closest_dur" class="ui-corner-all"  style="float:center;height:30px;width:55px" value=0>(frames)</input>
+                </div>
+              </div>
+              <button id="media_event_recording" class="AM_button" onclick="media_event_recording()" style="display:block; margin:10px 60px">Send</button>
+            </div>
+          </div><!-- end of <div id="media_event_recording"> -->
+        </div> <!-- end of <div id="media_recording">-->
 
-      <div id="tabs-4">
-        <p>Image to be continued</p>
-      </div><!-- end of  <div id="tabs-4">-->
+        <div id="media_playback" style="display:none;">
+          <div id="media_playback_audio">
+            <label>Audio:  </label>
+            <div id="media_playback_audio_file"  style="margin-top:10px;">
+              <div style="margin-bottom:5px;">Path
+                <input id="media_playback_audio_file0"  type="text"  class="ui-corner-all"  style="float:center;height:30px;width:350px" value="" />
+                <button onclick="media_playback_add_audio_file()" class="ui-corner-all" style="height:35px;width:35px;background-color:rgb(223, 239, 252)">+</button>
+              </div>
+            </div><!-- end of <div id="media_playback_audio_file"> -->
+            <button id="media_palyback_audio_add"  class="AM_button" style="margin-left:35px;" onclick="media_palyback_audio_add()">Add file</button>
+            <button id="media_palyback_audio_play"  class="AM_button"  onclick="media_palyback_audio_play()">Play</button>
+            <button id="media_palyback_audio_pause"  class="AM_button"  onclick="media_palyback_audio_pause()">Pause</button>
+            <button id="media_palyback_audio_stop"  class="AM_button"  onclick="media_palyback_audio_stop()">Stop</button>
+          </div><!-- end of <div id="media_playback_audio">-->
+        </div><!-- end of <div id="media_playback"> -->
 
-      <div id="tabs-5">
-        <p>Event to be continued</p>
-      </div><!-- end of  <div id="tabs-5">-->
+        <div id="image" >
+          <div class="oryx-border" style="float:left;clear:both;margin-bottom:0px;padding-bottom:0px;padding-right:10px">
+            <label>1.Exposure Control:  </label>
+            <div id="AE"  style="height:100px;margin-top:10px;">
+              <div style="float:left;clear: left;margin-right:5px;margin-bottom:10px">
+                <label for="ir_led_mode" style="display:block;">IR Led Mode:</label>
+                <select name="ir_led_mode" id="ir_led_mode" class="AM_selectmenu" style="width:80px;">
+                  <option value=2 selected="selected">Auto</option>
+                  <option value=1>On</option>
+                  <option value=0 >Off</option>
+                </select>
+              </div>
+              <div style="float:left;margin-right:5px;margin-bottom:10px">
+                <label for="day_night_mode"  style="display:block;">Day Night Mode:  </label>
+                <button name="day_night_mode" value=1 id="day_night_mode" class="AM_button" style="width:100px;height:32px" onclick="set_parameter(this)">Night</button>
+              </div>
+              <div style="float:left;margin-right:5px;margin-bottom:10px">
+                <label for="anti_flicker_mode" style="display:block;">Anti-flicker: </label>
+                <button name="anti_flicker_mode" id="anti_flicker_mode" value=0 class="AM_button" style="width:70px;height:32px" onclick="set_parameter(this)">50Hz</button>
+              </div>
+              <div style="float:left;clear: right;margin-right:5px;margin-bottom:10px">
+                <label for="back_light_comp"  style="display:block;">Backlight Compensation:</label>
+                <button name="back_light_comp" id="back_light_comp" value=1 class="AM_button" style="width:140px;height:32px" onclick="set_parameter(this)">Open</button>
+              </div>
+              <div style="float:left;clear: left;margin-right:5px;margin-bottom:10px">
+                <label for="local_exposure" style="display:block;">Local Exposure Mode:</label>
+                <select name="local_exposure" id="local_exposure" class="AM_selectmenu" style="width:130px;">
+                  <option value=0 selected="selected">Off</option>
+                  <option value=1>Auto</option>
+                  <option value=2>Weak</option>
+                  <option value=3>Strong</option>
+                </select>
+              </div>
+              <div style="float:left;margin-right:5px;margin-bottom:10px">
+                <label for="ae_metering_mode" style="display:block;">Metering Mode:</label>
+                <select name="ae_metering_mode" id="ae_metering_mode" class="AM_selectmenu" style="width:105px;">
+                  <option value=0 selected="selected">Spot</option>
+                  <option value=1>Center</option>
+                  <option value=2>Average</option>
+                  <option value=3>Custom</option>
+                </select>
+              </div>
+              <div style="float:left;margin-right:5px;margin-bottom:10px">
+                <label for="dc_iris_enable" style="display:block;">DC Iris Mode: </label>
+                <button name="dc_iris_enable" id="dc_iris_enable" value=1 class="AM_button" style="width:85px;height:32px" onclick="set_parameter(this)">Open</button>
+              </div>
+              <div style="float:left;clear:right;margin-right:5px;margin-bottom:10px">
+                <label for="ae_enable" style="display:block;">AE Switch:  </label>
+                <button name="ae_enable" id="ae_enable" value=0 class="AM_button" style="width:73px;height:32px" onclick="set_parameter(this)">Close</button>
+              </div>
+              <div style="float:left;clear: left;margin-right:5px;margin-bottom:10px">
+                <label for="ae_target_ratio" style="display:block;">Exposure Target Factor(%):</label>
+                <input id="ae_target_ratio" name="ae_target_ratio" onchange="set_parameter(this)" class="AM_spinner" value=100 style="width:125px;height:23px">
+              </div>
+              <div style="float:left;clear:right;margin-right:5px;margin-bottom:10px">
+                <label for="slow_shutter_mode" style="display:block;">Slow Shutter Mode:  </label>
+                <button name="slow_shutter_mode" id="slow_shutter_mode" value=0 class="AM_button" style="width:118px;height:32px" onclick="set_parameter(this)">Close</button>
+              </div>
+              <div style="float:left;margin-right:5px;margin-bottom:10px">
+                <label for="shutter_time_manual" style="display:block;">Manual Shutter Time:</label>
+                <select name="shutter_time_manual" id="shutter_time_manual" class="AM_selectmenu" style="width:125px;">
+                  <option value=8000 selected="selected">1/8000</option>
+                  <option value=1024>1/1024</option>
+                  <option value=960>1/960</option>
+                  <option value=480>1/480</option>
+                  <option value=240>1/240</option>
+                  <option value=120>1/120</option>
+                  <option value=100>1/100</option>
+                  <option value=60>1/60</option>
+                  <option value=50>1/50</option>
+                  <option value=30>1/30</option>
+                </select>
+              </div>
+              <div style="float:left;clear: left;margin-right:5px;margin-bottom:5px">
+                <label>Shutter Time Limit(seconds):</label>
+                <div class="oryx-border"  style="width:235px;height:50px;padding:10px 10px">
+                  <div style="float:left;clear: left;margin-right:5px;margin-bottom:5px">
+                    <label for="sensor_shutter_min" style="display:block">min:</label>
+                    <select name="sensor_shutter_min" id="sensor_shutter_min" class="AM_selectmenu" style="width:115px;">
+                      <option value=8000  selected="selected">1/8000</option>
+                      <option value=1024 >1/1024</option>
+                      <option value=960 >1/960</option>
+                      <option value=480 >1/480</option>
+                      <option value=240 >1/240</option>
+                      <option value=120 >1/120</option>
+                      <option value=100 >1/100</option>
+                      <option value=60 >1/60</option>
+                      <option value=50 >1/50</option>
+                      <option value=30 >1/30</option>
+                    </select>
+                  </div>
+                  <div style="float:left;margin-bottom:5px">
+                    <label for="sensor_shutter_max" style="display:block">max:</label>
+                    <select name="sensor_shutter_max" id="sensor_shutter_max" class="AM_selectmenu"  style="width:115px;">
+                      <option value=8000  selected="selected">1/8000</option>
+                      <option value=1024 >1/1024</option>
+                      <option value=960 >1/960</option>
+                      <option value=480 >1/480</option>
+                      <option value=240 >1/240</option>
+                      <option value=120 >1/120</option>
+                      <option value=100 >1/100</option>
+                      <option value=60 >1/60</option>
+                      <option value=50 >1/50</option>
+                      <option value=30 >1/30</option>
+                      <option value=29.97 >1/29.97</option>
+                      <option value=25 >1/25</option>
+                      <option value=15 >1/15</option>
+                      <option value=10 >1/10</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <div style="float:left;clear: right;margin-right:5px;margin-bottom:5px">
+                <label for="sensor_gain_manual" style="display:block;">Manual Sensor Gain(db):</label>
+                <input id="sensor_gain_manual" name="sensor_gain_manual" class="AM_spinner" value=36 onchange="set_parameter(this)" style="width:115px;height:23px">
+                <label for="sensor_gain_max" style="display:block;">Sensor Max Gain(db):</label>
+                <input id="sensor_gain_max" name="sensor_gain_max" class="AM_spinner" value=36 onchange="set_parameter(this)" style="width:115px;height:23px">
+              </div>
+            </div><!-- end of <div id="AE">-->
+            <div style="float:left;clear:left;margin-right:30px;margin-bottom:0px">
+              <label>2.White Balance Control:  </label>
+              <div style="margin-top:10px">
+                <select name="AWB" id="AWB" class="AM_selectmenu" style="width:200px;">
+                  <option value=0  selected="selected">Auto</option>
+                  <option value=1 >Incandescent(2800K)</option>
+                  <option value=2 >D4000</option>
+                  <option value=3 >D5000</option>
+                  <option value=4 >Sunny(6500K)</option>
+                  <option value=5 >Cloudy(7500K)</option>
+                  <option value=6 >Flash</option>
+                  <option value=7 >Fluorescent</option>
+                  <option value=8 >Fluorescent High</option>
+                  <option value=9 >Under Water</option>
+                </select>
+              </div>
+            </div><!-- end of <div style="float:left;clear:both">-->
+            <div style="float:left;clear:right;margin-bottom:0px">
+              <label>3.Focus Control:  </label>
+              <div style="margin-top:10px">
+                <select name="AF" id="AF" class="AM_selectmenu" style="width:175px;">
+                  <option value=0  selected="selected">CAF</option>
+                  <option value=1 >SAF</option>
+                  <option value=3 >Manual</option>
+                  <option value=4 >Calib</option>
+                  <option value=5 >DEBUG</option>
+                </select>
+              </div>
+            </div><!-- end of <div style="float:left;clear:both">-->
+          </div><!-- end of <div class="oryx-border" style="float:left;clear:both;margin-bottom:0px;padding-bottom:0px;padding-right:10px"> -->
+          <div class="oryx-border" style="float:left;clear:both;margin-bottom:0px;padding-bottom:0px;padding-right:25px">
+            <label>4.3D De-noise Filter:  </label>
+            <div style="margin-top:10px">
+              <div id="mctf_strength_slider" style="margin-bottom:5px"></div>
+              <label for="mctf_strength">MCTF Strength:</label>
+              <input type="text" id="mctf_strength" readonly style="border:0; color:#f6931f; font-weight:bold;" />
+            </div><!-- end of <div id="denoise">-->
+            <label>5.Image Style:  </label>
+            <div style="margin-top:10px;margin-bottom:30px;">
+              <div style="float:left;clear:left">
+                <div id="hue_slider" style="margin-bottom:5px;margin-top:0px;margin-left:15px"></div>
+                <label for="style_hue" >Hue:</label>
+                <input type="text" id="style_hue" readonly style="border:0; color:#f6931f; font-weight:bold;width:30px" />
+              </div>
+              <div style="float:left;">
+                <div id="saturation_slider" style="margin-bottom:5px;margin-top:0px;margin-left:25px"></div>
+                <label for="style_saturation">Saturation:</label>
+                <input type="text" id="style_saturation" readonly style="border:0; color:#f6931f; font-weight:bold;width:20px" />
+              </div>
+              <div style="float:left;">
+                <div id="sharpness_slider" style="margin-bottom:5px;margin-top:0px;margin-left:20px"></div>
+                <label for="style_sharpness">Sharpness:</label>
+                <input type="text" id="style_sharpness" readonly style="border:0; color:#f6931f; font-weight:bold;width:20px" />
+              </div>
+              <div style="float:left;">
+                <div id="brightness_slider" style="margin-bottom:5px;margin-top:0px;margin-left:20px"></div>
+                <label for="style_brightness">Brightness:</label>
+                <input type="text" id="style_brightness" readonly style="border:0; color:#f6931f; font-weight:bold;width:20px" />
+              </div>
+              <div style="float:left;clear:right">
+                <div id="contrast_slider" style="margin-bottom:5px;margin-top:0px;margin-left:20px"></div>
+                <label for="style_contrast">Contrast:</label>
+                <input type="text" id="style_contrast" readonly style="border:0; color:#f6931f; font-weight:bold;width:20px" />
+              </div>
+            </div>
+          </div><!-- end of  <div class="oryx-border" style="float:left;clear:left;margin-bottom:0px;padding-bottom:0px">-->
+        </div><!-- end of <div id="image"> -->
 
-      <div id="tabs-6">
-        <p>System to be continued</p>
-      </div><!-- end of  <div id="tabs-6">-->
+        <div id="system"  style="display:none;">
+          <label>SD Control:  </label>
+          <div class="oryx-border" style="margin-bottom:0px;padding-bottom:0px;padding-right:25px">
+            <div id="sdcard_control" style="margin-top:10px">
+              <label for="sdcard_life">1.Use Situation:  </label>
+              <div id="sdcard_life" style="margin-top:10px;margin-bottom:20px">
+                <div style="clear:both;">
+                  <label for="card_life_status">Card Life Status:</label>
+                  <input id="card_life_status" type="text" class="ui-corner-all" style="margin-left:5px;float: center; height: 30px; width: 290px" autocomplete="off"readonly />
+                </div>
+                <div style="clear:both;">
+                  <label for="card_life_consumed">Card Life Consumed:</label>
+                  <span id="card_life_consumed" style="margin-left:10px; "></span>
+                  <div id="card_life_consumed_bar" style="margin-top:5px; width: 395px;"></div>
+                  <label for="card_life_left">Expected Remaining Lifespan Before Replacement:</label>
+                  <input id="card_life_left" type="text" class="ui-corner-all" style="margin-left:0px;float: center; height: 30px; width: 72px" autocomplete="off" readonly >days</input>
+                </div>
+                <button id="card_life_update"  onclick="card_life_update()" class="AM_button" style="margin-left:70px;">Update Info</button>
+                <button id="card_life_details"  onclick="card_life_details()" class="AM_button">View Details</button>
+              </div>
+              <label for="dcard_err">2.Error Information:</label>
+              <div id="sdcard_err" style="margin-top:10px;margin-bottom:20px">
+                <div style="clear:both;">
+                <label for="card_err_num">Total Error Count:</label>
+                <input id="card_err_num"  type="text" class="ui-corner-all"  style="margin-left:5px;float: center; height: 30px; width: 260px" autocomplete="off" readonly/>
+                </div>
+                <button id="card_err_check"  onclick="card_err_check()" class="AM_button" style="margin-left:90px;">Check</button>
+                <button id="card_err_details"  onclick="card_err_details()" class="AM_button">View Details</button>
+              </div>
+            </div><!-- end of <div id="sdcard_control">-->
+          </div><!-- end of  <div class="oryx-border" style="float:left;clear:left;margin-bottom:0px;padding-bottom:0px">-->
+        </div><!-- end of <div id="system"> -->
 
-      <div id="tabs-7">
-        <p>Sip to be continued</p>
-      </div><!-- end of  <div id="tabs-7">-->
+      </div><!-- end of <div id="oryx_ctrl"> -->
 
-      <p id=success_dialog title=OK></p>
-      <p id="err_dialog" title=ERROR></p>
-    </div><!-- end of <div id="tabs"> -->
+      <div style="float:left;margin-bottom:0px">
+        <object id="vlc" type="application/x-vlc-plugin" pluginspage="http://www.videolan.org" width=720 height=480>
+          <param name='mrl' value="" />
+          <param name='volume' value='50' />
+          <param name='autoplay' value='true' />
+          <param name='loop' value='false' />
+          <param name='fullscreen' value='true' />
+        </object>
+        <p id="playing_video_info" style="background:#d9d9d9;text-align:center;margin-top:-3px;margin-bottom:8px;padding:2px">Encode Type: None</p>
+        <div style="margin-left:120px;">
+          <div style="float:left;margin-right:5px">
+            <label for="video_channel" style="display:block;">Video Channel:</label>
+            <select name="video_channel" id="video_channel" class="AM_selectmenu" style="width:100px;" autocomplete="off">
+              <option value="video0" selected="selected">video 0</option>
+              <option value="video1">video 1</option>
+              <option value="video2">video 2</option>
+              <option value="video3">video 3</option>
+            </select>
+          </div>
+          <div style="float:left;margin-right:5px">
+            <label for="audio_type" style="display:block;">Audio Type:</label>
+            <select name="audio_type" id="audio_type" class="AM_selectmenu" style="width:100px;" autocomplete="off">
+              <option value="none">none</option>
+              <option value="aac" selected="selected">aac</option>
+              <option value="speex">speex</option>
+              <option value="g711">g711</option>
+              <option id="audio_opus" value="opus">opus</option>
+            </select>
+          </div>
+          <div style="float:left;">
+            <label for="vlc_delay" style="display:block;">Buffer(ms):</label>
+            <input id="vlc_delay" name="spinner" class="AM_spinner" value="600" style="width:60px;height:23px" autocomplete="off">
+            <button id="vlc_control" class="AM_button" onclick="vlc_control()" style="margin-left:50px;height:32px">Apply</button>
+          </div>
+        </div>
+      </div>
+    </div><!-- end of <div id="oryx_using" class="oryx-border" style="position:absolute;z-index:-1;padding:10px;width:100%;">-->
+
+    <p id=success_dialog title=OK></p>
+    <p id="err_dialog" title=ERROR></p>
   </body>
 </html>
-
