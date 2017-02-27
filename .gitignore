@@ -1,1 +1,5 @@
 ambarella/out/*
+ambarella/boards/*/.config
+ambarella/boards/*/.config.cmd
+ambarella/boards/*/config.h
+
