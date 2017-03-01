@@ -1,0 +1,13 @@
+#Abbreviations
+http://m.blog.csdn.net/article/details?id=38760147
+BST - boostrap code of AMBoot
+PTB - partition table info
+BLD - seocnd stage bootloader of amboot
+HAL - hardware abstraction layero
+PBA - (Optional)persistent BIOS app for safe recovery, For IP camera design, it is a small Linux kernel with CPIO. If PRI or RMD/ROM is corrupted, AMBoot can boot from PBA partition and execute recovery processes.
+
+PRI - Primary code image, usually linux kernel
+SEC - Secondary code
+BAK - (Optional) backup of the kernel or rootfs, not used by default, can be enabled in bsp.h
+RMD/ROM/LNX - Rootfs
+
