@@ -1,0 +1,3 @@
+[submodule "ambarella/uteki"]
+	path = ambarella/uteki
+	url = git@github.com:hello/uteki.git
