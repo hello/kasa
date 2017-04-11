@@ -1,0 +1,234 @@
+/*
+ * Copyright (C) 2013 Ambarella,Inc. - http://www.ambarella.com/
+ * Author: Cao Rongrong <rrcao@ambarella.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
+/dts-v1/;
+
+/include/ "ambarella-s2l.dtsi"
+
+/ {
+	model = "Ambarella S2L Hawthorn Board";
+	compatible = "ambarella,hawthorn", "ambarella,s2l";
+
+	chosen {
+		bootargs = "console=ttyS0 ubi.mtd=lnx root=ubi0:rootfs rw rootfstype=ubifs init=/linuxrc";
+	};
+
+	apb@e8000000 {
+		i2c0: i2c@e8003000 {
+			status = "ok";
+
+			ak4642: codec@12 {
+				compatible = "ambarella,ak4642";
+				reg = <0x12>;
+				gpios = <&pca9539 4 0x0>;
+			};
+
+			it66121@4c {
+				compatible = "it66121";
+				reg = <0x4c>;
+			};
+
+			ambvin0@01 {
+				compatible = "ambarella,ambvin";
+				reg = <0x01>;	/* fake address, will be overwritten in runtime */
+			};
+	        };
+
+		i2c1: i2c@e8001000 {
+			status = "ok";
+	        };
+
+		i2c2: i2c@e8007000 {
+			status = "ok";
+
+			pca9539: pca9539@74 {
+				compatible = "nxp,pca9539";
+				reg = <0x74>;
+				interrupt-parent = <&gpio>;
+				interrupts = <9 0x0>;
+				gpio-controller;
+				#gpio-cells = <2>;
+				interrupt-controller;
+				#interrupt-cells = <2>;
+			};
+	        };
+
+		adc@e801d000 {
+			amb,keymap =
+				/* channel 1 */
+				<0x1fff0c1c 0>,   /* KEY_RESERVED */
+				<0x1c1c0a8c 373>, /* KEY_MODE */
+				<0x19600708 111>, /* KEY_DELETE */
+				<0x154603e8 167>, /* KEY_RECORD */
+				<0x1320012c 211>, /* KEY_HP */
+				<0x10c80000 212>, /* KEY_CAMERA */
+				/* channel 3 */
+				<0x3fff0c1c 0>,   /* KEY_RESERVED */
+				<0x3c1c0af0 139>, /* KEY_MENU */
+				<0x3af007d0 106>, /* KEY_RIGHT */
+				<0x37d003e8 105>, /* KEY_LEFT */
+				<0x33e80190 108>, /* KEY_DOWN */
+				<0x31900000 103>; /* KEY_UP */
+		};
+
+		ir@e8006000 {
+			amb,protocol = <1>;
+			amb,keymap =
+				<0x0100bcbd 116>, /* KEY_POWER */
+				<0x01000405 115>, /* KEY_VOLUMEUP */
+				<0x01008485 114>; /* KEY_VOLUMEDOWN */
+			/* amb,print-key; */
+		};
+	};
+
+	ahb@e0000000 {
+		sdmmc0@e0002000 {
+			slot@0 {
+				pwr-gpios = <&pca9539 0 0x1>;
+				v18-gpios = <&gpio 0 0x0>;
+				amb,caps-ddr;
+				max-frequency = <200000000>;
+			};
+		};
+
+		sdmmc1@e000c000 {
+			status = "ok";
+			slot@0 {
+				pwr-gpios = <&pca9539 1 0x1>;
+				no-1-8-v;
+				keep-power-in-suspend;
+				max-frequency = <50000000>;
+				bus-width = <4>;
+			};
+		};
+
+		mac0: ethernet@e000e000 {
+			phy@3 {
+				rst-gpios = <&pca9539 2 0x0>;
+				interrupt-parent = <&gpio>;
+				interrupts = <10 0x8>;
+			};
+		};
+
+		spi0: spi@e0020000 {
+			cs-gpios = <&gpio 37 0>, <&gpio 38 0>, <&gpio 23 0>;
+
+			ambvin0@0 {
+				compatible = "ambarella,ambvin";
+				reg = <0>;
+				spi-max-frequency = <1000000>;
+				spi-cpha;
+				spi-cpol;
+			};
+
+			gyro@1 {
+				compatible = "ambarella,gyro";
+				reg = <1>;
+				spi-max-frequency = <1000000>;
+				spi-cpha;
+				spi-cpol;
+				irq-gpio = <&gpio 8 0>;
+			};
+			spidev@2 {
+				compatible = "ambarella,spidev";
+				reg = <2>;
+				spi-max-frequency = <1200000>;
+				spi-cpha;
+				spi-cpol;
+			};
+		};
+	};
+
+	rct@ec170000 {
+		usbphy: usbphy@ec170050 {
+			/* high will trigger the ocp interrupt */
+			amb,ocp-polarity = <0>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&usb_host0_pins>;
+			id-gpios = <&gpio 3 0x0>;
+		};
+	};
+
+	sound {
+		compatible = "ambarella,audio-board";
+		amb,model = "Ambarella @ Audio";
+		amb,i2s-controllers = <&i2s0>;
+		amb,audio-codec = <&ak4642>;
+		amb,dummy-codec = <&dummycodec>;
+		amb,dai_fmt = <0>;
+		amb,dummy_dai_fmt = <4>;
+		amb,clk_fmt = <0>;
+		amb,codec-name = "ak4642";
+		amb,stream-name = "ak4642 PCM";
+		amb,codec-dai-name = "ak4642-hifi";
+                amb,audio-routing = "LIN1",     "Mic Bias",
+                                    "RIN1",     "Mic Bias",
+                                    "Mic Bias", "Mic internal",
+                                    "LIN2",     "Line In",
+                                    "RIN2",     "Line In",
+                                    "Line Out", "LOUT",
+                                    "Line Out", "ROUT",
+                                    "HP Jack",  "HPL",
+                                    "HP Jack",  "HPR",
+                                    "Speaker",  "SPP",
+                                    "Speaker",  "SPN";
+	};
+
+	gpio_keys {
+		compatible = "gpio-keys";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		demo_button {
+			label = "demo_button";
+			gpios = <&gpio 1 0>;
+			debounce-interval = <10>;
+			linux,code = <116>;
+			gpio-key,wakeup;
+		};
+	};
+
+	bogus_bus {
+		pwm_bl@0 {
+			compatible = "pwm-backlight";
+			reg = <0>;
+			pwms = <&pwm 0 200000 0>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&pwm0_pins_c>;
+			brightness-levels =
+				<0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15
+				16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31
+				32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+				48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63
+				64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79
+				80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+				96 97 98 99 100 101 102 103 104 105 106 107 108 109 110 111
+				112 113 114 115 116 117 118 119 120 121 122 123 124 125 126 127
+				128 129 130 131 132 133 134 135 136 137 138 139 140 141 142 143
+				144 145 146 147 148 149 150 151 152 153 154 155 156 157 158 159
+				160 161 162 163 164 165 166 167 168 169 170 171 172 173 174 175
+				176 177 178 179 180 181 182 183 184 185 186 187 188 189 190 191
+				192 193 194 195 196 197 198 199 200 201 202 203 204 205 206 207
+				208 209 210 211 212 213 214 215 216 217 218 219 220 221 222 223
+				224 225 226 227 228 229 230 231 232 233 234 235 236 237 238 239
+				240 241 242 243 244 245 246 247 248 249 250 251 252 253 254 255>;
+			default-brightness-level = <0>;
+		};
+	};
+
+	iav {
+		compatible = "ambarella,iav";
+
+		/* node for vin controller */
+		vinc0 {
+			vinrst-gpios = <&pca9539 8 0>;
+			/* vinpwr-gpios = <>; */
+		};
+	};
+};
+

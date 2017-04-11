@@ -1,0 +1,17 @@
+#Sound Card State
+state.AMBEVK {
+  control.25 {
+    iface MIXER
+    name 'Input Mux'
+    value 'Both Mic'
+    comment {
+      access 'read write'
+      type ENUMERATED
+      count 1
+      item.0 Line-in
+      item.1 'Both Mic'
+      item.2 Unknown
+    }
+  }
+}
+

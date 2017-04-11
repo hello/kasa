@@ -1,0 +1,132 @@
+#!/bin/sh
+#
+# Init Hawthorn ...
+#
+
+if [ -f /etc/ambarella.conf ]; then
+	. /etc/ambarella.conf
+fi
+
+install_drivers()
+{
+	kernel_ver=$(uname -r)
+
+	#Install I2C module
+	modprobe i2c-dev
+
+	#Install SPI module
+	modprobe spi_ambarella
+	modprobe spidev
+
+	#Ethernet
+	modprobe libphy
+	modprobe ksz80x1r
+	modprobe ambarella_eth
+
+	#Audio
+	modprobe snd-soc-core pmdown_time=300
+	modprobe snd-soc-ambarella
+	modprobe snd-soc-ambarella-i2s
+	modprobe snd-soc-ak4642-amb
+	modprobe snd-soc-ambevk
+	# modprobe snd-soc-ambdummy
+	# modprobe snd-soc-dummy
+
+	#SD/MMC
+	modprobe ambarella_sd
+	modprobe mmc_block
+
+	#Install input module
+	modprobe ambarella_input_adc
+	modprobe ambarella_input_ir
+	modprobe gpio_keys
+
+	#Install USB module
+	modprobe ehci-hcd
+	modprobe ohci-hcd
+	modprobe ambarella_udc
+	if [ -r /lib/modules/$kernel_ver/kernel/drivers/usb/gadget/g_$SYS_USB_G_TYPE.ko ]; then
+		modprobe g_$SYS_USB_G_TYPE $SYS_USB_G_PARAMETER
+	fi
+
+	#Install PWM module
+	modprobe pwm-ambarella
+	modprobe pwm_bl
+}
+
+create_node()
+{
+	[ -r /dev/iav ] || mknod -m 666 /dev/iav c 248 0
+	[ -r /dev/ucode ] || mknod -m 666 /dev/ucode c 248 1
+	[ -r /dev/overlay ] || mknod -m 666 /dev/overlay c 248 2
+	[ -r /dev/ambad ] || mknod -m 666 /dev/ambad c 248 248
+	[ -r /dev/dsplog ] || mknod -m 666 /dev/dsplog c 248 249
+}
+
+start_iav()
+{
+	/sbin/modprobe dsp
+	/sbin/modprobe iav
+	/sbin/modprobe ambtve
+	if [ $SYS_BOARD_SENSOR == "ov4689" ]; then
+		/sbin/modprobe ov4689_mipi
+	elif [ $SYS_BOARD_SENSOR == "ov9710" ]; then
+		/sbin/modprobe ov9710
+	fi
+	#/usr/local/bin/test_fastosd -a &
+}
+
+start_demo()
+{
+	# Dump the video clip which contain the first frame, select one of them.
+
+	#1. Dump BSB buffer with amba_debug
+	/sbin/modprobe ambad
+	/usr/local/bin/amba_debug -r $IDSP_RAM_START -s $DSP_BSB_SIZE -f /tmp/fast_video_$SYS_BOARD_BSP.h264
+
+	#2. Dump BSB buffer with test_stream (Example)
+	#test_stream -f /tmp/fast_video_$SYS_BOARD_BSP.h264
+	#test_encode -A -s
+}
+
+start()
+{
+#	install_drivers
+	create_node
+	start_iav
+	start_demo
+
+	#Customize steps in below.
+}
+
+stop()
+{
+	kernel_ver=$(uname -r)
+}
+
+restart()
+{
+	stop
+	start
+}
+
+case "$1" in
+	start)
+		start
+		;;
+	stop)
+		stop
+		;;
+	restart|reload)
+		restart
+		;;
+	drivers)
+		install_drivers
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart|drivers}"
+		exit 1
+esac
+
+exit $?
+
